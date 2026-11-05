@@ -1,0 +1,55 @@
+@import 'tailwindcss';
+
+/*
+ * Identidade visual do Line: grafite esverdeado com destaque verde-folha e amarelo-sol.
+ * Todas as cores vêm daqui; troque estes tokens para criar outros temas.
+ */
+@theme {
+  --color-rail: #0a0e0c;
+  --color-side: #101613;
+  --color-main: #151c18;
+  --color-raise: #1c2520;
+  --color-hover: #222d27;
+  --color-edge: #26322b;
+  --color-fg: #e9f0eb;
+  --color-soft: #b9c7bf;
+  --color-muted: #82948a;
+  --color-accent: #00c46a;
+  --color-accent-strong: #00a85b;
+  --color-sun: #ffcc29;
+  --color-danger: #ff5a5f;
+  --color-online: #00c46a;
+  --color-idle: #ffcc29;
+  --color-dnd: #ff5a5f;
+  --color-offline: #6b7a72;
+
+  --font-sans: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--color-main);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge) transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.mention {
+  background: color-mix(in srgb, var(--color-sun) 18%, transparent);
+  color: var(--color-sun);
+  border-radius: 4px;
+  padding: 0 2px;
+  font-weight: 600;
+}

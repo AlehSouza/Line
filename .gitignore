@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+dist/
+dist-electron/
+release/
+*.tsbuildinfo
+next-env.d.ts
+apps/server/data/
+.env
+.env.local
+.DS_Store

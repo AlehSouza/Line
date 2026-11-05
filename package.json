@@ -1,0 +1,26 @@
+{
+  "name": "line",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Line: app de chat e comunidades para desktop",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,desktop -c green,cyan \"npm run dev -w @line/server\" \"npm run dev -w @line/desktop\"",
+    "dev:server": "npm run dev -w @line/server",
+    "dev:web": "npm run dev:web -w @line/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dist:win": "npm run dist:win -w @line/desktop"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
