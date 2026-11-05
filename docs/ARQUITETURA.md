@@ -12,7 +12,7 @@
 │                              │          │      salas user:<id> e         │
 │  WebRTC (fase 2) ◄───────────┼─ P2P/SFU ┤      server:<id>               │
 │                              │          │                                │
-│  preload: notificações,      │          │  SQLite (better-sqlite3)       │
+│  preload: notificações,      │          │  SQLite (node:sqlite)          │
 │  badge, piscar na barra      │          │  arquivos em DATA_DIR          │
 └──────────────────────────────┘          └────────────────────────────────┘
 ```
@@ -25,7 +25,7 @@
 | Estado da interface | Zustand | Simples, sem boilerplate, ótimo para muitos eventos em tempo real. |
 | API | Fastify | Rápido, tipado, plugins para upload/rate limit quando precisarmos. |
 | Tempo real | Socket.IO sobre WebSocket | Reconexão automática, salas e acks prontos. Também serve de sinalização para o WebRTC. |
-| Banco | SQLite (better-sqlite3) | Uso pessoal: zero configuração, um arquivo, backup = copiar a pasta. Tem busca full-text (FTS5) embutida para a fase 3. Se um dia crescer, as consultas ficam todas em `store.ts` e dá para migrar para Postgres. |
+| Banco | SQLite embutido do Node (`node:sqlite`) | Uso pessoal: zero configuração, nenhum módulo nativo para compilar no Windows, um arquivo, backup = copiar a pasta. Tem busca full-text (FTS5) embutida para a fase 3. Se um dia crescer, as consultas ficam todas em `store.ts` e dá para migrar para Postgres. |
 | Senhas | scrypt (nativo do Node) | Sem dependência nativa extra. |
 | Sessão | JWT (HS256, 30 dias) | Funciona igual para REST e WebSocket. |
 | Voz/vídeo/tela | WebRTC | Padrão dos navegadores; o Electron já tem tudo, inclusive captura de tela com `desktopCapturer`. |

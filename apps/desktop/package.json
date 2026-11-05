@@ -6,24 +6,17 @@
   "author": "Line",
   "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"npm run dev:web\" \"wait-on http://localhost:3000 && cross-env LINE_DEV_URL=http://localhost:3000 electron .\"",
+    "dev": "npm run build:electron && concurrently -k -n next,electron -c cyan,magenta \"npm run dev:web\" \"wait-on http://localhost:3000 && cross-env LINE_DEV_URL=http://localhost:3000 LINE_EMBEDDED_SERVER=0 electron .\"",
     "dev:web": "next dev -p 3000",
     "build:web": "next build",
-    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --external:electron --out-extension:.js=.cjs --outdir=dist-electron",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --target=node22 --format=cjs --external:electron --external:bufferutil --external:utf-8-validate --out-extension:.js=.cjs --outdir=dist-electron",
     "build": "npm run build:web && npm run build:electron",
     "start": "electron .",
-    "dist:win": "npm run build && electron-builder --win",
+    "dist:win": "npm run build && electron-builder --win --x64",
     "typecheck": "tsc -p tsconfig.json"
   },
-  "dependencies": {
-    "@line/shared": "0.1.0",
-    "next": "^16.4.5",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "socket.io-client": "^4.8.4",
-    "zustand": "^5.0.16"
-  },
   "devDependencies": {
+    "@line/shared": "0.1.0",
     "@tailwindcss/postcss": "^4.3.4",
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.0",
@@ -32,8 +25,13 @@
     "electron": "^45.2.3",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
+    "next": "^16.4.5",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "socket.io-client": "^4.8.4",
     "tailwindcss": "^4.3.4",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "zustand": "^5.0.16"
   },
   "build": {
     "appId": "app.line.desktop",
@@ -48,14 +46,31 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Line"
+      "shortcutName": "Line",
+      "artifactName": "Line-Setup-${version}.exe"
+    },
+    "electronVersion": "45.2.3",
+    "portable": {
+      "artifactName": "Line-${version}-portable.exe"
     }
   }
 }

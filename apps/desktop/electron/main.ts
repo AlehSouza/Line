@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { startServer } from '../../server/src/start';
 
 const DEV_URL = process.env.LINE_DEV_URL;
 const OUT_DIR = path.join(__dirname, '..', 'out');
@@ -11,6 +12,28 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+let embeddedServer: Awaited<ReturnType<typeof startServer>> | null = null;
+
+/**
+ * Servidor embutido: o próprio app hospeda um servidor Line na porta 4000,
+ * com os dados na pasta do usuário. Assim o .exe funciona sozinho, e seus amigos
+ * podem se conectar no seu IP. Se a porta já estiver em uso (outro servidor rodando),
+ * o app só usa o que já existe. Desligue com LINE_EMBEDDED_SERVER=0.
+ */
+async function startEmbeddedServer() {
+  if (process.env.LINE_EMBEDDED_SERVER === '0') return;
+  try {
+    embeddedServer = await startServer({
+      config: {
+        port: Number(process.env.LINE_SERVER_PORT ?? 4000),
+        dataDir: path.join(app.getPath('userData'), 'server'),
+      },
+    });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EADDRINUSE') console.error('Falha ao iniciar o servidor embutido:', err);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -75,13 +98,18 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     if (process.platform === 'win32') app.setAppUserModelId('app.line.desktop');
     registerAppProtocol();
+    await startEmbeddedServer();
     createWindow();
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
+  });
+
+  app.on('before-quit', () => {
+    void embeddedServer?.close();
   });
 
   app.on('window-all-closed', () => {

@@ -1,6 +1,63 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 
-export type DB = Database.Database;
+/**
+ * Wrapper fino sobre o SQLite embutido no Node (node:sqlite).
+ * Sem módulo nativo para compilar: roda igual no Node e dentro do Electron,
+ * o que permite embutir o servidor no .exe do app.
+ */
+export class DB {
+  private raw: DatabaseSync;
+  private depth = 0;
+
+  constructor(file: string) {
+    this.raw = new DatabaseSync(file);
+  }
+
+  prepare(sql: string) {
+    const stmt = this.raw.prepare(sql);
+    return {
+      get: (...params: unknown[]) => stmt.get(...(params as SQLInputValue[])) as unknown,
+      all: (...params: unknown[]) => stmt.all(...(params as SQLInputValue[])) as unknown[],
+      run: (...params: unknown[]) => {
+        const r = stmt.run(...(params as SQLInputValue[]));
+        return { changes: Number(r.changes) };
+      },
+    };
+  }
+
+  exec(sql: string) {
+    this.raw.exec(sql);
+  }
+
+  pragma(statement: string, opts: { simple?: boolean } = {}) {
+    const row = this.raw.prepare(`PRAGMA ${statement}`).get() as Record<string, unknown> | undefined;
+    return opts.simple && row ? Object.values(row)[0] : row;
+  }
+
+  /** Como no better-sqlite3: devolve uma função que roda `fn` numa transação (aninhável). */
+  transaction<T>(fn: () => T): () => T {
+    return () => {
+      const outer = this.depth === 0;
+      const sp = `sp${this.depth}`;
+      this.raw.exec(outer ? 'BEGIN' : `SAVEPOINT ${sp}`);
+      this.depth++;
+      try {
+        const result = fn();
+        this.depth--;
+        this.raw.exec(outer ? 'COMMIT' : `RELEASE ${sp}`);
+        return result;
+      } catch (err) {
+        this.depth--;
+        this.raw.exec(outer ? 'ROLLBACK' : `ROLLBACK TO ${sp}; RELEASE ${sp}`);
+        throw err;
+      }
+    };
+  }
+
+  close() {
+    this.raw.close();
+  }
+}
 
 /**
  * Migrações em ordem. Cada uma roda uma vez; a versão atual fica em PRAGMA user_version.
@@ -90,7 +147,7 @@ const migrations: string[] = [
 ];
 
 export function openDatabase(file: string): DB {
-  const db = new Database(file);
+  const db = new DB(file);
   if (file !== ':memory:') db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   migrate(db);

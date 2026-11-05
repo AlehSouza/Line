@@ -1,11 +1,6 @@
-import { buildApp } from './app';
-import { loadConfig } from './config';
+import { startServer } from './start';
 
-const config = loadConfig();
-const { app } = await buildApp(config, { logger: true });
-
-await app.listen({ port: config.port, host: config.host });
-app.log.info(`Servidor Line rodando em http://localhost:${config.port} (dados em ${config.dataDir})`);
+const app = await startServer({ logger: true });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
