@@ -33,6 +33,7 @@ export function dmRoutes(app: FastifyInstance, { store, gateway, auth }: Ctx) {
     const me = await auth(req);
     const channel = store.channel(req.params.id);
     if (!channel || channel.type !== 'group_dm' || !store.recipientIds(channel.id).includes(me)) throw notFound('Grupo');
+    gateway.dropVoice({ channelId: channel.id, userId: me });
     store.leaveGroupDm(channel.id, me);
     gateway.toUsers([me], 'channel:delete', { id: channel.id, serverId: null });
     const updated = store.channel(channel.id);

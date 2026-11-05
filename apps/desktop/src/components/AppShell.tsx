@@ -12,7 +12,7 @@ import { MemberList } from './MemberList';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
-import { VoicePlaceholder } from './VoicePlaceholder';
+import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
 
 export function AppShell() {
   const view = useLine((s) => s.view);
@@ -45,7 +45,7 @@ export function AppShell() {
   let main;
   if (view.kind === 'discover') main = <DiscoverView />;
   else if (view.kind === 'home' && !view.dmId) main = <FriendsView />;
-  else if (channel?.type === 'voice') main = <VoicePlaceholder channel={channel} />;
+  else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
   else if (channel) main = <ChatView channel={channel} />;
   else main = <EmptyServer />;
 
@@ -62,12 +62,14 @@ export function AppShell() {
           <div className="min-h-0 flex-1">
             {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
           </div>
+          <VoiceBar />
           <UserPanel />
         </aside>
         <main className="flex min-w-0 flex-1 flex-col bg-main">{main}</main>
         {view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />}
       </div>
       <Modals />
+      <IncomingCall />
     </div>
   );
 }

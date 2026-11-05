@@ -62,6 +62,7 @@ export function serverRoutes(app: FastifyInstance, ctx: Ctx) {
   app.delete<{ Params: { id: string } }>('/servers/:id', async (req, reply) => {
     const me = await auth(req);
     const server = requireOwner(req.params.id, me);
+    gateway.dropVoice({ serverId: server.id });
     gateway.toServer(server.id, 'server:delete', { id: server.id });
     gateway.closeServerRoom(server.id);
     store.deleteServer(server.id);
@@ -80,6 +81,7 @@ export function serverRoutes(app: FastifyInstance, ctx: Ctx) {
     const me = await auth(req);
     const server = requireMember(req.params.id, me);
     if (server.ownerId === me) throw badRequest('O dono não pode sair; exclua o servidor');
+    gateway.dropVoice({ serverId: server.id, userId: me });
     store.removeMember(server.id, me);
     gateway.leaveServer(me, server.id);
     gateway.toUsers([me], 'server:delete', { id: server.id });
@@ -93,6 +95,7 @@ export function serverRoutes(app: FastifyInstance, ctx: Ctx) {
     const target = req.params.userId;
     if (target === me) throw badRequest('Você não pode expulsar a si mesmo');
     if (!store.isMember(server.id, target)) throw notFound('Membro');
+    gateway.dropVoice({ serverId: server.id, userId: target });
     store.removeMember(server.id, target);
     gateway.leaveServer(target, server.id);
     gateway.toUsers([target], 'server:delete', { id: server.id });

@@ -4,6 +4,7 @@ import { Server as IOServer, type Socket } from 'socket.io';
 import type { TokenService } from './auth';
 import type { PresenceTracker } from './presence';
 import type { Store } from './store';
+import { VoiceRegistry } from './voice';
 
 type IO = IOServer<ClientToServerEvents, ServerToClientEvents, Record<string, never>, { userId: string }>;
 type LineSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, { userId: string }>;
@@ -18,6 +19,7 @@ const serverRoom = (id: string) => `server:${id}`;
  */
 export class Gateway {
   io!: IO;
+  voice = new VoiceRegistry();
 
   constructor(
     private store: Store,
@@ -47,6 +49,11 @@ export class Gateway {
     const cameOnline = this.presence.connect(userId, socket.id);
     socket.emit('ready', { user: this.store.selfUser(userId)! });
     if (cameOnline) this.broadcastPresence(userId);
+    socket.emit(
+      'voice:snapshot',
+      this.voice.all().filter((v) => this.canAccess(userId, v.channelId)),
+    );
+    this.registerVoice(socket);
 
     socket.on('typing:start', ({ channelId }) => {
       const channel = typeof channelId === 'string' ? this.store.channel(channelId) : undefined;
@@ -65,9 +72,67 @@ export class Gateway {
     });
 
     socket.on('disconnect', () => {
+      if (this.voice.get(userId)?.socketId === socket.id) this.leaveVoice(userId);
       const wentOffline = this.presence.disconnect(userId, socket.id);
       if (wentOffline) this.broadcastPresence(userId);
     });
+  }
+
+  // ---------- voz ----------
+
+  private registerVoice(socket: LineSocket) {
+    const userId = socket.data.userId;
+
+    socket.on('voice:join', (payload, ack) => {
+      const reply = typeof ack === 'function' ? ack : () => {};
+      const channel = typeof payload?.channelId === 'string' ? this.store.channel(payload.channelId) : undefined;
+      if (!channel || !this.canAccess(userId, channel.id)) return reply({ ok: false, error: 'Canal não encontrado' });
+      if (channel.type === 'text') return reply({ ok: false, error: 'Esse canal é de texto' });
+
+      const current = this.voice.get(userId);
+      if (current) {
+        if (current.socketId !== socket.id) this.io.to(current.socketId).emit('voice:kicked', { channelId: current.state.channelId });
+        this.leaveVoice(userId);
+      }
+      const state = this.voice.join(userId, socket.id, channel.id, channel.serverId, payload);
+      this.toChannel(channel.id, 'voice:update', { userId, channelId: channel.id, state });
+      reply({ ok: true, peers: this.voice.inChannel(channel.id).filter((v) => v.userId !== userId) });
+    });
+
+    socket.on('voice:leave', () => {
+      if (this.voice.get(userId)?.socketId === socket.id) this.leaveVoice(userId);
+    });
+
+    socket.on('voice:state', (patch) => {
+      if (this.voice.get(userId)?.socketId !== socket.id || !patch || typeof patch !== 'object') return;
+      const state = this.voice.update(userId, patch);
+      if (state) this.toChannel(state.channelId, 'voice:update', { userId, channelId: state.channelId, state });
+    });
+
+    socket.on('voice:signal', (payload) => {
+      const me = this.voice.get(userId);
+      const target = typeof payload?.to === 'string' ? this.voice.get(payload.to) : undefined;
+      // Só repassa entre pessoas que estão no mesmo canal agora.
+      if (!me || me.socketId !== socket.id || !target || target.state.channelId !== me.state.channelId) return;
+      this.io.to(target.socketId).emit('voice:signal', { from: userId, signal: payload.signal });
+    });
+  }
+
+  leaveVoice(userId: string) {
+    const state = this.voice.leave(userId);
+    if (state) this.toChannel(state.channelId, 'voice:update', { userId, channelId: state.channelId, state: null });
+  }
+
+  /** Tira da voz quem perdeu acesso (canal apagado, saiu/expulso do servidor, servidor apagado). */
+  dropVoice(filter: { channelId?: string; serverId?: string; userId?: string }) {
+    for (const v of this.voice.all()) {
+      if (filter.channelId && v.channelId !== filter.channelId) continue;
+      if (filter.serverId && v.serverId !== filter.serverId) continue;
+      if (filter.userId && v.userId !== filter.userId) continue;
+      const entry = this.voice.get(v.userId);
+      if (entry) this.io?.to(entry.socketId).emit('voice:kicked', { channelId: v.channelId });
+      this.leaveVoice(v.userId);
+    }
   }
 
   canAccess(userId: string, channelId: string): boolean {

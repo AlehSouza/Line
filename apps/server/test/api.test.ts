@@ -163,4 +163,40 @@ describe('Line server', () => {
     expect(group.data.type).toBe('group_dm');
     expect(group.data.recipients).toHaveLength(3);
   });
+
+  it('voz: entrar, sinalizar entre pares e sair', async () => {
+    const dora = await register('dora');
+    const edu = await register('edu');
+    const srv = await api<{ id: string; inviteCode: string }>('POST', '/servers', dora.token, { name: 'Call' });
+    await api('POST', `/invites/${srv.data.inviteCode}`, edu.token);
+    const detail = await api<ServerDetail>('GET', `/servers/${srv.data.id}`, dora.token);
+    const voice = detail.data.channels.find((c) => c.type === 'voice')!;
+    const text = detail.data.channels.find((c) => c.type === 'text')!;
+
+    const ds = await socketFor(dora.token);
+    const es = await socketFor(edu.token);
+
+    const bad = await ds.emitWithAck('voice:join', { channelId: text.id });
+    expect(bad.ok).toBe(false);
+
+    const first = await ds.emitWithAck('voice:join', { channelId: voice.id });
+    expect(first).toEqual({ ok: true, peers: [] });
+
+    const seen = next(ds, 'voice:update');
+    const second = await es.emitWithAck('voice:join', { channelId: voice.id, muted: true });
+    expect(second.ok && second.peers.map((p) => p.userId)).toEqual([dora.user.id]);
+    expect((await seen).state).toMatchObject({ userId: edu.user.id, muted: true });
+
+    const signal = next(es, 'voice:signal');
+    ds.emit('voice:signal', { to: edu.user.id, signal: { type: 'candidate', candidate: null } });
+    expect(await signal).toEqual({ from: dora.user.id, signal: { type: 'candidate', candidate: null } });
+
+    const cam = next(ds, 'voice:update');
+    es.emit('voice:state', { cameraStreamId: 'abc' });
+    expect((await cam).state?.cameraStreamId).toBe('abc');
+
+    const left = next(ds, 'voice:update');
+    es.disconnect();
+    expect(await left).toMatchObject({ userId: edu.user.id, state: null });
+  });
 });

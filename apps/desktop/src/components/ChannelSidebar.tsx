@@ -3,7 +3,9 @@
 import type { Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { actions, useLine } from '@/lib/store';
+import { joinVoice, useVoice } from '@/lib/voice';
 import { cx, Icons } from './ui';
+import { VoiceChannelMembers } from './Voice';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
@@ -40,32 +42,38 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     const hasUnread = !!unread[c.id] && !active;
     const Icon = c.type === 'voice' ? Icons.Speaker : Icons.Hash;
     return (
-      <div key={c.id} className="group relative">
-        <button
-          onClick={() => actions.goServer(serverId, c.id)}
-          className={cx(
-            'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[15px]',
-            active ? 'bg-hover text-fg' : hasUnread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
-          )}
-        >
-          <Icon size={18} className="shrink-0 opacity-70" />
-          <span className={cx('truncate', hasUnread && 'font-semibold')}>{c.name}</span>
-        </button>
-        {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
-        {isOwner && (
+      <div key={c.id}>
+        <div className="group relative">
           <button
-            title="Excluir canal"
-            onClick={async () => {
-              if (confirm(`Excluir o canal #${c.name}? As mensagens dele serão apagadas.`)) {
-                const { api } = await import('@/lib/api');
-                await api.deleteChannel(c.id).catch((e) => alert(e.message));
-              }
+            onClick={() => {
+              actions.goServer(serverId, c.id);
+              if (c.type === 'voice' && useVoice.getState().channelId !== c.id) void joinVoice(c.id);
             }}
-            className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
+            className={cx(
+              'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[15px]',
+              active ? 'bg-hover text-fg' : hasUnread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
+            )}
           >
-            <Icons.Trash size={14} />
+            <Icon size={18} className="shrink-0 opacity-70" />
+            <span className={cx('truncate', hasUnread && 'font-semibold')}>{c.name}</span>
           </button>
-        )}
+          {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
+          {isOwner && (
+            <button
+              title="Excluir canal"
+              onClick={async () => {
+                if (confirm(`Excluir o canal #${c.name}? As mensagens dele serão apagadas.`)) {
+                  const { api } = await import('@/lib/api');
+                  await api.deleteChannel(c.id).catch((e) => alert(e.message));
+                }
+              }}
+              className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
+            >
+              <Icons.Trash size={14} />
+            </button>
+          )}
+        </div>
+        {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} />}
       </div>
     );
   };

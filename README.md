@@ -8,13 +8,19 @@ Feito com **Electron + Next.js + TypeScript** no app, e **Node.js (Fastify + Soc
 
 - Cadastro e login com nome de usuário e senha
 - Servidores públicos ou privados, convite por código, explorar servidores públicos
-- Categorias e canais de texto (canais de voz já aparecem; o áudio chega na fase 2)
+- Categorias e canais de texto
 - Mensagens em tempo real com edição, exclusão, markdown (`**negrito**`, `*itálico*`, `` `código` ``, blocos, links) e @menções
 - Mensagens privadas 1:1 e em grupo
 - Amigos: pedidos, aceitar, recusar, desfazer
 - Status: disponível, ausente (automático após 5 min parado), não perturbe e invisível, mais status personalizado
 - Indicador de "digitando…", mensagens não lidas, notificações do Windows para DMs e menções
 - Perfil com nome de exibição, bio e cor do avatar
+
+E da fase 2:
+
+- Canais de voz com WebRTC: entrar/sair, mudo, ensurdecer e indicador de quem está falando
+- Câmera e compartilhamento de tela (no app desktop, com seletor de tela/janela e áudio do sistema no Windows)
+- Chamadas de voz e vídeo nas mensagens privadas, com aviso de chamada recebida
 
 O plano completo, com voz, vídeo, tela, cargos, bots e o resto, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
@@ -45,6 +51,8 @@ O app conversa com um servidor Line. Para os seus amigos entrarem, o servidor pr
 
 1. **No seu PC + Tailscale** (recomendado para começar): instale o Tailscale em todos os PCs, rode `npm run dev:server` (ou `npm start -w @line/server`) e os amigos usam `http://SEU-IP-TAILSCALE:4000` no campo "Servidor" da tela de login.
 2. **Numa VPS barata**: rode `npm install && npm start -w @line/server` com `PORT` e `DATA_DIR` definidos (veja `apps/server/.env.example`), de preferência atrás de um proxy com HTTPS (Caddy faz isso sozinho).
+
+Sobre voz e vídeo: o navegador só libera microfone e câmera em `localhost` ou HTTPS. Pelo app desktop funciona sempre; pela versão web acessada por IP, só com HTTPS. A voz conecta as pessoas direto entre si (WebRTC); se alguém estiver atrás de uma rede muito restrita, pode ser preciso um servidor TURN (fica para depois).
 
 Os dados ficam num único arquivo SQLite em `DATA_DIR/line.db`. Para backup, basta copiar a pasta.
 

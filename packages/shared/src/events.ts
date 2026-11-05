@@ -1,4 +1,16 @@
-import type { Category, Channel, Friend, Member, Message, Presence, PublicUser, SelfUser, Server } from './types';
+import type {
+  Category,
+  Channel,
+  Friend,
+  Member,
+  Message,
+  Presence,
+  PublicUser,
+  SelfUser,
+  Server,
+  VoiceSignal,
+  VoiceState,
+} from './types';
 
 /** Eventos que o servidor envia para o cliente via WebSocket (Socket.IO). */
 export interface ServerToClientEvents {
@@ -23,10 +35,23 @@ export interface ServerToClientEvents {
   'category:delete': (payload: { id: string; serverId: string }) => void;
   'friend:update': (friend: Friend) => void;
   'friend:remove': (payload: { userId: string }) => void;
+  /** Todos os estados de voz que você pode ver (enviado ao conectar). */
+  'voice:snapshot': (states: VoiceState[]) => void;
+  /** Alguém entrou, mudou o estado ou saiu (state = null) de um canal de voz. */
+  'voice:update': (payload: { userId: string; channelId: string; state: VoiceState | null }) => void;
+  'voice:signal': (payload: { from: string; signal: VoiceSignal }) => void;
+  /** Você foi desconectado da voz (ex.: entrou em outro canal por outra janela). */
+  'voice:kicked': (payload: { channelId: string }) => void;
 }
+
+export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; error: string };
 
 /** Eventos que o cliente envia para o servidor. */
 export interface ClientToServerEvents {
   'typing:start': (payload: { channelId: string }) => void;
   'presence:activity': (payload: { idle: boolean }) => void;
+  'voice:join': (payload: { channelId: string; muted?: boolean; deafened?: boolean }, ack: (res: VoiceJoinResult) => void) => void;
+  'voice:leave': () => void;
+  'voice:state': (patch: Partial<Pick<VoiceState, 'muted' | 'deafened' | 'cameraStreamId' | 'screenStreamId'>>) => void;
+  'voice:signal': (payload: { to: string; signal: VoiceSignal }) => void;
 }

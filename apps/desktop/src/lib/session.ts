@@ -4,6 +4,7 @@ import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
 import { actions, currentChannelId, dmTitle, useLine } from './store';
+import { bindVoiceSocket, unbindVoice } from './voice';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -78,6 +79,7 @@ export async function authenticate(
 }
 
 export function logout() {
+  unbindVoice();
   socket?.disconnect();
   socket = null;
   if (typingTicker) clearInterval(typingTicker);
@@ -130,6 +132,7 @@ function connectSocket() {
   useLine.setState({ connection: 'connecting' });
   const s: LineSocket = io(serverUrl, { auth: { token }, transports: ['websocket'] });
   socket = s;
+  bindVoiceSocket(s, useLine.getState().me!.id);
 
   s.on('connect', () => useLine.setState({ connection: 'connected' }));
   s.on('disconnect', () => useLine.setState({ connection: 'disconnected' }));
@@ -261,6 +264,8 @@ declare global {
       platform: string;
       requestAttention: () => void;
       setBadge: (count: number) => void;
+      getScreenSources?: () => Promise<{ id: string; name: string; thumbnail: string; isScreen: boolean }[]>;
+      selectScreenSource?: (id: string) => Promise<void>;
     };
   }
 }

@@ -93,3 +93,23 @@ export interface ApiError {
   error: string;
   message: string;
 }
+
+/** Estado de alguém conectado a um canal de voz (ou chamada de DM). */
+export interface VoiceState {
+  userId: string;
+  channelId: string;
+  /** Canal de servidor; null em chamadas de DM. */
+  serverId: string | null;
+  muted: boolean;
+  deafened: boolean;
+  /** id do MediaStream da câmera (null = câmera desligada). */
+  cameraStreamId: string | null;
+  /** id do MediaStream da tela compartilhada (null = sem compartilhamento). */
+  screenStreamId: string | null;
+  joinedAt: string;
+}
+
+/** Mensagem de sinalização WebRTC repassada pelo servidor entre dois participantes. */
+export type VoiceSignal =
+  | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
+  | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null };

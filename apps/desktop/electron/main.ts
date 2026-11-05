@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, desktopCapturer, ipcMain, net, protocol, session, shell } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { startServer } from '../../server/src/start';
@@ -81,6 +81,39 @@ function registerAppProtocol() {
   });
 }
 
+// ---------- compartilhamento de tela ----------
+// O app mostra o próprio seletor (com miniaturas) e avisa qual fonte escolheu antes de chamar getDisplayMedia.
+let selectedSourceId: string | null = null;
+
+ipcMain.handle('line:screen-sources', async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen', 'window'],
+    thumbnailSize: { width: 320, height: 180 },
+    fetchWindowIcons: false,
+  });
+  return sources.map((s) => ({
+    id: s.id,
+    name: s.name,
+    thumbnail: s.thumbnail.toDataURL(),
+    isScreen: s.id.startsWith('screen:'),
+  }));
+});
+
+ipcMain.handle('line:screen-select', (_e, id: string) => {
+  selectedSourceId = typeof id === 'string' ? id : null;
+});
+
+function registerDisplayMediaHandler() {
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+    const source = sources.find((s) => s.id === selectedSourceId) ?? sources.find((s) => s.id.startsWith('screen:'));
+    selectedSourceId = null;
+    if (!source) return callback({});
+    // No Windows, "loopback" captura o áudio do sistema junto (jogos, vídeos).
+    callback(process.platform === 'win32' ? { video: source, audio: 'loopback' } : { video: source });
+  });
+}
+
 ipcMain.on('line:attention', () => {
   if (mainWindow && !mainWindow.isFocused()) mainWindow.flashFrame(true);
 });
@@ -101,6 +134,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     if (process.platform === 'win32') app.setAppUserModelId('app.line.desktop');
     registerAppProtocol();
+    registerDisplayMediaHandler();
     await startEmbeddedServer();
     createWindow();
     app.on('activate', () => {

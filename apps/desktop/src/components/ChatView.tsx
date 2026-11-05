@@ -6,7 +6,9 @@ import { api } from '@/lib/api';
 import { renderMarkdown } from '@/lib/markdown';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
+import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons } from './ui';
+import { VoiceStage } from './Voice';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -17,6 +19,9 @@ export function ChatView({ channel }: { channel: Channel }) {
   const isDm = !channel.serverId;
   const title = isDm ? dmTitle(channel, me?.id, users) : channel.name;
   const other = isDm && channel.type === 'dm' ? channel.recipients?.find((r) => r.id !== me?.id) : undefined;
+
+  const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
+  const inCall = useVoice((v) => v.channelId === channel.id);
 
   useEffect(() => {
     actions.markRead(channel.id);
@@ -44,7 +49,25 @@ export function ChatView({ channel }: { channel: Channel }) {
             <p className="truncate text-sm text-muted">{channel.topic}</p>
           </>
         )}
+        {isDm && !inCall && (
+          <div className="ml-auto flex gap-1">
+            <button title="Iniciar chamada de voz" onClick={() => joinVoice(channel.id)} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+              <Icons.Phone size={20} />
+            </button>
+            <button
+              title="Iniciar chamada de vídeo"
+              onClick={async () => {
+                await joinVoice(channel.id);
+                if (useVoice.getState().channelId === channel.id && !useVoice.getState().camera) await toggleCamera();
+              }}
+              className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
+            >
+              <Icons.Video size={20} />
+            </button>
+          </div>
+        )}
       </header>
+      {isDm && callActive && <VoiceStage channel={channel} compact />}
       <MessageList channel={channel} title={title} />
       <Composer channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
     </div>

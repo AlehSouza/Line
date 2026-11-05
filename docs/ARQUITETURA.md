@@ -56,13 +56,13 @@ As 24 funcionalidades da lista original, agrupadas por fase. Cada fase vira um P
 - (20) Perfil básico: nome de exibição, bio, cor do avatar, status personalizado
 - Base de (17) notificações: DMs e menções geram notificação do Windows; "não perturbe" silencia
 
-### Fase 2: mídia e voz
+### Fase 2: mídia e voz (voz, vídeo e tela ✅)
 
 - (15) Envio de arquivos: imagens, vídeos e documentos, com prévia (upload para `DATA_DIR/uploads`)
 - (11) Reações com emoji e seletor de emojis
-- (3) Canais de voz com WebRTC: no começo em malha (cada um conecta com cada um, bom para até ~6 pessoas), sinalização pelo Socket.IO, com mudo, ensurdecer, indicador de quem está falando e push-to-talk pelo Electron
-- (4) Chamadas de vídeo em DMs e canais de voz
-- (5) e (22) Compartilhamento de tela e transmissão de jogos/apps com `desktopCapturer` do Electron (com áudio do sistema no Windows)
+- ✅ (3) Canais de voz com WebRTC: no começo em malha (cada um conecta com cada um, bom para até ~6 pessoas), sinalização pelo Socket.IO, com mudo, ensurdecer, indicador de quem está falando e push-to-talk pelo Electron
+- ✅ (4) Chamadas de vídeo em DMs e canais de voz
+- ✅ (5) e (22) Compartilhamento de tela e transmissão de jogos/apps com `desktopCapturer` do Electron (com áudio do sistema no Windows)
 - Servidor TURN opcional (coturn) para quem estiver atrás de NAT difícil
 - Para salas grandes: trocar a malha por um SFU auto-hospedado (LiveKit ou mediasoup) sem mudar a interface
 

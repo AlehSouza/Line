@@ -32,6 +32,7 @@ export function channelRoutes(app: FastifyInstance, { store, gateway, auth }: Ct
   app.delete<{ Params: { id: string } }>('/channels/:id', async (req, reply) => {
     const me = await auth(req);
     const channel = requireChannelManager(req.params.id, me);
+    gateway.dropVoice({ channelId: channel.id });
     store.deleteChannel(channel.id);
     gateway.toServer(channel.serverId!, 'channel:delete', { id: channel.id, serverId: channel.serverId });
     reply.status(204);
