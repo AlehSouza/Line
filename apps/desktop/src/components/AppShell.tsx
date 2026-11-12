@@ -62,8 +62,10 @@ export function AppShell() {
           <div className="min-h-0 flex-1">
             {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
           </div>
-          <VoiceBar />
-          <UserPanel />
+          <div className="m-2 mt-1 rounded-xl border border-edge bg-rail shadow-lg">
+            <VoiceBar />
+            <UserPanel />
+          </div>
         </aside>
         <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
         {view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />}

@@ -12,3 +12,4 @@ apps/server/data/
 .DS_Store
 target/
 apps/desktop/src-tauri/gen/
+apps/desktop/public/noise/

@@ -59,3 +59,20 @@ body {
 .glow {
   background-image: radial-gradient(60% 45% at 50% 0%, color-mix(in srgb, var(--color-accent) 14%, transparent), transparent 70%);
 }
+
+/* O Tailwind v4 tirou o cursor de mãozinha dos botões; tudo que é clicável volta a ter. */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  select,
+  label[for],
+  summary,
+  input[type='checkbox'],
+  input[type='radio'] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}

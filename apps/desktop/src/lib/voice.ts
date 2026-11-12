@@ -3,6 +3,7 @@
 import type { ClientToServerEvents, ServerToClientEvents, VoiceSignal, VoiceState } from '@line/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
+import { disposeNoiseSuppressor, suppressNoise } from './noise';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -14,6 +15,57 @@ type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
  */
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+
+// ---------- qualidade da transmissão de tela ----------
+
+export type Resolution = '720' | '1080' | '1440' | '2160';
+export type Fps = 30 | 60;
+export interface ScreenQuality {
+  resolution: Resolution;
+  fps: Fps;
+}
+
+export const RESOLUTIONS: Record<Resolution, { label: string; width: number; height: number; kbps: Record<Fps, number> }> = {
+  '720': { label: '720p', width: 1280, height: 720, kbps: { 30: 2500, 60: 4000 } },
+  '1080': { label: '1080p', width: 1920, height: 1080, kbps: { 30: 6000, 60: 9000 } },
+  '1440': { label: '1440p', width: 2560, height: 1440, kbps: { 30: 10000, 60: 15000 } },
+  '2160': { label: '4K', width: 3840, height: 2160, kbps: { 30: 16000, 60: 25000 } },
+};
+
+// ---------- preferências (ficam salvas no PC) ----------
+
+interface VoicePrefs {
+  noiseSuppression: boolean;
+  inputId: string | null;
+  outputId: string | null;
+  screenQuality: ScreenQuality;
+}
+
+const PREFS_KEY = 'line.voice';
+const defaultPrefs: VoicePrefs = {
+  noiseSuppression: true,
+  inputId: null,
+  outputId: null,
+  screenQuality: { resolution: '1080', fps: 60 },
+};
+
+function loadPrefs(): VoicePrefs {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
+    return raw ? { ...defaultPrefs, ...(JSON.parse(raw) as Partial<VoicePrefs>) } : defaultPrefs;
+  } catch {
+    return defaultPrefs;
+  }
+}
+
+function savePrefs() {
+  const { noiseSuppression, inputId, outputId, screenQuality } = getV();
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ noiseSuppression, inputId, outputId, screenQuality }));
+  } catch {
+    // sem localStorage: as preferências valem só nesta sessão
+  }
+}
 
 export interface VoiceStore {
   /** Estados de voz visíveis, por usuário. */
@@ -29,6 +81,12 @@ export interface VoiceStore {
   streams: Record<string, MediaStream>;
   speaking: Record<string, boolean>;
   error: string | null;
+  /** Supressor de ruído (RNNoise) no microfone. */
+  noiseSuppression: boolean;
+  /** Microfone e saída de áudio escolhidos (null = padrão do sistema). */
+  inputId: string | null;
+  outputId: string | null;
+  screenQuality: ScreenQuality;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -42,6 +100,7 @@ export const useVoice = create<VoiceStore>(() => ({
   streams: {},
   speaking: {},
   error: null,
+  ...loadPrefs(),
 }));
 
 const setV = useVoice.setState;
@@ -57,6 +116,9 @@ interface Peer {
 
 let socket: LineSocket | null = null;
 let myId: string | null = null;
+/** Microfone cru (do dispositivo). */
+let rawMic: MediaStream | null = null;
+/** O que vai para os outros: o microfone já com o supressor de ruído (ou o cru, se desligado). */
 let mic: MediaStream | null = null;
 const peers = new Map<string, Peer>();
 const audioEls = new Map<string, HTMLAudioElement>();
@@ -115,12 +177,7 @@ export async function joinVoice(channelId: string) {
 
   setV({ channelId, connecting: true, error: null });
   try {
-    if (!mic) {
-      mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      });
-    }
+    if (!mic) await openMic();
     applyMute();
     await rejoin(channelId);
   } catch (err) {
@@ -184,8 +241,107 @@ export function toggleDeafen() {
 
 function applyMute() {
   const { muted, deafened } = getV();
-  mic?.getAudioTracks().forEach((t) => (t.enabled = !muted && !deafened));
+  for (const s of [rawMic, mic]) s?.getAudioTracks().forEach((t) => (t.enabled = !muted && !deafened));
   for (const el of audioEls.values()) el.muted = deafened;
+}
+
+// ---------- microfone, supressor de ruído e dispositivos ----------
+
+async function openMic() {
+  const { inputId, noiseSuppression } = getV();
+  const audio: MediaTrackConstraints = {
+    deviceId: inputId ? { exact: inputId } : undefined,
+    echoCancellation: true,
+    // Com o nosso supressor ligado, o do navegador sai do caminho (os dois juntos deixam a voz "metálica").
+    noiseSuppression: !noiseSuppression,
+    autoGainControl: true,
+    channelCount: 1,
+  };
+  try {
+    rawMic = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+  } catch (err) {
+    // O microfone salvo sumiu (desplugado): volta para o padrão.
+    if (!inputId || (err as Error).name !== 'OverconstrainedError') throw err;
+    setV({ inputId: null });
+    savePrefs();
+    rawMic = await navigator.mediaDevices.getUserMedia({ audio: { ...audio, deviceId: undefined }, video: false });
+  }
+  mic = rawMic;
+  if (noiseSuppression) {
+    try {
+      mic = await suppressNoise(rawMic);
+    } catch (err) {
+      console.warn('Supressor de ruído indisponível', err);
+      setV({ noiseSuppression: false, error: 'Não deu para ligar o supressor de ruído neste PC.' });
+    }
+  }
+}
+
+/** Reabre o microfone (trocou o dispositivo ou o supressor) sem derrubar a chamada. */
+async function reopenMic() {
+  if (!getV().channelId) return;
+  const old = mic;
+  const oldRaw = rawMic;
+  mic = null;
+  rawMic = null;
+  disposeNoiseSuppressor();
+  try {
+    await openMic();
+  } catch (err) {
+    setV({ error: (err as Error).name === 'NotAllowedError' ? 'Sem permissão para usar o microfone.' : 'Não foi possível abrir o microfone.' });
+    // O supressor antigo já foi desmontado: continua com o microfone cru.
+    mic = oldRaw;
+    rawMic = oldRaw;
+    return;
+  }
+  applyMute();
+  const oldTrack = old?.getAudioTracks()[0];
+  const newTrack = (mic as MediaStream | null)?.getAudioTracks()[0] ?? null;
+  for (const { pc } of peers.values()) {
+    for (const sender of pc.getSenders()) {
+      if (sender.track && sender.track === oldTrack) void sender.replaceTrack(newTrack);
+    }
+  }
+  stopStream(oldRaw);
+  if (old !== oldRaw) stopStream(old);
+  analysers.delete('local');
+}
+
+export async function setNoiseSuppression(on: boolean) {
+  setV({ noiseSuppression: on });
+  savePrefs();
+  await reopenMic();
+}
+
+export async function setInputDevice(deviceId: string | null) {
+  setV({ inputId: deviceId });
+  savePrefs();
+  await reopenMic();
+}
+
+export function setOutputDevice(deviceId: string | null) {
+  setV({ outputId: deviceId });
+  savePrefs();
+  for (const el of audioEls.values()) applySink(el);
+}
+
+function applySink(el: HTMLAudioElement) {
+  const sink = (el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId;
+  if (sink) void sink.call(el, getV().outputId ?? '').catch(() => {});
+}
+
+export async function listAudioDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const pick = (kind: MediaDeviceKind) =>
+    devices
+      .filter((d) => d.kind === kind && d.deviceId !== 'default' && d.deviceId !== 'communications')
+      .map((d, i) => ({ id: d.deviceId, label: d.label || `${kind === 'audioinput' ? 'Microfone' : 'Saída'} ${i + 1}` }));
+  return { inputs: pick('audioinput'), outputs: pick('audiooutput') };
+}
+
+export function setScreenQuality(q: ScreenQuality) {
+  setV({ screenQuality: q });
+  savePrefs();
 }
 
 export async function toggleCamera() {
@@ -219,11 +375,20 @@ export async function toggleScreen(sourceId?: string) {
   }
   try {
     if (sourceId) await window.line?.selectScreenSource?.(sourceId);
+    const { resolution, fps } = getV().screenQuality;
+    const r = RESOLUTIONS[resolution];
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: { ideal: 30 }, width: { max: 1920 }, height: { max: 1080 } },
+      video: {
+        width: { ideal: r.width, max: r.width },
+        height: { ideal: r.height, max: r.height },
+        frameRate: { ideal: fps, max: fps },
+      },
       audio: true,
     });
-    stream.getVideoTracks()[0]?.addEventListener('ended', stopScreen);
+    const video = stream.getVideoTracks()[0];
+    // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
+    if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
+    video?.addEventListener('ended', stopScreen);
     setV({ screen: stream });
     addStreamToPeers(stream);
     socket?.emit('voice:state', { screenStreamId: stream.id });
@@ -290,8 +455,8 @@ function createPeer(peerId: string): Peer {
 
   if (mic) for (const t of mic.getTracks()) pc.addTrack(t, mic);
   const { camera, screen } = getV();
-  if (camera) for (const t of camera.getTracks()) pc.addTrack(t, camera);
-  if (screen) for (const t of screen.getTracks()) pc.addTrack(t, screen);
+  if (camera) addStream(pc, camera);
+  if (screen) addStream(pc, screen);
   return peer;
 }
 
@@ -337,7 +502,52 @@ function closePeer(peerId: string) {
 }
 
 function addStreamToPeers(stream: MediaStream) {
-  for (const { pc } of peers.values()) for (const t of stream.getTracks()) pc.addTrack(t, stream);
+  for (const { pc } of peers.values()) addStream(pc, stream);
+}
+
+/** Adiciona câmera ou tela numa conexão. A tela vai com a taxa de bits da qualidade escolhida. */
+function addStream(pc: RTCPeerConnection, stream: MediaStream) {
+  const isScreen = stream === getV().screen;
+  for (const track of stream.getTracks()) {
+    if (!isScreen || track.kind !== 'video') {
+      pc.addTrack(track, stream);
+      continue;
+    }
+    const { resolution, fps } = getV().screenQuality;
+    const transceiver = pc.addTransceiver(track, {
+      direction: 'sendonly',
+      streams: [stream],
+      sendEncodings: [{ maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000, maxFramerate: fps }],
+    });
+    preferHardwareCodec(transceiver, resolution);
+    void tuneScreenSender(transceiver.sender, fps);
+  }
+}
+
+/** Acima de 1080p, prefere H.264 (codificado pela placa de vídeo) para aguentar 1440p/4K a 60fps. */
+function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolution) {
+  if (resolution === '720' || resolution === '1080' || !transceiver.setCodecPreferences) return;
+  const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
+  if (!codecs) return;
+  const rank = (c: { mimeType: string }) => {
+    const m = c.mimeType.toLowerCase();
+    return m === 'video/h264' ? 0 : m === 'video/vp9' ? 1 : m === 'video/av1' ? 2 : 3;
+  };
+  try {
+    transceiver.setCodecPreferences([...codecs].sort((a, b) => rank(a) - rank(b)));
+  } catch {
+    // navegador não deixou escolher: fica com o padrão
+  }
+}
+
+async function tuneScreenSender(sender: RTCRtpSender, fps: Fps) {
+  try {
+    const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
+    params.degradationPreference = fps >= 60 ? 'maintain-framerate' : 'maintain-resolution';
+    await sender.setParameters(params);
+  } catch {
+    // alguns navegadores não aceitam antes da negociação; os limites de sendEncodings já valem
+  }
 }
 
 function removeStreamFromPeers(stream: MediaStream) {
@@ -354,6 +564,7 @@ function attachAudio(peerId: string, stream: MediaStream) {
   el.srcObject = stream;
   el.muted = getV().deafened;
   el.dataset.peer = peerId;
+  applySink(el);
   document.body.appendChild(el);
   void el.play().catch(() => {});
   audioEls.set(stream.id, el);
@@ -380,8 +591,11 @@ function stopStream(stream: MediaStream | null) {
 }
 
 function stopMic() {
-  stopStream(mic);
+  stopStream(rawMic);
+  if (mic !== rawMic) stopStream(mic);
+  disposeNoiseSuppressor();
   mic = null;
+  rawMic = null;
   analysers.delete('local');
 }
 

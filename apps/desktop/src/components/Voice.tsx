@@ -5,9 +5,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import {
   clearVoiceError,
+  type Fps,
   joinVoice,
   leaveVoice,
+  listAudioDevices,
   participants,
+  type Resolution,
+  RESOLUTIONS,
+  setInputDevice,
+  setNoiseSuppression,
+  setOutputDevice,
+  setScreenQuality,
   toggleCamera,
   toggleDeafen,
   toggleMute,
@@ -206,11 +214,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
   const screen = useVoice((v) => !!v.screen);
   const [picker, setPicker] = useState(false);
 
-  const shareScreen = () => {
-    if (screen) return void toggleScreen();
-    if (window.line?.getScreenSources) setPicker(true);
-    else void toggleScreen();
-  };
+  const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
 
   const size = large ? 22 : 18;
   const btn = (active: boolean, danger = false) =>
@@ -237,57 +241,134 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title="Sair da chamada" onClick={() => leaveVoice()} className={btn(false, true)}>
         <Icons.PhoneOff size={size} />
       </button>
-      {picker && (
-        <ScreenPicker
-          onClose={() => setPicker(false)}
-          onPick={(id) => {
-            setPicker(false);
-            void toggleScreen(id);
-          }}
-        />
-      )}
+      {picker && <ScreenShareModal onClose={() => setPicker(false)} />}
     </div>
   );
 }
 
-/** Seletor de tela/janela (só no app desktop). */
-function ScreenPicker({ onClose, onPick }: { onClose: () => void; onPick: (id: string) => void }) {
-  const [sources, setSources] = useState<{ id: string; name: string; thumbnail: string; isScreen: boolean }[] | null>(null);
-  const [tab, setTab] = useState<'screen' | 'window'>('screen');
-  useEffect(() => {
-    window.line
-      ?.getScreenSources?.()
-      .then(setSources)
-      .catch(() => setSources([]));
-  }, []);
-  const list = (sources ?? []).filter((s) => (tab === 'screen' ? s.isScreen : !s.isScreen));
+// ---------- transmitir tela: qualidade ----------
+
+/** Escolhe resolução e fps antes de abrir o seletor de tela do sistema. */
+export function ScreenShareModal({ onClose }: { onClose: () => void }) {
+  const quality = useVoice((v) => v.screenQuality);
+  const [resolution, setResolution] = useState<Resolution>(quality.resolution);
+  const [fps, setFps] = useState<Fps>(quality.fps);
+  const start = () => {
+    setScreenQuality({ resolution, fps });
+    onClose();
+    void toggleScreen();
+  };
+  const choice = (active: boolean) =>
+    cx(
+      'flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
+      active ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-hover hover:text-fg',
+    );
 
   return (
-    <Modal title="Compartilhar tela" subtitle="Escolha o que a galera vai ver. O áudio do sistema vai junto." onClose={onClose} width={720}>
-      <div className="mb-4 flex gap-2">
-        {(['screen', 'window'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cx('rounded-md px-3 py-1 text-sm font-medium', tab === t ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}
-          >
-            {t === 'screen' ? 'Telas' : 'Janelas'}
-          </button>
-        ))}
-      </div>
-      {!sources && <p className="text-sm text-muted">Carregando…</p>}
-      {sources && list.length === 0 && (
-        <p className="text-sm text-muted">Nada encontrado aqui. Tente a outra aba.</p>
-      )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {list.map((s) => (
-          <button key={s.id} onClick={() => onPick(s.id)} className="group space-y-1.5 rounded-lg p-1.5 text-left hover:bg-hover">
-            <img src={s.thumbnail} alt="" className="aspect-video w-full rounded-md bg-black object-contain ring-accent group-hover:ring-2" />
-            <span className="block truncate text-xs text-soft">{s.name}</span>
-          </button>
-        ))}
+    <Modal
+      title="Transmitir tela"
+      subtitle="Escolha a qualidade. Depois o Windows pergunta qual tela ou janela mostrar (e se o áudio vai junto)."
+      onClose={onClose}
+      width={480}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={start}>
+            <Icons.Screen size={16} /> Ao vivo
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Resolução</p>
+          <div className="flex gap-2">
+            {(Object.keys(RESOLUTIONS) as Resolution[]).map((r) => (
+              <button key={r} onClick={() => setResolution(r)} className={choice(resolution === r)}>
+                {RESOLUTIONS[r].label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Taxa de quadros</p>
+          <div className="flex gap-2">
+            {([30, 60] as Fps[]).map((f) => (
+              <button key={f} onClick={() => setFps(f)} className={choice(fps === f)}>
+                {f} fps
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-muted">
+          Até {(RESOLUTIONS[resolution].kbps[fps] / 1000).toLocaleString('pt-BR')} Mbps para cada pessoa na chamada.
+          {resolution === '2160' && ' Em 4K, sua internet de upload e a placa de vídeo precisam aguentar; com muita gente na call, prefira 1440p.'}
+        </p>
       </div>
     </Modal>
+  );
+}
+
+// ---------- configurações de voz ----------
+
+export function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
+  const inputId = useVoice((v) => v.inputId);
+  const outputId = useVoice((v) => v.outputId);
+  const noise = useVoice((v) => v.noiseSuppression);
+  const [devices, setDevices] = useState<Awaited<ReturnType<typeof listAudioDevices>> | null>(null);
+  useEffect(() => {
+    listAudioDevices().then(setDevices).catch(() => setDevices({ inputs: [], outputs: [] }));
+  }, []);
+  const select = 'w-full rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none focus:border-accent';
+
+  return (
+    <Modal title="Voz e áudio" onClose={onClose} width={480}>
+      <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Microfone</span>
+          <select className={select} value={inputId ?? ''} onChange={(e) => void setInputDevice(e.target.value || null)}>
+            <option value="">Padrão do sistema</option>
+            {devices?.inputs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Saída de áudio</span>
+          <select className={select} value={outputId ?? ''} onChange={(e) => setOutputDevice(e.target.value || null)}>
+            <option value="">Padrão do sistema</option>
+            {devices?.outputs.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <NoiseToggle on={noise} />
+      </div>
+    </Modal>
+  );
+}
+
+function NoiseToggle({ on }: { on: boolean }) {
+  return (
+    <button
+      onClick={() => void setNoiseSuppression(!on)}
+      className="flex w-full items-center gap-3 rounded-lg border border-edge bg-rail px-3 py-2.5 text-left hover:bg-hover"
+    >
+      <Icons.Waves size={20} className={on ? 'text-accent' : 'text-muted'} />
+      <span className="flex-1">
+        <span className="block text-sm font-semibold">Supressor de ruído</span>
+        <span className="block text-xs text-muted">Tira teclado, ventilador e barulho de fundo da sua voz.</span>
+      </span>
+      <span className={cx('relative h-5 w-9 rounded-full transition-colors', on ? 'bg-accent' : 'bg-edge')}>
+        <span className={cx('absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all', on ? 'left-[18px]' : 'left-0.5')} />
+      </span>
+    </button>
   );
 }
 
@@ -296,10 +377,15 @@ function ScreenPicker({ onClose, onPick }: { onClose: () => void; onPick: (id: s
 export function VoiceBar() {
   const channelId = useVoice((v) => v.channelId);
   const connecting = useVoice((v) => v.connecting);
+  const noise = useVoice((v) => v.noiseSuppression);
+  const camera = useVoice((v) => !!v.camera);
+  const screen = useVoice((v) => !!v.screen);
+  const quality = useVoice((v) => v.screenQuality);
   const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
   const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
   const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
+  const [modal, setModal] = useState<'screen' | 'settings' | null>(null);
   if (!channelId) return null;
 
   const label = channel ? (channel.serverId ? `${channel.name} / ${server?.name ?? ''}` : dmTitle(channel, meId, users)) : '';
@@ -308,16 +394,53 @@ export function VoiceBar() {
     if (channel.serverId) actions.goServer(channel.serverId, channel.id);
     else actions.goHome(channel.id);
   };
+  const tile = (active: boolean) =>
+    cx(
+      'flex h-9 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition-colors',
+      active ? 'border-accent/60 bg-accent/20 text-fg' : 'border-edge bg-raise text-soft hover:bg-hover hover:text-fg',
+    );
 
   return (
-    <div className="space-y-1.5 border-b border-edge bg-rail/70 px-2 py-2">
-      <button onClick={go} className="block w-full min-w-0 rounded px-1 text-left hover:bg-hover">
-        <span className={cx('block text-sm font-bold', connecting ? 'text-sun' : 'text-accent')}>
-          {connecting ? 'Conectando…' : 'Voz conectada'}
-        </span>
-        <span className="block truncate text-xs text-muted">{label}</span>
-      </button>
-      <VoiceControls />
+    <div className="space-y-2.5 border-b border-edge p-2.5">
+      <div className="flex items-center gap-1">
+        <button onClick={go} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-hover">
+          <Icons.Signal size={20} className={connecting ? 'text-sun' : 'text-online'} />
+          <span className="min-w-0">
+            <span className={cx('block truncate text-[13px] font-bold', connecting ? 'text-sun' : 'text-online')}>
+              {connecting ? 'Conectando…' : 'Voz conectada'}
+            </span>
+            <span className="block truncate text-xs text-muted">{label}</span>
+          </span>
+        </button>
+        <button
+          title={noise ? 'Supressor de ruído ligado' : 'Supressor de ruído desligado'}
+          onClick={() => void setNoiseSuppression(!noise)}
+          className={cx('rounded-md p-1.5 hover:bg-hover', noise ? 'text-accent' : 'text-muted hover:text-fg')}
+        >
+          <Icons.Waves size={18} />
+        </button>
+        <button title="Sair da chamada" onClick={() => leaveVoice()} className="rounded-md p-1.5 text-muted hover:bg-hover hover:text-danger">
+          <Icons.PhoneOff size={18} />
+        </button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={toggleCamera} className={tile(camera)}>
+          {camera ? <Icons.Video size={16} /> : <Icons.VideoOff size={16} />}
+        </button>
+        <button
+          title={screen ? 'Parar transmissão' : 'Transmitir tela'}
+          onClick={() => (screen ? void toggleScreen() : setModal('screen'))}
+          className={tile(screen)}
+        >
+          <Icons.Screen size={16} />
+          {screen && <span>{RESOLUTIONS[quality.resolution].label}</span>}
+        </button>
+        <button title="Voz e áudio" onClick={() => setModal('settings')} className={tile(false)}>
+          <Icons.Sliders size={16} />
+        </button>
+      </div>
+      {modal === 'screen' && <ScreenShareModal onClose={() => setModal(null)} />}
+      {modal === 'settings' && <VoiceSettingsModal onClose={() => setModal(null)} />}
     </div>
   );
 }
