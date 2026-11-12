@@ -198,7 +198,7 @@ function MenuItem({
       }}
       className={cx(
         'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left font-medium',
-        danger ? 'text-danger hover:bg-danger hover:text-white' : accent ? 'text-accent hover:bg-accent hover:text-rail' : 'text-soft hover:bg-accent hover:text-rail',
+        danger ? 'text-danger hover:bg-danger hover:text-white' : accent ? 'text-accent hover:bg-accent hover:text-on-accent' : 'text-soft hover:bg-accent hover:text-on-accent',
       )}
     >
       {children}

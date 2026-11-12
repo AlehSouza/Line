@@ -86,8 +86,8 @@ function RailItem({
         className={cx(
           'relative flex h-12 w-12 items-center justify-center transition-all',
           active ? 'rounded-2xl' : 'rounded-[24px] hover:rounded-2xl',
-          action && !active && 'bg-side text-accent hover:bg-accent hover:text-rail',
-          action && active && 'bg-accent text-rail',
+          action && !active && 'bg-side text-accent hover:bg-accent hover:text-on-accent',
+          action && active && 'bg-accent text-on-accent',
           !action && !color && (active ? 'bg-raise' : 'bg-side hover:bg-raise'),
         )}
         style={color ? { background: color } : undefined}

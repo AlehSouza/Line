@@ -19,12 +19,12 @@ export function Logo({ size = 28 }: { size?: number }) {
       <rect x="1" y="1" width="30" height="30" rx="10" fill="var(--color-accent)" />
       <path
         d="M8 19c3-6 6-6 8-3s5 3 8-3"
-        stroke="var(--color-rail)"
+        stroke="var(--color-on-accent)"
         strokeWidth="3"
         strokeLinecap="round"
         fill="none"
       />
-      <circle cx="24" cy="10" r="2.4" fill="var(--color-sun)" />
+      <circle cx="24" cy="10" r="2.4" fill="var(--color-on-accent)" opacity="0.7" />
     </svg>
   );
 }
@@ -116,7 +116,7 @@ export function Button({
       {...props}
       className={cx(
         'inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-        variant === 'primary' && 'bg-accent text-rail hover:bg-accent-strong',
+        variant === 'primary' && 'bg-accent text-on-accent hover:bg-accent-strong',
         variant === 'danger' && 'bg-danger text-white hover:brightness-110',
         variant === 'ghost' && 'text-soft hover:bg-hover hover:text-fg',
         variant === 'subtle' && 'bg-raise text-fg hover:bg-hover',

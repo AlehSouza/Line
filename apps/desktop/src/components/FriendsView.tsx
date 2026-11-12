@@ -55,7 +55,7 @@ export function FriendsView() {
           onClick={() => setTab('add')}
           className={cx(
             'rounded-md px-2 py-0.5 text-[15px] font-semibold',
-            tab === 'add' ? 'text-accent' : 'bg-accent text-rail hover:bg-accent-strong',
+            tab === 'add' ? 'text-accent' : 'bg-accent text-on-accent hover:bg-accent-strong',
           )}
         >
           Adicionar amigo

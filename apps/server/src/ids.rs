@@ -54,7 +54,7 @@ pub fn new_invite_code() -> String {
 }
 
 const PALETTE: [&str; 8] = [
-    "#00a868", "#f5b700", "#2b6cff", "#e5484d", "#8e4ec6", "#12a594", "#f76b15", "#d6409f",
+    "#7c6af2", "#f5b700", "#2b6cff", "#e5484d", "#8e4ec6", "#12a594", "#f76b15", "#d6409f",
 ];
 
 pub fn random_color() -> String {

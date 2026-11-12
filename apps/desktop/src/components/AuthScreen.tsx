@@ -28,12 +28,12 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="relative flex h-screen items-center justify-center overflow-hidden bg-rail p-6">
-      {/* Fundo: linhas onduladas na identidade do Line */}
-      <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.07]" aria-hidden>
+    <div className="glow relative flex h-screen items-center justify-center overflow-hidden bg-rail p-6">
+      {/* Fundo: linhas onduladas discretas + brilho violeta no topo */}
+      <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.04]" aria-hidden>
         <defs>
           <pattern id="waves" width="160" height="60" patternUnits="userSpaceOnUse">
-            <path d="M0 30c20-20 40-20 60 0s40 20 60 0 40-20 40 0" stroke="#00c46a" strokeWidth="3" fill="none" />
+            <path d="M0 30c20-20 40-20 60 0s40 20 60 0 40-20 40 0" stroke="#8b8b96" strokeWidth="3" fill="none" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#waves)" />

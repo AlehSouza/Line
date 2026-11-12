@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 
-const COLORS = ['#00c46a', '#ffcc29', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#e9f0eb'];
+const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
 export function Modals() {
   const modal = useLine((s) => s.modal);

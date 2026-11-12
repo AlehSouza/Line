@@ -65,7 +65,7 @@ export function AppShell() {
           <VoiceBar />
           <UserPanel />
         </aside>
-        <main className="flex min-w-0 flex-1 flex-col bg-main">{main}</main>
+        <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
         {view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />}
       </div>
       <Modals />

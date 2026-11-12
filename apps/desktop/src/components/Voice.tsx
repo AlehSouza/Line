@@ -85,7 +85,7 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
       {tile.stream ? (
         <Video stream={tile.stream} mirror={tile.isMe && tile.kind === 'person'} contain={tile.kind === 'screen'} />
       ) : (
-        <Avatar name={name} color={tile.user?.avatarColor ?? '#3a4a41'} size={big ? 112 : 72} />
+        <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} size={big ? 112 : 72} />
       )}
       <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium">
         {tile.kind === 'screen' && <Icons.Screen size={14} />}
@@ -337,7 +337,7 @@ export function VoiceChannelMembers({ channelId }: { channelId: string }) {
         return (
           <div key={p.userId} className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-soft">
             <span className={cx('rounded-full', speaking[p.userId] && 'ring-2 ring-accent')}>
-              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a4a41'} size={22} />
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} size={22} />
             </span>
             <span className="flex-1 truncate">{u?.displayName ?? 'Alguém'}</span>
             {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
@@ -396,7 +396,7 @@ export function IncomingCall() {
   return (
     <div className="fixed right-6 bottom-6 z-40 flex w-72 flex-col items-center gap-3 rounded-2xl border border-edge bg-side p-5 shadow-2xl">
       <span className="animate-pulse rounded-full ring-4 ring-accent/50">
-        <Avatar name={caller?.displayName ?? '?'} color={caller?.avatarColor ?? '#3a4a41'} size={64} />
+        <Avatar name={caller?.displayName ?? '?'} color={caller?.avatarColor ?? '#3a3a42'} size={64} />
       </span>
       <div className="text-center">
         <p className="font-bold">{channel.type === 'group_dm' ? dmTitle(channel, meId, users) : caller?.displayName}</p>
@@ -416,7 +416,7 @@ export function IncomingCall() {
             actions.goHome(channel.id);
             void joinVoice(channel.id);
           }}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-rail hover:bg-accent-strong"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-on-accent hover:bg-accent-strong"
         >
           <Icons.Phone size={20} />
         </button>
