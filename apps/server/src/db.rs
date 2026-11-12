@@ -1,70 +1,9 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+use rusqlite::Connection;
 
-/**
- * Wrapper fino sobre o SQLite embutido no Node (node:sqlite).
- * Sem módulo nativo para compilar: roda igual no Node e dentro do Electron,
- * o que permite embutir o servidor no .exe do app.
- */
-export class DB {
-  private raw: DatabaseSync;
-  private depth = 0;
-
-  constructor(file: string) {
-    this.raw = new DatabaseSync(file);
-  }
-
-  prepare(sql: string) {
-    const stmt = this.raw.prepare(sql);
-    return {
-      get: (...params: unknown[]) => stmt.get(...(params as SQLInputValue[])) as unknown,
-      all: (...params: unknown[]) => stmt.all(...(params as SQLInputValue[])) as unknown[],
-      run: (...params: unknown[]) => {
-        const r = stmt.run(...(params as SQLInputValue[]));
-        return { changes: Number(r.changes) };
-      },
-    };
-  }
-
-  exec(sql: string) {
-    this.raw.exec(sql);
-  }
-
-  pragma(statement: string, opts: { simple?: boolean } = {}) {
-    const row = this.raw.prepare(`PRAGMA ${statement}`).get() as Record<string, unknown> | undefined;
-    return opts.simple && row ? Object.values(row)[0] : row;
-  }
-
-  /** Como no better-sqlite3: devolve uma função que roda `fn` numa transação (aninhável). */
-  transaction<T>(fn: () => T): () => T {
-    return () => {
-      const outer = this.depth === 0;
-      const sp = `sp${this.depth}`;
-      this.raw.exec(outer ? 'BEGIN' : `SAVEPOINT ${sp}`);
-      this.depth++;
-      try {
-        const result = fn();
-        this.depth--;
-        this.raw.exec(outer ? 'COMMIT' : `RELEASE ${sp}`);
-        return result;
-      } catch (err) {
-        this.depth--;
-        this.raw.exec(outer ? 'ROLLBACK' : `ROLLBACK TO ${sp}; RELEASE ${sp}`);
-        throw err;
-      }
-    };
-  }
-
-  close() {
-    this.raw.close();
-  }
-}
-
-/**
- * Migrações em ordem. Cada uma roda uma vez; a versão atual fica em PRAGMA user_version.
- * Para mudar o banco: adicione uma nova entrada no fim (nunca edite as antigas).
- */
-const migrations: string[] = [
-  `
+/// Migrações em ordem. Cada uma roda uma vez; a versão atual fica em PRAGMA user_version.
+/// Para mudar o banco: adicione uma nova entrada no fim (nunca edite as antigas).
+/// A primeira é idêntica à do servidor antigo em Node, então o arquivo line.db existente continua valendo.
+const MIGRATIONS: &[&str] = &[r#"
   CREATE TABLE users (
     id            TEXT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
@@ -143,23 +82,29 @@ const migrations: string[] = [
     PRIMARY KEY (requester_id, addressee_id)
   );
   CREATE INDEX friendships_addressee ON friendships(addressee_id);
-  `,
-];
+"#];
 
-export function openDatabase(file: string): DB {
-  const db = new DB(file);
-  if (file !== ':memory:') db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  migrate(db);
-  return db;
+pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
+    let conn = if file == ":memory:" {
+        Connection::open_in_memory()?
+    } else {
+        Connection::open(file)?
+    };
+    if file != ":memory:" {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+    }
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    migrate(&conn)?;
+    Ok(conn)
 }
 
-function migrate(db: DB) {
-  const current = db.pragma('user_version', { simple: true }) as number;
-  for (let v = current; v < migrations.length; v++) {
-    db.transaction(() => {
-      db.exec(migrations[v]!);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
-  }
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    let current: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    for (v, sql) in MIGRATIONS.iter().enumerate().skip(current as usize) {
+        conn.execute_batch(&format!(
+            "BEGIN; {sql}; PRAGMA user_version = {}; COMMIT;",
+            v + 1
+        ))?;
+    }
+    Ok(())
 }

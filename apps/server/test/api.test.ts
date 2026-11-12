@@ -1,23 +1,50 @@
 import type { AuthResponse, ClientToServerEvents, Message, ServerDetail, ServerToClientEvents } from '@line/shared';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildApp, type LineApp } from '../src/app';
-import { loadConfig } from '../src/config';
 
-let line: LineApp;
+/**
+ * Testes de contrato: sobem o binário Rust (`cargo build -p line-server`) e falam com ele
+ * exatamente como o app faz (fetch + socket.io-client). Garantem que o protocolo não mudou.
+ */
+const BIN = path.resolve(import.meta.dirname, '../../../target/debug', process.platform === 'win32' ? 'line-server.exe' : 'line-server');
+
+let child: ChildProcess;
 let base: string;
 const sockets: Socket[] = [];
 
 beforeAll(async () => {
-  line = await buildApp(loadConfig({ dbFile: ':memory:', dataDir: '/tmp/line-test', jwtSecret: 'test-secret' }));
-  await line.app.listen({ port: 0, host: '127.0.0.1' });
-  const addr = line.app.server.address();
-  base = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  child = spawn(BIN, [], {
+    env: {
+      ...process.env,
+      PORT: '0',
+      HOST: '127.0.0.1',
+      DB_FILE: ':memory:',
+      DATA_DIR: mkdtempSync(path.join(tmpdir(), 'line-test-')),
+      JWT_SECRET: 'test-secret',
+      RUST_LOG: 'warn',
+    },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  const port = await new Promise<number>((resolve, reject) => {
+    let out = '';
+    child.stdout!.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+      const m = out.match(/LINE_LISTENING (\d+)/);
+      if (m) resolve(Number(m[1]));
+    });
+    child.once('exit', (code) => reject(new Error(`line-server saiu com código ${code}`)));
+    child.once('error', reject);
+  });
+  base = `http://127.0.0.1:${port}`;
 });
 
 afterAll(async () => {
   for (const s of sockets) s.disconnect();
-  await line.app.close();
+  child?.kill();
 });
 
 async function api<T = unknown>(method: string, path: string, token?: string, body?: unknown) {
@@ -198,5 +225,68 @@ describe('Line server', () => {
     const left = next(ds, 'voice:update');
     es.disconnect();
     expect(await left).toMatchObject({ userId: edu.user.id, state: null });
+  });
+
+  it('gerência: perfil, descoberta, categorias, expulsão e grupos', async () => {
+    const fabi = await register('fabi');
+    const gui = await register('gui');
+
+    // Perfil: status personalizado vazio vira null; validação devolve 400 com mensagem
+    const prof = await api<{ customStatus: string | null; bio: string }>('PATCH', '/users/@me', fabi.token, {
+      bio: 'oi',
+      customStatus: '',
+    });
+    expect(prof.data).toMatchObject({ bio: 'oi', customStatus: null });
+    const badColor = await api<{ error: string }>('PATCH', '/users/@me', fabi.token, { avatarColor: 'azul' });
+    expect(badColor.status).toBe(400);
+    expect(badColor.data.error).toBe('validation');
+    expect((await api('POST', '/auth/register', undefined, { username: 'x', password: 'senha123' })).status).toBe(400);
+
+    // Servidor público aparece no explorar de quem não é membro
+    const srv = await api<{ id: string; isPublic: boolean }>('POST', '/servers', fabi.token, { name: 'Aberto', isPublic: true });
+    expect(srv.data.isPublic).toBe(true);
+    const found = await api<{ id: string }[]>('GET', '/servers/discover?q=Abe', gui.token);
+    expect(found.data.map((s) => s.id)).toContain(srv.data.id);
+    expect((await api('POST', `/servers/${srv.data.id}/join`, gui.token)).status).toBe(200);
+    expect((await api<unknown[]>('GET', '/servers/discover', gui.token)).data.length).toBe(0);
+
+    // Apagar categoria solta os canais dela
+    const cat = await api<{ id: string }>('POST', `/servers/${srv.data.id}/categories`, fabi.token, { name: 'Extra' });
+    const ch = await api<{ id: string; categoryId: string }>('POST', `/servers/${srv.data.id}/channels`, fabi.token, {
+      name: 'solto',
+      categoryId: cat.data.id,
+    });
+    expect(ch.data.categoryId).toBe(cat.data.id);
+    expect((await api('DELETE', `/categories/${cat.data.id}`, fabi.token)).status).toBe(204);
+    const loose = await api<{ categoryId: string | null }>('GET', `/channels/${ch.data.id}`, fabi.token);
+    expect(loose.data.categoryId).toBeNull();
+    const moved = await api<{ position: number; categoryId: string | null }>('PATCH', `/channels/${ch.data.id}`, fabi.token, {
+      position: 7,
+      categoryId: null,
+    });
+    expect(moved.data).toMatchObject({ position: 7, categoryId: null });
+
+    // Expulsar: o expulso recebe server:delete e perde acesso
+    const gs = await socketFor(gui.token);
+    const kicked = next(gs, 'server:delete');
+    expect((await api('DELETE', `/servers/${srv.data.id}/members/${gui.user.id}`, fabi.token)).status).toBe(204);
+    expect((await kicked).id).toBe(srv.data.id);
+    expect((await api('GET', `/servers/${srv.data.id}`, gui.token)).status).toBe(404);
+
+    // Grupo: sair avisa quem fica
+    const group = await api<{ id: string }>('POST', '/dms', fabi.token, { userIds: ['gui', 'ana'], name: 'Trio' });
+    const fs = await socketFor(fabi.token);
+    const updated = next(fs, 'channel:update');
+    expect((await api('POST', `/dms/${group.data.id}/leave`, gui.token)).status).toBe(204);
+    expect((await updated).recipients).toHaveLength(2);
+
+    // Mensagem do dono pode ser apagada; rota desconhecida dá 404
+    const dm = await api<{ id: string }>('POST', '/dms', fabi.token, { userIds: [gui.user.id] });
+    const msg = await api<{ id: string }>('POST', `/channels/${dm.data.id}/messages`, fabi.token, { content: '  oi  ' });
+    expect((await api<{ content: string }>('GET', `/channels/${dm.data.id}/messages`, gui.token)).data[0]?.content).toBe('oi');
+    expect((await api('DELETE', `/messages/${msg.data.id}`, gui.token)).status).toBe(403);
+    expect((await api('DELETE', `/messages/${msg.data.id}`, fabi.token)).status).toBe(204);
+    expect((await api('GET', '/nada', fabi.token)).status).toBe(404);
+    expect((await api<{ ok: boolean }>('GET', '/health')).data.ok).toBe(true);
   });
 });

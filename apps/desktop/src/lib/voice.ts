@@ -210,7 +210,7 @@ export async function toggleCamera() {
   }
 }
 
-/** Liga/desliga o compartilhamento de tela. No Electron, `sourceId` vem do seletor de telas/janelas. */
+/** Liga/desliga o compartilhamento de tela. Sem `sourceId`, o seletor é o do próprio sistema (WebView2/navegador). */
 export async function toggleScreen(sourceId?: string) {
   const { screen } = getV();
   if (screen) {

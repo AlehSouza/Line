@@ -1,0 +1,25 @@
+[workspace]
+resolver = "3"
+members = ["apps/server", "apps/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+# Binário menor e mais rápido para o .exe final.
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "unwind"
+strip = true
+
+# O scrypt é lento sem otimização; deixa os testes e o modo dev rápidos.
+[profile.dev.package.scrypt]
+opt-level = 3
+[profile.dev.package.salsa20]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.sha2]
+opt-level = 3
