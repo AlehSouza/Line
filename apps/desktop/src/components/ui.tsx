@@ -255,6 +255,9 @@ export const Icons = {
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),
   Camera: icon(L.Camera),
+  ArrowLeft: icon(L.ArrowLeft),
+  ZoomIn: icon(L.ZoomIn),
+  ZoomOut: icon(L.ZoomOut),
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
 };

@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
+import { ImageCropper } from './ImageCropper';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
@@ -25,7 +26,18 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const [crop, setCrop] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null);
   if (!me) return null;
+
+  /** Escolheu a imagem: abre o recorte (GIF vai direto para manter a animação). */
+  function pick(file: File, kind: 'avatar' | 'banner') {
+    if (file.type === 'image/gif' || !file.type.startsWith('image/')) return finish(file, kind);
+    setCrop({ file, kind });
+  }
+  function finish(file: File, kind: 'avatar' | 'banner') {
+    if (kind === 'avatar') void upload(file, setAvatar, () => setAvatarChanged(true));
+    else void upload(file, setBanner, () => setBannerChanged(true));
+  }
 
   async function upload(file: File, set: (i: Image) => void, mark: () => void) {
     if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return setError('Escolha uma imagem (PNG, JPG, GIF ou WebP).');
@@ -139,6 +151,17 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
         </div>
       </div>
 
+      {crop && (
+        <ImageCropper
+          file={crop.file}
+          kind={crop.kind}
+          onCancel={() => setCrop(null)}
+          onApply={(f) => {
+            setCrop(null);
+            finish(f, crop.kind);
+          }}
+        />
+      )}
       <div className="shrink-0 lg:w-[320px]">
         <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Prévia</p>
         <ProfileCard
@@ -152,8 +175,8 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           avatarUrl={avatar.url}
           bannerUrl={banner.url}
           createdAt={me.createdAt}
-          onAvatarFile={(f) => upload(f, setAvatar, () => setAvatarChanged(true))}
-          onBannerFile={(f) => upload(f, setBanner, () => setBannerChanged(true))}
+          onAvatarFile={(f) => pick(f, 'avatar')}
+          onBannerFile={(f) => pick(f, 'banner')}
         />
         <p className="mt-2 text-xs text-muted">Clique no banner ou na foto para trocar.</p>
         <div className="mt-1 flex flex-wrap gap-x-3">
