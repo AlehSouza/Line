@@ -317,6 +317,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
   const [camPicker, setCamPicker] = useState(false);
 
   const [devMenu, setDevMenu] = useState<'input' | 'output' | null>(null);
+  const size = large ? 22 : 18;
 
   const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
   const camClick = () => (camera ? void toggleCamera() : setCamPicker(true));
@@ -380,7 +381,6 @@ export function VoiceControls({ large }: { large?: boolean }) {
     );
   }
 
-  const size = large ? 22 : 18;
   const btn = (active: boolean, danger = false) =>
     cx(
       'flex items-center justify-center rounded-full transition-colors',
