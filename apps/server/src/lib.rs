@@ -10,6 +10,7 @@ pub mod db;
 pub mod errors;
 pub mod gateway;
 pub mod ids;
+pub mod mail;
 pub mod model;
 pub mod perms;
 pub mod presence;
@@ -44,6 +45,10 @@ pub struct App {
     pub giphy: Option<gifs::Giphy>,
     /// Preview de links do chat (cache em memória).
     pub embeds: embeds::EmbedCache,
+    /// Email da recuperação de senha (SMTP_*). Sem ele, "Esqueci minha senha" fica indisponível.
+    pub mailer: Option<mail::Mailer>,
+    /// Pedidos de recuperação de senha por IP.
+    pub resets: captcha::SignupLimiter,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -214,6 +219,8 @@ pub fn build(
         signups: captcha::SignupLimiter::new(),
         giphy: gifs::Giphy::from_env(),
         embeds: embeds::EmbedCache::default(),
+        mailer: mail::Mailer::from_env(),
+        resets: captcha::SignupLimiter::with(5, std::time::Duration::from_secs(60 * 60)),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

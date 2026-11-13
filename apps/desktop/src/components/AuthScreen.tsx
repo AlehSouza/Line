@@ -5,9 +5,14 @@ import { api, configureApi } from '@/lib/api';
 import { authenticate, savedServerUrl } from '@/lib/session';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button, ErrorText, Field, Input, Logo } from './ui';
+import { toast } from './Dialogs';
 
 export function AuthScreen() {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  // Link do email de recuperação: .../app/?reset=TOKEN abre direto a tela de nova senha.
+  const [resetToken] = useState(() =>
+    typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('reset') ?? '',
+  );
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(resetToken ? 'reset' : 'login');
   const serverUrl = savedServerUrl();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -17,17 +22,62 @@ export function AuthScreen() {
   const [siteKey, setSiteKey] = useState<string | null>(null);
   const [captcha, setCaptcha] = useState('');
   const [captchaRun, setCaptchaRun] = useState(0);
+  const [resetEnabled, setResetEnabled] = useState(false);
+  const [sent, setSent] = useState(false);
 
   useEffect(() => {
     configureApi({ baseUrl: serverUrl });
-    api.authConfig().then((c) => setSiteKey(c.turnstileSiteKey)).catch(() => {});
+    api
+      .authConfig()
+      .then((c) => {
+        setSiteKey(c.turnstileSiteKey);
+        setResetEnabled(!!c.passwordReset);
+      })
+      .catch(() => {});
   }, [serverUrl]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  function go(next: typeof mode) {
+    setMode(next);
+    setError('');
+    setSent(false);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    if (mode === 'forgot') {
+      setBusy(true);
+      try {
+        await api.forgotPassword(email.trim());
+        setSent(true);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    if (mode === 'reset') {
+      if (password !== confirm) return setError('As senhas não são iguais.');
+      setBusy(true);
+      try {
+        const { username: name } = await api.resetPassword(resetToken, password);
+        // Tira o token da barra de endereço para não reaparecer ao recarregar.
+        window.history.replaceState(null, '', window.location.pathname);
+        setUsername(name);
+        setPassword('');
+        setConfirm('');
+        go('login');
+        toast('Senha alterada! Agora é só entrar com a nova senha.');
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     if (mode === 'register' && password !== confirm) {
       setError('As senhas não são iguais.');
       return;
@@ -70,13 +120,23 @@ export function AuthScreen() {
         <div className="flex flex-col items-center gap-3 text-center">
           <Logo size={48} />
           <div>
-            <h1 className="text-2xl font-bold">{mode === 'login' ? 'E aí, bora entrar?' : 'Crie sua conta'}</h1>
-            <p className="mt-1 text-sm text-muted">
-              {mode === 'login' ? 'Que bom te ver de novo no Line.' : 'Leva menos de um minuto.'}
-            </p>
+            <h1 className="text-2xl font-bold">{TITLES[mode][0]}</h1>
+            <p className="mt-1 text-sm text-muted">{TITLES[mode][1]}</p>
           </div>
         </div>
 
+        {mode === 'forgot' && (sent ? (
+          <p className="rounded-xl border border-edge bg-rail/60 p-4 text-sm leading-relaxed">
+            Se existir uma conta com <b>{email.trim()}</b>, mandamos um link para criar uma senha nova. Ele vale por 30
+            minutos. Não chegou? Dá uma olhada no spam.
+          </p>
+        ) : (
+          <Field label="Email da conta">
+            <Input autoFocus required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@exemplo.com" autoComplete="email" />
+          </Field>
+        ))}
+
+        {(mode === 'login' || mode === 'register') && (
         <Field label="Nome de usuário">
           <Input
             autoFocus
@@ -87,6 +147,7 @@ export function AuthScreen() {
             autoComplete="username"
           />
         </Field>
+        )}
 
         {mode === 'register' && (
           <Field label="Email">
@@ -100,15 +161,22 @@ export function AuthScreen() {
           </Field>
         )}
 
-        <Field label="Senha">
-          <PasswordInput
-            value={password}
-            onChange={setPassword}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-        </Field>
+        {mode !== 'forgot' && (
+          <Field label={mode === 'reset' ? 'Nova senha' : 'Senha'}>
+            <PasswordInput
+              value={password}
+              onChange={setPassword}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+            {mode === 'login' && resetEnabled && (
+              <button type="button" className="mt-1.5 text-xs font-semibold text-accent hover:underline" onClick={() => go('forgot')}>
+                Esqueci minha senha
+              </button>
+            )}
+          </Field>
+        )}
 
-        {mode === 'register' && (
+        {(mode === 'register' || mode === 'reset') && (
           <Field label="Confirmar senha">
             <PasswordInput value={confirm} onChange={setConfirm} autoComplete="new-password" />
             {confirm && confirm !== password && <p className="mt-1 text-xs text-red-400">As senhas não são iguais.</p>}
@@ -128,27 +196,43 @@ export function AuthScreen() {
 
         <ErrorText>{error}</ErrorText>
 
-        <Button type="submit" disabled={busy} className="w-full py-2.5">
-          {busy ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-        </Button>
+        {!(mode === 'forgot' && sent) && (
+          <Button type="submit" disabled={busy} className="w-full py-2.5">
+            {busy ? 'Aguarde…' : SUBMIT[mode]}
+          </Button>
+        )}
 
+        {(mode === 'forgot' || mode === 'reset') ? (
+          <p className="text-center text-sm text-muted">
+            <button type="button" className="font-semibold text-accent hover:underline" onClick={() => go('login')}>
+              Voltar para o login
+            </button>
+          </p>
+        ) : (
         <p className="text-center text-sm text-muted">
           {mode === 'login' ? 'Ainda não tem conta? ' : 'Já tem conta? '}
           <button
             type="button"
             className="font-semibold text-accent hover:underline"
-            onClick={() => {
-              setMode(mode === 'login' ? 'register' : 'login');
-              setError('');
-            }}
+            onClick={() => go(mode === 'login' ? 'register' : 'login')}
           >
             {mode === 'login' ? 'Cadastre-se' : 'Entrar'}
           </button>
         </p>
+        )}
       </form>
     </div>
   );
 }
+
+const TITLES = {
+  login: ['E aí, bora entrar?', 'Que bom te ver de novo no Line.'],
+  register: ['Crie sua conta', 'Leva menos de um minuto.'],
+  forgot: ['Esqueceu a senha?', 'Digite o email da sua conta que a gente te manda um link.'],
+  reset: ['Crie uma senha nova', 'Escolha uma senha com pelo menos 6 caracteres.'],
+} as const;
+
+const SUBMIT = { login: 'Entrar', register: 'Criar conta', forgot: 'Enviar link', reset: 'Salvar nova senha' } as const;
 
 /** Campo de senha com o botão de olho para mostrar ou esconder o que foi digitado. */
 function PasswordInput({ value, onChange, autoComplete }: { value: string; onChange: (v: string) => void; autoComplete: string }) {

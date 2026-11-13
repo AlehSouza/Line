@@ -126,7 +126,10 @@ export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
     request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),
-  authConfig: () => request<{ turnstileSiteKey: string | null }>('GET', '/auth/config'),
+  authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean }>('GET', '/auth/config'),
+  forgotPassword: (email: string) => request<void>('POST', '/auth/forgot', { email }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ username: string }>('POST', '/auth/reset', { token, newPassword }),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/auth/login', { username, password }),
 
   me: () => request<SelfUser>('GET', '/users/@me'),

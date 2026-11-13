@@ -65,6 +65,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/config", get(auth_config))
         .route("/auth/captcha", get(captcha_page))
         .route("/auth/login", post(login))
+        .route("/auth/forgot", post(forgot_password))
+        .route("/auth/reset", post(reset_password))
         .route("/users/@me", get(get_me).patch(update_me))
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
@@ -175,7 +177,11 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
 
 /// O que a tela de login precisa saber antes do cadastro (ex.: chave pública do captcha).
 async fn auth_config(State(app): S) -> Res {
-    Ok(Json(json!({ "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()) })).into_response())
+    Ok(Json(json!({
+        "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()),
+        "passwordReset": app.mailer.is_some(),
+    }))
+    .into_response())
 }
 
 /// Página do captcha servida pelo próprio domínio: o app desktop (origem tauri.localhost, que a
@@ -299,6 +305,67 @@ async fn login(State(app): S, b: Bytes) -> Res {
         token: app.tokens.sign(&row.id),
         user,
     })
+}
+
+/// Hash do token de recuperação: no banco só fica o SHA-256, nunca o token do link.
+fn reset_token_hash(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(token.as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Validade do link de recuperação.
+const RESET_MINUTES: i64 = 30;
+
+/// "Esqueci minha senha": manda um link por email. Responde igual exista ou não a conta,
+/// para não revelar quais emails estão cadastrados.
+async fn forgot_password(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
+    let input = body::<validate::ForgotPassword>(&b)?.check()?;
+    let Some(_) = &app.mailer else {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "RESET_DISABLED", "A recuperação de senha ainda não está disponível."));
+    };
+    if client_ip(&headers).is_some_and(|ip| !app.resets.allow(&ip)) {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitos pedidos daqui. Tente de novo mais tarde."));
+    }
+    let found = {
+        let q = app.store.q();
+        q.user_by_email(&input.email).filter(|u| !q.reset_requested_recently(&u.id, 60))
+    };
+    if let Some(user) = found {
+        use base64::Engine;
+        use rand::RngCore;
+        let mut bytes = [0u8; 32];
+        rand::rng().fill_bytes(&mut bytes);
+        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        app.store.q().create_password_reset(&user.id, &reset_token_hash(&token), RESET_MINUTES);
+        // Envia em segundo plano: a resposta demora o mesmo com ou sem conta.
+        let app = app.clone();
+        tokio::spawn(async move {
+            if let Some(mailer) = &app.mailer {
+                let link = format!("{}/?reset={token}", mailer.app_url);
+                mailer.send_password_reset(&input.email, &user.display_name, &link).await;
+            }
+        });
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Define a senha nova a partir do token do email (vale uma vez, por 30 minutos).
+async fn reset_password(State(app): S, b: Bytes) -> Res {
+    let input = body::<validate::ResetPassword>(&b)?.check()?;
+    let token_hash = reset_token_hash(&input.token);
+    let expired = || validation("Esse link expirou ou já foi usado. Peça um novo.");
+    let user_id = app.store.q().password_reset_user(&token_hash).ok_or_else(expired)?;
+    let password = input.new_password;
+    let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .expect("scrypt");
+    let q = app.store.q();
+    if !q.consume_password_reset(&token_hash) {
+        return Err(expired());
+    }
+    q.set_password_hash(&user_id, &hash);
+    let username = q.user_row(&user_id).map(|u| u.username).unwrap_or_default();
+    ok(json!({ "username": username }))
 }
 
 // ---------- usuários ----------

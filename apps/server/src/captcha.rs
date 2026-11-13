@@ -45,26 +45,32 @@ impl Turnstile {
 }
 
 /// Até `MAX` contas novas por IP a cada `WINDOW`.
-pub struct SignupLimiter(Mutex<HashMap<String, Vec<Instant>>>);
+pub struct SignupLimiter(Mutex<HashMap<String, Vec<Instant>>>, usize, Duration);
 
 const MAX: usize = 3;
 const WINDOW: Duration = Duration::from_secs(60 * 60);
 
 impl SignupLimiter {
     pub fn new() -> Self {
-        Self(Mutex::new(HashMap::new()))
+        Self::with(MAX, WINDOW)
+    }
+
+    /// Até `max` tentativas por IP a cada `window`.
+    pub fn with(max: usize, window: Duration) -> Self {
+        Self(Mutex::new(HashMap::new()), max, window)
     }
 
     /// Registra uma tentativa; devolve false se o IP já passou do limite.
     pub fn allow(&self, ip: &str) -> bool {
+        let (max, window) = (self.1, self.2);
         let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         map.retain(|_, times| {
-            times.retain(|t| now.duration_since(*t) < WINDOW);
+            times.retain(|t| now.duration_since(*t) < window);
             !times.is_empty()
         });
         let times = map.entry(ip.to_string()).or_default();
-        if times.len() >= MAX {
+        if times.len() >= max {
             return false;
         }
         times.push(now);
