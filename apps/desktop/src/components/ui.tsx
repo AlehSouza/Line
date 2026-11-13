@@ -253,6 +253,7 @@ export const Icons = {
   Upload: icon(L.Upload),
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),
+  Camera: icon(L.Camera),
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
 };

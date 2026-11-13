@@ -73,21 +73,6 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
       <div className="min-w-0 flex-1 space-y-5">
-        <div className="flex flex-wrap gap-3">
-          <ImagePick label="Trocar foto" onFile={(f) => upload(f, setAvatar, () => setAvatarChanged(true))} />
-          {avatar.url && (
-            <Button variant="ghost" onClick={() => (setAvatar({ id: null, url: null }), setAvatarChanged(true))}>
-              Remover foto
-            </Button>
-          )}
-          <ImagePick label="Trocar banner" onFile={(f) => upload(f, setBanner, () => setBannerChanged(true))} />
-          {banner.url && (
-            <Button variant="ghost" onClick={() => (setBanner({ id: null, url: null }), setBannerChanged(true))}>
-              Remover banner
-            </Button>
-          )}
-        </div>
-
         <Field label="Nome de exibição">
           <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
         </Field>
@@ -167,17 +152,42 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           avatarUrl={avatar.url}
           bannerUrl={banner.url}
           createdAt={me.createdAt}
+          onAvatarFile={(f) => upload(f, setAvatar, () => setAvatarChanged(true))}
+          onBannerFile={(f) => upload(f, setBanner, () => setBannerChanged(true))}
         />
+        <p className="mt-2 text-xs text-muted">Clique no banner ou na foto para trocar.</p>
+        <div className="mt-1 flex flex-wrap gap-x-3">
+          {avatar.url && (
+            <button className="text-xs text-soft hover:text-danger hover:underline" onClick={() => (setAvatar({ id: null, url: null }), setAvatarChanged(true))}>
+              Remover foto
+            </button>
+          )}
+          {banner.url && (
+            <button className="text-xs text-soft hover:text-danger hover:underline" onClick={() => (setBanner({ id: null, url: null }), setBannerChanged(true))}>
+              Remover banner
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function ImagePick({ label, onFile }: { label: string; onFile: (f: File) => void }) {
+/** Área clicável que abre o seletor de imagem, com um véu e ícone ao passar o mouse. */
+function ImagePick({ onFile, className, round, children }: { onFile?: (f: File) => void; className?: string; round?: boolean; children: ReactNode }) {
   const ref = useRef<HTMLInputElement>(null);
+  if (!onFile) return <div className={className}>{children}</div>;
   return (
-    <>
-      <Button onClick={() => ref.current?.click()}>{label}</Button>
+    <button type="button" title="Trocar imagem" onClick={() => ref.current?.click()} className={cx('group/pick relative block cursor-pointer', className)}>
+      {children}
+      <span
+        className={cx(
+          'absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover/pick:opacity-100',
+          round && 'rounded-full',
+        )}
+      >
+        <Icons.Camera size={round ? 22 : 26} />
+      </span>
       <input
         ref={ref}
         type="file"
@@ -189,7 +199,7 @@ function ImagePick({ label, onFile }: { label: string; onFile: (f: File) => void
           e.target.value = '';
         }}
       />
-    </>
+    </button>
   );
 }
 
@@ -206,6 +216,8 @@ export function ProfileCard({
   bannerUrl,
   createdAt,
   children,
+  onAvatarFile,
+  onBannerFile,
 }: {
   name: string;
   username: string;
@@ -218,6 +230,9 @@ export function ProfileCard({
   bannerUrl?: string | null;
   createdAt?: string;
   children?: ReactNode;
+  /** Só no editor: deixa banner e foto clicáveis. */
+  onAvatarFile?: (f: File) => void;
+  onBannerFile?: (f: File) => void;
 }) {
   // Blob local (prévia) ou caminho do servidor.
   const src = (u?: string | null) => (u ? (u.startsWith('blob:') ? u : fileUrl(u)) : null);
@@ -227,19 +242,23 @@ export function ProfileCard({
       className="overflow-hidden rounded-2xl border border-edge shadow-xl"
       style={{ background: `linear-gradient(to bottom, color-mix(in srgb, ${color} 35%, var(--color-rail)), var(--color-rail) 55%)` }}
     >
-      <div className="relative h-28" style={banner ? undefined : { background: color }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
-      </div>
+      <ImagePick onFile={onBannerFile} className="h-28 w-full">
+        <div className="h-full w-full" style={banner ? undefined : { background: color }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
+        </div>
+      </ImagePick>
       <div className="relative px-4 pb-4">
         <div className="-mt-11 flex items-end gap-2">
-          <span className="rounded-full border-[5px] border-rail">
-            {avatarUrl?.startsWith('blob:') ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatarUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
-            ) : (
-              <Avatar name={name} color={color} src={avatarUrl} size={80} />
-            )}
+          <span className="relative rounded-full border-[5px] border-rail">
+            <ImagePick onFile={onAvatarFile} round className="rounded-full">
+              {avatarUrl?.startsWith('blob:') ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
+              ) : (
+                <Avatar name={name} color={color} src={avatarUrl} size={80} />
+              )}
+            </ImagePick>
           </span>
           {thought && (
             <span className="relative mb-6 max-w-[180px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs text-soft shadow-lg">
