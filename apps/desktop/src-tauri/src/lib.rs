@@ -76,6 +76,85 @@ async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
     app.restart();
 }
 
+const SPLASH: &str = "splash";
+
+fn create_splash(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
+    WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
+        .title("Line")
+        .decorations(false)
+        .resizable(false)
+        .shadow(true)
+        .inner_size(300.0, 340.0)
+        .center()
+        .skip_taskbar(false)
+        .background_color(tauri::webview::Color(0x1a, 0x1a, 0x1f, 0xff))
+        .build()
+}
+
+fn splash_status(splash: &WebviewWindow, text: &str, pct: Option<f64>) {
+    let pct = pct.map_or("null".to_string(), |p| format!("{p:.0}"));
+    let text = serde_json::to_string(text).unwrap_or_default();
+    let _ = splash.eval(format!("window.lineSplash && window.lineSplash({text}, {pct})"));
+}
+
+/// Procura, baixa e instala a atualização mostrando o andamento na janelinha.
+/// No Windows o instalador fecha o app e abre a versão nova sozinho; aqui só voltamos se
+/// não houver atualização ou se algo falhar (aí o app abre normalmente).
+async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) {
+    use std::time::Duration;
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = match app.updater_builder().timeout(Duration::from_secs(20)).build() {
+        Ok(u) => u,
+        Err(err) => return tracing::warn!("atualizador indisponível: {err}"),
+    };
+    let check = tokio::time::timeout(Duration::from_secs(8), updater.check()).await;
+    let update = match check {
+        Ok(Ok(Some(update))) => update,
+        Ok(Ok(None)) => return,
+        Ok(Err(err)) => return tracing::warn!("falha ao procurar atualização: {err}"),
+        Err(_) => return tracing::warn!("procura de atualização demorou demais"),
+    };
+    splash_status(splash, &format!("Baixando a versão {}...", update.version), Some(0.0));
+    let mut got = 0usize;
+    let mut last = -1.0f64;
+    let s2 = splash.clone();
+    let result = update
+        .download_and_install(
+            |chunk, total| {
+                got += chunk;
+                if let Some(total) = total.filter(|t| *t > 0) {
+                    let pct = (got as f64 / total as f64 * 100.0).floor();
+                    if pct > last {
+                        last = pct;
+                        splash_status(&s2, "Baixando atualização...", Some(pct));
+                    }
+                }
+            },
+            || splash_status(&s2, "Instalando...", None),
+        )
+        .await;
+    match result {
+        // macOS: a versão nova já está no lugar, só reabrir.
+        Ok(()) => app.restart(),
+        Err(err) => {
+            tracing::warn!("falha ao instalar atualização: {err}");
+            splash_status(splash, "Não deu para atualizar agora. Abrindo o Line...", Some(-1.0));
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+        }
+    }
+}
+
+fn open_main(app: &tauri::AppHandle) {
+    match create_window(app) {
+        // Mostra só depois de carregar, sem piscar branco.
+        Ok(window) => {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(err) => tracing::error!("não abriu a janela principal: {err}"),
+    }
+}
+
 #[tauri::command]
 fn request_attention(window: WebviewWindow) {
     if !window.is_focused().unwrap_or(true) {
@@ -122,9 +201,9 @@ fn is_app_url(url: &tauri::Url) -> bool {
     }
 }
 
-fn create_window(app: &tauri::App) -> tauri::Result<WebviewWindow> {
-    let opener = app.handle().clone();
-    let opener2 = app.handle().clone();
+fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
+    let opener = app.clone();
+    let opener2 = app.clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Line")
         // Sem a barra do Windows: a interface desenha a própria (com arrastar, minimizar etc).
@@ -134,7 +213,9 @@ fn create_window(app: &tauri::App) -> tauri::Result<WebviewWindow> {
         .min_inner_size(940.0, 560.0)
         .background_color(tauri::webview::Color(0x0a, 0x0a, 0x0c, 0xff))
         .visible(false)
-        .initialization_script(include_str!("bridge.js"))
+        .initialization_script(
+            include_str!("bridge.js").replace("__LINE_VERSION__", &app.package_info().version.to_string()),
+        )
         // Microfone, câmera e notificações sem perguntar de novo: o app inteiro é nosso.
         .on_permission_request(|_, kind| match kind {
             PermissionKind::Microphone
@@ -211,9 +292,19 @@ pub fn run() {
             screen::screen_stop
         ])
         .setup(|app| {
-            let window = create_window(app)?;
-            // Mostra só depois de carregar, sem piscar branco.
-            window.show()?;
+            let handle = app.handle().clone();
+            // Windows e macOS: antes de abrir o app, uma janelinha procura atualização,
+            // baixa e instala. Sem atualização (ou sem internet), segue direto para o app.
+            if cfg!(any(windows, target_os = "macos")) && !cfg!(debug_assertions) {
+                let splash = create_splash(&handle)?;
+                tauri::async_runtime::spawn(async move {
+                    startup_update(&handle, &splash).await;
+                    open_main(&handle);
+                    let _ = splash.close();
+                });
+            } else {
+                open_main(&handle);
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

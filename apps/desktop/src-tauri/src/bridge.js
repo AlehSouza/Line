@@ -8,6 +8,8 @@
   const ua = navigator.userAgent;
   window.line = {
     isDesktop: true,
+    /** Versão instalada do app (o Rust troca o marcador ao abrir a janela). */
+    version: '__LINE_VERSION__',
     platform: ua.includes('Windows') ? 'win32' : ua.includes('Mac') ? 'darwin' : 'linux',
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),

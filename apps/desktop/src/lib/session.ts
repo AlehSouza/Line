@@ -362,6 +362,7 @@ declare global {
   interface Window {
     line?: {
       isDesktop: boolean;
+      version?: string;
       platform: string;
       requestAttention: () => void;
       setBadge: (count: number) => void;
