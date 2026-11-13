@@ -1,6 +1,6 @@
 'use client';
 
-import type { Category, Channel, Friend, Member, Message, Presence, PublicUser, SelfUser, Server } from '@line/shared';
+import { ALL_PERMS, hasPerm, Perm, type Category, type Channel, type Friend, type Member, type Message, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
 import { create } from 'zustand';
 
 export type View =
@@ -13,7 +13,8 @@ export type Modal =
   | { kind: 'create-channel'; serverId: string; categoryId: string | null }
   | { kind: 'create-category'; serverId: string }
   | { kind: 'edit-category'; categoryId: string }
-  | { kind: 'server-settings'; serverId: string }
+  | { kind: 'server-settings'; serverId: string; section?: 'overview' | 'roles' }
+  | { kind: 'nickname'; serverId: string; userId: string }
   | { kind: 'invite'; serverId: string }
   | { kind: 'profile' }
   | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' }
@@ -36,7 +37,10 @@ interface MemberRef {
   userId: string;
   nickname: string | null;
   joinedAt: string;
+  roleIds: string[];
 }
+
+const memberRef = (m: Member): MemberRef => ({ userId: m.user.id, nickname: m.nickname, joinedAt: m.joinedAt, roleIds: m.roleIds ?? [] });
 
 export interface LineState {
   serverUrl: string;
@@ -52,6 +56,8 @@ export interface LineState {
   categories: Record<string, Category>;
   channels: Record<string, Channel>;
   members: Record<string, Record<string, MemberRef>>;
+  /** Cargos de cada servidor, do mais alto ao mais baixo (o @everyone por último). */
+  roles: Record<string, Role[]>;
   dmOrder: string[];
   friends: Record<string, Friend>;
   messages: Record<string, MessageBucket>;
@@ -79,6 +85,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   categories: {},
   channels: {},
   members: {},
+  roles: {},
   dmOrder: [],
   friends: {},
   messages: {},
@@ -155,7 +162,7 @@ export const actions = {
     });
   },
 
-  loadServerDetail(serverId: string, categories: Category[], channels: Channel[], members: Member[]) {
+  loadServerDetail(serverId: string, categories: Category[], channels: Channel[], members: Member[], roles: Role[] = []) {
     actions.upsertUsers(members.map((m) => m.user));
     set((s) => ({
       loadedServers: { ...s.loadedServers, [serverId]: true },
@@ -169,11 +176,14 @@ export const actions = {
       },
       members: {
         ...s.members,
-        [serverId]: Object.fromEntries(
-          members.map((m) => [m.user.id, { userId: m.user.id, nickname: m.nickname, joinedAt: m.joinedAt }]),
-        ),
+        [serverId]: Object.fromEntries(members.map((m) => [m.user.id, memberRef(m)])),
       },
+      roles: { ...s.roles, [serverId]: roles },
     }));
+  },
+
+  setRoles(serverId: string, roles: Role[]) {
+    set((s) => ({ roles: { ...s.roles, [serverId]: roles } }));
   },
 
   upsertMember(member: Member) {
@@ -183,7 +193,7 @@ export const actions = {
         ...s.members,
         [member.serverId]: {
           ...s.members[member.serverId],
-          [member.user.id]: { userId: member.user.id, nickname: member.nickname, joinedAt: member.joinedAt },
+          [member.user.id]: memberRef(member),
         },
       },
     }));
@@ -444,4 +454,79 @@ export function dmTitle(channel: Channel, meId: string | undefined, users: Recor
   const others = (channel.recipients ?? []).filter((r) => r.id !== meId);
   if (!others.length) return 'Só você';
   return others.map((r) => users[r.id]?.displayName ?? r.displayName).join(', ');
+}
+
+// ---------- cargos e permissões ----------
+
+/** Permissões de alguém no servidor (mesma conta do servidor: @everyone + cargos; dono e admin = tudo). */
+export function permsOf(s: LineState, serverId: string | null | undefined, userId: string | undefined): number {
+  if (!serverId || !userId) return ALL_PERMS;
+  const server = s.servers[serverId];
+  if (server?.ownerId === userId) return ALL_PERMS;
+  const roles = s.roles[serverId] ?? [];
+  const mine = s.members[serverId]?.[userId]?.roleIds ?? [];
+  let p = roles.find((r) => r.id === serverId)?.permissions ?? 0;
+  for (const r of roles) if (mine.includes(r.id)) p |= r.permissions;
+  return hasPerm(p, Perm.Administrator) ? ALL_PERMS : p;
+}
+
+/** Minhas permissões no servidor (fora de servidor, tudo). */
+export function useMyPerms(serverId: string | null | undefined): number {
+  return useLine((s) => permsOf(s, serverId, s.me?.id));
+}
+
+export function useCan(serverId: string | null | undefined, flag: number): boolean {
+  return useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), flag));
+}
+
+/** Cor do cargo mais alto (com cor) da pessoa no servidor. */
+export function memberColor(s: LineState, serverId: string | null | undefined, userId: string): string | undefined {
+  if (!serverId) return undefined;
+  const mine = s.members[serverId]?.[userId]?.roleIds;
+  if (!mine?.length) return undefined;
+  return (s.roles[serverId] ?? []).find((r) => r.color && mine.includes(r.id))?.color ?? undefined;
+}
+
+export function useMemberColor(serverId: string | null | undefined, userId: string): string | undefined {
+  return useLine((s) => memberColor(s, serverId, userId));
+}
+
+/** Posição do cargo mais alto (dono = infinito). */
+export function topPosition(s: LineState, serverId: string, userId: string | undefined): number {
+  if (!userId) return 0;
+  if (s.servers[serverId]?.ownerId === userId) return Infinity;
+  const mine = s.members[serverId]?.[userId]?.roleIds ?? [];
+  return Math.max(0, ...(s.roles[serverId] ?? []).filter((r) => mine.includes(r.id)).map((r) => r.position));
+}
+
+/** Troca `<@&id>` por `@Nome do cargo` (para notificações e para editar mensagens). */
+export function mentionsToText(content: string, serverId: string | null | undefined): string {
+  if (!serverId || !content.includes('<@&')) return content;
+  const roles = get().roles[serverId] ?? [];
+  return content.replace(/<@&([\w-]+)>/g, (all, id: string) => {
+    const r = roles.find((x) => x.id === id);
+    return r ? `@${r.name}` : all;
+  });
+}
+
+/** O contrário: `@Nome do cargo` digitado vira `<@&id>` (nomes mais longos primeiro). */
+export function textToMentions(content: string, serverId: string | null | undefined): string {
+  if (!serverId) return content;
+  const roles = (get().roles[serverId] ?? []).filter((r) => r.id !== serverId).sort((a, b) => b.name.length - a.name.length);
+  let out = content;
+  for (const r of roles) {
+    const esc = r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`(^|[^\\w<&])@${esc}(?![\\w])`, 'gu'), (_m, pre: string) => `${pre}<@&${r.id}>`);
+  }
+  return out;
+}
+
+/** Nome mostrado dentro do servidor: o apelido de lá, senão o nome de exibição. */
+export function displayNameIn(s: LineState, serverId: string | null | undefined, userId: string): string {
+  const nick = serverId ? s.members[serverId]?.[userId]?.nickname : null;
+  return nick || s.users[userId]?.displayName || 'Alguém';
+}
+
+export function useDisplayName(serverId: string | null | undefined, userId: string): string {
+  return useLine((s) => displayNameIn(s, serverId, userId));
 }

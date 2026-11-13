@@ -5,6 +5,7 @@ import type {
   Member,
   Message,
   Presence,
+  Role,
   PublicUser,
   SelfUser,
   Server,
@@ -27,6 +28,10 @@ export interface ServerToClientEvents {
   'server:delete': (payload: { id: string }) => void;
   'member:add': (member: Member) => void;
   'member:remove': (payload: { serverId: string; userId: string }) => void;
+  /** Cargos de um membro mudaram. */
+  'member:update': (member: Member) => void;
+  /** Lista completa de cargos do servidor (criou, editou, excluiu ou reordenou). */
+  'roles:update': (payload: { serverId: string; roles: Role[] }) => void;
   'channel:create': (channel: Channel) => void;
   'channel:update': (channel: Channel) => void;
   'channel:delete': (payload: { id: string; serverId: string | null }) => void;

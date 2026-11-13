@@ -6,8 +6,10 @@ import type {
   CreateChannelInput,
   CreateServerInput,
   Friend,
+  Member,
   Message,
   PublicUser,
+  Role,
   SelfUser,
   Server,
   ServerDetail,
@@ -136,6 +138,16 @@ export const api = {
   joinPublic: (id: string) => request<Server>('POST', `/servers/${enc(id)}/join`),
   resetInvite: (id: string) => request<Server>('POST', `/servers/${enc(id)}/invite/reset`),
   kick: (serverId: string, userId: string) => request<void>('DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}`),
+  setNickname: (serverId: string, userId: string, nickname: string | null) =>
+    request<Member>('PATCH', `/servers/${enc(serverId)}/members/${enc(userId)}`, { nickname }),
+  createRole: (serverId: string, input: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean }) =>
+    request<Role>('POST', `/servers/${enc(serverId)}/roles`, input),
+  updateRole: (id: string, patch: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean }) =>
+    request<Role>('PATCH', `/roles/${enc(id)}`, patch),
+  deleteRole: (id: string) => request<void>('DELETE', `/roles/${enc(id)}`),
+  reorderRoles: (serverId: string, roleIds: string[]) => request<Role[]>('PUT', `/servers/${enc(serverId)}/roles/order`, { roleIds }),
+  setMemberRole: (serverId: string, userId: string, roleId: string, on: boolean) =>
+    request<Member>(on ? 'PUT' : 'DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}/roles/${enc(roleId)}`),
   invite: (code: string) => request<Server>('GET', `/invites/${enc(code)}`),
   acceptInvite: (code: string) => request<Server>('POST', `/invites/${enc(code)}`),
 

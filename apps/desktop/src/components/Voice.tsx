@@ -2,7 +2,7 @@
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { actions, dmTitle, useLine } from '@/lib/store';
+import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
 import {
   clearVoiceError,
   type Fps,
@@ -113,7 +113,8 @@ function useTiles(channelId: string) {
 
 function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?: () => void }) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
-  const name = tile.user?.displayName ?? 'Alguém';
+  const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
+  const name = nick || tile.user?.displayName || 'Alguém';
   return (
     <button
       onClick={onClick}
@@ -932,6 +933,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
   const speaking = useVoice((v) => v.speaking);
   const myChannel = useVoice((v) => v.channelId);
   const users = useLine((s) => s.users);
+  useLine((s) => s.members); // apelidos
   const list = participants(states, channelId);
   const canInvite = !!serverId && myChannel === channelId;
   const [menu, setMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
@@ -961,7 +963,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
                 <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-accent" />
               )}
             </span>
-            <span className="flex-1 truncate">{u?.displayName ?? 'Alguém'}</span>
+            <span className="flex-1 truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
               {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
               {p.cameraStreamId && <Icons.Video size={15} />}

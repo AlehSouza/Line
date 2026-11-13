@@ -10,6 +10,7 @@ pub mod errors;
 pub mod gateway;
 pub mod ids;
 pub mod model;
+pub mod perms;
 pub mod presence;
 pub mod routes;
 pub mod store;

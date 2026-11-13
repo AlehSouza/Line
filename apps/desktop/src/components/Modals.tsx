@@ -1,12 +1,14 @@
 'use client';
 
 import { ProfileEditor } from './ProfileEditor';
+import { NicknameDialog, ServerSettings } from './ServerSettings';
 import { UserCard } from './UserCard';
 import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { actions, useLine, type Modal as ModalState } from '@/lib/store';
+import { hasPerm, Perm } from '@line/shared';
+import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
@@ -26,8 +28,10 @@ export function Modals() {
       return <CreateCategoryModal serverId={modal.serverId} onClose={close} />;
     case 'edit-category':
       return <EditCategoryModal categoryId={modal.categoryId} onClose={close} />;
+    case 'nickname':
+      return <NicknameDialog serverId={modal.serverId} userId={modal.userId} onClose={close} />;
     case 'server-settings':
-      return <ServerSettingsModal serverId={modal.serverId} onClose={close} />;
+      return <ServerSettings serverId={modal.serverId} initial={modal.section} onClose={close} />;
     case 'invite':
       return <InviteModal serverId={modal.serverId} onClose={close} />;
     case 'profile':
@@ -145,6 +149,8 @@ function CreateChannelModal({
   const [name, setName] = useState('');
   const [isPrivate, setIsPrivate] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [roleIds, setRoleIds] = useState<string[]>([]);
+  const serverRoles = useLine((s) => s.roles[modal.serverId]);
   const category = useLine((s) => (modal.categoryId ? s.categories[modal.categoryId] : undefined));
   const server = useLine((s) => s.servers[modal.serverId]);
   const memberRefs = useLine((s) => s.members[modal.serverId]);
@@ -158,6 +164,8 @@ function CreateChannelModal({
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
   const toggleMember = (id: string) =>
     setMemberIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const toggleRole = (id: string) => setRoleIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const roles = (serverRoles ?? []).filter((r) => r.id !== modal.serverId);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -166,7 +174,7 @@ function CreateChannelModal({
         name,
         type,
         categoryId: modal.categoryId,
-        ...(isPrivate ? { isPrivate: true, memberIds } : {}),
+        ...(isPrivate ? { isPrivate: true, memberIds, roleIds } : {}),
       });
       actions.upsertChannel(channel);
       if (channel.type === 'text') actions.goServer(modal.serverId, channel.id);
@@ -246,9 +254,20 @@ function CreateChannelModal({
               <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', isPrivate ? 'left-[22px]' : 'left-0.5')} />
             </button>
           </div>
-          <p className="mt-1 text-sm text-muted">Somente os membros selecionados poderão visualizar esse canal.</p>
+          <p className="mt-1 text-sm text-muted">Somente os cargos e membros selecionados (e os administradores) poderão ver esse canal.</p>
           {isPrivate && (
-            <div className="mt-3 max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+            <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+              {roles.length > 0 && <p className="px-2 pt-1 pb-0.5 text-xs font-bold text-muted uppercase">Cargos</p>}
+              {roles.map((r) => (
+                <label key={r.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
+                  <span className="flex h-7 w-7 items-center justify-center" style={{ color: r.color ?? '#99aab5' }}>
+                    <Icons.Shield size={18} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.name}</span>
+                  <Checkbox checked={roleIds.includes(r.id)} onChange={() => toggleRole(r.id)} />
+                </label>
+              ))}
+              {roles.length > 0 && <p className="px-2 pt-2 pb-0.5 text-xs font-bold text-muted uppercase">Membros</p>}
               {members.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">Ainda não há outros membros no servidor.</p>}
               {members.map((u) => (
                 <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
@@ -492,10 +511,10 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
   );
 }
 
-function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose: () => void }) {
+export function ServerOverview({ serverId, onClose }: { serverId: string; onClose: () => void }) {
   const server = useLine((s) => s.servers[serverId]);
-  const members = useLine((s) => s.members[serverId]);
-  const users = useLine((s) => s.users);
+  const isOwner = useLine((s) => s.me?.id === s.servers[serverId]?.ownerId);
+  const [saved, setSaved] = useState(false);
   const [name, setName] = useState(server?.name ?? '');
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
@@ -508,54 +527,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
   const uploading = icon.uploading || banner.uploading;
 
   return (
-    <Modal
-      title="Configurações do servidor"
-      onClose={onClose}
-      width={520}
-      footer={
-        <>
-          <Button
-            variant="danger"
-            className="mr-auto"
-            onClick={() => {
-              if (prompt(`Para excluir, digite o nome do servidor: ${server.name}`) === server.name) {
-                run(async () => {
-                  await api.deleteServer(server.id);
-                  actions.removeServer(server.id);
-                  onClose();
-                });
-              }
-            }}
-          >
-            Excluir servidor
-          </Button>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            disabled={busy || uploading}
-            onClick={() =>
-              run(async () => {
-                actions.upsertServer(
-                  await api.updateServer(server.id, {
-                    name,
-                    description,
-                    isPublic,
-                    iconColor: color,
-                    ...(icon.changed ? { iconId: icon.id } : {}),
-                    ...(banner.changed ? { bannerId: banner.id } : {}),
-                  }),
-                );
-                onClose();
-              })
-            }
-          >
-            {uploading ? 'Enviando imagem…' : 'Salvar'}
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
+    <div className="space-y-4">
         <ServerImages name={name} color={color} icon={icon} banner={banner} setIcon={setIcon} setBanner={setBanner} onError={setImageError} />
         <ErrorText>{imageError}</ErrorText>
         <Field label="Nome">
@@ -577,41 +549,54 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
           <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
-        <Field label={`Membros (${Object.keys(members ?? {}).length})`}>
-          <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-edge p-1">
-            {Object.values(members ?? {}).map((m) => {
-              const u = users[m.userId];
-              if (!u) return null;
-              return (
-                <div key={m.userId} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-hover">
-                  <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={24} />
-                  <span className="flex-1 truncate text-sm">
-                    {u.displayName} <span className="text-muted">@{u.username}</span>
-                  </span>
-                  {m.userId !== server.ownerId && (
-                    <button
-                      className="text-xs text-danger hover:underline"
-                      onClick={() => {
-                        if (confirm(`Expulsar ${u.displayName}?`)) run(() => api.kick(server.id, m.userId));
-                      }}
-                    >
-                      Expulsar
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Field>
         <ErrorText>{error}</ErrorText>
-      </div>
-    </Modal>
+        <div className="flex items-center justify-end gap-2 border-t border-edge pt-4">
+          {isOwner && (
+          <Button
+            variant="danger"
+            className="mr-auto"
+            onClick={() => {
+              if (prompt(`Para excluir, digite o nome do servidor: ${server.name}`) === server.name) {
+                run(async () => {
+                  await api.deleteServer(server.id);
+                  actions.removeServer(server.id);
+                  onClose();
+                });
+              }
+            }}
+          >
+            Excluir servidor
+          </Button>
+          )}
+          <Button
+            disabled={busy || uploading}
+            onClick={() =>
+              run(async () => {
+                actions.upsertServer(
+                  await api.updateServer(server.id, {
+                    name,
+                    description,
+                    isPublic,
+                    iconColor: color,
+                    ...(icon.changed ? { iconId: icon.id } : {}),
+                    ...(banner.changed ? { bannerId: banner.id } : {}),
+                  }),
+                );
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+              })
+            }
+          >
+            {uploading ? 'Enviando imagem…' : saved ? 'Salvo!' : 'Salvar alterações'}
+          </Button>
+        </div>
+    </div>
   );
 }
 
 function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => void }) {
   const server = useLine((s) => s.servers[serverId]);
-  const isOwner = useLine((s) => s.me?.id === s.servers[serverId]?.ownerId);
+  const isOwner = useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageServer));
   const [copied, setCopied] = useState(false);
   const { error, run } = useAction();
   if (!server) return null;

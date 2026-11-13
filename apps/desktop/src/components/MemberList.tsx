@@ -10,6 +10,9 @@ export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
   const users = useLine((s) => s.users);
   const ownerId = useLine((s) => s.servers[serverId]?.ownerId);
+  const roles = useLine((s) => s.roles[serverId]);
+  // Cor do cargo mais alto (com cor) de cada um.
+  const colorOf = (roleIds: string[]) => (roles ?? []).find((r) => r.color && roleIds.includes(r.id))?.color ?? undefined;
 
   const { online, offline } = useMemo(() => {
     const list = Object.values(members ?? {})
@@ -39,8 +42,8 @@ export function MemberList({ serverId }: { serverId: string }) {
           >
             <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
-              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: m.user.avatarColor }}>
-                {m.nickname ?? m.user.displayName}
+              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: colorOf(m.roleIds) }}>
+                {m.nickname || m.user.displayName}
                 {m.userId === ownerId && (
                   <span title="Dono do servidor" className="text-sun">
                     ★

@@ -5,6 +5,7 @@
 //! qualquer problema de concorrência no SQLite.
 use crate::ids::{new_id, new_invite_code, now_iso, random_color};
 use crate::model::*;
+use crate::perms;
 use crate::presence::PresenceTracker;
 use rusqlite::types::Value;
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
@@ -96,7 +97,8 @@ fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
 
 fn message_select() -> String {
     format!(
-        "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at
+        "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at,
+                m.mention_everyone, m.mention_roles
          FROM messages m JOIN users u ON u.id = m.author_id"
     )
 }
@@ -201,6 +203,14 @@ pub struct ServerPatch {
     pub icon_color: Option<String>,
     pub icon_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
+}
+
+#[derive(Default)]
+pub struct RolePatch {
+    pub name: Option<String>,
+    pub color: Option<Option<String>>,
+    pub permissions: Option<i64>,
+    pub mentionable: Option<bool>,
 }
 
 #[derive(Default)]
@@ -471,10 +481,21 @@ impl Q<'_> {
     }
 
     pub fn servers_of(&self, user_id: &str) -> Vec<Server> {
-        let mut st = ok(self.c.prepare_cached(&format!(
-            "{SERVER_SELECT} JOIN members me ON me.server_id = s.id AND me.user_id = ? ORDER BY me.joined_at"
-        )));
-        ok(ok(st.query_map([user_id], server_from_row)).collect())
+        let list: Vec<Server> = {
+            let mut st = ok(self.c.prepare_cached(&format!(
+                "{SERVER_SELECT} JOIN members me ON me.server_id = s.id AND me.user_id = ? ORDER BY me.joined_at"
+            )));
+            ok(ok(st.query_map([user_id], server_from_row)).collect())
+        };
+        list.into_iter().map(|s| self.for_viewer(s, user_id)).collect()
+    }
+
+    /// Esconde o código de convite de quem não tem "Criar convite".
+    pub fn for_viewer(&self, mut server: Server, viewer: &str) -> Server {
+        if !perms::has(self.permissions(&server.id, viewer), perms::CREATE_INVITE) {
+            server.invite_code = String::new();
+        }
+        server
     }
 
     pub fn server_ids_of(&self, user_id: &str) -> Vec<String> {
@@ -490,7 +511,8 @@ impl Q<'_> {
                AND (s.name LIKE ?2 OR s.description LIKE ?2)
              ORDER BY member_count DESC, s.created_at DESC LIMIT 50"
         )));
-        ok(ok(st.query_map(params![user_id, like], server_from_row)).collect())
+        let list: Vec<Server> = ok(ok(st.query_map(params![user_id, like], server_from_row)).collect());
+        list.into_iter().map(|s| Server { invite_code: String::new(), ..s }).collect()
     }
 
     pub fn create_server(
@@ -506,6 +528,10 @@ impl Q<'_> {
                 "INSERT INTO servers (id, name, description, icon_color, owner_id, is_public, invite_code, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 params![id, name, description, random_color(), owner_id, is_public as i64, new_invite_code(), now_iso()],
+            ));
+            ok(self.c.execute(
+                "INSERT INTO roles (id, server_id, name, permissions, position, created_at) VALUES (?, ?, '@everyone', ?, 0, ?)",
+                params![id, id, perms::DEFAULT_EVERYONE, now_iso()],
             ));
             self.add_member(&id, owner_id);
             let text = self.create_category(&id, "Canais de texto");
@@ -593,6 +619,7 @@ impl Q<'_> {
             user: self.public_user(user_id)?,
             nickname,
             joined_at,
+            role_ids: self.member_role_ids(server_id, user_id),
         })
     }
 
@@ -609,9 +636,22 @@ impl Q<'_> {
             ))
         }))
         .collect());
+        let mut roles: std::collections::HashMap<String, Vec<String>> = Default::default();
+        {
+            let mut st = ok(self.c.prepare_cached(
+                "SELECT mr.user_id, mr.role_id FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+                 WHERE mr.server_id = ? ORDER BY r.position DESC",
+            ));
+            let pairs: Vec<(String, String)> =
+                ok(ok(st.query_map([server_id], |r| Ok((r.get(0)?, r.get(1)?)))).collect());
+            for (u, r) in pairs {
+                roles.entry(u).or_default().push(r);
+            }
+        }
         rows.into_iter()
             .map(|(u, nickname, joined_at)| Member {
                 server_id: server_id.into(),
+                role_ids: roles.remove(&u.id).unwrap_or_default(),
                 user: self.to_public_user(&u),
                 nickname,
                 joined_at,
@@ -715,7 +755,7 @@ impl Q<'_> {
         category_id: Option<&str>,
         topic: &str,
     ) -> Channel {
-        self.create_channel_ex(server_id, name, kind, category_id, topic, None)
+        self.create_channel_ex(server_id, name, kind, category_id, topic, None, &[])
     }
 
     /// `private_members`: Some(lista) cria um canal privado visível só para eles (e o dono).
@@ -727,6 +767,7 @@ impl Q<'_> {
         category_id: Option<&str>,
         topic: &str,
         private_members: Option<&[String]>,
+        private_roles: &[String],
     ) -> Channel {
         let id = new_id();
         let n: i64 = ok(self.c.query_row(
@@ -744,6 +785,14 @@ impl Q<'_> {
                 "INSERT OR IGNORE INTO channel_recipients (channel_id, user_id) VALUES (?, ?)",
                 params![id, user_id],
             ));
+        }
+        if private_members.is_some() {
+            for role_id in private_roles {
+                ok(self.c.execute(
+                    "INSERT OR IGNORE INTO channel_roles (channel_id, role_id) VALUES (?, ?)",
+                    params![id, role_id],
+                ));
+            }
         }
         self.channel(&id).unwrap()
     }
@@ -767,64 +816,278 @@ impl Q<'_> {
         ok(self.c.execute("DELETE FROM channels WHERE id = ?", [id]));
     }
 
-    /// Quem enxerga o canal: membro do servidor ou participante da DM.
+    /// Quem enxerga o canal. DM: os participantes. Servidor: canal privado só para quem foi
+    /// escolhido (pessoa ou cargo); canal aberto para quem tem "Ver canais". Dono e
+    /// administradores veem tudo. Threads seguem o canal pai.
     pub fn can_access(&self, user_id: &str, channel_id: &str) -> bool {
-        let row: Option<Option<String>> = ok(self
+        let row: Option<(Option<String>, String, bool)> = ok(self
             .c
             .query_row(
-                "SELECT server_id FROM channels WHERE id = ?",
+                "SELECT r.server_id, r.id, r.is_private FROM channels r
+                 WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
             )
             .optional());
         match row {
             None => false,
-            Some(Some(server_id)) => {
-                self.is_member(&server_id, user_id)
-                    && self
-                        .private_audience(channel_id)
-                        .is_none_or(|ids| ids.iter().any(|u| u == user_id))
+            Some((None, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((Some(server_id), root, is_private)) => {
+                if !self.is_member(&server_id, user_id) {
+                    return false;
+                }
+                let p = self.permissions(&server_id, user_id);
+                if perms::has(p, perms::ADMINISTRATOR) {
+                    return true;
+                }
+                if !is_private {
+                    return perms::has(p, perms::VIEW_CHANNELS);
+                }
+                ok(self
+                    .c
+                    .query_row(
+                        "SELECT 1 WHERE EXISTS (SELECT 1 FROM channel_recipients WHERE channel_id = ?1 AND user_id = ?2)
+                            OR EXISTS (SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id = cr.role_id
+                                       WHERE cr.channel_id = ?1 AND mr.user_id = ?2)",
+                        [&root, user_id],
+                        |_| Ok(()),
+                    )
+                    .optional())
+                .is_some()
             }
-            Some(None) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
         }
     }
 
-    /// Quem enxerga um canal privado (ou uma thread de canal privado): o dono do servidor e os
-    /// membros escolhidos que ainda estão no servidor. None = canal aberto a todo o servidor.
+    /// Quem enxerga um canal de servidor, quando não é o servidor inteiro (canal privado ou
+    /// @everyone sem "Ver canais"). None = todos os membros veem (pode usar a sala do servidor).
     pub fn private_audience(&self, channel_id: &str) -> Option<Vec<String>> {
-        let (root, server_id): (String, String) = ok(self
+        let (server_id, is_private): (String, bool) = ok(self
             .c
             .query_row(
-                "SELECT c.id, c.server_id FROM channels c
-                 WHERE c.is_private = 1 AND c.server_id IS NOT NULL
-                   AND c.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
+                "SELECT r.server_id, r.is_private FROM channels r
+                 WHERE r.server_id IS NOT NULL
+                   AND r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
             )
             .optional())?;
-        let mut ids = self.ids(
-            "SELECT r.user_id FROM channel_recipients r
-             JOIN members m ON m.user_id = r.user_id AND m.server_id = (SELECT server_id FROM channels WHERE id = r.channel_id)
-             WHERE r.channel_id = ?",
-            [root.as_str()],
-        );
-        if let Some(s) = self.server(&server_id)
-            && !ids.contains(&s.owner_id)
-        {
-            ids.push(s.owner_id);
+        if !is_private && perms::has(self.everyone_permissions(&server_id), perms::VIEW_CHANNELS) {
+            return None;
         }
-        Some(ids)
+        Some(
+            self.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id.as_str()])
+                .into_iter()
+                .filter(|u| self.can_access(u, channel_id))
+                .collect(),
+        )
     }
 
     /// Canais (e threads) do servidor que essa pessoa não pode ver.
     pub fn hidden_channel_ids(&self, server_id: &str, user_id: &str) -> Vec<String> {
-        self.ids(
-            "SELECT id FROM channels WHERE server_id = ? AND (is_private = 1 OR parent_id IN (SELECT id FROM channels WHERE is_private = 1))",
+        self.ids("SELECT id FROM channels WHERE server_id = ?", [server_id])
+            .into_iter()
+            .filter(|id| !self.can_access(user_id, id))
+            .collect()
+    }
+
+    // ---------- cargos e permissões ----------
+
+    fn role_rows(&self, sql: &str, p: impl rusqlite::Params) -> Vec<Role> {
+        let mut st = ok(self.c.prepare_cached(sql));
+        ok(ok(st.query_map(p, |r| {
+            Ok(Role {
+                id: r.get("id")?,
+                server_id: r.get("server_id")?,
+                name: r.get("name")?,
+                color: r.get("color")?,
+                permissions: r.get("permissions")?,
+                position: r.get("position")?,
+                mentionable: r.get::<_, i64>("mentionable")? != 0,
+                member_count: r.get("member_count")?,
+            })
+        }))
+        .collect())
+    }
+
+    /// Cargos do servidor, do mais alto para o mais baixo (o @everyone por último).
+    pub fn roles(&self, server_id: &str) -> Vec<Role> {
+        self.role_rows(
+            "SELECT r.*, CASE WHEN r.id = r.server_id THEN (SELECT COUNT(*) FROM members m WHERE m.server_id = r.server_id)
+                    ELSE (SELECT COUNT(*) FROM member_roles mr WHERE mr.role_id = r.id) END AS member_count
+             FROM roles r WHERE r.server_id = ? ORDER BY r.position DESC, r.created_at",
             [server_id],
         )
-        .into_iter()
-        .filter(|id| !self.can_access(user_id, id))
-        .collect()
+    }
+
+    pub fn role(&self, id: &str) -> Option<Role> {
+        self.role_rows(
+            "SELECT r.*, (SELECT COUNT(*) FROM member_roles mr WHERE mr.role_id = r.id) AS member_count
+             FROM roles r WHERE r.id = ?",
+            [id],
+        )
+        .pop()
+    }
+
+    /// Novo cargo entra logo acima do @everyone (posição 1); os outros sobem uma casa.
+    pub fn create_role(&self, server_id: &str, name: &str, color: Option<&str>, permissions: i64, mentionable: bool) -> Role {
+        let id = new_id();
+        self.tx(|| {
+            ok(self.c.execute(
+                "UPDATE roles SET position = position + 1 WHERE server_id = ? AND position >= 1",
+                [server_id],
+            ));
+            ok(self.c.execute(
+                "INSERT INTO roles (id, server_id, name, color, permissions, position, mentionable, created_at)
+                 VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
+                params![id, server_id, name, color, permissions, mentionable as i64, now_iso()],
+            ));
+        });
+        self.role(&id).unwrap()
+    }
+
+    pub fn update_role(&self, id: &str, patch: RolePatch) -> Role {
+        let r = self.role(id).unwrap();
+        ok(self.c.execute(
+            "UPDATE roles SET name = ?, color = ?, permissions = ?, mentionable = ? WHERE id = ?",
+            params![
+                patch.name.unwrap_or(r.name),
+                patch.color.unwrap_or(r.color),
+                patch.permissions.unwrap_or(r.permissions),
+                patch.mentionable.unwrap_or(r.mentionable) as i64,
+                id
+            ],
+        ));
+        self.role(id).unwrap()
+    }
+
+    pub fn delete_role(&self, id: &str) {
+        ok(self.c.execute("DELETE FROM roles WHERE id = ?", [id]));
+    }
+
+    /// Grava a nova ordem: `top_first` lista os cargos (sem o @everyone) do mais alto ao mais baixo.
+    pub fn reorder_roles(&self, server_id: &str, top_first: &[String]) {
+        let n = top_first.len() as i64;
+        self.tx(|| {
+            for (i, id) in top_first.iter().enumerate() {
+                ok(self.c.execute(
+                    "UPDATE roles SET position = ? WHERE id = ? AND server_id = ? AND id != server_id",
+                    params![n - i as i64, id, server_id],
+                ));
+            }
+        });
+    }
+
+    pub fn member_role_ids(&self, server_id: &str, user_id: &str) -> Vec<String> {
+        self.ids(
+            "SELECT mr.role_id FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+             WHERE mr.server_id = ? AND mr.user_id = ? ORDER BY r.position DESC",
+            [server_id, user_id],
+        )
+    }
+
+    pub fn set_member_role(&self, server_id: &str, user_id: &str, role_id: &str, on: bool) {
+        if on {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO member_roles (server_id, user_id, role_id) VALUES (?, ?, ?)",
+                [server_id, user_id, role_id],
+            ));
+        } else {
+            ok(self.c.execute(
+                "DELETE FROM member_roles WHERE role_id = ? AND user_id = ?",
+                [role_id, user_id],
+            ));
+        }
+    }
+
+    /// Quem tem o cargo (para avisar sobre menções e mostrar em "Gerenciar membros").
+    pub fn set_nickname(&self, server_id: &str, user_id: &str, nickname: Option<&str>) {
+        ok(self.c.execute(
+            "UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?",
+            params![nickname, server_id, user_id],
+        ));
+    }
+
+    pub fn member_ids(&self, server_id: &str) -> Vec<String> {
+        self.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id])
+    }
+
+    pub fn role_member_ids(&self, role_id: &str) -> Vec<String> {
+        self.ids("SELECT user_id FROM member_roles WHERE role_id = ?", [role_id])
+    }
+
+    pub fn everyone_permissions(&self, server_id: &str) -> i64 {
+        ok(self
+            .c
+            .query_row("SELECT permissions FROM roles WHERE id = ?", [server_id], |r| r.get(0))
+            .optional())
+        .unwrap_or(perms::DEFAULT_EVERYONE)
+    }
+
+    /// Permissões da pessoa no servidor (0 se não for membro).
+    pub fn permissions(&self, server_id: &str, user_id: &str) -> i64 {
+        let owner: Option<String> = ok(self
+            .c
+            .query_row("SELECT owner_id FROM servers WHERE id = ?", [server_id], |r| r.get(0))
+            .optional());
+        if owner.as_deref() == Some(user_id) {
+            return perms::ALL;
+        }
+        if !self.is_member(server_id, user_id) {
+            return 0;
+        }
+        let mut p = self.everyone_permissions(server_id);
+        let list: Vec<i64> = {
+            let mut st = ok(self.c.prepare_cached(
+                "SELECT r.permissions FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+                 WHERE mr.server_id = ? AND mr.user_id = ?",
+            ));
+            ok(ok(st.query_map([server_id, user_id], |r| r.get::<_, i64>(0))).collect())
+        };
+        for x in list {
+            p |= x;
+        }
+        if perms::has(p, perms::ADMINISTRATOR) { perms::ALL } else { p & perms::ALL }
+    }
+
+    /// Posição do cargo mais alto da pessoa (dono = acima de tudo).
+    pub fn top_position(&self, server_id: &str, user_id: &str) -> i64 {
+        if self.server(server_id).is_some_and(|s| s.owner_id == user_id) {
+            return i64::MAX;
+        }
+        ok(self.c.query_row(
+            "SELECT COALESCE(MAX(r.position), 0) FROM member_roles mr JOIN roles r ON r.id = mr.role_id
+             WHERE mr.server_id = ? AND mr.user_id = ?",
+            [server_id, user_id],
+            |r| r.get(0),
+        ))
+    }
+
+    /// Quais menções da mensagem valem: @everyone/@here só com permissão; cargo só se for
+    /// mencionável ou se quem mandou puder mencionar todos. Fora de servidor, nenhuma.
+    fn resolve_mentions(&self, channel_id: &str, author_id: &str, content: &str) -> (bool, String) {
+        let Some(server_id) = self.channel(channel_id).and_then(|c| c.server_id) else {
+            return (false, String::new());
+        };
+        let p = self.permissions(&server_id, author_id);
+        let can_all = perms::has(p, perms::MENTION_EVERYONE);
+        let everyone = can_all
+            && content
+                .split(|c: char| !(c.is_alphanumeric() || c == '@'))
+                .any(|w| w == "@everyone" || w == "@here");
+        let mut roles: Vec<String> = Vec::new();
+        for part in content.split("<@&").skip(1) {
+            let Some((id, _)) = part.split_once('>') else { continue };
+            if roles.iter().any(|r| r == id) || id == server_id {
+                continue;
+            }
+            if let Some(role) = self.role(id)
+                && role.server_id == server_id
+                && (role.mentionable || can_all)
+            {
+                roles.push(role.id);
+            }
+        }
+        (everyone, roles.join(","))
     }
 
     // ---------- DMs ----------
@@ -927,6 +1190,13 @@ impl Q<'_> {
                     thread: None,
                     poll: None,
                     reactions: Vec::new(),
+                    mention_everyone: r.get::<_, i64>("mention_everyone")? != 0,
+                    mention_role_ids: r
+                        .get::<_, String>("mention_roles")?
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect(),
                 };
                 Ok((user, msg))
             }))
@@ -1041,10 +1311,12 @@ impl Q<'_> {
     pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str, attachment_ids: &[String]) -> Message {
         let id = new_id();
         let at = now_iso();
+        let (everyone, roles) = self.resolve_mentions(channel_id, author_id, content);
         self.tx(|| {
             ok(self.c.execute(
-                "INSERT INTO messages (id, channel_id, author_id, content, created_at) VALUES (?, ?, ?, ?, ?)",
-                params![id, channel_id, author_id, content, at],
+                "INSERT INTO messages (id, channel_id, author_id, content, created_at, mention_everyone, mention_roles)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![id, channel_id, author_id, content, at, everyone as i64, roles],
             ));
             ok(self.c.execute("UPDATE channels SET last_message_at = ? WHERE id = ?", [&at, channel_id]));
             for (pos, a) in attachment_ids.iter().enumerate() {
@@ -1285,9 +1557,11 @@ impl Q<'_> {
     }
 
     pub fn edit_message(&self, id: &str, content: &str) -> Message {
+        let old = self.message(id).unwrap();
+        let (everyone, roles) = self.resolve_mentions(&old.channel_id, &old.author.id, content);
         ok(self.c.execute(
-            "UPDATE messages SET content = ?, edited_at = ? WHERE id = ?",
-            params![content, now_iso(), id],
+            "UPDATE messages SET content = ?, edited_at = ?, mention_everyone = ?, mention_roles = ? WHERE id = ?",
+            params![content, now_iso(), everyone as i64, roles, id],
         ));
         self.message(id).unwrap()
     }

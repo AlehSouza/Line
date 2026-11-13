@@ -3,7 +3,7 @@
 import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/shared';
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
-import { actions, currentChannelId, dmTitle, useLine, type View } from './store';
+import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
 import { bindVoiceSocket, unbindVoice } from './voice';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
@@ -133,7 +133,7 @@ export async function ensureServerLoaded(serverId: string, force = false) {
   if (!force && useLine.getState().loadedServers[serverId]) return;
   const detail = await api.server(serverId);
   actions.upsertServer(detail.server);
-  actions.loadServerDetail(serverId, detail.categories, detail.channels, detail.members);
+  actions.loadServerDetail(serverId, detail.categories, detail.channels, detail.members, detail.roles);
 }
 
 /** Abre o canal (ou a thread) da mensagem e rola até ela. */
@@ -217,6 +217,15 @@ function connectSocket() {
     const srv = useLine.getState().servers[serverId];
     if (srv) actions.upsertServer({ ...srv, memberCount: Math.max(0, srv.memberCount - 1) });
   });
+  s.on('member:update', (m) => {
+    actions.upsertMember(m);
+    // Meus cargos mudaram: os canais que eu vejo podem ter mudado.
+    if (m.user.id === useLine.getState().me?.id) refreshServer(m.serverId);
+  });
+  s.on('roles:update', ({ serverId, roles }) => {
+    actions.setRoles(serverId, roles);
+    refreshServer(serverId);
+  });
   s.on('channel:create', (c) => actions.upsertChannel(c));
   s.on('channel:update', (c) => actions.upsertChannel(c));
   s.on('channel:delete', ({ id }) => actions.removeChannel(id));
@@ -225,6 +234,35 @@ function connectSocket() {
   s.on('category:delete', ({ id }) => actions.removeCategory(id));
   s.on('friend:update', (f) => actions.upsertFriend(f));
   s.on('friend:remove', ({ userId }) => actions.removeFriend(userId));
+}
+
+/** Recarrega canais e convite depois de mudar cargo ou permissão (agrupa rajadas de eventos). */
+const refreshTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function refreshServer(serverId: string) {
+  if (!useLine.getState().loadedServers[serverId]) return;
+  clearTimeout(refreshTimers[serverId]);
+  refreshTimers[serverId] = setTimeout(() => {
+    void ensureServerLoaded(serverId, true)
+      .then(() => {
+        // Se perdi acesso ao canal aberto, volta para o primeiro que ainda vejo.
+        const st = useLine.getState();
+        if (st.view.kind === 'server' && st.view.serverId === serverId && st.view.channelId && !st.channels[st.view.channelId])
+          actions.goServer(serverId, firstTextChannel(st, serverId));
+      })
+      .catch(() => {});
+  }, 300);
+}
+
+/** A mensagem me menciona? (@meu_usuario, @everyone/@here válido ou um cargo que eu tenho). */
+export function mentionsMe(message: Message): boolean {
+  const st = useLine.getState();
+  const me = st.me;
+  if (!me || message.author.id === me.id) return false;
+  if (message.content.toLowerCase().includes(`@${me.username}`)) return true;
+  if (message.mentionEveryone) return true;
+  const serverId = st.channels[message.channelId]?.serverId;
+  const mine = serverId ? (st.members[serverId]?.[me.id]?.roleIds ?? []) : [];
+  return (message.mentionRoleIds ?? []).some((r) => mine.includes(r));
 }
 
 let firstReady = true;
@@ -257,7 +295,7 @@ function onMessage(message: Message) {
 
   const channel = state.channels[message.channelId];
   const isDm = !channel?.serverId;
-  const mentioned = state.me && message.content.toLowerCase().includes(`@${state.me.username}`);
+  const mentioned = mentionsMe(message);
   const dnd = state.me?.status === 'dnd';
   if (!viewing && !dnd && (isDm || mentioned)) notify(message);
 }
@@ -274,7 +312,7 @@ function notify(message: Message) {
   }
   window.line?.requestAttention();
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const body = (message.content && previewContent(message.content)) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
+  const body = (message.content && previewContent(mentionsToText(message.content, channel?.serverId))) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
   const n = new Notification(title, { body: body.slice(0, 200), silent: false });
   n.onclick = () => {
     window.focus();

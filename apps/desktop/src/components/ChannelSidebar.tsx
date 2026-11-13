@@ -1,9 +1,9 @@
 'use client';
 
-import type { Channel } from '@line/shared';
+import { hasPerm, Perm, type Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { fileUrl } from '@/lib/api';
-import { actions, useLine } from '@/lib/store';
+import { actions, permsOf, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
@@ -19,6 +19,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const openThreadId = useLine((s) => s.threadId);
   const loaded = useLine((s) => !!s.loadedServers[serverId]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const perms = useLine((s) => permsOf(s, serverId, s.me?.id));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const { categories, byCategory, loose, threads } = useMemo(() => {
@@ -45,6 +46,10 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
 
   if (!server) return null;
   const isOwner = me?.id === server.ownerId;
+  // "Gerenciar canais" libera criar/editar/excluir canais e categorias.
+  const canChannels = hasPerm(perms, Perm.ManageChannels);
+  const canSettings = hasPerm(perms, Perm.ManageServer) || hasPerm(perms, Perm.ManageRoles) || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
+  const canNick = hasPerm(perms, Perm.ChangeNickname) || hasPerm(perms, Perm.ManageNicknames);
 
   const renderChannel = (c: Channel) => {
     const active = c.id === activeId;
@@ -77,10 +82,10 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           {c.type === 'voice' && (
             <CallTimer
               channelId={c.id}
-              className={cx('pointer-events-none absolute top-1/2 right-2 -translate-y-1/2', isOwner && 'group-hover:hidden')}
+              className={cx('pointer-events-none absolute top-1/2 right-2 -translate-y-1/2', canChannels && 'group-hover:hidden')}
             />
           )}
-          {isOwner && (
+          {canChannels && (
             <button
               title="Excluir canal"
               onClick={async () => {
@@ -130,23 +135,45 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             className="absolute top-13 right-2 left-2 z-20 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-xl"
             onMouseLeave={() => setMenuOpen(false)}
           >
-            <MenuItem
-              icon={<Icons.Link size={16} />}
-              accent
-              onClick={() => actions.openModal({ kind: 'invite', serverId })}
-              close={() => setMenuOpen(false)}
-            >
-              Convidar pessoas
-            </MenuItem>
-            {isOwner && (
+            {hasPerm(perms, Perm.CreateInvite) && (
+              <MenuItem
+                icon={<Icons.Link size={16} />}
+                accent
+                onClick={() => actions.openModal({ kind: 'invite', serverId })}
+                close={() => setMenuOpen(false)}
+              >
+                Convidar pessoas
+              </MenuItem>
+            )}
+            {canSettings && (
+              <MenuItem
+                icon={<Icons.Settings size={16} />}
+                onClick={() => actions.openModal({ kind: 'server-settings', serverId })}
+                close={() => setMenuOpen(false)}
+              >
+                Config. do servidor
+              </MenuItem>
+            )}
+            {hasPerm(perms, Perm.ManageRoles) && (
+              <MenuItem
+                icon={<Icons.Shield size={16} />}
+                onClick={() => actions.openModal({ kind: 'server-settings', serverId, section: 'roles' })}
+                close={() => setMenuOpen(false)}
+              >
+                Cargos
+              </MenuItem>
+            )}
+            {canNick && me && (
+              <MenuItem
+                icon={<Icons.Edit size={16} />}
+                onClick={() => actions.openModal({ kind: 'nickname', serverId, userId: me.id })}
+                close={() => setMenuOpen(false)}
+              >
+                Alterar apelido
+              </MenuItem>
+            )}
+            {canChannels && (
               <>
-                <MenuItem
-                  icon={<Icons.Settings size={16} />}
-                  onClick={() => actions.openModal({ kind: 'server-settings', serverId })}
-                  close={() => setMenuOpen(false)}
-                >
-                  Configurações do servidor
-                </MenuItem>
                 <MenuItem
                   icon={<Icons.Plus size={16} />}
                   onClick={() => actions.openModal({ kind: 'create-channel', serverId, categoryId: null })}
@@ -194,7 +221,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 <Icons.Chevron size={12} className={cx('transition-transform', collapsed[cat.id] && '-rotate-90')} />
                 {cat.name}
               </button>
-              {isOwner && (
+              {canChannels && (
                 <span className="flex items-center gap-1.5">
                   <button
                     title="Editar categoria"
@@ -216,7 +243,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             {!collapsed[cat.id] && <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>}
           </div>
         ))}
-        {isOwner && loaded && (
+        {canChannels && loaded && (
           <button
             onClick={() => actions.openModal({ kind: 'create-category', serverId })}
             className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-bold tracking-wide text-muted uppercase hover:bg-hover hover:text-soft"

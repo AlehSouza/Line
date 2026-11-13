@@ -94,6 +94,22 @@ pub struct Member {
     pub user: PublicUser,
     pub nickname: Option<String>,
     pub joined_at: String,
+    /// Cargos da pessoa (sem o @everyone, que todo mundo tem).
+    pub role_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Role {
+    pub id: String,
+    pub server_id: String,
+    pub name: String,
+    pub color: Option<String>,
+    pub permissions: i64,
+    /// Maior = mais alto na lista. O @everyone fica sempre em 0.
+    pub position: i64,
+    pub mentionable: bool,
+    pub member_count: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -109,6 +125,10 @@ pub struct Message {
     /// Thread que começou nesta mensagem (se houver).
     pub thread: Option<ThreadSummary>,
     pub poll: Option<Poll>,
+    /// @everyone/@here que vale (quem mandou tinha permissão).
+    pub mention_everyone: bool,
+    /// Cargos mencionados que valem (o app avisa quem tem esses cargos).
+    pub mention_role_ids: Vec<String>,
     /// Reações agrupadas por emoji, na ordem em que cada emoji apareceu pela primeira vez.
     pub reactions: Vec<Reaction>,
 }
@@ -175,6 +195,7 @@ pub struct ServerDetail {
     pub categories: Vec<Category>,
     pub channels: Vec<Channel>,
     pub members: Vec<Member>,
+    pub roles: Vec<Role>,
 }
 
 #[derive(Serialize)]

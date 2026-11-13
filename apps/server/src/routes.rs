@@ -2,7 +2,8 @@
 use crate::errors::*;
 use crate::gateway::VoiceFilter;
 use crate::model::*;
-use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, SearchFilter, SearchScope, ServerPatch};
+use crate::perms::{self, has};
+use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, RolePatch, SearchFilter, SearchScope, ServerPatch};
 use crate::validate::{self, body};
 use crate::{App, VERSION, auth};
 use axum::body::{Body, Bytes};
@@ -81,10 +82,17 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/servers/{id}/leave", post(leave_server))
         .route(
             "/servers/{id}/members/{user_id}",
-            axum::routing::delete(kick_member),
+            axum::routing::delete(kick_member).patch(update_member),
         )
         .route("/servers/{id}/join", post(join_public))
         .route("/servers/{id}/channels", post(create_channel))
+        .route("/servers/{id}/roles", get(list_roles).post(create_role))
+        .route("/servers/{id}/roles/order", put(reorder_roles))
+        .route(
+            "/servers/{id}/members/{user_id}/roles/{role_id}",
+            put(add_member_role).delete(remove_member_role),
+        )
+        .route("/roles/{id}", axum::routing::patch(update_role).delete(delete_role))
         .route("/servers/{id}/categories", post(create_category))
         .route("/invites/{code}", get(get_invite).post(accept_invite))
         .route(
@@ -446,11 +454,19 @@ fn require_member(q: &Q, server_id: &str, user_id: &str) -> ApiResult<Server> {
     }
 }
 
-// Fase 1: só o dono gerencia. Cargos e permissões chegam na fase 3.
 fn require_owner(q: &Q, server_id: &str, user_id: &str) -> ApiResult<Server> {
     let server = require_member(q, server_id, user_id)?;
     if server.owner_id != user_id {
         return Err(forbidden("Só o dono do servidor pode fazer isso"));
+    }
+    Ok(server)
+}
+
+/// Membro com a permissão `flag` (dono e administradores sempre passam).
+fn require_perm(q: &Q, server_id: &str, user_id: &str, flag: i64) -> ApiResult<Server> {
+    let server = require_member(q, server_id, user_id)?;
+    if !has(q.permissions(server_id, user_id), flag) {
+        return Err(forbidden("Você não tem permissão para fazer isso"));
     }
     Ok(server)
 }
@@ -484,20 +500,21 @@ async fn get_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let server = require_member(&q, &id, &me)?;
     ok(ServerDetail {
+        roles: q.roles(&server.id),
         categories: q.categories(&server.id),
         channels: q
             .channels(&server.id)
             .into_iter()
-            .filter(|c| !c.is_private && c.parent_id.is_none() || q.can_access(&me, &c.id))
+            .filter(|c| q.can_access(&me, &c.id))
             .collect(),
         members: q.members(&server.id),
-        server,
+        server: q.for_viewer(server, &me),
     })
 }
 
 async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
-    require_owner(&q, &id, &me)?;
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
     for img in [&p.icon_id, &p.banner_id].into_iter().flatten().flatten() {
         if !q.own_image(&me, img) {
@@ -515,7 +532,7 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             banner_id: p.banner_id,
         },
     );
-    app.to_server(&server.id, "server:update", &server);
+    app.server_updated(&q, &server);
     ok(server)
 }
 
@@ -539,9 +556,9 @@ async fn delete_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res
 
 async fn reset_invite(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
-    require_owner(&q, &id, &me)?;
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let server = q.reset_invite(&id);
-    app.to_server(&server.id, "server:update", &server);
+    app.server_updated(&q, &server);
     ok(server)
 }
 
@@ -576,15 +593,192 @@ async fn leave_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res 
 
 async fn kick_member(State(app): S, Me(me): Me, Path((id, target)): Path<(String, String)>) -> Res {
     let q = app.store.q();
-    let server = require_owner(&q, &id, &me)?;
+    let server = require_perm(&q, &id, &me, perms::KICK_MEMBERS)?;
     if target == me {
         return Err(bad_request("Você não pode expulsar a si mesmo"));
     }
     if !q.is_member(&server.id, &target) {
         return Err(not_found("Membro"));
     }
+    if target == server.owner_id || q.top_position(&server.id, &target) >= q.top_position(&server.id, &me) {
+        return Err(forbidden("Você só pode expulsar quem tem cargos abaixo do seu"));
+    }
     remove_from_server(&app, &q, &server.id, &target);
     no_content()
+}
+
+/// Apelido no servidor: o próprio com "Alterar apelido"; o dos outros (abaixo do seu cargo)
+/// com "Gerenciar apelidos".
+async fn update_member(State(app): S, Me(me): Me, Path((id, target)): Path<(String, String)>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let server = require_member(&q, &id, &me)?;
+    let target = if target == "@me" { me.clone() } else { target };
+    if !q.is_member(&id, &target) {
+        return Err(not_found("Membro"));
+    }
+    let nickname = body::<validate::UpdateMember>(&b)?.check()?;
+    let p = q.permissions(&id, &me);
+    if target == me {
+        if !has(p, perms::CHANGE_NICKNAME) && !has(p, perms::MANAGE_NICKNAMES) {
+            return Err(forbidden("Você não tem permissão para mudar seu apelido"));
+        }
+    } else if !has(p, perms::MANAGE_NICKNAMES)
+        || target == server.owner_id
+        || q.top_position(&id, &target) >= q.top_position(&id, &me)
+    {
+        return Err(forbidden("Você não pode mudar o apelido dessa pessoa"));
+    }
+    q.set_nickname(&id, &target, nickname.as_deref());
+    let member = q.member(&id, &target).ok_or_else(|| not_found("Membro"))?;
+    app.to_server(&id, "member:update", &member);
+    ok(member)
+}
+
+// ----- cargos -----
+
+/// Quem tem "Gerenciar cargos" só mexe em cargos abaixo do seu cargo mais alto e só dá
+/// permissões que já tem.
+fn require_role_manager(q: &Q, server_id: &str, me: &str) -> ApiResult<(i64, i64)> {
+    require_perm(q, server_id, me, perms::MANAGE_ROLES)?;
+    Ok((q.permissions(server_id, me), q.top_position(server_id, me)))
+}
+
+fn editable_role(q: &Q, role_id: &str, me: &str) -> ApiResult<(i64, Role)> {
+    let role = q.role(role_id).ok_or_else(|| not_found("Cargo"))?;
+    let (p, top) = require_role_manager(q, &role.server_id, me)?;
+    if role.id != role.server_id && role.position >= top {
+        return Err(forbidden("Você só pode mexer em cargos abaixo do seu cargo mais alto"));
+    }
+    Ok((p, role))
+}
+
+fn check_grant(mine: i64, before: i64, after: i64) -> ApiResult<()> {
+    // Só pode ligar ou desligar permissões que a própria pessoa tem.
+    if (before ^ after) & !mine & perms::ALL != 0 {
+        return Err(forbidden("Você não pode dar ou tirar permissões que não tem"));
+    }
+    Ok(())
+}
+
+fn roles_changed(app: &App, q: &Q, server_id: &str) {
+    app.to_server(server_id, "roles:update", &json!({ "serverId": server_id, "roles": q.roles(server_id) }));
+}
+
+async fn list_roles(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    ok(q.roles(&id))
+}
+
+async fn create_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let (mine, _) = require_role_manager(&q, &id, &me)?;
+    let input = body::<validate::CreateRole>(&b)?.check()?;
+    let permissions = input.permissions.unwrap_or(0) & perms::ALL;
+    check_grant(mine, 0, permissions)?;
+    if q.roles(&id).len() >= 250 {
+        return Err(bad_request("Limite de 250 cargos por servidor"));
+    }
+    let role = q.create_role(
+        &id,
+        input.name.as_deref().unwrap_or("novo cargo"),
+        input.color.flatten().as_deref(),
+        permissions,
+        input.mentionable.unwrap_or(false),
+    );
+    roles_changed(&app, &q, &id);
+    created(role)
+}
+
+async fn update_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let (mine, role) = editable_role(&q, &id, &me)?;
+    let input = body::<validate::UpdateRole>(&b)?.check()?;
+    let is_everyone = role.id == role.server_id;
+    if is_everyone && (input.name.is_some() || input.color.is_some()) {
+        return Err(bad_request("O @everyone só muda as permissões"));
+    }
+    let permissions = input.permissions.map(|p| p & perms::ALL);
+    if let Some(p) = permissions {
+        check_grant(mine, role.permissions, p)?;
+    }
+    let server_id = role.server_id.clone();
+    let updated = q.update_role(
+        &role.id,
+        RolePatch {
+            name: input.name,
+            color: input.color,
+            permissions,
+            mentionable: input.mentionable,
+        },
+    );
+    roles_changed(&app, &q, &server_id);
+    ok(updated)
+}
+
+async fn delete_role(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let (_, role) = editable_role(&q, &id, &me)?;
+    if role.id == role.server_id {
+        return Err(bad_request("O @everyone não pode ser excluído"));
+    }
+    let holders = q.role_member_ids(&role.id);
+    q.delete_role(&role.id);
+    roles_changed(&app, &q, &role.server_id);
+    for u in holders {
+        if let Some(m) = q.member(&role.server_id, &u) {
+            app.to_server(&role.server_id, "member:update", &m);
+        }
+    }
+    no_content()
+}
+
+async fn reorder_roles(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let (_, top) = require_role_manager(&q, &id, &me)?;
+    let input = body::<validate::ReorderRoles>(&b)?;
+    let current: Vec<Role> = q.roles(&id).into_iter().filter(|r| r.id != id).collect();
+    let mut wanted = input.role_ids.clone();
+    wanted.dedup();
+    let same_set = wanted.len() == current.len() && current.iter().all(|r| wanted.contains(&r.id));
+    if !same_set {
+        return Err(bad_request("Mande a lista completa de cargos"));
+    }
+    let n = wanted.len() as i64;
+    for (i, rid) in wanted.iter().enumerate() {
+        let new_pos = n - i as i64;
+        let old = current.iter().find(|r| &r.id == rid).map(|r| r.position).unwrap_or(0);
+        if old != new_pos && (old >= top || new_pos >= top) {
+            return Err(forbidden("Você só pode mover cargos abaixo do seu cargo mais alto"));
+        }
+    }
+    q.reorder_roles(&id, &wanted);
+    roles_changed(&app, &q, &id);
+    ok(q.roles(&id))
+}
+
+async fn set_member_role(app: &App, me: &str, server_id: &str, user_id: &str, role_id: &str, on: bool) -> Res {
+    let q = app.store.q();
+    let (_, role) = editable_role(&q, role_id, me)?;
+    if role.server_id != server_id || role.id == role.server_id {
+        return Err(not_found("Cargo"));
+    }
+    if !q.is_member(server_id, user_id) {
+        return Err(not_found("Membro"));
+    }
+    q.set_member_role(server_id, user_id, &role.id, on);
+    let member = q.member(server_id, user_id).ok_or_else(|| not_found("Membro"))?;
+    app.to_server(server_id, "member:update", &member);
+    roles_changed(app, &q, server_id);
+    ok(member)
+}
+
+async fn add_member_role(State(app): S, Me(me): Me, Path((id, user, role)): Path<(String, String, String)>) -> Res {
+    set_member_role(&app, &me, &id, &user, &role, true).await
+}
+
+async fn remove_member_role(State(app): S, Me(me): Me, Path((id, user, role)): Path<(String, String, String)>) -> Res {
+    set_member_role(&app, &me, &id, &user, &role, false).await
 }
 
 // ----- convites -----
@@ -621,7 +815,7 @@ fn join(app: &App, q: &Q, me: &str, server: Server) -> Server {
     let member = q.add_member(&server.id, me);
     app.to_server(&server.id, "member:add", &member);
     app.join_server(me, &server.id);
-    let fresh = q.server(&server.id).unwrap_or(server);
+    let fresh = q.for_viewer(q.server(&server.id).unwrap_or(server), me);
     app.to_user(me, "server:create", &fresh);
     app.broadcast_presence(q, me);
     fresh
@@ -631,7 +825,7 @@ fn join(app: &App, q: &Q, me: &str, server: Server) -> Server {
 
 async fn create_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
-    require_owner(&q, &id, &me)?;
+    require_perm(&q, &id, &me, perms::MANAGE_CHANNELS)?;
     let input = body::<validate::CreateChannel>(&b)?.check()?;
     let category_id = input.category_id.flatten();
     if let Some(cat) = &category_id
@@ -650,6 +844,14 @@ async fn create_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
         ids.dedup();
         ids
     });
+    let mut private_roles: Vec<String> = input
+        .role_ids
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|r| *r != id && q.role(r).is_some_and(|role| role.server_id == id))
+        .collect();
+    private_roles.sort();
+    private_roles.dedup();
     let channel = q.create_channel_ex(
         &id,
         &input.name,
@@ -657,6 +859,7 @@ async fn create_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
         category_id.as_deref(),
         input.topic.as_deref().unwrap_or(""),
         private_members.as_deref(),
+        &private_roles,
     );
     app.to_channel(&q, &channel.id, "channel:create", &channel);
     created(channel)
@@ -664,7 +867,7 @@ async fn create_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
 
 async fn create_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
-    require_owner(&q, &id, &me)?;
+    require_perm(&q, &id, &me, perms::MANAGE_CHANNELS)?;
     let input = body::<validate::CreateCategory>(&b)?.check()?;
     let category = q.create_category(&id, &input.name);
     app.to_server(&id, "category:create", &category);
@@ -674,7 +877,7 @@ async fn create_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
 async fn rename_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
     let category = q.category(&id).ok_or_else(|| not_found("Categoria"))?;
-    require_owner(&q, &category.server_id, &me)?;
+    require_perm(&q, &category.server_id, &me, perms::MANAGE_CHANNELS)?;
     let input = body::<validate::CreateCategory>(&b)?.check()?;
     let updated = q.rename_category(&category.id, &input.name);
     app.to_server(&category.server_id, "category:update", &updated);
@@ -684,7 +887,7 @@ async fn rename_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
 async fn delete_category(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let category = q.category(&id).ok_or_else(|| not_found("Categoria"))?;
-    require_owner(&q, &category.server_id, &me)?;
+    require_perm(&q, &category.server_id, &me, perms::MANAGE_CHANNELS)?;
     // Os canais da categoria ficam "soltos" (ON DELETE SET NULL).
     let affected: Vec<String> = q
         .channels(&category.server_id)
@@ -720,8 +923,8 @@ fn require_channel_manager(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<
     };
     let thread_owner = channel.kind == "thread"
         && matches!(&channel.owner_id, Some(Some(o)) if o == user_id);
-    if !thread_owner && q.server(&server_id).is_none_or(|s| s.owner_id != user_id) {
-        return Err(forbidden("Só o dono do servidor pode gerenciar canais"));
+    if !thread_owner && !has(q.permissions(&server_id, user_id), perms::MANAGE_CHANNELS) {
+        return Err(forbidden("Você não tem permissão para gerenciar canais"));
     }
     Ok((channel, server_id))
 }
@@ -817,6 +1020,15 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         return Err(bad_request("Não é possível mandar mensagem para essa pessoa"));
     }
     let mut input = body::<validate::SendMessage>(&b)?.check()?;
+    if let Some(server_id) = &channel.server_id {
+        let p = q.permissions(server_id, &me);
+        if !has(p, perms::SEND_MESSAGES) {
+            return Err(forbidden("Você não tem permissão para enviar mensagens aqui"));
+        }
+        if !input.attachment_ids.is_empty() && !has(p, perms::ATTACH_FILES) {
+            return Err(forbidden("Você não tem permissão para anexar arquivos aqui"));
+        }
+    }
     // Tira repetidos mantendo a ordem em que a pessoa anexou.
     let mut seen = std::collections::HashSet::new();
     input.attachment_ids.retain(|a| seen.insert(a.clone()));
@@ -837,6 +1049,9 @@ async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
     let channel = require_access(&q, &id, &me)?;
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
+    }
+    if channel.server_id.as_deref().is_some_and(|s| !has(q.permissions(s, &me), perms::SEND_MESSAGES)) {
+        return Err(forbidden("Você não tem permissão para enviar mensagens aqui"));
     }
     let created_msg = q.create_message(&channel.id, &me, "", &[]);
     q.create_poll(&created_msg.id, &input.question, &input.options, input.multi);
@@ -918,6 +1133,9 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let parent = require_access(&q, &id, &me)?;
     if parent.kind != "text" {
         return Err(bad_request("Threads só podem ser criadas em canais de texto"));
+    }
+    if parent.server_id.as_deref().is_some_and(|s| !has(q.permissions(s, &me), perms::CREATE_THREADS)) {
+        return Err(forbidden("Você não tem permissão para criar threads"));
     }
     let input = body::<validate::CreateThread>(&b)?.check()?;
     if let Some(mid) = &input.message_id {
@@ -1130,12 +1348,11 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
     let channel = q
         .channel(&message.channel_id)
         .ok_or_else(|| not_found("Mensagem"))?;
-    let is_server_owner = channel
+    let can_manage = channel
         .server_id
         .as_deref()
-        .and_then(|s| q.server(s))
-        .is_some_and(|s| s.owner_id == me);
-    if message.author.id != me && !is_server_owner {
+        .is_some_and(|s| has(q.permissions(s, &me), perms::MANAGE_MESSAGES));
+    if message.author.id != me && !can_manage {
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
     let files = q.attachment_ids_of_message(&message.id);

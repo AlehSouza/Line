@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
-import { actions, useLine } from "@/lib/store";
+import { actions, permsOf, useLine } from "@/lib/store";
 import {
   joinVoice,
   moderateVoice,
@@ -20,12 +20,15 @@ import {
   useVoice,
 } from "@/lib/voice";
 import { cx, Icons } from "./ui";
+import { hasPerm, Perm } from "@line/shared";
 
-/** Quem pode silenciar/mover/desconectar os outros na voz. Por enquanto só o dono; cargos entram aqui. */
+/** Quem pode silenciar ("Silenciar membros") ou mover/desconectar ("Mover membros") os outros na voz. */
 export function useCanModerateVoice(serverId: string | null | undefined) {
-  return useLine(
-    (s) => !!serverId && s.servers[serverId]?.ownerId === s.me?.id,
-  );
+  return useLine((s) => {
+    if (!serverId) return false;
+    const p = permsOf(s, serverId, s.me?.id);
+    return hasPerm(p, Perm.MuteMembers) || hasPerm(p, Perm.MoveMembers);
+  });
 }
 
 /** Insere "@usuario " no campo de mensagem do canal aberto (ou do primeiro canal de texto do servidor). */
