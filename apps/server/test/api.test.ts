@@ -288,6 +288,8 @@ describe('Line server', () => {
     expect((await api('DELETE', `/messages/${msg.data.id}`, fabi.token)).status).toBe(204);
     expect((await api('GET', '/nada', fabi.token)).status).toBe(404);
     expect((await api<{ ok: boolean }>('GET', '/health')).data.ok).toBe(true);
+    const ice = await api<{ iceServers: { urls: string[] }[] }>('GET', '/voice/ice', fabi.token);
+    expect(ice.data.iceServers[0]?.urls[0]).toContain('stun:');
   });
 
   it('anexos e threads', async () => {

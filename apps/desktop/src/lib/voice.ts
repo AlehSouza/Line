@@ -4,6 +4,7 @@ import type { ClientToServerEvents, ServerToClientEvents, VoiceSignal, VoiceStat
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { disposeNoiseSuppressor, suppressNoise } from './noise';
+import { api } from './api';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -14,7 +15,18 @@ type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
  * o próximo passo é um SFU (LiveKit/mediasoup) mantendo esta mesma interface.
  */
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const DEFAULT_ICE: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+/** STUN + TURN do servidor (quando ele tiver), renovado a cada chamada. */
+let iceServers: RTCIceServer[] = DEFAULT_ICE;
+
+async function refreshIceServers() {
+  try {
+    const res = await api.iceServers();
+    if (res.iceServers?.length) iceServers = res.iceServers;
+  } catch {
+    iceServers = DEFAULT_ICE;
+  }
+}
 
 // ---------- qualidade da transmissão de tela ----------
 
@@ -184,6 +196,7 @@ export async function joinVoice(channelId: string) {
   }
   setV({ channelId, connecting: true, error: null });
   try {
+    await refreshIceServers();
     if (!mic) await openMic();
     applyMute();
     await rejoin(channelId);
@@ -424,7 +437,7 @@ function send(to: string, signal: VoiceSignal) {
 }
 
 function createPeer(peerId: string): Peer {
-  const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  const pc = new RTCPeerConnection({ iceServers });
   const peer: Peer = { pc, polite: (myId ?? '') > peerId, makingOffer: false, ignoreOffer: false, streamIds: new Set() };
   peers.set(peerId, peer);
 

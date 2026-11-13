@@ -32,6 +32,29 @@ pub struct App {
     pub uploads_dir: PathBuf,
     /// Interface web servida na raiz (para usar o Line pelo navegador).
     pub web: Option<WebSource>,
+    pub turn: Option<TurnConfig>,
+}
+
+/// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
+#[derive(Clone, Debug)]
+pub struct TurnConfig {
+    /// Ex.: ["turn:line.exemplo.com:3478", "turn:line.exemplo.com:3478?transport=tcp"]
+    pub urls: Vec<String>,
+    pub secret: String,
+}
+
+impl TurnConfig {
+    /// TURN_URLS (separadas por vírgula) e TURN_SECRET.
+    pub fn from_env() -> Option<Self> {
+        let urls: Vec<String> = std::env::var("TURN_URLS")
+            .ok()?
+            .split(',')
+            .map(|u| u.trim().to_string())
+            .filter(|u| !u.is_empty())
+            .collect();
+        let secret = std::env::var("TURN_SECRET").ok().filter(|s| !s.is_empty())?;
+        (!urls.is_empty()).then_some(Self { urls, secret })
+    }
 }
 
 /// Lê um arquivo da interface: caminho relativo ("index.html") → (bytes, tipo MIME).
@@ -63,6 +86,7 @@ pub struct Config {
     pub db_file: String,
     pub jwt_secret: Option<String>,
     pub web: Option<WebSource>,
+    pub turn: Option<TurnConfig>,
 }
 
 impl Config {
@@ -82,6 +106,7 @@ impl Config {
             data_dir,
             jwt_secret: std::env::var("JWT_SECRET").ok(),
             web: std::env::var("WEB_DIR").ok().map(|d| WebSource::Dir(d.into())),
+            turn: TurnConfig::from_env(),
         }
     }
 
@@ -126,7 +151,7 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     let addr = listener.local_addr()?;
 
-    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"), config.web.clone());
+    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"), config.web.clone(), config.turn.clone());
     app.sweep_uploads();
     drop(app);
 
@@ -158,6 +183,7 @@ pub fn build(
     secret: &[u8],
     uploads_dir: PathBuf,
     web: Option<WebSource>,
+    turn: Option<TurnConfig>,
 ) -> (Arc<App>, SocketIo, axum::Router) {
     // O estado precisa do handle do Socket.IO e o Socket.IO precisa do estado:
     // criamos o handle primeiro e passamos o estado depois por uma célula.
@@ -172,6 +198,7 @@ pub fn build(
         voice: Mutex::new(voice::VoiceRegistry::default()),
         uploads_dir,
         web,
+        turn,
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

@@ -104,6 +104,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
         )
         .route("/attachments/{id}/{name}", get(serve_attachment))
+        .route("/voice/ice", get(ice_servers))
         .route("/dms", get(list_dms).post(open_dm))
         .route("/dms/{id}/leave", post(leave_dm))
         .route("/friends", get(list_friends).post(add_friend))
@@ -1024,4 +1025,23 @@ fn mime_guess_web(path: &str) -> mime::Mime {
         _ => return mime_guess(path),
     };
     t.parse().unwrap()
+}
+
+// ---------- voz ----------
+
+/// Servidores ICE para as chamadas: STUN público e, se configurado, o TURN do servidor
+/// com credencial temporária (válida por 24h) no formato do `use-auth-secret` do coturn.
+async fn ice_servers(State(app): S, Me(me): Me) -> Res {
+    use base64::Engine;
+    use hmac::{KeyInit, Mac};
+    let mut list = vec![json!({ "urls": ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] })];
+    if let Some(turn) = &app.turn {
+        let expires = chrono::Utc::now().timestamp() + 24 * 3600;
+        let username = format!("{expires}:{me}");
+        let mut mac = hmac::Hmac::<sha1::Sha1>::new_from_slice(turn.secret.as_bytes()).expect("hmac aceita qualquer chave");
+        mac.update(username.as_bytes());
+        let credential = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+        list.push(json!({ "urls": turn.urls, "username": username, "credential": credential }));
+    }
+    ok(json!({ "iceServers": list }))
 }

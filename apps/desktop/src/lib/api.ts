@@ -143,6 +143,8 @@ export const api = {
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
 
+  iceServers: () => request<{ iceServers: RTCIceServer[] }>('GET', '/voice/ice'),
+
   dms: () => request<Channel[]>('GET', '/dms'),
   openDm: (userIds: string[], name?: string) => request<Channel>('POST', '/dms', { userIds, name }),
   leaveGroup: (id: string) => request<void>('POST', `/dms/${enc(id)}/leave`),
