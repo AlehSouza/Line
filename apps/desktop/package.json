@@ -9,7 +9,8 @@
     "dev:web": "node scripts/copy-noise.mjs && next dev -p 3000",
     "build:web": "node scripts/copy-noise.mjs && next build",
     "build": "tauri build --no-bundle",
-    "dist:win": "tauri build",
+    "dist:win": "tauri build --bundles nsis",
+    "dist:linux": "tauri build --bundles deb",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json"
   },
