@@ -853,8 +853,12 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
               menu?.userId === p.userId && 'bg-hover',
             )}
           >
-            <span className={cx('shrink-0 rounded-full', speaking[p.userId] && 'ring-2 ring-accent')}>
+            {/* Caixa fixa 24x24; o anel de "falando" fica 2px em volta, sempre redondo e centralizado. */}
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
               <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
+              {speaking[p.userId] && (
+                <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-accent" />
+              )}
             </span>
             <span className="flex-1 truncate">{u?.displayName ?? 'Alguém'}</span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
