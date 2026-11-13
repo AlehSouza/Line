@@ -90,17 +90,20 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
             {nav.length === 0 && <p className="px-3 py-2 text-sm text-muted">Nada encontrado.</p>}
           </nav>
 
-          <div className="mt-auto border-t border-edge pt-2">
+          <div className="mt-auto flex items-center gap-2 border-t border-edge pt-2">
             <button
               onClick={() => {
                 onClose();
                 logout();
               }}
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10"
+              className="flex flex-1 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-danger hover:bg-danger/10"
             >
               <Icons.Logout size={18} />
               Sair
             </button>
+            <span className="shrink-0 px-2 text-xs text-muted" title="Versão do Line">
+              {appVersion()}
+            </span>
           </div>
         </aside>
 
@@ -271,4 +274,10 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
       </form>
     </div>
   );
+}
+
+/** Versão do app desktop; no navegador mostra que é a versão web. */
+function appVersion() {
+  const v = typeof window !== 'undefined' ? window.line?.version : undefined;
+  return v && !v.startsWith('__') ? `v${v}` : 'Web';
 }
