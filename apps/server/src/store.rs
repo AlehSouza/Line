@@ -278,11 +278,19 @@ impl Q<'_> {
             .unwrap_or_else(|| "online".into())
     }
 
-    pub fn create_user(&self, username: &str, display_name: &str, password_hash: &str) -> SelfUser {
+    pub fn email_in_use(&self, email: &str) -> bool {
+        ok(self
+            .c
+            .query_row("SELECT 1 FROM users WHERE email = ?", [email], |_| Ok(()))
+            .optional())
+        .is_some()
+    }
+
+    pub fn create_user(&self, username: &str, email: Option<&str>, display_name: &str, password_hash: &str) -> SelfUser {
         let id = new_id();
         ok(self.c.execute(
-            "INSERT INTO users (id, username, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            params![id, username, display_name, password_hash, random_color(), now_iso()],
+            "INSERT INTO users (id, username, email, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![id, username, email, display_name, password_hash, random_color(), now_iso()],
         ));
         self.self_user(&id).unwrap()
     }

@@ -92,6 +92,8 @@ pub fn channel_name(raw: &str) -> ApiResult<String> {
 #[serde(rename_all = "camelCase")]
 pub struct Register {
     pub username: String,
+    #[serde(default)]
+    pub email: Option<String>,
     pub display_name: Option<String>,
     pub password: String,
 }
@@ -100,6 +102,21 @@ impl Register {
     pub fn check(mut self) -> ApiResult<Self> {
         self.username = username(&self.username)?;
         self.display_name = self.display_name.as_deref().map(display_name).transpose()?;
+        self.email = match self.email.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(e) => {
+                let e = e.to_lowercase();
+                let valid = e.len() <= 254
+                    && !e.contains(char::is_whitespace)
+                    && e.split_once('@').is_some_and(|(user, host)| {
+                        !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.')
+                    });
+                if !valid {
+                    return Err(validation("Digite um email válido"));
+                }
+                Some(e)
+            }
+        };
         if len(&self.password) < 6 {
             return Err(validation("A senha precisa ter pelo menos 6 caracteres"));
         }

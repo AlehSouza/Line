@@ -10,6 +10,7 @@ export const usernameSchema = z
 
 export const registerSchema = z.object({
   username: usernameSchema,
+  email: z.string().trim().email('Digite um email válido').max(254).optional(),
   displayName: z.string().trim().min(1).max(32).optional(),
   password: z.string().min(6, 'A senha precisa ter pelo menos 6 caracteres').max(128),
 });

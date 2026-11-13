@@ -152,6 +152,9 @@ async fn register(State(app): S, b: Bytes) -> Res {
     if app.store.q().user_by_username(&input.username).is_some() {
         return Err(conflict("Esse nome de usuário já está em uso"));
     }
+    if input.email.as_deref().is_some_and(|e| app.store.q().email_in_use(e)) {
+        return Err(conflict("Esse email já tem uma conta"));
+    }
     // scrypt é pesado de propósito: roda fora das threads de rede.
     let password = input.password.clone();
     let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
@@ -162,8 +165,12 @@ async fn register(State(app): S, b: Bytes) -> Res {
         if q.user_by_username(&input.username).is_some() {
             return Err(conflict("Esse nome de usuário já está em uso"));
         }
+        if input.email.as_deref().is_some_and(|e| q.email_in_use(e)) {
+            return Err(conflict("Esse email já tem uma conta"));
+        }
         q.create_user(
             &input.username,
+            input.email.as_deref(),
             input.display_name.as_deref().unwrap_or(&input.username),
             &hash,
         )

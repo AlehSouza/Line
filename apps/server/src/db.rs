@@ -104,6 +104,11 @@ const MIGRATIONS: &[&str] = &[
   CREATE INDEX channels_parent ON channels(parent_id);
   CREATE INDEX channels_thread_message ON channels(thread_message_id);
 "#,
+    // 3: email da conta (guardado em minúsculas, único quando existe)
+    r#"
+  ALTER TABLE users ADD COLUMN email TEXT;
+  CREATE UNIQUE INDEX users_email ON users(email) WHERE email IS NOT NULL;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
