@@ -2,6 +2,7 @@
 
 import type { Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
+import { fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { cx, Icons, ListSkeleton } from './ui';
@@ -101,14 +102,29 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="relative">
+      {/* Cabeçalho fixo: fica fora da área que rola, então o banner não sai do lugar. */}
+      <div className="relative shrink-0">
+        {server.bannerUrl && (
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-[135px] overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={fileUrl(server.bannerUrl)} alt="" className="h-full w-full object-cover" />
+            {/* Gradiente: escurece em cima (nome legível) e funde com a lista embaixo. */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0.6),transparent_45%,transparent_65%,var(--color-side))]" />
+          </div>
+        )}
         <button
           onClick={() => setMenuOpen((v) => !v)}
-          className="flex h-12 w-full items-center justify-between border-b border-rail px-4 font-bold shadow-sm hover:bg-hover"
+          className={cx(
+            'relative flex h-12 w-full items-center justify-between px-4 font-bold',
+            server.bannerUrl
+              ? 'text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.7)] hover:bg-black/20'
+              : 'border-b border-rail shadow-sm hover:bg-hover',
+          )}
         >
           <span className="truncate">{server.name}</span>
           <Icons.Chevron size={16} className={cx('transition-transform', menuOpen && 'rotate-180')} />
         </button>
+        {server.bannerUrl && <div className="h-[87px]" />}
         {menuOpen && (
           <div
             className="absolute top-13 right-2 left-2 z-20 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-xl"

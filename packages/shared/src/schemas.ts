@@ -40,6 +40,8 @@ export const createServerSchema = z.object({
 
 export const updateServerSchema = createServerSchema.partial().extend({
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  iconId: z.string().nullable().optional(),
+  bannerId: z.string().nullable().optional(),
 });
 
 export const channelNameSchema = z

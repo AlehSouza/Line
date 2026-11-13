@@ -35,6 +35,8 @@ pub struct Server {
     pub name: String,
     pub description: String,
     pub icon_color: String,
+    pub icon_url: Option<String>,
+    pub banner_url: Option<String>,
     pub owner_id: String,
     pub is_public: bool,
     pub invite_code: String,
