@@ -527,13 +527,20 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [audio, setAudio] = useState(true);
 
+  const [listError, setListError] = useState<string | null>(null);
   const load = () => {
     setSources(null);
-    void listScreenSources().then((list) => {
-      setSources(list);
-      // Sem janelas abertas, já mostra as telas.
-      if (!list.some((s) => !s.isScreen)) setTab('screens');
-    });
+    setListError(null);
+    listScreenSources()
+      .then((list) => {
+        setSources(list);
+        // Sem janelas abertas, já mostra as telas.
+        if (!list.some((s) => !s.isScreen)) setTab('screens');
+      })
+      .catch((err) => {
+        setSources([]);
+        setListError(typeof err === 'string' ? err : 'Não foi possível listar as janelas e telas.');
+      });
   };
   useEffect(() => {
     if (native) load();
@@ -600,6 +607,8 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                   <div key={i} className="aspect-video animate-pulse rounded-lg bg-raise" />
                 ))}
               </div>
+            ) : listError ? (
+              <p className="rounded-lg bg-danger/10 px-3 py-6 text-center text-sm text-danger">{listError}</p>
             ) : visible.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted">
                 {tab === 'apps' ? 'Nenhuma janela aberta para transmitir.' : 'Nenhuma tela encontrada.'}

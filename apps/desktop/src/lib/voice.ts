@@ -496,7 +496,7 @@ let screenSize: { width: number; height: number } | null = null;
 
 /**
  * Liga/desliga o compartilhamento de tela.
- * Com `source` (app do Windows), captura a janela/tela escolhida no seletor do Line.
+ * Com `source` (app do Windows ou do macOS), captura a janela/tela escolhida no seletor do Line.
  * Sem ela, usa o seletor do próprio navegador (web, macOS, Linux).
  */
 export async function toggleScreen(source?: { id: string; audio: boolean }) {
@@ -509,7 +509,12 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
   try {
     let stream: MediaStream;
     if (source && hasNativeScreen()) {
-      const native = await startNativeScreen(source.id, { fps, audio: source.audio, onEnded: stopScreen });
+      const native = await startNativeScreen(source.id, {
+        fps,
+        audio: source.audio,
+        height: RESOLUTIONS[resolution].height,
+        onEnded: stopScreen,
+      });
       // Saiu da chamada enquanto abria: solta a captura.
       if (!getV().channelId) {
         native.stop();
