@@ -13,9 +13,9 @@ import {
   joinVoice,
   moderateVoice,
   setScreenVolume,
+  setWatching,
   setUserVolume,
   toggleDeafen,
-  toggleHiddenScreen,
   toggleHiddenVideo,
   toggleLocalMute,
   toggleMute,
@@ -83,7 +83,7 @@ export function VoiceUserMenu({
   const hiddenVideo = useVoice((v) => !!v.hiddenVideo[userId]);
   const screenVolume = useVoice((v) => v.screenVolume[userId] ?? 1);
   const screenMuted = useVoice((v) => !!v.screenMuted[userId]);
-  const hiddenScreen = useVoice((v) => !!v.hiddenScreen[userId]);
+  const watching = useVoice((v) => !!v.watching[userId]);
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -196,11 +196,14 @@ export function VoiceUserMenu({
       ) : (
         <>
           <div className="px-2.5 py-1.5">
-            <p className="mb-1.5 font-medium text-soft">Volume do usuário</p>
+            <p className="mb-1.5 flex justify-between font-medium text-soft">
+              Volume do usuário
+              <span className="text-muted">{Math.round(volume * 100)}%</span>
+            </p>
             <input
               type="range"
               min={0}
-              max={100}
+              max={200}
               value={Math.round(volume * 100)}
               onChange={(e) =>
                 setUserVolume(userId, Number(e.target.value) / 100)
@@ -247,11 +250,8 @@ export function VoiceUserMenu({
               >
                 Silenciar transmissão
               </Item>
-              <Item
-                onClick={run(() => toggleHiddenScreen(userId), true)}
-                check={hiddenScreen}
-              >
-                Parar de assistir
+              <Item onClick={run(() => setWatching(userId, !watching))}>
+                {watching ? "Sair da transmissão" : "Assistir transmissão"}
               </Item>
             </>
           )}

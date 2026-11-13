@@ -1,7 +1,7 @@
 'use client';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
-import { type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
 import {
   clearVoiceError,
@@ -17,10 +17,10 @@ import {
   setOutputDevice,
   setScreenQuality,
   setScreenVolume,
+  setWatching,
   startCamera,
   toggleCamera,
   toggleDeafen,
-  toggleHiddenScreen,
   toggleMute,
   toggleScreen,
   toggleScreenMute,
@@ -61,17 +61,33 @@ function usePing(active: boolean) {
 
 // ---------- vídeo ----------
 
-function Video({ stream, mirror, contain }: { stream: MediaStream; mirror?: boolean; contain?: boolean }) {
+function Video({
+  stream,
+  mirror,
+  contain,
+  onAspect,
+}: {
+  stream: MediaStream;
+  mirror?: boolean;
+  contain?: boolean;
+  onAspect?: (aspect: number) => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     if (ref.current && ref.current.srcObject !== stream) ref.current.srcObject = stream;
   }, [stream]);
+  const report = () => {
+    const v = ref.current;
+    if (v && v.videoWidth && v.videoHeight) onAspect?.(v.videoWidth / v.videoHeight);
+  };
   return (
     <video
       ref={ref}
       autoPlay
       playsInline
       muted
+      onLoadedMetadata={report}
+      onResize={report}
       className={cx('h-full w-full bg-black', contain ? 'object-contain' : 'object-cover', mirror && '-scale-x-100')}
     />
   );
@@ -94,14 +110,16 @@ function useTiles(channelId: string) {
   const users = useLine((s) => s.users);
   const meId = useLine((s) => s.me?.id);
   const hiddenVideo = useVoice((v) => v.hiddenVideo);
+  const watching = useVoice((v) => v.watching);
 
   return useMemo(() => {
     const list = participants(states, channelId);
     const tiles: Tile[] = [];
     for (const p of list) {
       const isMe = p.userId === meId;
-      const scr = isMe ? screen : p.screenStreamId ? (streams[p.screenStreamId] ?? null) : null;
-      if (p.screenStreamId && scr) {
+      // A tela dos outros aparece como quadro mesmo antes de eu escolher assistir.
+      const scr = isMe ? screen : p.screenStreamId && watching[p.userId] ? (streams[p.screenStreamId] ?? null) : null;
+      if (p.screenStreamId && (scr || !isMe)) {
         tiles.push({ key: `screen:${p.userId}`, kind: 'screen', state: p, user: users[p.userId], stream: scr, isMe });
       }
     }
@@ -111,7 +129,7 @@ function useTiles(channelId: string) {
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching]);
 }
 
 /** Som e "parar de assistir" da tela de outra pessoa. Só mudam para mim. */
@@ -142,16 +160,26 @@ function ScreenControls({ userId }: { userId: string }) {
         onChange={(e) => setScreenVolume(userId, Number(e.target.value) / 100)}
         className="w-24 accent-accent"
       />
-      <button title="Parar de assistir" onClick={() => toggleHiddenScreen(userId)} className="rounded p-1 hover:bg-white/15">
+      <button title="Sair da transmissão" onClick={() => setWatching(userId, false)} className="rounded p-1 hover:bg-white/15">
         <Icons.EyeOff size={16} />
       </button>
     </div>
   );
 }
 
-function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?: () => void }) {
+function TileView({
+  tile,
+  big,
+  onClick,
+  onAspect,
+}: {
+  tile: Tile;
+  big?: boolean;
+  onClick?: () => void;
+  onAspect?: (aspect: number) => void;
+}) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
-  const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !!v.hiddenScreen[tile.state.userId]);
+  const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !v.watching[tile.state.userId]);
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
   return (
@@ -171,19 +199,24 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
       )}
       {hidden ? (
         <div className="flex flex-col items-center gap-2 text-center">
-          <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 96 : 48} />
+          {big && <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={96} />}
           <button
             onClick={(e) => {
               e.stopPropagation();
-              toggleHiddenScreen(tile.state.userId);
+              setWatching(tile.state.userId, true);
             }}
             className="flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-[#141418] hover:bg-white/90"
           >
-            <Icons.Eye size={14} /> Assistir
+            <Icons.Eye size={14} /> Assistir transmissão
           </button>
         </div>
       ) : tile.stream ? (
-        <Video stream={tile.stream} mirror={tile.isMe && tile.kind === 'person'} contain={tile.kind === 'screen'} />
+        <Video
+          stream={tile.stream}
+          mirror={tile.isMe && tile.kind === 'person'}
+          contain={tile.kind === 'screen'}
+          onAspect={tile.kind === 'screen' ? onAspect : undefined}
+        />
       ) : (
         <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
       )}
@@ -246,6 +279,29 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
   );
 }
 
+/** Quadro em destaque: com a proporção do vídeo conhecida, encolhe até o tamanho do vídeo (sem faixas pretas). */
+function FitBox({ aspect, children }: { aspect: number | null; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBox({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  let size: { width: number | string; height: number | string } = { width: '100%', height: '100%' };
+  if (aspect && box.w && box.h) {
+    const width = Math.min(box.w, box.h * aspect);
+    size = { width: Math.floor(width), height: Math.floor(width / aspect) };
+  }
+  return (
+    <div ref={ref} className="flex min-h-0 flex-1 items-center justify-center">
+      <div style={size}>{children}</div>
+    </div>
+  );
+}
+
 export function VoiceStage({ channel, compact }: { channel: Channel; compact?: boolean }) {
   const inCall = useVoice((v) => v.channelId === channel.id);
   const connecting = useVoice((v) => v.connecting && v.channelId === channel.id);
@@ -262,6 +318,8 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
     if (firstScreen) setFocus((f) => f ?? firstScreen);
   }, [firstScreen]);
   const focused = tiles.find((t) => t.key === focus);
+  const [aspect, setAspect] = useState<number | null>(null);
+  useEffect(() => setAspect(null), [focus]);
   const others = focused ? tiles.filter((t) => t !== focused) : tiles;
 
   // Canal vazio: tela de espera colorida, com o convite para entrar no centro.
@@ -323,9 +381,9 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </div>
         ) : focused ? (
           <>
-            <div className="min-h-0 flex-1">
-              <TileView tile={focused} big onClick={() => setFocus(null)} />
-            </div>
+            <FitBox aspect={focused.kind === 'screen' && focused.stream ? aspect : null}>
+              <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
+            </FitBox>
             {others.length > 0 && (
               <div className="flex h-28 shrink-0 overflow-x-auto">
                 {/* mx-auto centraliza; se não couber, a margem zera e a fileira rola sem cortar o começo. */}
