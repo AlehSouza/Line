@@ -130,7 +130,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             get(|| async { Json(json!({ "ok": true, "name": "line", "version": VERSION })) }),
         )
         .nest("/api", api)
-        .fallback(|| async { not_found("Rota") })
+        .fallback(web_fallback)
         .with_state(app)
         .layer(socket_layer)
         .layer(cors)
@@ -966,4 +966,62 @@ async fn remove_friend(State(app): S, Me(me): Me, Path(other): Path<String>) -> 
     app.to_user(&me, "friend:remove", &json!({ "userId": other }));
     app.to_user(&other, "friend:remove", &json!({ "userId": me }));
     no_content()
+}
+
+// ---------- interface web ----------
+
+/// Fora de /api, entrega a interface (se configurada): assim dá para usar o Line pelo navegador
+/// em https://seu-servidor/ sem instalar nada.
+async fn web_fallback(State(app): S, req: Request) -> Response {
+    let path = req.uri().path().to_string();
+    let Some(web) = app.web.clone().filter(|_| !path.starts_with("/api/") && path != "/api") else {
+        return not_found("Rota").into_response();
+    };
+    if !matches!(*req.method(), Method::GET | Method::HEAD) {
+        return not_found("Rota").into_response();
+    }
+    let rel = path.trim_start_matches('/');
+    let rel = if rel.is_empty() || rel.ends_with('/') { format!("{rel}index.html") } else { rel.to_string() };
+    if rel.split('/').any(|seg| seg == ".." || seg.is_empty()) {
+        return not_found("Rota").into_response();
+    }
+    match web {
+        crate::WebSource::Dir(dir) => {
+            let mut target = dir.join(&rel);
+            if !target.is_file() && !rel.contains('.') {
+                // Rotas da interface sem arquivo próprio caem no index.html.
+                target = dir.join("index.html");
+            }
+            let mime = mime_guess_web(&target.to_string_lossy());
+            match tower_http::services::ServeFile::new_with_mime(&target, &mime).oneshot(req).await {
+                Ok(res) => res.map(Body::new),
+                Err(_) => not_found("Rota").into_response(),
+            }
+        }
+        crate::WebSource::Assets(read) => {
+            let found = read(&rel).or_else(|| (!rel.contains('.')).then(|| read("index.html")).flatten());
+            match found {
+                Some((bytes, mime)) => ([(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response(),
+                None => not_found("Rota").into_response(),
+            }
+        }
+    }
+}
+
+fn mime_guess_web(path: &str) -> mime::Mime {
+    let ext = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let t = match ext.as_str() {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" | "map" => "application/json",
+        "wasm" => "application/wasm",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "woff2" => "font/woff2",
+        "woff" => "font/woff",
+        "txt" => "text/plain; charset=utf-8",
+        _ => return mime_guess(path),
+    };
+    t.parse().unwrap()
 }

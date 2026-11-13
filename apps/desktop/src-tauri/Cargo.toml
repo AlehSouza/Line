@@ -20,3 +20,7 @@ tauri-plugin-single-instance = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Ligar WebRTC/microfone no WebKitGTK (vem desligado por padrão).
+webkit2gtk = { version = "2.0", features = ["v2_38"] }

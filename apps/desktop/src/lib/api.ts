@@ -16,7 +16,14 @@ import type {
   UpdateServerInput,
 } from '@line/shared';
 
-export const DEFAULT_SERVER_URL = 'http://localhost:4000';
+/**
+ * No app desktop o padrão é o servidor embutido. Aberto pelo navegador a partir de um
+ * servidor Line (ex.: https://line.seudominio), usa o próprio endereço da página.
+ */
+export const DEFAULT_SERVER_URL =
+  typeof window !== 'undefined' && !window.line && /^https?:$/.test(window.location.protocol) && window.location.port !== '3000'
+    ? window.location.origin
+    : 'http://localhost:4000';
 
 export class ApiError extends Error {
   constructor(

@@ -92,6 +92,8 @@ fn start_embedded_server(app: &tauri::App) -> Option<RunningServer> {
             .and_then(|p| p.parse().ok())
             .unwrap_or(4000),
         host: "0.0.0.0".into(),
+        // A interface também fica em http://IP:4000/, para quem quiser entrar pelo navegador.
+        web: Some(line_server::WebSource::Assets(web_assets(app))),
         ..Config::with_data_dir(data_dir)
     };
     match tauri::async_runtime::block_on(line_server::start(config)) {
@@ -102,6 +104,16 @@ fn start_embedded_server(app: &tauri::App) -> Option<RunningServer> {
             None
         }
     }
+}
+
+fn web_assets(app: &tauri::App) -> line_server::WebAssets {
+    let handle = app.handle().clone();
+    std::sync::Arc::new(move |path: &str| {
+        handle
+            .asset_resolver()
+            .get(path.to_string())
+            .map(|a| (a.bytes, a.mime_type))
+    })
 }
 
 /// A versão Electron guardava o servidor embutido em `%APPDATA%\Line\server`.
@@ -173,6 +185,9 @@ fn create_window(app: &tauri::App) -> tauri::Result<WebviewWindow> {
         })
         .build()?;
 
+    #[cfg(target_os = "linux")]
+    enable_linux_media(&window);
+
     let w = window.clone();
     window.on_window_event(move |event| {
         if let WindowEvent::Focused(true) = event {
@@ -235,5 +250,27 @@ pub fn run() {
                 tauri::async_runtime::block_on(server.shutdown());
             }
         }
+    });
+}
+
+/// No Linux o WebKitGTK vem com WebRTC e captura de mídia desligados:
+/// sem isso não existe `RTCPeerConnection` e as chamadas não funcionam.
+#[cfg(target_os = "linux")]
+fn enable_linux_media(window: &WebviewWindow) {
+    use webkit2gtk::{PermissionRequestExt, SettingsExt, WebViewExt};
+    let _ = window.with_webview(|wv| {
+        let view = wv.inner();
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_enable_webrtc(true);
+            settings.set_enable_media_stream(true);
+            settings.set_enable_mediasource(true);
+            settings.set_enable_media_capabilities(true);
+            settings.set_media_playback_requires_user_gesture(false);
+        }
+        // Microfone, câmera, tela e notificações: o app inteiro é nosso, então libera.
+        view.connect_permission_request(|_, req| {
+            req.allow();
+            true
+        });
     });
 }

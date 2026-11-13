@@ -2507,6 +2507,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tracing",
  "tracing-subscriber",
+ "webkit2gtk",
 ]
 
 [[package]]

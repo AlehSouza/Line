@@ -30,6 +30,28 @@ pub struct App {
     pub voice: Mutex<voice::VoiceRegistry>,
     /// Onde ficam os arquivos enviados no chat.
     pub uploads_dir: PathBuf,
+    /// Interface web servida na raiz (para usar o Line pelo navegador).
+    pub web: Option<WebSource>,
+}
+
+/// Lê um arquivo da interface: caminho relativo ("index.html") → (bytes, tipo MIME).
+pub type WebAssets = Arc<dyn Fn(&str) -> Option<(Vec<u8>, String)> + Send + Sync>;
+
+/// De onde vem a interface web: uma pasta (`WEB_DIR`, no servidor de VPS) ou
+/// os arquivos embutidos no app desktop.
+#[derive(Clone)]
+pub enum WebSource {
+    Dir(PathBuf),
+    Assets(WebAssets),
+}
+
+impl std::fmt::Debug for WebSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WebSource::Dir(d) => write!(f, "Dir({})", d.display()),
+            WebSource::Assets(_) => write!(f, "Assets"),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +62,7 @@ pub struct Config {
     /// ":memory:" nos testes
     pub db_file: String,
     pub jwt_secret: Option<String>,
+    pub web: Option<WebSource>,
 }
 
 impl Config {
@@ -58,6 +81,7 @@ impl Config {
                 .unwrap_or_else(|_| data_dir.join("line.db").to_string_lossy().into_owned()),
             data_dir,
             jwt_secret: std::env::var("JWT_SECRET").ok(),
+            web: std::env::var("WEB_DIR").ok().map(|d| WebSource::Dir(d.into())),
         }
     }
 
@@ -102,7 +126,7 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     let addr = listener.local_addr()?;
 
-    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"));
+    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"), config.web.clone());
     app.sweep_uploads();
     drop(app);
 
@@ -133,6 +157,7 @@ pub fn build(
     conn: rusqlite::Connection,
     secret: &[u8],
     uploads_dir: PathBuf,
+    web: Option<WebSource>,
 ) -> (Arc<App>, SocketIo, axum::Router) {
     // O estado precisa do handle do Socket.IO e o Socket.IO precisa do estado:
     // criamos o handle primeiro e passamos o estado depois por uma célula.
@@ -146,6 +171,7 @@ pub fn build(
         io: io.clone(),
         voice: Mutex::new(voice::VoiceRegistry::default()),
         uploads_dir,
+        web,
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

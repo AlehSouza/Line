@@ -175,6 +175,13 @@ export async function joinVoice(channelId: string) {
   if (current.channelId === channelId) return;
   if (current.channelId) await leaveVoice();
 
+  if (typeof RTCPeerConnection === 'undefined') {
+    setV({
+      error:
+        'Chamadas não funcionam neste app no Linux (o WebKit da sua distro veio sem WebRTC). Abra o Line pelo Chrome ou Firefox no endereço do servidor.',
+    });
+    return;
+  }
   setV({ channelId, connecting: true, error: null });
   try {
     if (!mic) await openMic();
