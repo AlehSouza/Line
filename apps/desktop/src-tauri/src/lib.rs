@@ -3,11 +3,9 @@
 //! Troca o Electron: em vez de levar um Chromium inteiro, usa o WebView2 que já vem no Windows.
 //! A interface continua sendo o export estático do Next (pasta `out/`), e o servidor Line
 //! roda embutido no mesmo processo, sem Node.
-use line_server::{Config, RunningServer};
-use std::sync::Mutex;
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{
-    Manager, RunEvent, UserAttentionType, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    Manager, UserAttentionType, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
     WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
@@ -15,7 +13,6 @@ use tauri_plugin_opener::OpenerExt;
 const MAIN: &str = "main";
 
 /// Servidor embutido (se subiu). Fica no estado do app para desligar ao sair.
-struct Embedded(Mutex<Option<RunningServer>>);
 
 #[tauri::command]
 fn window_minimize(window: WebviewWindow) {
@@ -103,69 +100,6 @@ fn badge_dot() -> tauri::image::Image<'static> {
         }
     }
     tauri::image::Image::new_owned(rgba, SIZE, SIZE)
-}
-
-/// Servidor embutido: o próprio app hospeda um servidor Line na porta 4000,
-/// com os dados na pasta do usuário. Assim o .exe funciona sozinho, e seus amigos
-/// podem se conectar no seu IP. Se a porta já estiver em uso (outro servidor rodando),
-/// o app só usa o que já existe. Desligue com LINE_EMBEDDED_SERVER=0.
-fn start_embedded_server(app: &tauri::App) -> Option<RunningServer> {
-    if std::env::var("LINE_EMBEDDED_SERVER").as_deref() == Ok("0") {
-        return None;
-    }
-    let data_dir = app.path().app_data_dir().ok()?.join("server");
-    if let Ok(config_dir) = app.path().config_dir() {
-        migrate_from_electron(&config_dir.join("Line").join("server"), &data_dir);
-    }
-    let config = Config {
-        port: std::env::var("LINE_SERVER_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(4000),
-        host: "0.0.0.0".into(),
-        // A interface também fica em http://IP:4000/, para quem quiser entrar pelo navegador.
-        web: Some(line_server::WebSource::Assets(web_assets(app))),
-        ..Config::with_data_dir(data_dir)
-    };
-    match tauri::async_runtime::block_on(line_server::start(config)) {
-        Ok(server) => Some(server),
-        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => None,
-        Err(e) => {
-            tracing::error!("Falha ao iniciar o servidor embutido: {e}");
-            None
-        }
-    }
-}
-
-fn web_assets(app: &tauri::App) -> line_server::WebAssets {
-    let handle = app.handle().clone();
-    std::sync::Arc::new(move |path: &str| {
-        handle
-            .asset_resolver()
-            .get(path.to_string())
-            .map(|a| (a.bytes, a.mime_type))
-    })
-}
-
-/// A versão Electron guardava o servidor embutido em `%APPDATA%\Line\server`.
-/// Na primeira vez que o app Tauri abre, copia o banco e o segredo dos tokens de lá,
-/// para ninguém perder contas, servidores e mensagens. O original fica intacto.
-fn migrate_from_electron(old: &std::path::Path, new: &std::path::Path) {
-    if new.join("line.db").exists() || !old.join("line.db").exists() {
-        return;
-    }
-    if std::fs::create_dir_all(new).is_err() {
-        return;
-    }
-    for name in ["line.db", "line.db-wal", "line.db-shm", "jwt-secret"] {
-        let from = old.join(name);
-        if from.exists()
-            && let Err(e) = std::fs::copy(&from, new.join(name))
-        {
-            tracing::warn!("não consegui copiar {}: {e}", from.display());
-        }
-    }
-    tracing::info!("dados do Line (Electron) copiados de {}", old.display());
 }
 
 /// URLs que pertencem ao app (o resto abre no navegador padrão).
@@ -262,8 +196,6 @@ pub fn run() {
             update_install
         ])
         .setup(|app| {
-            let server = start_embedded_server(app);
-            app.manage(Embedded(Mutex::new(server)));
             let window = create_window(app)?;
             // Mostra só depois de carregar, sem piscar branco.
             window.show()?;
@@ -272,19 +204,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o Line");
 
-    app.run(|handle, event| {
-        if let RunEvent::Exit = event {
-            let server = handle
-                .state::<Embedded>()
-                .0
-                .lock()
-                .ok()
-                .and_then(|mut s| s.take());
-            if let Some(server) = server {
-                tauri::async_runtime::block_on(server.shutdown());
-            }
-        }
-    });
+    app.run(|_, _| {});
 }
 
 /// No Linux o WebKitGTK vem com WebRTC e captura de mídia desligados:

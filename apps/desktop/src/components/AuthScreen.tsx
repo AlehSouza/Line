@@ -6,13 +6,12 @@ import { Button, ErrorText, Field, Input, Logo } from './ui';
 
 export function AuthScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [serverUrl, setServerUrl] = useState(savedServerUrl);
+  const serverUrl = savedServerUrl();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [showServer, setShowServer] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -80,15 +79,6 @@ export function AuthScreen() {
           />
         </Field>
 
-        {showServer ? (
-          <Field label="Endereço do servidor" hint="O servidor do Line que você ou seu amigo hospeda.">
-            <Input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} placeholder="http://localhost:4000" />
-          </Field>
-        ) : (
-          <button type="button" onClick={() => setShowServer(true)} className="text-xs text-muted hover:text-fg">
-            Servidor: <span className="font-mono">{serverUrl}</span> (alterar)
-          </button>
-        )}
 
         <ErrorText>{error}</ErrorText>
 

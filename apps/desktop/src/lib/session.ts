@@ -37,12 +37,14 @@ const storage = {
 };
 
 export function savedServerUrl() {
-  return storage.get(STORAGE_URL) ?? DEFAULT_SERVER_URL;
+  return DEFAULT_SERVER_URL;
 }
 
 /** Tenta reabrir a sessão salva. Retorna true se conseguiu. */
 export async function restoreSession(): Promise<boolean> {
   const serverUrl = savedServerUrl();
+  // Login feito em outro servidor (antes do useline.tech) não vale aqui: começa do zero.
+  if ((storage.get(STORAGE_URL) ?? serverUrl) !== serverUrl) storage.set(STORAGE_TOKEN, null);
   const token = storage.get(STORAGE_TOKEN);
   useLine.setState({ serverUrl });
   configureApi({ baseUrl: serverUrl, token, onUnauthorized: logout });

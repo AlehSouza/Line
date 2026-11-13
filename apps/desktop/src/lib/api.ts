@@ -16,14 +16,9 @@ import type {
   UpdateServerInput,
 } from '@line/shared';
 
-/**
- * No app desktop o padrão é o servidor embutido. Aberto pelo navegador a partir de um
- * servidor Line (ex.: https://line.seudominio), usa o próprio endereço da página.
- */
+/** O Line tem um servidor público só. Em desenvolvimento (porta 3000) usa o servidor local. */
 export const DEFAULT_SERVER_URL =
-  typeof window !== 'undefined' && !window.line && /^https?:$/.test(window.location.protocol) && window.location.port !== '3000'
-    ? window.location.origin
-    : 'http://localhost:4000';
+  typeof window !== 'undefined' && window.location.port === '3000' ? 'http://localhost:4000' : 'https://useline.tech';
 
 export class ApiError extends Error {
   constructor(

@@ -2583,7 +2583,6 @@ dependencies = [
 name = "line-desktop"
 version = "0.1.0"
 dependencies = [
- "line-server",
  "serde",
  "serde_json",
  "tauri",
