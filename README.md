@@ -49,6 +49,7 @@ Outros comandos úteis:
 | --- | --- |
 | `npm run dev:server` | Só o servidor (`cargo run -p line-server`) |
 | `npm run dev:web` | Só a interface no navegador (http://localhost:3000) |
+| `npm run dev:prod` | Interface local (http://localhost:3000) usando o servidor de produção useline.tech, com seus amigos e dados reais. Mudanças no servidor só valem depois do deploy |
 | `npm test` | Testes do servidor: unitários em Rust + testes de contrato com `socket.io-client` |
 | `npm run typecheck` | Checagem de tipos da interface |
 | `npm run dist:win` | Gera o instalador do Windows em `target/release/bundle/nsis/` |

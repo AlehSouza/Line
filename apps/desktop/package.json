@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:web": "node scripts/copy-noise.mjs && next dev -p 3000",
+    "dev:prod": "node scripts/dev-prod.mjs",
     "build:web": "node scripts/copy-noise.mjs && next build",
     "build": "tauri build --no-bundle",
     "dist:win": "tauri build --bundles nsis",

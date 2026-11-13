@@ -11,6 +11,7 @@
     "dev": "npm run dev -w @line/desktop",
     "dev:server": "cargo run -p line-server",
     "dev:web": "npm run dev:web -w @line/desktop",
+    "dev:prod": "npm run dev:prod -w @line/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
