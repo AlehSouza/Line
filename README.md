@@ -1,6 +1,13 @@
 # Line
 
-App de chat e comunidades para desktop (Windows), feito para uso pessoal com a sua galera: servidores, canais, mensagens privadas, amigos e status, tudo liberado e sem assinatura.
+App de chat e comunidades para desktop (Windows e Linux), feito para uso pessoal com a sua galera: servidores, canais, mensagens privadas, amigos e status, tudo liberado e sem assinatura.
+
+## Baixar
+
+Os instaladores mais recentes ficam em **[Releases](https://github.com/AlehSouza/Line/releases/latest)**:
+
+- **Windows 10/11**: baixe o `Line_*_x64-setup.exe` e execute (instala só para o seu usuário, sem pedir administrador).
+- **Linux (Debian 12+, Ubuntu 22.04+ e derivados)**: baixe o `Line_*_amd64.deb` e rode `sudo apt install ./Line_*_amd64.deb`. Depois é só abrir "Line" no menu de aplicativos.
 
 Feito em **Rust** por baixo: o app é um casco **Tauri** (usa o WebView2 do Windows em vez de carregar um Chromium inteiro) com a interface em **Next.js + TypeScript**, e o servidor é **Rust (axum + Socket.IO + SQLite)**, que roda embutido no próprio app ou sozinho numa máquina sua.
 
@@ -44,8 +51,9 @@ Outros comandos úteis:
 | `npm test` | Testes do servidor: unitários em Rust + testes de contrato com `socket.io-client` |
 | `npm run typecheck` | Checagem de tipos da interface |
 | `npm run dist:win` | Gera o instalador do Windows em `target/release/bundle/nsis/` |
+| `npm run dist:linux` | Gera o pacote `.deb` em `target/release/bundle/deb/` (precisa de `libwebkit2gtk-4.1-dev`) |
 
-O CI do GitHub também gera o instalador do Windows a cada PR (artefato "Line-instalador-windows").
+O CI do GitHub gera os dois instaladores a cada PR (artefatos "Line-instalador-windows" e "Line-linux-deb") e, a cada push na branch principal, publica os dois numa release nova.
 
 ## Jogando com os amigos
 
