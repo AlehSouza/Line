@@ -121,8 +121,9 @@ $DOMAIN {
 		file_server
 	}
 	# Site de apresentação na raiz (o CI envia apps/site para /opt/line/site).
-	@site path / /index.html /site/*
+	@site path / /index.html /downloads /downloads/ /site/*
 	handle @site {
+		rewrite /downloads* /index.html
 		root * /opt/line/site
 		file_server
 	}

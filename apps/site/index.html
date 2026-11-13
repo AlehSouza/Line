@@ -188,10 +188,10 @@
 
 <header>
   <div class="wrap bar">
-    <a class="brand" href="#inicio"><img src="/site/icon.png" alt="">Line</a>
+    <a class="brand" href="/"><img src="/site/icon.png" alt="">Line</a>
     <nav class="tabs">
-      <a href="#inicio" data-tab="inicio">Início</a>
-      <a href="#downloads" data-tab="downloads">Downloads</a>
+      <a href="/" data-tab="inicio">Início</a>
+      <a href="/downloads" data-tab="downloads">Downloads</a>
     </nav>
     <div class="spacer"></div>
     <a class="btn btn-ghost btn-sm" href="/app/">Abrir On Line</a>
@@ -207,7 +207,7 @@
         <h1>O lugar da sua galera <em>conversar, jogar e se ver.</em></h1>
         <p class="lead">Line junta servidores, canais de texto, chamadas de voz e vídeo e compartilhamento de tela num app leve, feito em Rust, que abre na hora e quase não pesa no PC.</p>
         <div class="cta">
-          <a class="btn btn-primary js-main-dl" href="#downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
+          <a class="btn btn-primary js-main-dl" href="/downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
           <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
         </div>
         <p class="cta-note js-note">Windows 10 e 11 · macOS · Linux (Debian/Ubuntu) · qualquer navegador</p>
@@ -273,7 +273,7 @@
           <h2>Chame a galera para o Line</h2>
           <p>Instale no Windows, no macOS ou no Linux, ou entre direto pelo navegador. Sua conta funciona em todos.</p>
           <div class="cta">
-            <a class="btn btn-primary" href="#downloads"><svg><use href="#i-down"/></svg>Ver downloads</a>
+            <a class="btn btn-primary" href="/downloads"><svg><use href="#i-down"/></svg>Ver downloads</a>
             <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
           </div>
         </div>
@@ -343,22 +343,31 @@
   <div class="wrap">
     <img src="/site/icon.png" alt=""><span>Line · feito no Brasil</span>
     <div class="spacer"></div>
-    <a href="#downloads">Downloads</a>
+    <a href="/downloads">Downloads</a>
     <a href="/app/">Entrar</a>
   </div>
 </footer>
 
 <script>
-  // Abas: Início e Downloads, trocadas pelo # da URL.
+  // Abas: Início (/) e Downloads (/downloads), sem recarregar a página.
   const pages = document.querySelectorAll('main > section[data-page]');
   const tabs = document.querySelectorAll('nav.tabs a');
+  // Links antigos com #downloads continuam funcionando.
+  if (location.hash === '#downloads') history.replaceState(null, '', '/downloads');
   function route() {
-    const want = location.hash === '#downloads' ? 'downloads' : 'inicio';
+    const want = location.pathname.replace(/\/+$/, '') === '/downloads' ? 'downloads' : 'inicio';
     pages.forEach(p => p.classList.toggle('on', p.dataset.page === want));
     tabs.forEach(t => { if (t.dataset.tab === want) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); });
     window.scrollTo({ top: 0 });
   }
-  addEventListener('hashchange', route);
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[href="/"], a[href="/downloads"]');
+    if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    if (location.pathname !== a.getAttribute('href')) history.pushState(null, '', a.getAttribute('href'));
+    route();
+  });
+  addEventListener('popstate', route);
   route();
 
   // Prévia local (localhost): manda para o app do servidor de verdade.

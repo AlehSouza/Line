@@ -206,7 +206,7 @@ jobs:
           scp -i ~/.ssh/deploy "$macgz" "line-deploy@$HOST:/opt/line/updates/$macname"
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz | tail -n +4 | xargs -r rm --"
-          # Links fixos usados pela aba Downloads do site (useline.tech/#downloads).
+          # Links fixos usados pela aba Downloads do site (useline.tech/downloads).
           deb=$(ls deb/*.deb | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
