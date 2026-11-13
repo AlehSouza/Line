@@ -273,22 +273,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
         {bucket && !bucket.hasMore && isThread && (
           <div className="pt-3">
             {starter ? (
-              <div className="flex gap-3 px-4 py-1">
-                <Avatar
-                  name={(users[starter.author.id] ?? starter.author).displayName}
-                  color={(users[starter.author.id] ?? starter.author).avatarColor}
-                  src={(users[starter.author.id] ?? starter.author).avatarUrl}
-                  size={36}
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-baseline gap-2">
-                    <span className="font-semibold">{(users[starter.author.id] ?? starter.author).displayName}</span>
-                    <span className="text-xs text-muted">{formatTime(starter.createdAt)}</span>
-                  </p>
-                  {starter.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(starter.content, myUsername, mentionCtx)}</div>}
-                  <AttachmentList attachments={starter.attachments} compact />
-                </div>
-              </div>
+              <ThreadStarter message={starter} myUsername={myUsername} mentionCtx={mentionCtx} />
             ) : (
               <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
@@ -548,6 +533,48 @@ function MessageRow({
             </button>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Mensagem que abriu a thread, no topo do painel: com as mesmas reações da mensagem original. */
+function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; myUsername?: string; mentionCtx: ReturnType<typeof useMentionContext> }) {
+  const author = useLine((s) => s.users[message.author.id]) ?? message.author;
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return (
+    <div className="group relative flex gap-3 px-4 py-1 hover:bg-black/10">
+      <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={36} />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-baseline gap-2">
+          <span className="font-semibold">{author.displayName}</span>
+          <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
+        </p>
+        {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
+        <AttachmentList attachments={message.attachments} compact />
+        {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
+      </div>
+      <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', anchor && 'flex')}>
+        <button
+          title="Adicionar reação"
+          onClick={(e) => {
+            const el = e.currentTarget;
+            setAnchor((a) => (a ? null : el));
+          }}
+          className="p-1.5 text-muted hover:text-fg"
+        >
+          <Icons.SmilePlus size={16} />
+        </button>
+      </div>
+      {anchor && (
+        <EmojiPicker
+          anchor={anchor}
+          onClose={() => setAnchor(null)}
+          onPick={(emoji, keepOpen) => {
+            void toggleReaction(message, emoji);
+            if (!keepOpen) setAnchor(null);
+          }}
+        />
       )}
     </div>
   );
