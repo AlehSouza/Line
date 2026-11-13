@@ -1102,7 +1102,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
         return (
           <button
             key={p.userId}
-            onClick={(e) => setMenu({ userId: p.userId, x: e.clientX, y: e.clientY })}
+            onClick={(e) => actions.openModal({ kind: 'user', userId: p.userId, at: { x: e.clientX, y: e.clientY } })}
             onContextMenu={(e) => {
               e.preventDefault();
               setMenu({ userId: p.userId, x: e.clientX, y: e.clientY });
