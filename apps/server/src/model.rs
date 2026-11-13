@@ -99,6 +99,23 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
     /// Thread que começou nesta mensagem (se houver).
     pub thread: Option<ThreadSummary>,
+    pub poll: Option<Poll>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Poll {
+    pub question: String,
+    pub multi: bool,
+    pub options: Vec<PollOption>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PollOption {
+    pub id: String,
+    pub text: String,
+    pub voter_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -27,6 +27,8 @@ export function Modals() {
       return <ProfileModal onClose={close} />;
     case 'settings':
       return <SettingsModal onClose={close} />;
+    case 'create-poll':
+      return <CreatePollModal channelId={modal.channelId} onClose={close} />;
     case 'new-dm':
       return <NewDmModal onClose={close} />;
     case 'user':
@@ -252,6 +254,70 @@ function CreateThreadModal({
           </Button>
           <Button type="submit" disabled={busy || !name.trim()}>
             Criar thread
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: () => void }) {
+  const [question, setQuestion] = useState('');
+  const [options, setOptions] = useState(['', '']);
+  const [multi, setMulti] = useState(false);
+  const { busy, error, run } = useAction();
+  const filled = options.filter((o) => o.trim()).length;
+  const setOption = (i: number, v: string) => setOptions((list) => list.map((o, j) => (j === i ? v : o)));
+
+  return (
+    <Modal title="Criar enquete" subtitle="Pergunte algo e deixe a galera votar." onClose={onClose} width={480}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            actions.addMessage(await api.createPoll(channelId, question, options, multi));
+            onClose();
+          });
+        }}
+        className="space-y-4"
+      >
+        <Field label="Pergunta">
+          <Input autoFocus required maxLength={300} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Qual jogo hoje?" />
+        </Field>
+        <div className="space-y-2">
+          <span className="block text-xs font-bold tracking-wide text-muted uppercase">Opções</span>
+          {options.map((o, i) => (
+            <div key={i} className="flex gap-2">
+              <Input maxLength={100} value={o} onChange={(e) => setOption(i, e.target.value)} placeholder={`Opção ${i + 1}`} />
+              {options.length > 2 && (
+                <button
+                  type="button"
+                  title="Remover opção"
+                  onClick={() => setOptions((list) => list.filter((_, j) => j !== i))}
+                  className="rounded-md px-2 text-muted hover:bg-hover hover:text-danger"
+                >
+                  <Icons.X size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          {options.length < 10 && (
+            <button type="button" onClick={() => setOptions((list) => [...list, ''])} className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              <Icons.Plus size={16} /> Adicionar opção
+            </button>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-soft">
+          <input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} className="accent-[var(--color-accent)]" />
+          Permitir escolher mais de uma opção
+        </label>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={busy || !question.trim() || filled < 2}>
+            Publicar enquete
           </Button>
         </div>
       </form>

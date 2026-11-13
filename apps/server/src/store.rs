@@ -772,6 +772,7 @@ impl Q<'_> {
                     edited_at: r.get("edited_at")?,
                     attachments: Vec::new(),
                     thread: None,
+                    poll: None,
                 };
                 Ok((user, msg))
             }))
@@ -782,6 +783,7 @@ impl Q<'_> {
                 m.author = self.to_public_user(&u);
                 m.attachments = self.attachments_of(&m.id);
                 m.thread = self.thread_of_message(&m.id);
+                m.poll = self.poll_of(&m.id);
                 m
             })
             .collect()
@@ -890,6 +892,68 @@ impl Q<'_> {
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
         self.ids("SELECT id FROM attachments WHERE message_id = ?", [message_id])
+    }
+
+    // ---------- enquetes ----------
+
+    pub fn create_poll(&self, message_id: &str, question: &str, options: &[String], multi: bool) {
+        ok(self.c.execute(
+            "INSERT INTO polls (message_id, question, multi) VALUES (?, ?, ?)",
+            params![message_id, question, multi as i64],
+        ));
+        for (i, text) in options.iter().enumerate() {
+            ok(self.c.execute(
+                "INSERT INTO poll_options (id, message_id, position, text) VALUES (?, ?, ?, ?)",
+                params![new_id(), message_id, i as i64, text],
+            ));
+        }
+    }
+
+    fn poll_of(&self, message_id: &str) -> Option<Poll> {
+        let (question, multi): (String, i64) = ok(self
+            .c
+            .query_row("SELECT question, multi FROM polls WHERE message_id = ?", [message_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional())?;
+        let opts: Vec<(String, String)> = ok(self
+            .c
+            .prepare_cached("SELECT id, text FROM poll_options WHERE message_id = ? ORDER BY position")
+            .and_then(|mut st| st.query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()));
+        let options = opts
+            .into_iter()
+            .map(|(id, text)| {
+                let voter_ids = ok(self
+                    .c
+                    .prepare_cached("SELECT user_id FROM poll_votes WHERE option_id = ?")
+                    .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect()));
+                PollOption { id, text, voter_ids }
+            })
+            .collect();
+        Some(Poll { question, multi: multi != 0, options })
+    }
+
+    /// Marca ou desmarca o voto. Em enquete de escolha única, trocar de opção tira o voto anterior.
+    /// Devolve false se a opção não for dessa enquete.
+    pub fn toggle_vote(&self, message_id: &str, option_id: &str, user_id: &str) -> bool {
+        let multi: Option<i64> = ok(self
+            .c
+            .query_row(
+                "SELECT p.multi FROM poll_options o JOIN polls p ON p.message_id = o.message_id WHERE o.id = ? AND o.message_id = ?",
+                [option_id, message_id],
+                |r| r.get(0),
+            )
+            .optional());
+        let Some(multi) = multi else { return false };
+        let removed = ok(self.c.execute("DELETE FROM poll_votes WHERE option_id = ? AND user_id = ?", [option_id, user_id]));
+        if removed == 0 {
+            if multi == 0 {
+                ok(self.c.execute(
+                    "DELETE FROM poll_votes WHERE user_id = ? AND option_id IN (SELECT id FROM poll_options WHERE message_id = ?)",
+                    [user_id, message_id],
+                ));
+            }
+            ok(self.c.execute("INSERT INTO poll_votes (option_id, user_id) VALUES (?, ?)", [option_id, user_id]));
+        }
+        true
     }
 
     // ---------- threads ----------

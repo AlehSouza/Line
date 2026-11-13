@@ -81,28 +81,6 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           )}
         </div>
         {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} />}
-        {threads[c.id] && (
-          <div className="relative ml-4 border-l border-edge pl-2">
-            {threads[c.id]!.map((t) => {
-              const open = t.id === openThreadId;
-              const tUnread = !!unread[t.id] && !open;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => (open ? actions.closeThread() : actions.openThread(t.id))}
-                  title={t.name}
-                  className={cx(
-                    'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm',
-                    open ? 'bg-hover text-fg' : tUnread ? 'font-semibold text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
-                  )}
-                >
-                  <Icons.Thread size={14} className="shrink-0 opacity-70" />
-                  <span className="truncate">{t.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     );
   };

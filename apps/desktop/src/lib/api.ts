@@ -144,6 +144,10 @@ export const api = {
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),
   createThread: (channelId: string, name: string, messageId?: string) =>
     request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),
+  createPoll: (channelId: string, question: string, options: string[], multi: boolean) =>
+    request<Message>('POST', `/channels/${enc(channelId)}/polls`, { question, options, multi }),
+  votePoll: (messageId: string, optionId: string) =>
+    request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
 

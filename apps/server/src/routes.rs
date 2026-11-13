@@ -102,6 +102,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             axum::routing::patch(edit_message).delete(delete_message),
         )
         .route("/channels/{id}/threads", get(list_threads).post(create_thread))
+        .route("/channels/{id}/polls", post(create_poll))
+        .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
             "/attachments",
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
@@ -673,6 +675,36 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         refresh_thread_starter(&app, &q, &channel);
     }
     created(message)
+}
+
+async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<validate::CreatePoll>(&b)?.check()?;
+    let q = app.store.q();
+    let channel = require_access(&q, &id, &me)?;
+    if channel.kind == "voice" {
+        return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
+    }
+    let created_msg = q.create_message(&channel.id, &me, "", &[]);
+    q.create_poll(&created_msg.id, &input.question, &input.options, input.multi);
+    let message = q.message(&created_msg.id).unwrap_or(created_msg);
+    app.to_channel(&q, &channel.id, "message:create", &message);
+    if channel.kind == "thread" {
+        refresh_thread_starter(&app, &q, &channel);
+    }
+    created(message)
+}
+
+async fn vote_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<validate::Vote>(&b)?;
+    let q = app.store.q();
+    let message = q.message(&id).ok_or_else(|| bad_request("Mensagem não encontrada"))?;
+    require_access(&q, &message.channel_id, &me)?;
+    if !q.toggle_vote(&id, &input.option_id, &me) {
+        return Err(bad_request("Opção inválida"));
+    }
+    let message = q.message(&id).unwrap_or(message);
+    app.to_channel(&q, &message.channel_id, "message:update", &message);
+    ok(message)
 }
 
 /// Atualiza o contador de respostas mostrado embaixo da mensagem que abriu a thread.

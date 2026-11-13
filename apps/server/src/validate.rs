@@ -170,6 +170,35 @@ impl ChangePassword {
 }
 
 #[derive(Deserialize)]
+pub struct CreatePoll {
+    pub question: String,
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub multi: bool,
+}
+
+impl CreatePoll {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.question = self.question.trim().to_string();
+        text(&self.question, 1, 300, "A pergunta")?;
+        self.options = self.options.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+        if self.options.len() < 2 || self.options.len() > 10 {
+            return Err(validation("A enquete precisa de 2 a 10 opções"));
+        }
+        for o in &self.options {
+            text(o, 1, 100, "A opção")?;
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Vote {
+    pub option_id: String,
+}
+
+#[derive(Deserialize)]
 pub struct Login {
     pub username: String,
     pub password: String,

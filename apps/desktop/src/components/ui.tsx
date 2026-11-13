@@ -242,4 +242,6 @@ export const Icons = {
   FileText: icon(L.FileText),
   Download: icon(L.Download),
   Folder: icon(L.Folder),
+  Upload: icon(L.Upload),
+  Poll: icon(L.ChartBar),
 };

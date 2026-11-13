@@ -109,6 +109,26 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE users ADD COLUMN email TEXT;
   CREATE UNIQUE INDEX users_email ON users(email) WHERE email IS NOT NULL;
 "#,
+    // 4: enquetes
+    r#"
+  CREATE TABLE polls (
+    message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    multi INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE poll_options (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL REFERENCES polls(message_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    text TEXT NOT NULL
+  );
+  CREATE INDEX poll_options_message ON poll_options(message_id);
+  CREATE TABLE poll_votes (
+    option_id TEXT NOT NULL REFERENCES poll_options(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (option_id, user_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

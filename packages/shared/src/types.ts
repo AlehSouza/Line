@@ -96,6 +96,7 @@ export interface Message {
   attachments: Attachment[];
   /** Thread aberta a partir desta mensagem. */
   thread: ThreadSummary | null;
+  poll?: Poll | null;
 }
 
 export type FriendState = 'friends' | 'incoming' | 'outgoing';
@@ -142,3 +143,15 @@ export interface VoiceState {
 export type VoiceSignal =
   | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
   | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null };
+
+export interface PollOption {
+  id: string;
+  text: string;
+  voterIds: string[];
+}
+
+export interface Poll {
+  question: string;
+  multi: boolean;
+  options: PollOption[];
+}
