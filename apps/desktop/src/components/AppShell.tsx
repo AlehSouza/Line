@@ -58,16 +58,24 @@ export function AppShell() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <ServerRail />
-        <aside className="flex w-60 shrink-0 flex-col bg-side">
-          <div className="min-h-0 flex-1">
-            {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
+        {/* Coluna da esquerda: servidores + canais, com a caixa do usuário embaixo ocupando as duas. */}
+        <div
+          className="flex w-[312px] shrink-0 flex-col"
+          style={{ background: 'linear-gradient(to right, var(--color-rail) 72px, var(--color-side) 72px)' }}
+        >
+          <div className="flex min-h-0 flex-1">
+            <ServerRail />
+            <aside className="flex w-60 shrink-0 flex-col bg-side">
+              <div className="min-h-0 flex-1">
+                {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
+              </div>
+            </aside>
           </div>
           <div className="m-2 mt-1 rounded-xl border border-edge bg-rail shadow-lg">
             <VoiceBar />
             <UserPanel />
           </div>
-        </aside>
+        </div>
         <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
