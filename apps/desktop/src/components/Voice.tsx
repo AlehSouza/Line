@@ -607,7 +607,7 @@ function NoisePopover({ onClose }: { onClose: () => void }) {
 
   const lit = Math.round(level * METER_BARS);
   return (
-    <div ref={ref} className="absolute bottom-full right-0 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
+    <div ref={ref} className="absolute bottom-full left-2 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
       <div className="flex items-center justify-between">
         <span className="font-bold">Supressão de ruído</span>
         <button
@@ -677,7 +677,7 @@ export function VoiceBar() {
     );
 
   return (
-    <div className="space-y-2.5 border-b border-edge p-2.5">
+    <div className="relative space-y-2.5 border-b border-edge p-2.5">
       <div className="flex items-center gap-1">
         <button onClick={go} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-hover">
           <Icons.Signal size={20} className={connecting ? 'text-sun' : 'text-online'} />
@@ -688,7 +688,8 @@ export function VoiceBar() {
             <span className="block truncate text-xs text-muted">{label}</span>
           </span>
         </button>
-        <span className="relative">
+        {/* Sem "relative" aqui: o popover se ancora no painel e abre para cima e para a direita. */}
+        <span>
           <button
             title="Supressão de ruído"
             onClick={() => setNoiseOpen((v) => !v)}
