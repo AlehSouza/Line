@@ -14,13 +14,20 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const allCategories = useLine((s) => s.categories);
   const unread = useLine((s) => s.unread);
   const activeId = useLine((s) => (s.view.kind === 'server' ? s.view.channelId : null));
+  const openThreadId = useLine((s) => s.threadId);
   const loaded = useLine((s) => !!s.loadedServers[serverId]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const { categories, byCategory, loose } = useMemo(() => {
-    const channels = Object.values(allChannels)
-      .filter((c) => c.serverId === serverId)
+  const { categories, byCategory, loose, threads } = useMemo(() => {
+    const all = Object.values(allChannels).filter((c) => c.serverId === serverId);
+    const threads: Record<string, Channel[]> = {};
+    for (const t of all) if (t.type === 'thread' && t.parentId) (threads[t.parentId] ??= []).push(t);
+    // Threads mais ativas primeiro.
+    for (const list of Object.values(threads))
+      list.sort((a, b) => (b.lastMessageAt ?? b.id).localeCompare(a.lastMessageAt ?? a.id));
+    const channels = all
+      .filter((c) => c.type !== 'thread')
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const categories = Object.values(allCategories)
       .filter((c) => c.serverId === serverId)
@@ -31,7 +38,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       if (c.categoryId && allCategories[c.categoryId]) (byCategory[c.categoryId] ??= []).push(c);
       else loose.push(c);
     }
-    return { categories, byCategory, loose };
+    return { categories, byCategory, loose, threads };
   }, [allChannels, allCategories, serverId]);
 
   if (!server) return null;
@@ -74,6 +81,28 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           )}
         </div>
         {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} />}
+        {threads[c.id] && (
+          <div className="relative ml-4 border-l border-edge pl-2">
+            {threads[c.id]!.map((t) => {
+              const open = t.id === openThreadId;
+              const tUnread = !!unread[t.id] && !open;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => (open ? actions.closeThread() : actions.openThread(t.id))}
+                  title={t.name}
+                  className={cx(
+                    'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm',
+                    open ? 'bg-hover text-fg' : tUnread ? 'font-semibold text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
+                  )}
+                >
+                  <Icons.Thread size={14} className="shrink-0 opacity-70" />
+                  <span className="truncate">{t.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -198,7 +227,7 @@ function MenuItem({
       }}
       className={cx(
         'flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left font-medium',
-        danger ? 'text-danger hover:bg-danger hover:text-white' : accent ? 'text-accent hover:bg-accent hover:text-rail' : 'text-soft hover:bg-accent hover:text-rail',
+        danger ? 'text-danger hover:bg-danger hover:text-white' : accent ? 'text-accent hover:bg-accent hover:text-on-accent' : 'text-soft hover:bg-accent hover:text-on-accent',
       )}
     >
       {children}

@@ -10,3 +10,6 @@ apps/server/data/
 .env
 .env.local
 .DS_Store
+target/
+apps/desktop/src-tauri/gen/
+apps/desktop/public/noise/

@@ -2,7 +2,7 @@
 
 App de chat e comunidades para desktop (Windows), feito para uso pessoal com a sua galera: servidores, canais, mensagens privadas, amigos e status, tudo liberado e sem assinatura.
 
-Feito com **Electron + Next.js + TypeScript** no app, e **Node.js (Fastify + Socket.IO + SQLite)** no servidor que você mesmo hospeda.
+Feito em **Rust** por baixo: o app é um casco **Tauri** (usa o WebView2 do Windows em vez de carregar um Chromium inteiro) com a interface em **Next.js + TypeScript**, e o servidor é **Rust (axum + Socket.IO + SQLite)**, que roda embutido no próprio app ou sozinho numa máquina sua.
 
 ## O que já funciona (fase 1)
 
@@ -19,38 +19,40 @@ Feito com **Electron + Next.js + TypeScript** no app, e **Node.js (Fastify + Soc
 E da fase 2:
 
 - Canais de voz com WebRTC: entrar/sair, mudo, ensurdecer e indicador de quem está falando
-- Câmera e compartilhamento de tela (no app desktop, com seletor de tela/janela e áudio do sistema no Windows)
+- Câmera e compartilhamento de tela (com o seletor de tela/janela do Windows e áudio do sistema)
 - Chamadas de voz e vídeo nas mensagens privadas, com aviso de chamada recebida
 
 O plano completo, com voz, vídeo, tela, cargos, bots e o resto, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ## Rodando em desenvolvimento
 
-Requisitos: Node.js 22 ou mais novo.
+Requisitos: Node.js 22+, [Rust](https://rustup.rs) estável e, no Windows, as "Ferramentas de Build do C++" do Visual Studio (o instalador do Rust oferece). O WebView2 já vem no Windows 10/11.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Isso sobe o servidor em `http://localhost:4000` e abre o app no Electron (com o Next em modo dev em `http://localhost:3000`). Crie uma conta na tela inicial e pronto.
+Isso abre o app com o Next em modo dev (`http://localhost:3000`) e o servidor Line embutido em `http://localhost:4000`. Crie uma conta na tela inicial e pronto. A primeira compilação do Rust demora alguns minutos; as seguintes são rápidas.
 
 Outros comandos úteis:
 
 | Comando | O que faz |
 | --- | --- |
-| `npm run dev:server` | Só o servidor |
+| `npm run dev:server` | Só o servidor (`cargo run -p line-server`) |
 | `npm run dev:web` | Só a interface no navegador (http://localhost:3000) |
-| `npm test` | Testes do servidor |
-| `npm run typecheck` | Checagem de tipos em tudo |
-| `npm run dist:win` | Gera o instalador do Windows em `apps/desktop/release/` |
+| `npm test` | Testes do servidor: unitários em Rust + testes de contrato com `socket.io-client` |
+| `npm run typecheck` | Checagem de tipos da interface |
+| `npm run dist:win` | Gera o instalador do Windows em `target/release/bundle/nsis/` |
+
+O CI do GitHub também gera o instalador do Windows a cada PR (artefato "Line-instalador-windows").
 
 ## Jogando com os amigos
 
 O app conversa com um servidor Line. Para os seus amigos entrarem, o servidor precisa estar acessível para eles. Opções simples:
 
-1. **No seu PC + Tailscale** (recomendado para começar): instale o Tailscale em todos os PCs, rode `npm run dev:server` (ou `npm start -w @line/server`) e os amigos usam `http://SEU-IP-TAILSCALE:4000` no campo "Servidor" da tela de login.
-2. **Numa VPS barata**: rode `npm install && npm start -w @line/server` com `PORT` e `DATA_DIR` definidos (veja `apps/server/.env.example`), de preferência atrás de um proxy com HTTPS (Caddy faz isso sozinho).
+1. **No seu PC + Tailscale** (recomendado para começar): instale o Tailscale em todos os PCs, abra o app (ele já sobe o servidor) ou rode `npm run dev:server` e os amigos usam `http://SEU-IP-TAILSCALE:4000` no campo "Servidor" da tela de login.
+2. **Numa VPS barata**: compile com `cargo build --release -p line-server` e rode o binário `target/release/line-server` com `PORT` e `DATA_DIR` definidos (veja `apps/server/.env.example`), de preferência atrás de um proxy com HTTPS (Caddy faz isso sozinho).
 
 Sobre voz e vídeo: o navegador só libera microfone e câmera em `localhost` ou HTTPS. Pelo app desktop funciona sempre; pela versão web acessada por IP, só com HTTPS. A voz conecta as pessoas direto entre si (WebRTC); se alguém estiver atrás de uma rede muito restrita, pode ser preciso um servidor TURN (fica para depois).
 
@@ -60,11 +62,17 @@ Os dados ficam num único arquivo SQLite em `DATA_DIR/line.db`. Para backup, bas
 
 ```
 apps/
-  desktop/   App Electron + Next.js (interface)
-    electron/  Processo principal e preload do Electron
-    src/       Interface React (Next App Router, exportada estática)
-  server/    API REST + WebSocket (Fastify, Socket.IO, SQLite)
+  desktop/        Interface + app desktop
+    src/          Interface React (Next App Router, exportada estática)
+    src-tauri/    Casco Tauri em Rust: janela, ponte com a interface, servidor embutido
+  server/         Servidor Line em Rust (crate line-server)
+    src/          axum (REST), socketioxide (tempo real), rusqlite (banco)
+    test/         Testes de contrato em TypeScript contra o binário
 packages/
-  shared/    Tipos, validações (zod) e eventos em tempo real usados pelos dois lados
-docs/        Arquitetura e roadmap
+  shared/         Tipos, validações (zod) e eventos em tempo real usados pela interface
+docs/             Arquitetura e roadmap
 ```
+
+### Vindo da versão Electron
+
+Na primeira vez que o app novo abre, ele copia o banco do servidor embutido antigo (`%APPDATA%\Line\server`) para a pasta nova, então contas, servidores e mensagens continuam lá. Senhas e o formato do banco são os mesmos. Só é preciso entrar de novo na conta uma vez.

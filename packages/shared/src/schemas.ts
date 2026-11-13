@@ -63,8 +63,16 @@ export const createCategorySchema = z.object({
   name: z.string().trim().min(1).max(100),
 });
 
-export const sendMessageSchema = z.object({
-  content: z.string().trim().min(1, 'Mensagem vazia').max(4000),
+export const sendMessageSchema = z
+  .object({
+    content: z.string().trim().max(4000).default(''),
+    attachmentIds: z.array(z.string()).max(10).default([]),
+  })
+  .refine((m) => m.content.length > 0 || m.attachmentIds.length > 0, 'Mensagem vazia');
+
+export const createThreadSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  messageId: z.string().optional(),
 });
 
 export const createDmSchema = z.object({

@@ -8,8 +8,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "concurrently -k -n server,desktop -c green,cyan \"npm run dev -w @line/server\" \"npm run dev -w @line/desktop\"",
-    "dev:server": "npm run dev -w @line/server",
+    "dev": "npm run dev -w @line/desktop",
+    "dev:server": "cargo run -p line-server",
     "dev:web": "npm run dev:web -w @line/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -17,7 +17,6 @@
     "dist:win": "npm run dist:win -w @line/desktop"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6",
     "typescript": "~5.9.3"
   },
   "engines": {

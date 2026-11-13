@@ -1,0 +1,34 @@
+[package]
+name = "line-server"
+description = "Servidor do Line: API REST + gateway em tempo real (Socket.IO) + SQLite"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "line_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "line-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.8.9"
+base64 = "0.22"
+chrono = "0.4"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+mime = "0.3"
+jsonwebtoken = { version = "11.1.0", features = ["rust_crypto"] }
+rand = "0.9"
+regex = "1"
+rusqlite = { version = "0.42.0", features = ["bundled"] }
+scrypt = { version = "0.12.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socketioxide = { version = "0.18.9", features = ["state", "extensions"] }
+subtle = "2.6"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "fs", "io-util"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["cors", "catch-panic", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

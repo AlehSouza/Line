@@ -17,6 +17,8 @@ export type Modal =
   | { kind: 'profile' }
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string }
+  | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
+  | { kind: 'image'; url: string; filename: string }
   | null;
 
 interface MessageBucket {
@@ -53,6 +55,8 @@ export interface LineState {
   lastChannelByServer: Record<string, string>;
 
   view: View;
+  /** Thread aberta no painel lateral direito. */
+  threadId: string | null;
   modal: Modal;
 }
 
@@ -73,6 +77,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   typing: {},
   lastChannelByServer: {},
   view: { kind: 'home', dmId: null },
+  threadId: null,
   modal: null,
 };
 
@@ -210,7 +215,10 @@ export const actions = {
       let view = s.view;
       if (view.kind === 'server' && view.channelId === id) view = { ...view, channelId: null };
       if (view.kind === 'home' && view.dmId === id) view = { kind: 'home', dmId: null };
-      return { channels, dmOrder: s.dmOrder.filter((x) => x !== id), view };
+      // Apagar um canal também leva as threads dele.
+      for (const [cid, c] of Object.entries(channels)) if (c.parentId === id) delete channels[cid];
+      const threadId = s.threadId && channels[s.threadId] ? s.threadId : null;
+      return { channels, dmOrder: s.dmOrder.filter((x) => x !== id), view, threadId };
     });
   },
 
@@ -334,7 +342,7 @@ export const actions = {
   // ----- navegação -----
 
   goHome(dmId: string | null = null) {
-    set({ view: { kind: 'home', dmId } });
+    set({ view: { kind: 'home', dmId }, threadId: null });
     if (dmId) actions.markRead(dmId);
   },
 
@@ -343,13 +351,31 @@ export const actions = {
     const target = channelId ?? s.lastChannelByServer[serverId] ?? null;
     set((st) => ({
       view: { kind: 'server', serverId, channelId: target },
+      // A thread aberta só continua se for deste canal.
+      threadId: st.threadId && st.channels[st.threadId]?.parentId === target ? st.threadId : null,
       lastChannelByServer: target ? { ...st.lastChannelByServer, [serverId]: target } : st.lastChannelByServer,
     }));
     if (target) actions.markRead(target);
   },
 
   goDiscover() {
-    set({ view: { kind: 'discover' } });
+    set({ view: { kind: 'discover' }, threadId: null });
+  },
+
+  /** Abre uma thread no painel lateral, indo para o canal onde ela nasceu. */
+  openThread(threadId: string) {
+    const thread = get().channels[threadId];
+    if (!thread) return;
+    if (thread.serverId && thread.parentId) {
+      const v = get().view;
+      if (v.kind !== 'server' || v.channelId !== thread.parentId) actions.goServer(thread.serverId, thread.parentId);
+    }
+    set({ threadId });
+    actions.markRead(threadId);
+  },
+
+  closeThread() {
+    set({ threadId: null });
   },
 
   openModal(modal: Modal) {

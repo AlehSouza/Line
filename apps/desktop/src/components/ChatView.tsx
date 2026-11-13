@@ -1,8 +1,9 @@
 'use client';
 
-import type { Channel, Message } from '@line/shared';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import type { Attachment, Channel, Message } from '@line/shared';
+import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
+import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
@@ -22,6 +23,8 @@ export function ChatView({ channel }: { channel: Channel }) {
 
   const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
   const inCall = useVoice((v) => v.channelId === channel.id);
+  const composer = useRef<ComposerHandle>(null);
+  const drop = useFileDrop((files) => composer.current?.addFiles(files));
 
   useEffect(() => {
     actions.markRead(channel.id);
@@ -31,7 +34,8 @@ export function ChatView({ channel }: { channel: Channel }) {
   }, [channel.id]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
+      {drop.over && <DropOverlay target={isDm ? title : `#${channel.name}`} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         {isDm ? (
           other ? (
@@ -48,6 +52,15 @@ export function ChatView({ channel }: { channel: Channel }) {
             <span className="mx-2 h-6 w-px bg-edge" />
             <p className="truncate text-sm text-muted">{channel.topic}</p>
           </>
+        )}
+        {channel.type === 'text' && (
+          <button
+            title="Criar thread"
+            onClick={() => actions.openModal({ kind: 'create-thread', channelId: channel.id })}
+            className="ml-auto rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
+          >
+            <Icons.Thread size={20} />
+          </button>
         )}
         {isDm && !inCall && (
           <div className="ml-auto flex gap-1">
@@ -69,9 +82,97 @@ export function ChatView({ channel }: { channel: Channel }) {
       </header>
       {isDm && callActive && <VoiceStage channel={channel} compact />}
       <MessageList channel={channel} title={title} />
-      <Composer channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
+      <Composer ref={composer} channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
     </div>
   );
+}
+
+/** Painel lateral com a conversa de uma thread. */
+export function ThreadPanel({ thread }: { thread: Channel }) {
+  const composer = useRef<ComposerHandle>(null);
+  const drop = useFileDrop((files) => composer.current?.addFiles(files));
+  const meId = useLine((s) => s.me?.id);
+  const isServerOwner = useLine((s) => (thread.serverId ? s.servers[thread.serverId]?.ownerId === meId : false));
+  const canDelete = isServerOwner || thread.ownerId === meId;
+
+  useEffect(() => {
+    actions.markRead(thread.id);
+  }, [thread.id]);
+
+  return (
+    <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main" {...drop.handlers}>
+      {drop.over && <DropOverlay target={thread.name} />}
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        <Icons.Thread size={20} className="shrink-0 text-muted" />
+        <h2 className="truncate font-bold">{thread.name}</h2>
+        <div className="ml-auto flex gap-1">
+          {canDelete && (
+            <button
+              title="Apagar thread"
+              onClick={async () => {
+                if (confirm(`Apagar a thread "${thread.name}"? As mensagens dela serão apagadas.`)) {
+                  await api.deleteChannel(thread.id).catch((e) => alert(e.message));
+                }
+              }}
+              className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-danger"
+            >
+              <Icons.Trash size={18} />
+            </button>
+          )}
+          <button title="Fechar thread" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+            <Icons.X size={20} />
+          </button>
+        </div>
+      </header>
+      <MessageList channel={thread} title={thread.name} />
+      <Composer ref={composer} channel={thread} placeholder={`Responder em ${thread.name}`} />
+    </aside>
+  );
+}
+
+function DropOverlay({ target }: { target: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-black/50 p-6">
+      <div className="rounded-2xl border-2 border-dashed border-accent bg-side/90 px-10 py-8 text-center shadow-2xl">
+        <Icons.Paperclip size={36} className="mx-auto text-accent" />
+        <p className="mt-3 text-lg font-bold">Soltar para enviar</p>
+        <p className="text-sm text-muted">em {target}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Arrastar e soltar arquivos em cima do chat. */
+function useFileDrop(onFiles: (files: File[]) => void) {
+  const [over, setOver] = useState(false);
+  const depth = useRef(0);
+  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
+  return {
+    over,
+    handlers: {
+      onDragEnter: (e: DragEvent) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current++;
+        setOver(true);
+      },
+      onDragOver: (e: DragEvent) => {
+        if (hasFiles(e)) e.preventDefault();
+      },
+      onDragLeave: (e: DragEvent) => {
+        if (!hasFiles(e)) return;
+        depth.current = Math.max(0, depth.current - 1);
+        if (!depth.current) setOver(false);
+      },
+      onDrop: (e: DragEvent) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth.current = 0;
+        setOver(false);
+        onFiles(Array.from(e.dataTransfer.files));
+      },
+    },
+  };
 }
 
 function MessageList({ channel, title }: { channel: Channel; title: string }) {
@@ -84,10 +185,30 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
   const stickToBottom = useRef(true);
   const prevHeight = useRef(0);
   const loadingOlder = useRef(false);
+  const lastTop = useRef(0);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
 
   const items = bucket?.items ?? EMPTY;
+  const content = useRef<HTMLDivElement>(null);
+  const isThread = channel.type === 'thread';
+  const starter = useLine((s) =>
+    isThread && channel.threadMessageId && channel.parentId
+      ? s.messages[channel.parentId]?.items.find((m) => m.id === channel.threadMessageId)
+      : undefined,
+  );
+
+  // Imagens e vídeos mudam de altura ao carregar: continua grudado no fim se já estava.
+  useEffect(() => {
+    const el = content.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const sc = scroller.current;
+      if (sc && stickToBottom.current) sc.scrollTop = sc.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     stickToBottom.current = true;
@@ -110,7 +231,11 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
   async function onScroll() {
     const el = scroller.current;
     if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    // Só solta do fim quando a pessoa rola para cima (conteúdo crescendo não conta).
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) stickToBottom.current = true;
+    else if (el.scrollTop < lastTop.current - 1) stickToBottom.current = false;
+    lastTop.current = el.scrollTop;
     if (el.scrollTop < 120 && bucket?.hasMore && !loadingOlder.current) {
       loadingOlder.current = true;
       prevHeight.current = el.scrollHeight;
@@ -119,9 +244,26 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
   }
 
   return (
-    <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="flex min-h-full flex-col justify-end pb-4">
-        {bucket && !bucket.hasMore && (
+    <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
+      <div ref={content} className="flex min-h-full flex-col justify-end pb-4">
+        {bucket && !bucket.hasMore && isThread && (
+          <div className="px-4 pt-8 pb-2">
+            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-raise text-accent">
+              <Icons.Thread size={28} />
+            </div>
+            <h2 className="text-2xl font-bold">{title}</h2>
+            {starter ? (
+              <div className="mt-3 rounded-lg border border-edge bg-side/60 p-3">
+                <p className="mb-1 text-xs font-semibold text-muted">Mensagem original de {users[starter.author.id]?.displayName ?? starter.author.displayName}</p>
+                {starter.content && <div className="text-[14px] break-words whitespace-pre-wrap text-soft">{renderMarkdown(starter.content, myUsername)}</div>}
+                <AttachmentList attachments={starter.attachments} />
+              </div>
+            ) : (
+              <p className="mt-1 text-muted">Este é o começo da thread.</p>
+            )}
+          </div>
+        )}
+        {bucket && !bucket.hasMore && !isThread && (
           <div className="px-4 pt-8 pb-4">
             <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-raise text-accent">
               {channel.serverId ? <Icons.Hash size={36} /> : <Icons.Message size={32} />}
@@ -159,6 +301,7 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
                 onEdit={() => setEditing(m.id)}
                 onDoneEditing={() => setEditing(null)}
                 myUsername={myUsername}
+                canThread={channel.type === 'text'}
               />
             </Fragment>
           );
@@ -200,6 +343,7 @@ function MessageRow({
   onEdit,
   onDoneEditing,
   myUsername,
+  canThread,
 }: {
   message: Message;
   authorName: string;
@@ -211,13 +355,15 @@ function MessageRow({
   onEdit: () => void;
   onDoneEditing: () => void;
   myUsername?: string;
+  canThread: boolean;
 }) {
   const [draft, setDraft] = useState(message.content);
+  const showThreadAction = canThread && !message.thread;
   const mentionsMe = !!myUsername && message.content.toLowerCase().includes(`@${myUsername}`);
 
   async function saveEdit() {
     const content = draft.trim();
-    if (!content || content === message.content) return onDoneEditing();
+    if ((!content && !message.attachments.length) || content === message.content) return onDoneEditing();
     try {
       await api.editMessage(message.id, content);
       onDoneEditing();
@@ -277,15 +423,35 @@ function MessageRow({
             <p className="text-xs text-muted">Esc para cancelar · Enter para salvar</p>
           </div>
         ) : (
-          <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
-            {renderMarkdown(message.content, myUsername)}
-            {message.editedAt && <span className="ml-1 text-[10px] text-muted">(editado)</span>}
-          </div>
+          message.content && (
+            <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
+              {renderMarkdown(message.content, myUsername)}
+              {message.editedAt && <span className="ml-1 text-[10px] text-muted">(editado)</span>}
+            </div>
+          )
         )}
+        <AttachmentList attachments={message.attachments} />
+        {message.thread && <ThreadChip thread={message.thread} />}
       </div>
 
-      {!editing && (mine || canDelete) && (
+      {!editing && (mine || canDelete || showThreadAction) && (
         <div className="absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex">
+          {showThreadAction && (
+            <button
+              title="Criar thread"
+              onClick={() =>
+                actions.openModal({
+                  kind: 'create-thread',
+                  channelId: message.channelId,
+                  messageId: message.id,
+                  suggestedName: (message.content.split('\n')[0] || message.attachments[0]?.filename || '').slice(0, 60),
+                })
+              }
+              className="p-1.5 text-muted hover:text-fg"
+            >
+              <Icons.Thread size={16} />
+            </button>
+          )}
           {mine && (
             <button title="Editar" onClick={() => { setDraft(message.content); onEdit(); }} className="p-1.5 text-muted hover:text-fg">
               <Icons.Edit size={16} />
@@ -308,10 +474,103 @@ function MessageRow({
   );
 }
 
-function Composer({ channel, placeholder }: { channel: Channel; placeholder: string }) {
+function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
+  const open = useLine((s) => s.threadId === thread.id);
+  const n = thread.messageCount;
+  return (
+    <button
+      onClick={() => (open ? actions.closeThread() : actions.openThread(thread.id))}
+      className={cx(
+        'mt-1.5 flex max-w-[420px] items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm',
+        open ? 'border-accent/60 bg-accent/10' : 'border-edge bg-side/60 hover:border-accent/40 hover:bg-hover',
+      )}
+    >
+      <Icons.Thread size={16} className="shrink-0 text-accent" />
+      <span className="truncate font-semibold text-fg">{thread.name}</span>
+      <span className="shrink-0 text-xs text-accent">{n === 0 ? 'Sem respostas' : n === 1 ? '1 mensagem' : `${n} mensagens`}</span>
+      {thread.lastMessageAt && n > 0 && <span className="shrink-0 truncate text-xs text-muted">{formatTime(thread.lastMessageAt)}</span>}
+    </button>
+  );
+}
+
+type ComposerHandle = { addFiles: (files: File[]) => void };
+
+interface Pending {
+  key: string;
+  name: string;
+  size: number;
+  type: string;
+  preview?: string;
+  progress: number;
+  attachment?: Attachment;
+  error?: string;
+}
+
+const MAX_FILE = 100 * 1024 * 1024;
+const MAX_FILES = 10;
+/** Texto colado maior que isso vira um arquivo .txt (como no Discord). */
+const LONG_PASTE = 2000;
+
+function Composer({ channel, placeholder, ref: handle }: { channel: Channel; placeholder: string; ref?: Ref<ComposerHandle> }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [pending, setPending] = useState<Pending[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
+  const patch = (key: string, p: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === key ? { ...x, ...p } : x)));
+
+  function addFiles(files: File[]) {
+    const room = MAX_FILES - pendingRef.current.length;
+    if (files.length > room) alert(`Dá para enviar até ${MAX_FILES} arquivos por mensagem.`);
+    for (const file of files.slice(0, Math.max(0, room))) {
+      const key = `${Date.now()}-${Math.random()}`;
+      const name = file.name || 'arquivo';
+      const kind = attachmentKind(file.type, name);
+      const item: Pending = {
+        key,
+        name,
+        size: file.size,
+        type: file.type,
+        progress: 0,
+        preview: kind === 'image' || kind === 'video' ? URL.createObjectURL(file) : undefined,
+        error: file.size > MAX_FILE ? 'Maior que 100 MB' : file.size === 0 ? 'Arquivo vazio' : undefined,
+      };
+      setPending((list) => [...list, item]);
+      if (item.error) continue;
+      api
+        .uploadAttachment(file, name, (f) => patch(key, { progress: f }))
+        .then((attachment) => patch(key, { attachment, progress: 1 }))
+        .catch((e: Error) => patch(key, { error: e.message }));
+    }
+    ref.current?.focus();
+  }
+
+  useImperativeHandle(handle, () => ({ addFiles }));
+
+  function remove(key: string) {
+    setPending((list) => {
+      const item = list.find((x) => x.key === key);
+      if (item?.preview) URL.revokeObjectURL(item.preview);
+      return list.filter((x) => x.key !== key);
+    });
+  }
+
+  function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const files = Array.from(e.clipboardData.files);
+    if (files.length) {
+      e.preventDefault();
+      addFiles(files);
+      return;
+    }
+    const pasted = e.clipboardData.getData('text/plain');
+    if (pasted.length > LONG_PASTE) {
+      e.preventDefault();
+      addFiles([new File([pasted], 'mensagem.txt', { type: 'text/plain' })]);
+    }
+  }
   const typing = useLine((s) => s.typing[channel.id]);
   const meId = useLine((s) => s.me?.id);
   const typers = Object.entries(typing ?? {})
@@ -320,17 +579,28 @@ function Composer({ channel, placeholder }: { channel: Channel; placeholder: str
 
   useEffect(() => {
     setText('');
+    setPending((list) => {
+      for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
+      return [];
+    });
     ref.current?.focus();
   }, [channel.id]);
 
+  const uploading = pending.some((x) => !x.attachment && !x.error);
+  const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
+
   async function send() {
     const content = text.trim();
-    if (!content || sending) return;
+    if ((!content && !ready.length) || sending || uploading) return;
     setSending(true);
     try {
-      const message = await api.sendMessage(channel.id, content);
+      const message = await api.sendMessage(channel.id, content, ready);
       actions.addMessage(message);
       setText('');
+      setPending((list) => {
+        for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
+        return [];
+      });
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -348,7 +618,32 @@ function Composer({ channel, placeholder }: { channel: Channel; placeholder: str
 
   return (
     <div className="shrink-0 px-4 pb-2">
-      <div className="flex items-end rounded-xl bg-raise px-4 py-2.5">
+      <div className="rounded-xl bg-raise">
+        {pending.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto border-b border-edge p-3">
+            {pending.map((p) => (
+              <PendingCard key={p.key} item={p} onRemove={() => remove(p.key)} />
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2 px-3 py-2.5">
+        <button
+          title="Anexar arquivo"
+          onClick={() => picker.current?.click()}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-soft hover:text-fg"
+        >
+          <Icons.Plus size={20} />
+        </button>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            addFiles(Array.from(e.target.files ?? []));
+            e.target.value = '';
+          }}
+        />
         <textarea
           ref={ref}
           value={text}
@@ -357,12 +652,15 @@ function Composer({ channel, placeholder }: { channel: Channel; placeholder: str
             if (e.target.value) sendTyping(channel.id);
           }}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           rows={1}
           maxLength={4000}
           className="max-h-60 min-h-6 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-muted"
           style={{ height: `${Math.min(240, 24 * Math.max(1, text.split('\n').length))}px` }}
         />
+        {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
+        </div>
       </div>
       <div className="h-5 px-1 pt-0.5 text-xs text-soft">
         {typers.length > 0 && (
@@ -384,5 +682,48 @@ function TypingDots() {
         <span key={i} className="h-1.5 w-1.5 animate-bounce rounded-full bg-soft" style={{ animationDelay: `${i * 0.15}s` }} />
       ))}
     </span>
+  );
+}
+
+function PendingCard({ item, onRemove }: { item: Pending; onRemove: () => void }) {
+  const kind = attachmentKind(item.type, item.name);
+  const done = !!item.attachment;
+  return (
+    <div className="relative flex w-44 shrink-0 flex-col rounded-lg border border-edge bg-side p-2">
+      <button
+        title="Remover"
+        onClick={onRemove}
+        className="absolute -top-2 -right-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-edge bg-rail text-muted shadow hover:text-danger"
+      >
+        <Icons.X size={14} />
+      </button>
+      <div className="flex h-24 items-center justify-center overflow-hidden rounded-md bg-rail">
+        {kind === 'image' && item.preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.preview} alt={item.name} className="h-full w-full object-cover" />
+        ) : kind === 'video' && item.preview ? (
+          <video src={item.preview} muted className="h-full w-full object-cover" />
+        ) : kind === 'text' ? (
+          <Icons.FileText size={36} className="text-accent" />
+        ) : (
+          <Icons.File size={36} className="text-accent" />
+        )}
+      </div>
+      <p className="mt-1.5 truncate text-xs font-medium text-fg" title={item.name}>
+        {item.name}
+      </p>
+      {item.error ? (
+        <p className="truncate text-[11px] text-danger" title={item.error}>
+          {item.error}
+        </p>
+      ) : (
+        <div className="mt-1 flex items-center gap-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-rail">
+            <div className={cx('h-full rounded-full', done ? 'bg-online' : 'bg-accent')} style={{ width: `${Math.round(item.progress * 100)}%` }} />
+          </div>
+          <span className="text-[10px] text-muted">{formatSize(item.size)}</span>
+        </div>
+      )}
+    </div>
   );
 }

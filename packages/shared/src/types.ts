@@ -3,7 +3,7 @@ export type UserStatus = 'online' | 'idle' | 'dnd' | 'invisible';
 /** Presença que os outros enxergam. */
 export type Presence = 'online' | 'idle' | 'dnd' | 'offline';
 
-export type ChannelType = 'text' | 'voice' | 'dm' | 'group_dm';
+export type ChannelType = 'text' | 'voice' | 'dm' | 'group_dm' | 'thread';
 
 export interface PublicUser {
   id: string;
@@ -49,8 +49,31 @@ export interface Channel {
   position: number;
   /** Só para dm / group_dm. */
   recipients?: PublicUser[];
+  /** Dono da DM em grupo ou quem criou a thread. */
   ownerId?: string | null;
   lastMessageAt?: string | null;
+  /** Só para threads: canal de texto onde a thread nasceu. */
+  parentId?: string;
+  /** Só para threads: mensagem que abriu a thread (null se foi criada solta). */
+  threadMessageId?: string | null;
+  /** Só para threads. */
+  messageCount?: number;
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  /** Caminho relativo ao servidor, ex.: /api/attachments/abc/foto.png */
+  url: string;
+}
+
+export interface ThreadSummary {
+  id: string;
+  name: string;
+  messageCount: number;
+  lastMessageAt: string | null;
 }
 
 export interface Member {
@@ -67,6 +90,9 @@ export interface Message {
   content: string;
   createdAt: string;
   editedAt: string | null;
+  attachments: Attachment[];
+  /** Thread aberta a partir desta mensagem. */
+  thread: ThreadSummary | null;
 }
 
 export type FriendState = 'friends' | 'incoming' | 'outgoing';
