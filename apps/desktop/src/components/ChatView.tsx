@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment, Channel, Message } from '@line/shared';
-import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
+import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
@@ -103,8 +103,8 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
     <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main" {...drop.handlers}>
       {drop.over && <DropOverlay target={thread.name} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
-        <Icons.Thread size={20} className="shrink-0 text-muted" />
-        <h2 className="truncate font-bold">{thread.name}</h2>
+        <h2 className="font-bold">Conversa</h2>
+        <span className="truncate text-sm text-muted">{thread.name}</span>
         <div className="ml-auto flex gap-1">
           {canDelete && (
             <button
@@ -124,8 +124,11 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
           </button>
         </div>
       </header>
-      <MessageList channel={thread} title={thread.name} />
-      <Composer ref={composer} channel={thread} placeholder={`Responder em ${thread.name}`} />
+      <MessageList
+        channel={thread}
+        title={thread.name}
+        footer={<Composer ref={composer} channel={thread} placeholder="Responder…" />}
+      />
     </aside>
   );
 }
@@ -175,7 +178,7 @@ function useFileDrop(onFiles: (files: File[]) => void) {
   };
 }
 
-function MessageList({ channel, title }: { channel: Channel; title: string }) {
+function MessageList({ channel, title, footer }: { channel: Channel; title: string; footer?: ReactNode }) {
   const bucket = useLine((s) => s.messages[channel.id]);
   const meId = useLine((s) => s.me?.id);
   const myUsername = useLine((s) => s.me?.username);
@@ -245,22 +248,32 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
 
   return (
     <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
-      <div ref={content} className="flex min-h-full flex-col justify-end pb-4">
+      <div ref={content} className={cx('flex flex-col', isThread ? 'pb-2' : 'min-h-full justify-end pb-4')}>
         {bucket && !bucket.hasMore && isThread && (
-          <div className="px-4 pt-8 pb-2">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-raise text-accent">
-              <Icons.Thread size={28} />
-            </div>
-            <h2 className="text-2xl font-bold">{title}</h2>
+          <div className="pt-3">
             {starter ? (
-              <div className="mt-3 rounded-lg border border-edge bg-side/60 p-3">
-                <p className="mb-1 text-xs font-semibold text-muted">Mensagem original de {users[starter.author.id]?.displayName ?? starter.author.displayName}</p>
-                {starter.content && <div className="text-[14px] break-words whitespace-pre-wrap text-soft">{renderMarkdown(starter.content, myUsername)}</div>}
-                <AttachmentList attachments={starter.attachments} />
+              <div className="flex gap-3 px-4 py-1">
+                <Avatar
+                  name={(users[starter.author.id] ?? starter.author).displayName}
+                  color={(users[starter.author.id] ?? starter.author).avatarColor}
+                  size={36}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-baseline gap-2">
+                    <span className="font-semibold">{(users[starter.author.id] ?? starter.author).displayName}</span>
+                    <span className="text-xs text-muted">{formatTime(starter.createdAt)}</span>
+                  </p>
+                  {starter.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(starter.content, myUsername)}</div>}
+                  <AttachmentList attachments={starter.attachments} compact />
+                </div>
               </div>
             ) : (
-              <p className="mt-1 text-muted">Este é o começo da thread.</p>
+              <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
+            <div className="mt-2 flex items-center gap-2 px-4 text-xs text-muted">
+              <span className="shrink-0">{items.length === 1 ? '1 resposta' : `${items.length} respostas`}</span>
+              <span className="h-px flex-1 bg-edge" />
+            </div>
           </div>
         )}
         {bucket && !bucket.hasMore && !isThread && (
@@ -302,11 +315,14 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
                 onDoneEditing={() => setEditing(null)}
                 myUsername={myUsername}
                 canThread={channel.type === 'text'}
+                tight={isThread}
               />
             </Fragment>
           );
         })}
       </div>
+      {/* Na thread a caixa de resposta fica logo abaixo da última resposta (e gruda embaixo quando a conversa é longa). */}
+      {footer && <div className="sticky bottom-0 bg-main pt-1">{footer}</div>}
     </div>
   );
 }
@@ -344,6 +360,7 @@ function MessageRow({
   onDoneEditing,
   myUsername,
   canThread,
+  tight,
 }: {
   message: Message;
   authorName: string;
@@ -356,6 +373,7 @@ function MessageRow({
   onDoneEditing: () => void;
   myUsername?: string;
   canThread: boolean;
+  tight?: boolean;
 }) {
   const [draft, setDraft] = useState(message.content);
   const showThreadAction = canThread && !message.thread;
@@ -376,7 +394,7 @@ function MessageRow({
     <div
       className={cx(
         'group relative flex gap-4 px-4 py-0.5 hover:bg-black/10',
-        !grouped && 'mt-4',
+        !grouped && (tight ? 'mt-2' : 'mt-4'),
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
       )}
     >
@@ -476,19 +494,33 @@ function MessageRow({
 
 function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
   const open = useLine((s) => s.threadId === thread.id);
+  const users = useLine((s) => s.users);
   const n = thread.messageCount;
+  const people = (thread.participantIds ?? []).map((id) => users[id]).filter(Boolean);
   return (
     <button
       onClick={() => (open ? actions.closeThread() : actions.openThread(thread.id))}
-      className={cx(
-        'mt-1.5 flex max-w-[420px] items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm',
-        open ? 'border-accent/60 bg-accent/10' : 'border-edge bg-side/60 hover:border-accent/40 hover:bg-hover',
-      )}
+      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 text-left text-sm', open && 'bg-accent/10')}
     >
-      <Icons.Thread size={16} className="shrink-0 text-accent" />
-      <span className="truncate font-semibold text-fg">{thread.name}</span>
-      <span className="shrink-0 text-xs text-accent">{n === 0 ? 'Sem respostas' : n === 1 ? '1 mensagem' : `${n} mensagens`}</span>
-      {thread.lastMessageAt && n > 0 && <span className="shrink-0 truncate text-xs text-muted">{formatTime(thread.lastMessageAt)}</span>}
+      {people.length > 0 ? (
+        <span className="flex -space-x-1.5">
+          {people.map((u) => (
+            <span key={u!.id} className="rounded-md ring-2 ring-main">
+              <Avatar name={u!.displayName} color={u!.avatarColor} size={22} />
+            </span>
+          ))}
+        </span>
+      ) : (
+        <Icons.Thread size={18} className="text-accent" />
+      )}
+      <span className="font-semibold text-accent group-hover/thread:underline">
+        {n === 0 ? 'Responder' : n === 1 ? '1 resposta' : `${n} respostas`}
+      </span>
+      {thread.lastMessageAt && n > 0 && (
+        <span className="text-xs text-muted opacity-0 transition-opacity group-hover/thread:opacity-100">
+          Última resposta {formatTime(thread.lastMessageAt)}
+        </span>
+      )}
     </button>
   );
 }

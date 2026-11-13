@@ -22,18 +22,18 @@ export function attachmentKind(contentType: string, filename = '') {
 }
 
 /** Anexos de uma mensagem: imagens e GIFs, vídeos, áudios, textos com prévia e demais arquivos. */
-export function AttachmentList({ attachments }: { attachments: Attachment[] }) {
+export function AttachmentList({ attachments, compact }: { attachments: Attachment[]; compact?: boolean }) {
   if (!attachments.length) return null;
   return (
     <div className="mt-1 flex flex-col items-start gap-2">
       {attachments.map((a) => (
-        <AttachmentView key={a.id} attachment={a} />
+        <AttachmentView key={a.id} attachment={a} compact={compact} />
       ))}
     </div>
   );
 }
 
-function AttachmentView({ attachment: a }: { attachment: Attachment }) {
+function AttachmentView({ attachment: a, compact }: { attachment: Attachment; compact?: boolean }) {
   const url = fileUrl(a.url);
   switch (attachmentKind(a.contentType, a.filename)) {
     case 'image':
@@ -44,7 +44,7 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
           title={a.filename}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={a.filename} loading="lazy" className="block max-h-[350px] max-w-[420px] object-contain" />
+          <img src={url} alt={a.filename} loading="lazy" className={cx('block object-contain', compact ? 'max-h-[160px] max-w-[220px]' : 'max-h-[350px] max-w-[420px]')} />
         </button>
       );
     case 'video':
@@ -53,7 +53,7 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
           src={url}
           controls
           preload="metadata"
-          className="max-h-[360px] w-[520px] max-w-full rounded-lg border border-edge bg-black"
+          className={cx('max-w-full rounded-lg border border-edge bg-black', compact ? 'max-h-[180px] w-[280px]' : 'max-h-[360px] w-[520px]')}
         />
       );
     case 'audio':

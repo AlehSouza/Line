@@ -119,6 +119,8 @@ pub struct ThreadSummary {
     pub name: String,
     pub message_count: i64,
     pub last_message_at: Option<String>,
+    /// Quem respondeu por último (até 3, mais recente primeiro), para os mini avatares.
+    pub participant_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

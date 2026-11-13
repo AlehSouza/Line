@@ -908,7 +908,13 @@ impl Q<'_> {
             )
             .optional());
         let (id, name, last_message_at) = row?;
-        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at })
+        let participant_ids = ok(self
+            .c
+            .prepare_cached(
+                "SELECT author_id FROM messages WHERE channel_id = ? GROUP BY author_id ORDER BY MAX(created_at) DESC LIMIT 3",
+            )
+            .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()));
+        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at, participant_ids })
     }
 
     pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {
