@@ -112,6 +112,16 @@ export interface Gif {
   height: number;
 }
 
+/** Preview de um link do chat, montado pelo servidor. */
+export interface LinkEmbed {
+  url: string;
+  siteName?: string | null;
+  title?: string | null;
+  description?: string | null;
+  image?: string | null;
+  youtubeId?: string | null;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
@@ -203,4 +213,5 @@ export const api = {
   unblockUser: (userId: string) => request<void>('DELETE', `/friends/${enc(userId)}/block`),
 
   gifs: (q = '', offset = 0) => request<Gif[]>('GET', `/gifs?q=${enc(q)}&offset=${offset}`),
+  embed: (url: string) => request<LinkEmbed | null>('GET', `/embeds?url=${enc(url)}`),
 };

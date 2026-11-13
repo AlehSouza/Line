@@ -72,6 +72,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/{id}/mutual", get(get_mutual))
         .route("/search", get(search))
         .route("/gifs", get(search_gifs))
+        .route("/embeds", get(get_embed))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
         .route(
@@ -211,6 +212,15 @@ async fn search_gifs(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String
             Err(ApiError::new(StatusCode::BAD_GATEWAY, "GIFS_UNAVAILABLE", "Não deu para carregar os GIFs agora."))
         }
     }
+}
+
+/// Preview de um link do chat. Sem preview possível, devolve `null`.
+async fn get_embed(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let url = qs.get("url").map(|s| s.trim()).unwrap_or_default();
+    if url.len() > 2048 || !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "INVALID_URL", "Link inválido."));
+    }
+    Ok(Json(app.embeds.get(url).await).into_response())
 }
 
 /// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
