@@ -494,19 +494,25 @@ function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
   const open = useLine((s) => s.threadId === thread.id);
   const users = useLine((s) => s.users);
   const n = thread.messageCount;
-  const people = (thread.participantIds ?? []).map((id) => users[id]).filter(Boolean);
+  const ids = (thread.participantIds ?? []).slice(0, 3);
+  const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
   return (
     <button
       onClick={() => (open ? actions.closeThread() : actions.openThread(thread.id))}
       className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 text-left text-sm', open && 'bg-accent/10')}
     >
-      {people.length > 0 ? (
-        <span className="flex -space-x-1.5">
-          {people.map((u) => (
-            <span key={u!.id} className="rounded-md ring-2 ring-main">
-              <Avatar name={u!.displayName} color={u!.avatarColor} size={22} />
+      {ids.length > 0 ? (
+        <span className="flex items-center -space-x-1.5">
+          {ids.map((id) => (
+            <span key={id} className="rounded-full ring-2 ring-main">
+              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} size={22} />
             </span>
           ))}
+          {extra > 0 && (
+            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft ring-2 ring-main">
+              +{extra}
+            </span>
+          )}
         </span>
       ) : (
         <Icons.Thread size={18} className="text-accent" />

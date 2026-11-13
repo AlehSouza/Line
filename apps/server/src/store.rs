@@ -914,7 +914,12 @@ impl Q<'_> {
                 "SELECT author_id FROM messages WHERE channel_id = ? GROUP BY author_id ORDER BY MAX(created_at) DESC LIMIT 3",
             )
             .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()));
-        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at, participant_ids })
+        let participant_count: i64 = ok(self.c.query_row(
+            "SELECT COUNT(DISTINCT author_id) FROM messages WHERE channel_id = ?",
+            [&id],
+            |r| r.get(0),
+        ));
+        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at, participant_ids, participant_count })
     }
 
     pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {

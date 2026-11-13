@@ -76,6 +76,7 @@ export interface ThreadSummary {
   messageCount: number;
   lastMessageAt: string | null;
   participantIds?: string[];
+  participantCount?: number;
 }
 
 export interface Member {
