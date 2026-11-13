@@ -370,11 +370,6 @@
   addEventListener('popstate', route);
   route();
 
-  // Prévia local (localhost): manda para o app do servidor de verdade.
-  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
-    document.querySelectorAll('a[href^="/app/"]').forEach(a => a.href = 'https://useline.tech/app/');
-  }
-
   // Destaca a versão do sistema de quem está visitando.
   const ua = navigator.userAgent;
   const os = /Windows/i.test(ua) ? 'windows' : (/Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua)) ? 'mac' : (/Linux/i.test(ua) && !/Android/i.test(ua)) ? 'linux' : null;
