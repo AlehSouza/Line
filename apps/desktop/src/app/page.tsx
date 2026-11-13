@@ -32,6 +32,15 @@ function Booting() {
       <div className="animate-pulse">
         <Logo size={56} />
       </div>
+      <div className="relative h-1 w-40 overflow-hidden rounded-full bg-raise">
+        <div
+          className="absolute inset-y-0 w-2/5 rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, transparent, var(--color-accent), transparent)',
+            animation: 'line-progress 1.2s ease-in-out infinite',
+          }}
+        />
+      </div>
       <p className="text-sm text-muted">Conectando…</p>
     </div>
   );

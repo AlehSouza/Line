@@ -76,3 +76,29 @@ body {
     cursor: not-allowed;
   }
 }
+
+/* Skeletons: brilho em gradiente passando, nas cores do Line. */
+@keyframes line-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+.skeleton {
+  background-color: var(--color-raise);
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--color-accent) 22%, transparent) 45%,
+    color-mix(in srgb, white 8%, transparent) 50%,
+    color-mix(in srgb, var(--color-accent) 22%, transparent) 55%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: line-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes line-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

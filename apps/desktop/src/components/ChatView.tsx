@@ -8,7 +8,7 @@ import { renderMarkdown } from '@/lib/markdown';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
-import { Avatar, cx, Icons } from './ui';
+import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
@@ -290,7 +290,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             </p>
           </div>
         )}
-        {!bucket && !error && <p className="px-4 py-6 text-sm text-muted">Carregando mensagens…</p>}
+        {!bucket && !error && <MessageSkeletons />}
         {error && <p className="px-4 py-6 text-sm text-danger">{error}</p>}
 
         {items.map((m, i) => {

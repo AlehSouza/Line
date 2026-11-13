@@ -4,7 +4,7 @@ import type { Attachment } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
-import { cx, Icons } from './ui';
+import { cx, Icons, Skeleton } from './ui';
 
 export function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -43,8 +43,7 @@ function AttachmentView({ attachment: a, compact }: { attachment: Attachment; co
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={a.filename} loading="lazy" className={cx('block object-contain', compact ? 'max-h-[160px] max-w-[220px]' : 'max-h-[350px] max-w-[420px]')} />
+          <LoadingImage src={url} alt={a.filename} compact={compact} />
         </button>
       );
     case 'video':
@@ -121,7 +120,11 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
         <FileHeader attachment={a} url={url} icon={<Icons.FileText size={24} />} />
       </div>
       {text === null ? (
-        <p className="px-3 py-2 text-xs text-muted">Carregando prévia…</p>
+        <div className="space-y-2 px-3 py-3">
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
       ) : text ? (
         <pre className={cx('overflow-x-auto px-3 py-2 font-mono text-[13px] leading-5 text-soft', expanded && 'max-h-[420px] overflow-y-auto')}>
           {shown}
@@ -133,5 +136,24 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
         </button>
       )}
     </div>
+  );
+}
+
+/** Imagem com skeleton animado até carregar. */
+function LoadingImage({ src, alt, compact }: { src: string; alt: string; compact?: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <span className={cx('relative block', !loaded && (compact ? 'h-[120px] w-[200px]' : 'h-[220px] w-[320px]'))}>
+      {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={() => setLoaded(true)}
+        className={cx('block object-contain', compact ? 'max-h-[160px] max-w-[220px]' : 'max-h-[350px] max-w-[420px]', !loaded && 'absolute opacity-0')}
+      />
+    </span>
   );
 }

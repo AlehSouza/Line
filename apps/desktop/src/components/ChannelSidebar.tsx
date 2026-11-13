@@ -4,7 +4,7 @@ import type { Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { actions, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { cx, Icons } from './ui';
+import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
@@ -152,7 +152,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
-        {!loaded && <p className="px-2 text-sm text-muted">Carregando…</p>}
+        {!loaded && <ListSkeleton count={8} />}
         {loose.length > 0 && <div className="space-y-0.5">{loose.map(renderChannel)}</div>}
         {categories.map((cat) => (
           <div key={cat.id}>

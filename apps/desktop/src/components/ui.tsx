@@ -245,3 +245,42 @@ export const Icons = {
   Upload: icon(L.Upload),
   Poll: icon(L.ChartBar),
 };
+
+/** Bloco de carregamento com brilho animado. */
+export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div aria-hidden className={cx('skeleton rounded-md', className)} style={style} />;
+}
+
+/** Linhas de mensagem fantasma enquanto o histórico carrega. */
+export function MessageSkeletons({ count = 7 }: { count?: number }) {
+  const widths = [72, 45, 88, 60, 35, 80, 52, 66];
+  return (
+    <div className="space-y-5 px-4 py-4" aria-label="Carregando mensagens">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex gap-4" style={{ opacity: 1 - i * 0.09 }}>
+          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2 pt-1">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3.5" style={{ width: `${widths[i % widths.length]}%` }} />
+            {i % 3 === 1 && <Skeleton className="h-28 w-64 rounded-lg" />}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Lista fantasma (canais, membros, conversas). */
+export function ListSkeleton({ count = 6, avatar = false }: { count?: number; avatar?: boolean }) {
+  const widths = [70, 55, 80, 45, 65, 50, 75, 60];
+  return (
+    <div className="space-y-2 px-2 py-1" aria-label="Carregando">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex items-center gap-2.5 px-1 py-1">
+          {avatar ? <Skeleton className="h-8 w-8 shrink-0 rounded-full" /> : <Skeleton className="h-4 w-4 shrink-0 rounded" />}
+          <Skeleton className="h-3.5" style={{ width: `${widths[i % widths.length]}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+}

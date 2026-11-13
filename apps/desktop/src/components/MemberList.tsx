@@ -3,7 +3,7 @@
 import type { PublicUser } from '@line/shared';
 import { useMemo } from 'react';
 import { actions, useLine } from '@/lib/store';
-import { Avatar, cx } from './ui';
+import { Avatar, cx, ListSkeleton } from './ui';
 
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
@@ -55,8 +55,14 @@ export function MemberList({ serverId }: { serverId: string }) {
 
   return (
     <aside className="hidden w-60 shrink-0 space-y-5 overflow-y-auto bg-side px-2 py-4 lg:block">
-      {section('Online', online)}
-      {section('Offline', offline)}
+      {!members ? (
+        <ListSkeleton count={8} avatar />
+      ) : (
+        <>
+          {section('Online', online)}
+          {section('Offline', offline)}
+        </>
+      )}
     </aside>
   );
 }
