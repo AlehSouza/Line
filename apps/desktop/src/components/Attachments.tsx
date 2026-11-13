@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
 import { cx, Icons, Skeleton } from './ui';
+import { VideoPlayer } from './VideoPlayer';
 
 export function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -48,11 +49,10 @@ function AttachmentView({ attachment: a, compact }: { attachment: Attachment; co
       );
     case 'video':
       return (
-        <video
+        <VideoPlayer
           src={url}
-          controls
-          preload="metadata"
-          className={cx('max-w-full rounded-lg border border-edge bg-black', compact ? 'max-h-[180px] w-[280px]' : 'max-h-[360px] w-[520px]')}
+          filename={a.filename}
+          className={compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
         />
       );
     case 'audio':
