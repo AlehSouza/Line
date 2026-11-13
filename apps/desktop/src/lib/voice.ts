@@ -405,7 +405,10 @@ export async function toggleScreen(sourceId?: string) {
         frameRate: { ideal: fps, max: fps },
       },
       audio: true,
-    });
+      // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
+      systemAudio: 'include',
+      windowAudio: 'system',
+    } as DisplayMediaStreamOptions);
     const video = stream.getVideoTracks()[0];
     // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
     if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
