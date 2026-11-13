@@ -408,6 +408,8 @@ export async function toggleScreen(sourceId?: string) {
       // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
       systemAudio: 'include',
       windowAudio: 'system',
+      // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
+      restrictOwnAudio: true,
     } as DisplayMediaStreamOptions);
     const video = stream.getVideoTracks()[0];
     // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
