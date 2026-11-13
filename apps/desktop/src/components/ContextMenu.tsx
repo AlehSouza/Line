@@ -7,6 +7,7 @@ import { actions, permsOf, useLine } from '@/lib/store';
 import { hasPerm, Perm } from '@line/shared';
 import { joinVoice } from '@/lib/voice';
 import { cx, Icons } from './ui';
+import { showError } from './Dialogs';
 
 /**
  * Menus do clique direito do Line. O menu nativo do navegador/WebView2 (Voltar, Recarregar,
@@ -200,7 +201,7 @@ function MenuBox({ x, y, items }: { x: number; y: number; items: MenuEntry[] }) 
               closeContextMenu();
               Promise.resolve()
                 .then(it.onClick)
-                .catch((err) => alert((err as Error).message));
+                .catch(showError);
             }}
             className={cx(
               'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left font-medium disabled:pointer-events-none disabled:opacity-40',

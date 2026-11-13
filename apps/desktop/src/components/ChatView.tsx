@@ -15,6 +15,7 @@ import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useL
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
+import { confirmDialog, showError } from './Dialogs';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -106,8 +107,8 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
             <button
               title="Apagar thread"
               onClick={async () => {
-                if (confirm(`Apagar a thread "${thread.name}"? As mensagens dela serão apagadas.`)) {
-                  await api.deleteChannel(thread.id).catch((e) => alert(e.message));
+                if (await confirmDialog({ title: 'Apagar thread', message: `A thread "${thread.name}" e as mensagens dela serão apagadas.`, confirmLabel: 'Apagar', danger: true })) {
+                  await api.deleteChannel(thread.id).catch(showError);
                 }
               }}
               className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-danger"
@@ -404,7 +405,7 @@ function MessageRow({
       await api.editMessage(message.id, content);
       onDoneEditing();
     } catch (e) {
-      alert((e as Error).message);
+      showError(e);
     }
   }
 
@@ -446,7 +447,7 @@ function MessageRow({
             icon: <Icons.Trash size={15} />,
             danger: true,
             onClick: async () => {
-              if (confirm('Apagar esta mensagem?')) await api.deleteMessage(message.id);
+              if ((await confirmDialog({ title: 'Apagar mensagem', message: 'Tem certeza? Não dá para desfazer.', confirmLabel: 'Apagar', danger: true }))) await api.deleteMessage(message.id);
             },
           },
         ]);
@@ -570,7 +571,7 @@ function MessageRow({
             <button
               title="Apagar"
               onClick={async (e) => {
-                if (e.shiftKey || confirm('Apagar esta mensagem?')) await api.deleteMessage(message.id).catch((err) => alert(err.message));
+                if (e.shiftKey || (await confirmDialog({ title: 'Apagar mensagem', message: 'Tem certeza? Não dá para desfazer. Dica: segure Shift para apagar sem confirmar.', confirmLabel: 'Apagar', danger: true }))) await api.deleteMessage(message.id).catch(showError);
               }}
               className="p-1.5 text-muted hover:text-danger"
             >
@@ -635,7 +636,7 @@ async function toggleReaction(message: Message, emoji: string) {
     const updated = mine ? await api.removeReaction(message.id, emoji) : await api.addReaction(message.id, emoji);
     actions.updateMessage(updated);
   } catch (e) {
-    alert((e as Error).message);
+    showError(e);
   }
 }
 
@@ -701,7 +702,7 @@ function PollView({ message, poll }: { message: Message; poll: NonNullable<Messa
   const meId = useLine((s) => s.me?.id);
   const voters = new Set(poll.options.flatMap((o) => o.voterIds));
   const total = poll.options.reduce((n, o) => n + o.voterIds.length, 0);
-  const vote = (optionId: string) => void api.votePoll(message.id, optionId).then(actions.addMessage).catch((e) => alert(e.message));
+  const vote = (optionId: string) => void api.votePoll(message.id, optionId).then(actions.addMessage).catch(showError);
   return (
     <div className="mt-1 w-full max-w-[440px] rounded-xl border border-edge bg-side/70 p-4">
       <p className="flex items-center gap-2 font-semibold">
@@ -954,7 +955,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         return [];
       });
     } catch (e) {
-      alert((e as Error).message);
+      showError(e);
     } finally {
       setSending(false);
       ref.current?.focus();

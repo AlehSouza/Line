@@ -12,6 +12,7 @@ import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
+import { confirmDialog } from './Dialogs';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
@@ -323,8 +324,8 @@ function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClos
             type="button"
             variant="danger"
             disabled={busy}
-            onClick={() => {
-              if (!confirm(`Excluir a categoria ${category.name}? Os canais dela continuam, só ficam sem categoria.`)) return;
+            onClick={async () => {
+              if (!(await confirmDialog({ title: `Excluir a categoria ${category.name}`, message: 'Os canais dela continuam, só ficam sem categoria.', confirmLabel: 'Excluir', danger: true }))) return;
               run(async () => {
                 await api.deleteCategory(categoryId);
                 actions.removeCategory(categoryId);
@@ -555,8 +556,8 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
           <Button
             variant="danger"
             className="mr-auto"
-            onClick={() => {
-              if (prompt(`Para excluir, digite o nome do servidor: ${server.name}`) === server.name) {
+            onClick={async () => {
+              if (await confirmDialog({ title: `Excluir ${server.name}`, message: 'Todos os canais e mensagens do servidor serão apagados. Não dá para desfazer.', confirmLabel: 'Excluir servidor', danger: true, requireText: server.name })) {
                 run(async () => {
                   await api.deleteServer(server.id);
                   actions.removeServer(server.id);

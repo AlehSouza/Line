@@ -24,6 +24,7 @@ import {
 } from "@/lib/voice";
 import { cx, Icons } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
+import { confirmDialog } from './Dialogs';
 
 /** Quem pode silenciar ("Silenciar membros") ou mover/desconectar ("Mover membros") os outros na voz. */
 export function useCanModerateVoice(serverId: string | null | undefined) {
@@ -281,7 +282,7 @@ export function VoiceUserMenu({
             <Item
               danger
               onClick={run(async () => {
-                if (confirm(`Bloquear ${user.displayName}?`))
+                if (await confirmDialog({ title: `Bloquear ${user.displayName}`, message: 'A pessoa não vai poder te mandar pedidos nem mensagens diretas.', confirmLabel: 'Bloquear', danger: true }))
                   await api.blockUser(userId);
               })}
             >

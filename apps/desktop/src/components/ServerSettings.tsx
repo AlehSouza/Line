@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { ServerOverview } from './Modals';
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
+import { confirmDialog } from './Dialogs';
 
 type Section = 'overview' | 'roles' | 'members';
 
@@ -284,9 +285,9 @@ function RoleMenu({ role, onClose, onEdit, onError }: { role: Role; onClose: () 
         Editar cargo
       </button>
       <button
-        onClick={() => {
+        onClick={async () => {
           onClose();
-          if (!confirm(`Excluir o cargo ${role.name}? Quem tem esse cargo perde as permissões dele.`)) return;
+          if (!(await confirmDialog({ title: `Excluir o cargo ${role.name}`, message: 'Quem tem esse cargo perde as permissões dele.', confirmLabel: 'Excluir', danger: true }))) return;
           api.deleteRole(role.id).catch((e: Error) => onError(e.message));
         }}
         className="w-full rounded-md px-2.5 py-1.5 text-left text-sm text-danger hover:bg-danger hover:text-white"
@@ -780,8 +781,8 @@ function MembersSection({ serverId }: { serverId: string }) {
                 )}
                 {canKick && below && m.userId !== meId && (
                   <button
-                    onClick={() => {
-                      if (confirm(`Expulsar ${displayNameIn(st, serverId, m.userId)}?`)) void run(() => api.kick(serverId, m.userId));
+                    onClick={async () => {
+                      if (await confirmDialog({ title: `Expulsar ${displayNameIn(st, serverId, m.userId)}`, message: 'A pessoa sai do servidor, mas pode voltar com um convite.', confirmLabel: 'Expulsar', danger: true })) void run(() => api.kick(serverId, m.userId));
                     }}
                     className="rounded-md border border-edge px-2.5 py-1 text-xs text-danger hover:bg-danger hover:text-white"
                   >
