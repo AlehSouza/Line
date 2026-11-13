@@ -4,7 +4,7 @@ import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
 import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
-import { bindVoiceSocket, unbindVoice } from './voice';
+import { bindVoiceSocket, syncVoice, unbindVoice } from './voice';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
 const previewContent = (c: string) => c.replace(/^\[\[voz:[\w-]+:[\w-]+:[\w-]+\]\]\s?(.*)$/, '🔊 Convite para a chamada de voz $1');
@@ -126,6 +126,10 @@ function restoreView() {
   }
   viewSaver ??= useLine.subscribe((st, prev) => {
     if (st.view !== prev.view) storage.set(STORAGE_VIEW, JSON.stringify(st.view));
+    // Abriu outro servidor: confere quem está na voz dele.
+    const sid = st.view.kind === 'server' ? st.view.serverId : null;
+    const before = prev.view.kind === 'server' ? prev.view.serverId : null;
+    if (sid && sid !== before) void syncVoice();
   });
 }
 
@@ -184,7 +188,10 @@ function connectSocket() {
   socket = s;
   bindVoiceSocket(s, useLine.getState().me!.id);
 
-  s.on('connect', () => useLine.setState({ connection: 'connected' }));
+  s.on('connect', () => {
+    useLine.setState({ connection: 'connected' });
+    void syncVoice();
+  });
   s.on('disconnect', () => useLine.setState({ connection: 'disconnected' }));
   s.on('connect_error', (err) => {
     useLine.setState({ connection: 'disconnected' });
@@ -204,7 +211,10 @@ function connectSocket() {
   s.on('presence:update', ({ userId, presence, customStatus }) => actions.setPresence(userId, presence, customStatus));
   s.on('user:update', (u) => actions.upsertUsers([u]));
   s.on('self:update', (u) => actions.setMe(u));
-  s.on('server:create', (srv) => actions.upsertServer(srv));
+  s.on('server:create', (srv) => {
+    actions.upsertServer(srv);
+    void syncVoice();
+  });
   s.on('server:update', (srv) => actions.upsertServer(srv));
   s.on('server:delete', ({ id }) => actions.removeServer(id));
   s.on('member:add', (m) => {

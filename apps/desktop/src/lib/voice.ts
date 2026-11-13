@@ -216,6 +216,24 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
   });
 }
 
+/**
+ * Busca de novo quem está na voz. O retrato que vem na conexão pode se perder (ou chegar antes de
+ * entrarmos num servidor), então pedimos também ao conectar, ao entrar num servidor e ao trocar de servidor.
+ */
+export async function syncVoice() {
+  const s = socket;
+  if (!s?.connected) return;
+  const res = await s.timeout(10_000).emitWithAck('voice:sync').catch(() => null);
+  if (!res || socket !== s) return;
+  setV((v) => {
+    const states = Object.fromEntries(res.states.map((st) => [st.userId, st]));
+    // Enquanto entro num canal, meu próprio estado ainda pode não estar no retrato.
+    const mine = myId ? v.states[myId] : undefined;
+    if (mine && v.connecting && !states[mine.userId]) states[mine.userId] = mine;
+    return { states, channelStatus: res.statuses };
+  });
+}
+
 export function unbindVoice() {
   void leaveVoice(false);
   socket = null;
