@@ -212,6 +212,38 @@ pub struct Vote {
 }
 
 #[derive(Deserialize)]
+pub struct ForgotPassword {
+    pub email: String,
+}
+
+impl ForgotPassword {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.email = optional_email(Some(&self.email))?.ok_or_else(|| validation("Digite seu email"))?;
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPassword {
+    pub token: String,
+    pub new_password: String,
+}
+
+impl ResetPassword {
+    pub fn check(self) -> ApiResult<Self> {
+        if self.token.is_empty() || self.token.len() > 128 {
+            return Err(validation("Link de recuperação inválido"));
+        }
+        if len(&self.new_password) < 6 {
+            return Err(validation("A senha precisa ter pelo menos 6 caracteres"));
+        }
+        text(&self.new_password, 6, 128, "A senha")?;
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
 pub struct Login {
     pub username: String,
     pub password: String,

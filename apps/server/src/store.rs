@@ -357,6 +357,67 @@ impl Q<'_> {
         ok(self.c.execute("UPDATE users SET password_hash = ? WHERE id = ?", params![hash, id]));
     }
 
+    pub fn user_by_email(&self, email: &str) -> Option<UserRow> {
+        ok(self
+            .c
+            .query_row("SELECT * FROM users WHERE email = ?", [email], UserRow::from_row)
+            .optional())
+    }
+
+    /// Último pedido de recuperação do usuário foi há menos de `secs` segundos?
+    pub fn reset_requested_recently(&self, user_id: &str, secs: i64) -> bool {
+        let since = (chrono::Utc::now() - chrono::Duration::seconds(secs))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
+        ok(self
+            .c
+            .query_row(
+                "SELECT 1 FROM password_resets WHERE user_id = ? AND created_at > ? LIMIT 1",
+                params![user_id, since],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some()
+    }
+
+    /// Novo token de recuperação (só o hash é guardado). Tokens antigos do usuário deixam de valer.
+    pub fn create_password_reset(&self, user_id: &str, token_hash: &str, minutes: i64) {
+        let now = now_iso();
+        let expires = (chrono::Utc::now() + chrono::Duration::minutes(minutes))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
+        ok(self.c.execute(
+            "UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL",
+            params![now, user_id],
+        ));
+        ok(self.c.execute("DELETE FROM password_resets WHERE expires_at < ?", [&now]));
+        ok(self.c.execute(
+            "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            params![token_hash, user_id, now, expires],
+        ));
+    }
+
+    /// Dono de um token ainda válido (não usado e não expirado).
+    pub fn password_reset_user(&self, token_hash: &str) -> Option<String> {
+        ok(self
+            .c
+            .query_row(
+                "SELECT user_id FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?",
+                params![token_hash, now_iso()],
+                |r| r.get(0),
+            )
+            .optional())
+    }
+
+    /// Gasta o token; devolve false se ele já tinha sido usado ou expirou.
+    pub fn consume_password_reset(&self, token_hash: &str) -> bool {
+        let now = now_iso();
+        ok(self.c.execute(
+            "UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?",
+            params![now, token_hash, now],
+        )) == 1
+    }
+
     pub fn public_user(&self, id: &str) -> Option<PublicUser> {
         self.user_row(id).map(|r| self.to_public_user(&r))
     }
