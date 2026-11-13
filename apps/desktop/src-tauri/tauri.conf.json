@@ -54,7 +54,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "TROCAR_PELA_CHAVE_PUBLICA",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM0NzExMEI2Njg4MTI5RTEKUldUaEtZRm90aEJ4TkVKSHMzdHBVWHZQTm1ENHNHbnFSM05xM2QyYUJaUk03ek1XaHB4c3djZ0UK",
       "endpoints": [
         "https://useline.tech/updates/latest.json"
       ],
