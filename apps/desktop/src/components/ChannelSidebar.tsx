@@ -245,15 +245,6 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             {!collapsed[cat.id] && <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>}
           </div>
         ))}
-        {canChannels && loaded && (
-          <button
-            onClick={() => actions.openModal({ kind: 'create-category', serverId })}
-            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-bold tracking-wide text-muted uppercase hover:bg-hover hover:text-soft"
-          >
-            <Icons.Folder size={14} />
-            Criar categoria
-          </button>
-        )}
       </div>
     </div>
   );

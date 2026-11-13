@@ -1,9 +1,10 @@
 'use client';
 
-import type { PublicUser, Server, UserStatus } from '@line/shared';
+import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
-import { actions, useLine } from '@/lib/store';
+import { actions, permsOf, topPosition, useLine } from '@/lib/store';
+import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, ErrorText, Icons, PresenceDot, presenceLabel } from './ui';
 import { confirmDialog } from './Dialogs';
 
@@ -227,6 +228,9 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
 
           {user.bio && <p className="mt-3 line-clamp-4 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
 
+          {!isMe && <InVoice userId={userId} onClose={onClose} />}
+          <MemberRoles userId={userId} />
+
           <ErrorText>{error}</ErrorText>
 
           {isMe ? (
@@ -291,6 +295,133 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
           {!isMe && <p className="sr-only">{presenceLabel[user.presence]}</p>}
         </div>
       </div>
+    </div>
+  );
+}
+
+const DEFAULT_ROLE_COLOR = '#99aab5';
+
+/** Servidor que está aberto agora (os cargos do cartão são dele). */
+function useViewServer(): string | null {
+  return useLine((s) => (s.view.kind === 'server' ? s.view.serverId : null));
+}
+
+/** "Em voz": canal de voz em que a pessoa está, se eu consigo ver esse canal. */
+function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
+  const channelId = useVoice((v) => v.states[userId]?.channelId ?? null);
+  const myChannel = useVoice((v) => v.channelId);
+  const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
+  const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
+  const [busy, setBusy] = useState(false);
+  if (!channel || !server) return null;
+  const here = myChannel === channel.id;
+  return (
+    <div className="mt-3 rounded-xl border border-edge bg-side/70 p-3">
+      <p className="text-xs font-bold text-soft">Em voz</p>
+      <div className="mt-2 flex items-center gap-3">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-edge bg-rail">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-bold">{server.name.slice(0, 2)}</span>}
+        </span>
+        <span className="min-w-0">
+          <span className="flex items-center gap-1.5 truncate text-sm font-semibold">
+            <Icons.Speaker size={14} className="shrink-0 text-muted" />
+            <span className="truncate">{channel.name}</span>
+          </span>
+          <span className="block truncate text-xs text-muted">em {server.name}</span>
+        </span>
+      </div>
+      <Button
+        variant="subtle"
+        className="mt-3 w-full"
+        disabled={here || busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            actions.goServer(server.id, channel.id);
+            await joinVoice(channel.id);
+            onClose();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {here ? 'Você já está nessa chamada' : 'Entrar na chamada de voz'}
+      </Button>
+    </div>
+  );
+}
+
+/** Tags de cargos da pessoa no servidor aberto, com + e x para quem pode gerenciar cargos. */
+function MemberRoles({ userId }: { userId: string }) {
+  const serverId = useViewServer();
+  const member = useLine((s) => (serverId ? s.members[serverId]?.[userId] : undefined));
+  const roles = useLine((s) => (serverId ? s.roles[serverId] : undefined));
+  const canRoles = useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles));
+  const myTop = useLine((s) => (serverId ? topPosition(s, serverId, s.me?.id) : 0));
+  const [picker, setPicker] = useState(false);
+  const [error, setError] = useState('');
+  if (!serverId || !member || !roles) return null;
+  const mine = roles.filter((r) => r.id !== serverId && member.roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
+  const assignable = roles.filter((r) => r.id !== serverId && r.position < myTop && !member.roleIds.includes(r.id));
+  const canAdd = canRoles && assignable.length > 0;
+  if (mine.length === 0 && !canAdd) return null;
+
+  async function toggle(roleId: string, on: boolean) {
+    setError('');
+    try {
+      actions.upsertMember(await api.setMemberRole(serverId!, userId, roleId, on));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {mine.map((r) => (
+          <span key={r.id} className="flex items-center gap-1.5 rounded-md border border-edge bg-side py-0.5 pr-1.5 pl-2 text-xs font-medium">
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
+            {r.name}
+            {canRoles && r.position < myTop && (
+              <button title="Tirar cargo" onClick={() => void toggle(r.id, false)} className="text-muted hover:text-danger">
+                <Icons.X size={12} />
+              </button>
+            )}
+          </span>
+        ))}
+        {canAdd && (
+          <span className="relative">
+            <button
+              title="Dar cargo"
+              onClick={() => setPicker((v) => !v)}
+              className="flex h-6 w-6 items-center justify-center rounded-md border border-edge bg-side text-muted hover:text-fg"
+            >
+              <Icons.Plus size={13} />
+            </button>
+            {picker && (
+              <div className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
+                {assignable
+                  .sort((a, b) => b.position - a.position)
+                  .map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => {
+                        setPicker(false);
+                        void toggle(r.id, true);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-soft hover:bg-hover hover:text-fg"
+                    >
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
+                      <span className="truncate">{r.name}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </span>
+        )}
+      </div>
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
