@@ -495,6 +495,10 @@ async function onSignal(from: string, signal: VoiceSignal) {
       if (desc.type === 'offer') {
         await pc.setLocalDescription();
         if (pc.localDescription) send(from, { type: 'description', description: pc.localDescription.toJSON() });
+        // Na colisão (os dois ofereceram ao mesmo tempo, como quando alguém entra na sala) o lado
+        // educado desfaz a própria oferta. Câmera/tela que estavam nela ficam sem negociar e nem todo
+        // WebView dispara negotiationneeded de novo: então renegocia na mão se sobrou algo pendente.
+        if (collision) setTimeout(() => renegotiateIfPending(peer), 0);
       }
     } else {
       try {
@@ -505,6 +509,24 @@ async function onSignal(from: string, signal: VoiceSignal) {
     }
   } catch (err) {
     console.warn('Erro de sinalização de voz', err);
+  }
+}
+
+/** Envia uma nova oferta se há faixas locais que nunca entraram numa negociação (sem mid). */
+async function renegotiateIfPending(peer: Peer) {
+  const { pc } = peer;
+  if (pc.signalingState !== 'stable' || peer.makingOffer) return;
+  if (!pc.getTransceivers().some((t) => !t.mid && t.sender.track)) return;
+  const peerId = [...peers.entries()].find(([, p]) => p === peer)?.[0];
+  if (!peerId) return;
+  try {
+    peer.makingOffer = true;
+    await pc.setLocalDescription();
+    if (pc.localDescription) send(peerId, { type: 'description', description: pc.localDescription.toJSON() });
+  } catch (err) {
+    console.warn('Falha ao renegociar voz', err);
+  } finally {
+    peer.makingOffer = false;
   }
 }
 
