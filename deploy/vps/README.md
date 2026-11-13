@@ -21,7 +21,8 @@ Rodar de novo atualiza para a versão mais nova. Os dados (banco e anexos) ficam
 
 ## Usar
 
-- Pelo navegador: `https://SEU-DOMINIO` (funciona com chamadas em qualquer sistema, inclusive Linux).
+- Site com downloads: `https://SEU-DOMINIO` (aba Downloads em `#downloads`, arquivos em `/updates/latest/`).
+- Pelo navegador: `https://SEU-DOMINIO/app/` (funciona com chamadas em qualquer sistema, inclusive Linux).
 - Pelo app: na tela de login, clique em "alterar" ao lado de Servidor e coloque `https://SEU-DOMINIO`.
 
 ## Comandos úteis

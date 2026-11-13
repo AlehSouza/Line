@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line: converse com a sua galera</title>
+<meta name="description" content="Line é um app leve de chat, voz e comunidades. Servidores, canais, mensagens privadas, chamadas e compartilhamento de tela.">
+<meta property="og:title" content="Line">
+<meta property="og:description" content="Chat, voz e comunidades num app leve feito em Rust.">
+<meta property="og:image" content="/site/icon.png">
+<link rel="icon" type="image/png" href="/site/favicon.png">
+<style>
+  :root {
+    --rail: #0a0a0c; --side: #111114; --main: #16161a; --raise: #1d1d22; --hover: #24242a; --edge: #2b2b32;
+    --fg: #ededf0; --soft: #b5b5bf; --muted: #84848f;
+    --accent: #7c6af2; --accent-strong: #6a57e6; --sun: #f5c451; --online: #3fbf7f; --danger: #f2555a;
+    --font: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--rail); color: var(--fg); font-family: var(--font);
+    -webkit-font-smoothing: antialiased; line-height: 1.55;
+    background-image: radial-gradient(70% 520px at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 75%);
+    background-repeat: no-repeat; min-height: 100vh;
+  }
+  ::selection { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* Topo */
+  header { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(14px); background: color-mix(in srgb, var(--rail) 70%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--edge) 60%, transparent); }
+  .bar { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; letter-spacing: -.01em; }
+  .brand img { width: 30px; height: 30px; }
+  nav.tabs { display: flex; gap: 4px; margin-left: 8px; }
+  nav.tabs a { padding: 7px 14px; border-radius: 8px; color: var(--soft); font-weight: 600; font-size: 14.5px; transition: background .15s, color .15s; }
+  nav.tabs a:hover { background: var(--hover); color: var(--fg); }
+  nav.tabs a[aria-current="page"] { background: var(--raise); color: var(--fg); box-shadow: inset 0 0 0 1px var(--edge); }
+  .bar .spacer { flex: 1; }
+
+  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 22px; border-radius: 999px; font-weight: 650; font-size: 15.5px; border: 0; cursor: pointer; transition: transform .12s, background .15s, box-shadow .15s; white-space: nowrap; }
+  .btn:active { transform: translateY(1px); }
+  .btn svg { width: 19px; height: 19px; flex: none; }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 8px 30px -8px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .btn-primary:hover { background: var(--accent-strong); }
+  .btn-ghost { background: var(--raise); color: var(--fg); box-shadow: inset 0 0 0 1px var(--edge); }
+  .btn-ghost:hover { background: var(--hover); }
+  .btn-sm { padding: 8px 16px; font-size: 14px; }
+
+  /* Páginas (abas) */
+  main > section[data-page] { display: none; }
+  main > section[data-page].on { display: block; animation: show .35s ease; }
+  @keyframes show { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* Hero */
+  .hero { text-align: center; padding: 88px 0 40px; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: #c9c1ff; font-size: 13.5px; font-weight: 600; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--online); box-shadow: 0 0 10px var(--online); }
+  h1 { font-size: clamp(38px, 6vw, 68px); line-height: 1.04; letter-spacing: -.035em; margin: 22px auto 18px; max-width: 820px; font-weight: 800; }
+  h1 em { font-style: normal; background: linear-gradient(100deg, #a99dff, var(--accent) 60%, #b388ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { color: var(--soft); font-size: clamp(16px, 2vw, 19px); max-width: 620px; margin: 0 auto 34px; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .cta-note { margin-top: 14px; color: var(--muted); font-size: 13.5px; }
+
+  /* Janela de demonstração, desenhada com o visual do app */
+  .shot { margin: 64px auto 0; max-width: 1040px; border-radius: 14px; overflow: hidden; background: var(--main); box-shadow: 0 0 0 1px var(--edge), 0 40px 120px -30px color-mix(in srgb, var(--accent) 45%, transparent), 0 30px 60px -20px #000; text-align: left; }
+  .tb { height: 34px; background: var(--rail); display: flex; align-items: center; padding: 0 12px; gap: 10px; font-size: 13px; color: var(--soft); }
+  .tb img { width: 16px; height: 16px; }
+  .tb .t { flex: 1; text-align: center; font-weight: 600; }
+  .tb .w { display: flex; gap: 18px; color: var(--muted); font-size: 12px; }
+  .app { display: grid; grid-template-columns: 64px 220px 1fr 200px; height: 460px; font-size: 14px; }
+  .rail { background: var(--rail); display: flex; flex-direction: column; align-items: center; gap: 10px; padding-top: 12px; }
+  .srv { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center; font-weight: 700; font-size: 15px; background: var(--raise); color: var(--soft); }
+  .srv.on { background: var(--sun); color: #2a2100; position: relative; }
+  .srv.on::before { content: ''; position: absolute; left: -11px; width: 4px; height: 34px; background: #fff; border-radius: 0 4px 4px 0; }
+  .srv img { width: 42px; height: 42px; }
+  .sep { width: 28px; height: 2px; background: var(--edge); border-radius: 2px; }
+  .side { background: var(--side); padding: 14px 10px; display: flex; flex-direction: column; }
+  .side h4 { margin: 2px 6px 14px; font-size: 15px; }
+  .cat { font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .04em; margin: 10px 6px 6px; }
+  .ch { padding: 6px 10px; border-radius: 7px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .ch.on { background: var(--hover); color: var(--fg); }
+  .ch b { font-weight: 400; color: var(--muted); }
+  .vc { margin-left: 28px; display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 13px; padding: 3px 0; }
+  .me { margin-top: auto; background: var(--rail); border-radius: 10px; padding: 8px 10px; display: flex; gap: 10px; align-items: center; box-shadow: inset 0 0 0 1px var(--edge); }
+  .av { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #fff; flex: none; position: relative; }
+  .av.s { width: 22px; height: 22px; font-size: 10px; }
+  .dot::after { content: ''; position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--online); border: 2px solid var(--rail); }
+  .chat { display: flex; flex-direction: column; background: var(--main); background-image: radial-gradient(60% 45% at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%); min-width: 0; }
+  .chead { height: 46px; border-bottom: 1px solid var(--edge); display: flex; align-items: center; gap: 10px; padding: 0 16px; font-weight: 700; }
+  .chead span { color: var(--muted); font-weight: 400; font-size: 13px; border-left: 1px solid var(--edge); padding-left: 10px; }
+  .msgs { flex: 1; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; justify-content: flex-end; }
+  .msg { display: flex; gap: 12px; }
+  .msg .n { font-weight: 650; }
+  .msg .h { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .msg p { margin: 2px 0 0; color: #dcdce2; }
+  .mention { background: color-mix(in srgb, var(--sun) 18%, transparent); color: var(--sun); border-radius: 4px; padding: 0 3px; font-weight: 600; }
+  .react { display: inline-flex; gap: 6px; margin-top: 6px; }
+  .react span { background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 8px; padding: 1px 8px; font-size: 12.5px; }
+  .thread { margin-top: 6px; display: inline-flex; gap: 8px; align-items: center; border-radius: 8px; padding: 5px 10px; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent); font-size: 13px; font-weight: 600; }
+  .thread small { color: #a99dff; font-weight: 400; }
+  .file { margin-top: 6px; background: var(--raise); border-radius: 10px; box-shadow: inset 0 0 0 1px var(--edge); padding: 10px 12px; display: flex; gap: 10px; align-items: center; max-width: 280px; }
+  .file small { display: block; color: var(--muted); font-size: 11.5px; }
+  .input { margin: 0 16px 16px; background: var(--raise); border-radius: 10px; padding: 11px 14px; color: var(--muted); }
+  .mem { background: var(--side); padding: 16px 12px; }
+  .mem .cat { margin-top: 0; }
+  .mem .u { display: flex; gap: 10px; align-items: center; padding: 5px 4px; font-size: 13.5px; }
+
+  /* Recursos */
+  .feats { padding: 96px 0 40px; }
+  .sh { text-align: center; margin-bottom: 44px; }
+  .sh h2 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.025em; margin: 0 0 10px; }
+  .sh p { color: var(--soft); margin: 0 auto; max-width: 560px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { background: linear-gradient(180deg, var(--side), color-mix(in srgb, var(--side) 60%, var(--rail))); border-radius: 16px; padding: 24px; box-shadow: inset 0 0 0 1px var(--edge); transition: box-shadow .2s, transform .2s; }
+  .card:hover { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--edge)); transform: translateY(-2px); }
+  .ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 16%, transparent); color: #b5aaff; margin-bottom: 16px; }
+  .ico svg { width: 21px; height: 21px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--soft); font-size: 14.5px; }
+
+  .band { margin: 80px 0 100px; border-radius: 22px; padding: 56px 32px; text-align: center; background: radial-gradient(80% 140% at 50% 0%, color-mix(in srgb, var(--accent) 30%, var(--side)), var(--side)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, var(--edge)); }
+  .band h2 { font-size: clamp(26px, 3.6vw, 36px); margin: 0 0 10px; letter-spacing: -.02em; }
+  .band p { color: var(--soft); margin: 0 0 26px; }
+
+  /* Downloads */
+  .dl { padding: 80px 0 100px; }
+  .dl .sh { margin-bottom: 40px; }
+  .dls { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 900px; margin: 0 auto; }
+  .dlc { position: relative; background: var(--side); border-radius: 18px; padding: 30px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; flex-direction: column; }
+  .dlc.rec { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, var(--edge)), 0 20px 70px -30px color-mix(in srgb, var(--accent) 60%, transparent); }
+  .dlc .tag { position: absolute; top: 18px; right: 18px; font-size: 12px; font-weight: 700; color: #c9c1ff; background: color-mix(in srgb, var(--accent) 18%, transparent); padding: 3px 10px; border-radius: 999px; display: none; }
+  .dlc.rec .tag { display: block; }
+  .os { width: 54px; height: 54px; border-radius: 15px; background: var(--raise); display: grid; place-items: center; margin-bottom: 18px; box-shadow: inset 0 0 0 1px var(--edge); }
+  .os svg { width: 28px; height: 28px; }
+  .dlc h3 { margin: 0; font-size: 22px; }
+  .dlc .meta { color: var(--muted); font-size: 13.5px; margin: 4px 0 16px; font-family: var(--mono); }
+  .dlc ul { margin: 0 0 24px; padding: 0; list-style: none; color: var(--soft); font-size: 14.5px; display: grid; gap: 8px; }
+  .dlc li { display: flex; gap: 10px; align-items: flex-start; }
+  .dlc li svg { width: 17px; height: 17px; color: var(--online); flex: none; margin-top: 3px; }
+  .dlc li.warn svg { color: var(--sun); }
+  .dlc .btn { margin-top: auto; justify-content: center; }
+  .cmd { margin: -10px 0 20px; background: var(--rail); border-radius: 10px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; color: var(--soft); box-shadow: inset 0 0 0 1px var(--edge); overflow-x: auto; white-space: nowrap; }
+  .web { max-width: 900px; margin: 18px auto 0; background: var(--side); border-radius: 18px; padding: 22px 26px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; align-items: center; gap: 18px; }
+  .web .os { margin: 0; flex: none; }
+  .web div { flex: 1; }
+  .web h4 { margin: 0 0 2px; font-size: 17px; }
+  .web p { margin: 0; color: var(--soft); font-size: 14.5px; }
+  .fine { text-align: center; color: var(--muted); font-size: 13px; margin-top: 26px; }
+
+  footer { border-top: 1px solid var(--edge); padding: 28px 0; color: var(--muted); font-size: 13.5px; }
+  footer .wrap { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  footer img { width: 20px; height: 20px; }
+  footer .spacer { flex: 1; }
+  footer a:hover { color: var(--fg); }
+
+  @media (max-width: 900px) {
+    .app { grid-template-columns: 56px 1fr; height: 400px; }
+    .side, .mem { display: none; }
+    .grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 680px) {
+    .wrap { padding: 0 16px; }
+    .bar { gap: 10px; }
+    nav.tabs { margin-left: 0; }
+    nav.tabs a { padding: 7px 10px; }
+    .bar .btn-sm { display: none; }
+    .hero { padding-top: 56px; }
+    .grid, .dls { grid-template-columns: 1fr; }
+    .web { flex-direction: column; align-items: flex-start; }
+    .shot { margin-top: 44px; }
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></symbol>
+  <symbol id="i-win" viewBox="0 0 24 24" fill="#7c6af2"><path d="M3 5.4 10.4 4.4v7.1H3zM11.4 4.2 21 3v8.5h-9.6zM3 12.5h7.4v7.1L3 18.6zM11.4 12.5H21V21l-9.6-1.3z"/></symbol>
+  <symbol id="i-linux" viewBox="0 0 24 24" fill="none" stroke="#f5c451" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3c-2.2 0-3.4 1.8-3.4 4.2 0 1.4.3 2.4-.6 3.9-1.2 2-2.6 3.6-2.6 6 0 .9.3 1.6.8 2.1"/><path d="M12 3c2.2 0 3.4 1.8 3.4 4.2 0 1.4-.3 2.4.6 3.9 1.2 2 2.6 3.6 2.6 6 0 .9-.3 1.6-.8 2.1"/><path d="M6.2 19.2c1 .9 2.6.4 3.3-.4.6.5 1.5.7 2.5.7s1.9-.2 2.5-.7c.7.8 2.3 1.3 3.3.4"/><circle cx="10.4" cy="7.4" r=".7" fill="#f5c451"/><circle cx="13.6" cy="7.4" r=".7" fill="#f5c451"/><path d="M10.6 9.6 12 10.6l1.4-1"/></symbol>
+</svg>
+
+<header>
+  <div class="wrap bar">
+    <a class="brand" href="#inicio"><img src="/site/icon.png" alt="">Line</a>
+    <nav class="tabs">
+      <a href="#inicio" data-tab="inicio">Início</a>
+      <a href="#downloads" data-tab="downloads">Downloads</a>
+    </nav>
+    <div class="spacer"></div>
+    <a class="btn btn-ghost btn-sm" href="/app/">Abrir On Line</a>
+  </div>
+</header>
+
+<main>
+  <!-- ======================= INÍCIO ======================= -->
+  <section data-page="inicio">
+    <div class="wrap">
+      <div class="hero">
+        <span class="pill"><i></i>Grátis, sem anúncios e sem assinatura</span>
+        <h1>O lugar da sua galera <em>conversar, jogar e se ver.</em></h1>
+        <p class="lead">Line junta servidores, canais de texto, chamadas de voz e vídeo e compartilhamento de tela num app leve, feito em Rust, que abre na hora e quase não pesa no PC.</p>
+        <div class="cta">
+          <a class="btn btn-primary js-main-dl" href="#downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
+          <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
+        </div>
+        <p class="cta-note js-note">Windows 10 e 11 · Linux (Debian/Ubuntu) · qualquer navegador</p>
+
+        <div class="shot" aria-hidden="true">
+          <div class="tb"><img src="/site/icon.png" alt=""><div class="t">Resenha</div><div class="w"><span>—</span><span>☐</span><span>✕</span></div></div>
+          <div class="app">
+            <div class="rail">
+              <div class="srv"><img src="/site/icon.png" alt=""></div>
+              <div class="sep"></div>
+              <div class="srv on">R</div>
+              <div class="srv">G</div>
+              <div class="srv" style="color:#b5aaff">+</div>
+            </div>
+            <div class="side">
+              <h4>Resenha</h4>
+              <div class="cat">⌄ CANAIS DE TEXTO</div>
+              <div class="ch on"><b>#</b>geral</div>
+              <div class="ch"><b>#</b>memes</div>
+              <div class="ch"><b>#</b>jogatina</div>
+              <div class="cat">⌄ CANAIS DE VOZ</div>
+              <div class="ch"><b>🔊</b>Geral</div>
+              <div class="vc"><span class="av s" style="background:#e5484d">A</span>Ana</div>
+              <div class="vc"><span class="av s" style="background:#c99a12">B</span>Bia</div>
+              <div class="me"><span class="av dot" style="background:#7c6af2">X</span><div><div style="font-weight:650;font-size:13px">xande</div><div style="color:var(--muted);font-size:11.5px">Online</div></div></div>
+            </div>
+            <div class="chat">
+              <div class="chead"><b style="color:var(--muted);font-weight:400">#</b>geral<span>Bem-vindo ao servidor!</span></div>
+              <div class="msgs">
+                <div class="msg"><span class="av" style="background:#c99a12">B</span><div><span class="n" style="color:#f5c451">Bia</span><span class="h">Hoje às 21:04</span><p>bora uma partida hoje? <span class="mention">@xande</span></p><div class="react"><span>🔥 3</span><span>👍 2</span></div></div></div>
+                <div class="msg"><span class="av" style="background:#e5484d">A</span><div><span class="n" style="color:#ff8a8f">Ana</span><span class="h">Hoje às 21:06</span><p>entro na call em 5 min, vou compartilhar a tela</p><div class="thread">💬 combinado da partida <small>4 mensagens</small></div></div></div>
+                <div class="msg"><span class="av" style="background:#7c6af2">X</span><div><span class="n" style="color:#b5aaff">xande</span><span class="h">Hoje às 21:07</span><p>fechou! mandei o mapa aqui</p><div class="file"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#9d8fff" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><div>mapa-estrategia.png<small>1,2 MB</small></div></div></div></div>
+              </div>
+              <div class="input">＋&nbsp;&nbsp;Conversar em #geral</div>
+            </div>
+            <div class="mem">
+              <div class="cat">ONLINE — 3</div>
+              <div class="u"><span class="av s dot" style="background:#e5484d">A</span>Ana</div>
+              <div class="u"><span class="av s dot" style="background:#c99a12">B</span>Bia</div>
+              <div class="u"><span class="av s dot" style="background:#7c6af2">X</span>xande</div>
+              <div class="cat" style="margin-top:14px">OFFLINE — 1</div>
+              <div class="u" style="opacity:.5"><span class="av s" style="background:#3a3a44">C</span>Caio</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="feats">
+        <div class="sh">
+          <h2>Tudo o que a conversa precisa</h2>
+          <p>Feito para grupos de amigos: rápido de abrir, simples de usar e sem nada pago escondido.</p>
+        </div>
+        <div class="grid">
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></svg></div><h3>Servidores e canais</h3><p>Crie servidores para cada grupo, organize canais por categoria e convide a galera com um link.</p></div>
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg></div><h3>Voz com supressão de ruído</h3><p>Canais de voz sempre abertos, com filtro de ruído para o barulho do teclado não atrapalhar.</p></div>
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div><h3>Vídeo e tela</h3><p>Ligue a câmera ou compartilhe a tela inteira ou só uma janela, direto na chamada.</p></div>
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg></div><h3>Mensagens privadas</h3><p>Converse no privado com amigos, com chamadas de voz e vídeo também na DM.</p></div>
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v13l4-4h12a2 2 0 0 0 2-2"/><path d="M8 9h8M8 12h5"/></svg></div><h3>Threads, reações e anexos</h3><p>Puxe uma thread de qualquer mensagem, reaja com emoji e mande imagens, vídeos e arquivos.</p></div>
+          <div class="card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div><h3>Leve de verdade</h3><p>Escrito em Rust e usando o navegador do próprio sistema: abre rápido e gasta pouca memória.</p></div>
+        </div>
+
+        <div class="band">
+          <h2>Chame a galera para o Line</h2>
+          <p>Instale no Windows ou no Linux, ou entre direto pelo navegador. Sua conta funciona em todos.</p>
+          <div class="cta">
+            <a class="btn btn-primary" href="#downloads"><svg><use href="#i-down"/></svg>Ver downloads</a>
+            <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= DOWNLOADS ======================= -->
+  <section data-page="downloads">
+    <div class="wrap dl">
+      <div class="sh">
+        <h2>Baixe o Line</h2>
+        <p>Escolha a versão do seu sistema. No Windows o app se atualiza sozinho.</p>
+      </div>
+      <div class="dls">
+        <div class="dlc" data-os="windows">
+          <span class="tag">Recomendado para você</span>
+          <div class="os"><svg><use href="#i-win"/></svg></div>
+          <h3>Windows</h3>
+          <div class="meta"><span class="js-ver">versão mais recente</span> · 64 bits · .exe</div>
+          <ul>
+            <li><svg><use href="#i-check"/></svg>Windows 10 e 11</li>
+            <li><svg><use href="#i-check"/></svg>Chamadas de voz, vídeo e compartilhamento de tela</li>
+            <li><svg><use href="#i-check"/></svg>Atualiza sozinho quando sai versão nova</li>
+            <li><svg><use href="#i-check"/></svg>Instala só para o seu usuário, sem pedir administrador</li>
+          </ul>
+          <a class="btn btn-primary" href="/updates/latest/Line-windows-setup.exe" download><svg><use href="#i-down"/></svg>Baixar para Windows</a>
+        </div>
+        <div class="dlc" data-os="linux">
+          <span class="tag">Recomendado para você</span>
+          <div class="os"><svg><use href="#i-linux"/></svg></div>
+          <h3>Linux</h3>
+          <div class="meta"><span class="js-ver">versão mais recente</span> · 64 bits · .deb</div>
+          <ul>
+            <li><svg><use href="#i-check"/></svg>Debian 12, Ubuntu 22.04 e mais novos</li>
+            <li><svg><use href="#i-check"/></svg>Servidores, canais, DMs, threads e anexos</li>
+            <li class="warn"><svg><use href="#i-info"/></svg>Chamadas ainda não funcionam no app Linux: para voz e vídeo, use o Line no navegador</li>
+          </ul>
+          <div class="cmd">sudo apt install ./Line-linux.deb</div>
+          <a class="btn btn-ghost" href="/updates/latest/Line-linux.deb" download><svg><use href="#i-down"/></svg>Baixar para Linux</a>
+        </div>
+      </div>
+      <div class="web">
+        <div class="os"><svg style="color:#9d8fff"><use href="#i-globe"/></svg></div>
+        <div><h4>Sem instalar nada</h4><p>Use o Line completo, com chamadas, no Chrome, Edge, Firefox ou em qualquer sistema.</p></div>
+        <a class="btn btn-ghost" href="/app/">Abrir On Line</a>
+      </div>
+      <p class="fine">Ao abrir o instalador do Windows pela primeira vez, o SmartScreen pode avisar que o app é novo. Clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <img src="/site/icon.png" alt=""><span>Line · feito no Brasil</span>
+    <div class="spacer"></div>
+    <a href="#downloads">Downloads</a>
+    <a href="/app/">Entrar</a>
+  </div>
+</footer>
+
+<script>
+  // Abas: Início e Downloads, trocadas pelo # da URL.
+  const pages = document.querySelectorAll('main > section[data-page]');
+  const tabs = document.querySelectorAll('nav.tabs a');
+  function route() {
+    const want = location.hash === '#downloads' ? 'downloads' : 'inicio';
+    pages.forEach(p => p.classList.toggle('on', p.dataset.page === want));
+    tabs.forEach(t => { if (t.dataset.tab === want) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current'); });
+    window.scrollTo({ top: 0 });
+  }
+  addEventListener('hashchange', route);
+  route();
+
+  // Prévia local (localhost): manda para o app do servidor de verdade.
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    document.querySelectorAll('a[href^="/app/"]').forEach(a => a.href = 'https://useline.tech/app/');
+  }
+
+  // Destaca a versão do sistema de quem está visitando.
+  const ua = navigator.userAgent;
+  const os = /Windows/i.test(ua) ? 'windows' : (/Linux/i.test(ua) && !/Android/i.test(ua)) ? 'linux' : null;
+  if (os) {
+    document.querySelector(`.dlc[data-os="${os}"]`)?.classList.add('rec');
+    const main = document.querySelector('.js-main-dl');
+    if (os === 'windows') {
+      main.href = '/updates/latest/Line-windows-setup.exe';
+      main.setAttribute('download', '');
+      main.querySelector('span').textContent = 'Baixar para Windows';
+    }
+  }
+
+  // Versão publicada pelo CI (mesmo arquivo que o atualizador do app lê).
+  fetch('/updates/latest.json', { cache: 'no-cache' })
+    .then(r => r.ok ? r.json() : null)
+    .then(j => { if (j?.version) document.querySelectorAll('.js-ver').forEach(e => e.textContent = 'v' + j.version); })
+    .catch(() => {});
+</script>
+</body>
+</html>
