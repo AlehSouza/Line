@@ -87,7 +87,16 @@ function SplitButton({
 }
 
 /** Escolher microfone (com o supressor de ruído) ou saída de áudio, direto do painel. */
-function DeviceMenu({ kind, onClose }: { kind: 'input' | 'output'; onClose: () => void }) {
+export function DeviceMenu({
+  kind,
+  onClose,
+  className = 'left-2 right-2',
+}: {
+  kind: 'input' | 'output';
+  onClose: () => void;
+  /** Posição horizontal do menu (ele sempre abre para cima). */
+  className?: string;
+}) {
   const inputId = useVoice((v) => v.inputId);
   const outputId = useVoice((v) => v.outputId);
   const noise = useVoice((v) => v.noiseSuppression);
@@ -107,7 +116,7 @@ function DeviceMenu({ kind, onClose }: { kind: 'input' | 'output'; onClose: () =
     cx('flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-hover', active && 'text-accent');
 
   return (
-    <div className="absolute bottom-full left-2 right-2 z-30 mb-2 rounded-lg border border-edge bg-rail p-1.5 shadow-xl" onMouseLeave={onClose}>
+    <div className={cx('absolute bottom-full z-30 mb-2 rounded-lg border border-edge bg-rail p-1.5 shadow-xl', className)} onMouseLeave={onClose}>
       <p className="px-2.5 pt-1 pb-1.5 text-[11px] font-bold tracking-wide text-muted uppercase">
         {kind === 'input' ? 'Microfone' : 'Saída de áudio'}
       </p>

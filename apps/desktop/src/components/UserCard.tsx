@@ -182,8 +182,8 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
           <div className="-mt-12 flex items-start gap-2">
-            <span className="shrink-0 rounded-full border-[6px] border-rail bg-rail">
-              <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={88} presence={presence} ring="rail" />
+            <span className="shrink-0 rounded-full border-[5px] border-rail bg-rail">
+              <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={88} presence={presence} ring="rail" dotSize={20} />
             </span>
             {user.thought && (
               <span className="relative mt-14 max-w-[190px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">

@@ -31,17 +31,17 @@ export function UpdateBanner() {
   };
 
   return (
-    <div className="flex items-center justify-center gap-3 bg-accent px-4 py-1.5 text-sm text-white">
+    <div className="flex items-center justify-center gap-3 bg-online px-4 py-1.5 text-sm font-medium text-white">
       <span>
         {state === 'installing'
           ? 'Baixando e instalando a atualização. O Line vai reiniciar sozinho.'
           : state === 'error'
             ? 'Não foi possível atualizar agora.'
-            : `Nova versão do Line disponível (${version}).`}
+            : 'Atualização disponível, mantenha a boa experiência com seu aplicativo atualizado.'}
       </span>
       {state !== 'installing' && (
-        <button onClick={install} className="rounded bg-white/20 px-2.5 py-0.5 font-semibold hover:bg-white/30">
-          {state === 'error' ? 'Tentar de novo' : 'Atualizar e reiniciar'}
+        <button onClick={install} className="rounded bg-black/20 px-2.5 py-0.5 font-semibold hover:bg-black/30">
+          {state === 'error' ? 'Tentar de novo' : 'Atualizar'}
         </button>
       )}
       {state !== 'installing' && (

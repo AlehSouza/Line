@@ -24,6 +24,34 @@ import {
   useVoice,
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select } from './ui';
+import { DeviceMenu } from './UserPanel';
+import { fileUrl } from '@/lib/api';
+
+/** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
+function usePing(active: boolean) {
+  const [ms, setMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    const measure = async () => {
+      const t0 = performance.now();
+      try {
+        await fetch(fileUrl('/api/health'), { cache: 'no-store' });
+        if (alive) setMs(Math.round(performance.now() - t0));
+      } catch {
+        if (alive) setMs(null);
+      }
+    };
+    void measure();
+    const t = setInterval(measure, 5000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [active]);
+  return ms;
+}
+
 
 // ---------- vídeo ----------
 
@@ -87,10 +115,13 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
       onClick={onClick}
       className={cx(
         'group relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl bg-raise transition-shadow',
-        tile.kind === 'person' && speaking && 'ring-[3px] ring-accent',
         big && 'aspect-auto h-full',
       )}
     >
+      {/* Borda de "falando" desenhada por dentro do tile, para a grade (overflow-hidden) não cortar. */}
+      {tile.kind === 'person' && speaking && (
+        <span className="pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-accent" />
+      )}
       {tile.stream ? (
         <Video stream={tile.stream} mirror={tile.isMe && tile.kind === 'person'} contain={tile.kind === 'screen'} />
       ) : (
@@ -235,12 +266,15 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
               <TileView tile={focused} big onClick={() => setFocus(null)} />
             </div>
             {others.length > 0 && (
-              <div className="flex h-28 shrink-0 gap-3 overflow-x-auto">
-                {others.map((t) => (
-                  <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
-                    <TileView tile={t} onClick={() => setFocus(t.key)} />
-                  </div>
-                ))}
+              <div className="flex h-28 shrink-0 overflow-x-auto">
+                {/* mx-auto centraliza; se não couber, a margem zera e a fileira rola sem cortar o começo. */}
+                <div className="mx-auto flex h-full gap-3">
+                  {others.map((t) => (
+                    <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
+                      <TileView tile={t} onClick={() => setFocus(t.key)} />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>
@@ -282,9 +316,71 @@ export function VoiceControls({ large }: { large?: boolean }) {
   const [picker, setPicker] = useState(false);
   const [camPicker, setCamPicker] = useState(false);
 
-  const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
-
+  const [devMenu, setDevMenu] = useState<'input' | 'output' | null>(null);
   const size = large ? 22 : 18;
+
+  const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
+  const camClick = () => (camera ? void toggleCamera() : setCamPicker(true));
+  const modals = (
+    <>
+      {camPicker && <CameraModal onClose={() => setCamPicker(false)} />}
+      {picker && <ScreenShareModal onClose={() => setPicker(false)} />}
+    </>
+  );
+
+  if (large) {
+    // Dentro da chamada: grupos separados (mic + fone, câmera + tela) e o desligar sozinho à direita.
+    const group = 'relative flex items-center gap-0.5 rounded-xl border border-edge bg-rail/90 p-1 shadow-lg';
+    const key = (state: 'off' | 'on' | 'danger') =>
+      cx(
+        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors',
+        state === 'danger' ? 'bg-danger/15 text-danger hover:bg-danger/25' : state === 'on' ? 'bg-fg text-rail' : 'text-fg hover:bg-hover',
+      );
+    const arrow = (danger: boolean, open: boolean) =>
+      cx(
+        'flex h-11 w-6 items-center justify-center rounded-lg transition-colors',
+        danger ? 'bg-danger/15 text-danger hover:bg-danger/25' : 'text-muted hover:bg-hover hover:text-fg',
+        open && 'bg-hover',
+      );
+    const toggleMenu = (k: 'input' | 'output') => setDevMenu((m) => (m === k ? null : k));
+    return (
+      <div className="flex items-center gap-3">
+        <div className={group}>
+          <button title={muted ? 'Ativar microfone' : 'Silenciar microfone'} onClick={toggleMute} className={key(muted ? 'danger' : 'off')}>
+            {muted ? <Icons.MicOff size={size} /> : <Icons.Mic size={size} />}
+          </button>
+          <button title="Escolher microfone" onClick={() => toggleMenu('input')} className={arrow(muted, devMenu === 'input')}>
+            <Icons.Chevron size={14} />
+          </button>
+          <span className="mx-1 h-6 w-px bg-edge" />
+          <button title={deafened ? 'Voltar a ouvir' : 'Ensurdecer'} onClick={toggleDeafen} className={key(deafened ? 'danger' : 'off')}>
+            {deafened ? <Icons.HeadphonesOff size={size} /> : <Icons.Headphones size={size} />}
+          </button>
+          <button title="Escolher saída de áudio" onClick={() => toggleMenu('output')} className={arrow(deafened, devMenu === 'output')}>
+            <Icons.Chevron size={14} />
+          </button>
+          {devMenu && <DeviceMenu kind={devMenu} onClose={() => setDevMenu(null)} className="left-0 w-64" />}
+        </div>
+        <div className={group}>
+          <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={camClick} className={key(camera ? 'on' : 'off')}>
+            {camera ? <Icons.Video size={size} /> : <Icons.VideoOff size={size} />}
+          </button>
+          <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={key(screen ? 'on' : 'off')}>
+            <Icons.Screen size={size} />
+          </button>
+        </div>
+        <button
+          title="Sair da chamada"
+          onClick={() => leaveVoice()}
+          className="flex h-[54px] items-center justify-center rounded-xl bg-danger px-7 text-white shadow-lg transition hover:brightness-110"
+        >
+          <Icons.PhoneOff size={size} />
+        </button>
+        {modals}
+      </div>
+    );
+  }
+
   const btn = (active: boolean, danger = false) =>
     cx(
       'flex items-center justify-center rounded-full transition-colors',
@@ -300,7 +396,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title={deafened ? 'Voltar a ouvir' : 'Ensurdecer'} onClick={toggleDeafen} className={btn(false, deafened && large)}>
         {deafened ? <Icons.HeadphonesOff size={size} className={large ? '' : 'text-danger'} /> : <Icons.Headphones size={size} />}
       </button>
-      <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => (camera ? void toggleCamera() : setCamPicker(true))} className={btn(camera)}>
+      <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={camClick} className={btn(camera)}>
         {camera ? <Icons.Video size={size} /> : <Icons.VideoOff size={size} />}
       </button>
       <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={btn(screen)}>
@@ -309,8 +405,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title="Sair da chamada" onClick={() => leaveVoice()} className={btn(false, true)}>
         <Icons.PhoneOff size={size} />
       </button>
-      {camPicker && <CameraModal onClose={() => setCamPicker(false)} />}
-      {picker && <ScreenShareModal onClose={() => setPicker(false)} />}
+      {modals}
     </div>
   );
 }
@@ -601,7 +696,7 @@ function NoisePopover({ onClose }: { onClose: () => void }) {
 
   const lit = Math.round(level * METER_BARS);
   return (
-    <div ref={ref} className="absolute bottom-full right-0 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
+    <div ref={ref} className="absolute bottom-full left-2 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
       <div className="flex items-center justify-between">
         <span className="font-bold">Supressão de ruído</span>
         <button
@@ -646,6 +741,7 @@ function NoisePopover({ onClose }: { onClose: () => void }) {
 export function VoiceBar() {
   const channelId = useVoice((v) => v.channelId);
   const connecting = useVoice((v) => v.connecting);
+  const ping = usePing(!connecting);
   const noise = useVoice((v) => v.noiseSuppression);
   const camera = useVoice((v) => !!v.camera);
   const screen = useVoice((v) => !!v.screen);
@@ -671,10 +767,15 @@ export function VoiceBar() {
     );
 
   return (
-    <div className="space-y-2.5 border-b border-edge p-2.5">
+    <div className="relative space-y-2.5 border-b border-edge p-2.5">
       <div className="flex items-center gap-1">
         <button onClick={go} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-hover">
-          <Icons.Signal size={20} className={connecting ? 'text-sun' : 'text-online'} />
+          <span title={connecting ? 'Conectando…' : ping != null ? `Ping: ${ping} ms` : 'Medindo ping…'}>
+            <Icons.Signal
+              size={20}
+              className={connecting ? 'text-sun' : ping == null || ping < 150 ? 'text-online' : ping < 300 ? 'text-sun' : 'text-danger'}
+            />
+          </span>
           <span className="min-w-0">
             <span className={cx('block truncate text-[13px] font-bold', connecting ? 'text-sun' : 'text-online')}>
               {connecting ? 'Conectando…' : 'Voz conectada'}
@@ -682,7 +783,8 @@ export function VoiceBar() {
             <span className="block truncate text-xs text-muted">{label}</span>
           </span>
         </button>
-        <span className="relative">
+        {/* Sem "relative" aqui: o popover se ancora no painel e abre para cima e para a direita. */}
+        <span>
           <button
             title="Supressão de ruído"
             onClick={() => setNoiseOpen((v) => !v)}
