@@ -126,6 +126,7 @@ struct ChannelRow {
     last_message_at: Option<String>,
     parent_id: Option<String>,
     thread_message_id: Option<String>,
+    is_private: bool,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -141,6 +142,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         last_message_at: r.get("last_message_at")?,
         parent_id: r.get("parent_id")?,
         thread_message_id: r.get("thread_message_id")?,
+        is_private: r.get::<_, i64>("is_private")? != 0,
     })
 }
 
@@ -207,6 +209,8 @@ pub struct SearchFilter {
     pub channel_id: Option<String>,
     pub mentions: Option<String>,
     pub has: Option<String>,
+    /// Canais privados que quem busca não enxerga.
+    pub hidden: Vec<String>,
 }
 
 pub enum FriendRequest {
@@ -658,6 +662,7 @@ impl Q<'_> {
             name: row.name,
             topic: row.topic,
             position: row.position,
+            is_private: row.is_private,
             last_message_at: row.last_message_at,
         }
     }
@@ -690,6 +695,19 @@ impl Q<'_> {
         category_id: Option<&str>,
         topic: &str,
     ) -> Channel {
+        self.create_channel_ex(server_id, name, kind, category_id, topic, None)
+    }
+
+    /// `private_members`: Some(lista) cria um canal privado visível só para eles (e o dono).
+    pub fn create_channel_ex(
+        &self,
+        server_id: &str,
+        name: &str,
+        kind: &str,
+        category_id: Option<&str>,
+        topic: &str,
+        private_members: Option<&[String]>,
+    ) -> Channel {
         let id = new_id();
         let n: i64 = ok(self.c.query_row(
             "SELECT COUNT(*) FROM channels WHERE server_id = ?",
@@ -697,10 +715,16 @@ impl Q<'_> {
             |r| r.get(0),
         ));
         ok(self.c.execute(
-            "INSERT INTO channels (id, type, server_id, category_id, name, topic, position, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![id, kind, server_id, category_id, name, topic, n, now_iso()],
+            "INSERT INTO channels (id, type, server_id, category_id, name, topic, position, is_private, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![id, kind, server_id, category_id, name, topic, n, private_members.is_some() as i64, now_iso()],
         ));
+        for user_id in private_members.unwrap_or_default() {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO channel_recipients (channel_id, user_id) VALUES (?, ?)",
+                params![id, user_id],
+            ));
+        }
         self.channel(&id).unwrap()
     }
 
@@ -735,9 +759,52 @@ impl Q<'_> {
             .optional());
         match row {
             None => false,
-            Some(Some(server_id)) => self.is_member(&server_id, user_id),
+            Some(Some(server_id)) => {
+                self.is_member(&server_id, user_id)
+                    && self
+                        .private_audience(channel_id)
+                        .is_none_or(|ids| ids.iter().any(|u| u == user_id))
+            }
             Some(None) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
         }
+    }
+
+    /// Quem enxerga um canal privado (ou uma thread de canal privado): o dono do servidor e os
+    /// membros escolhidos que ainda estão no servidor. None = canal aberto a todo o servidor.
+    pub fn private_audience(&self, channel_id: &str) -> Option<Vec<String>> {
+        let (root, server_id): (String, String) = ok(self
+            .c
+            .query_row(
+                "SELECT c.id, c.server_id FROM channels c
+                 WHERE c.is_private = 1 AND c.server_id IS NOT NULL
+                   AND c.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
+                [channel_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional())?;
+        let mut ids = self.ids(
+            "SELECT r.user_id FROM channel_recipients r
+             JOIN members m ON m.user_id = r.user_id AND m.server_id = (SELECT server_id FROM channels WHERE id = r.channel_id)
+             WHERE r.channel_id = ?",
+            [root.as_str()],
+        );
+        if let Some(s) = self.server(&server_id)
+            && !ids.contains(&s.owner_id)
+        {
+            ids.push(s.owner_id);
+        }
+        Some(ids)
+    }
+
+    /// Canais (e threads) do servidor que essa pessoa não pode ver.
+    pub fn hidden_channel_ids(&self, server_id: &str, user_id: &str) -> Vec<String> {
+        self.ids(
+            "SELECT id FROM channels WHERE server_id = ? AND (is_private = 1 OR parent_id IN (SELECT id FROM channels WHERE is_private = 1))",
+            [server_id],
+        )
+        .into_iter()
+        .filter(|id| !self.can_access(user_id, id))
+        .collect()
     }
 
     // ---------- DMs ----------
@@ -918,6 +985,10 @@ impl Q<'_> {
         for word in f.text.split_whitespace().take(8) {
             sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
             args.push(like(word));
+        }
+        for h in f.hidden.iter().take(500) {
+            sql.push_str(" AND m.channel_id != ?");
+            args.push(h.clone());
         }
         if let Some(a) = &f.author_id {
             sql.push_str(" AND m.author_id = ?");

@@ -309,6 +309,8 @@ pub struct CreateChannel {
     #[serde(default, deserialize_with = "nullable")]
     pub category_id: Option<Option<String>>,
     pub topic: Option<String>,
+    pub is_private: Option<bool>,
+    pub member_ids: Option<Vec<String>>,
 }
 
 impl CreateChannel {
@@ -317,6 +319,9 @@ impl CreateChannel {
         let kind = self.kind.get_or_insert_with(|| "text".into());
         if kind != "text" && kind != "voice" {
             return Err(validation("Tipo de canal inválido"));
+        }
+        if self.member_ids.as_ref().is_some_and(|m| m.len() > 500) {
+            return Err(validation("Membros demais no canal privado"));
         }
         if let Some(t) = &self.topic {
             text(t, 0, 1024, "O tópico")?;

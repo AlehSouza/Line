@@ -55,6 +55,9 @@ export const createChannelSchema = z.object({
   type: z.enum(['text', 'voice']).default('text'),
   categoryId: z.string().nullable().optional(),
   topic: z.string().max(1024).optional(),
+  isPrivate: z.boolean().optional(),
+  /** Quem pode ver o canal privado (o dono do servidor sempre vê). */
+  memberIds: z.array(z.string()).max(500).optional(),
 });
 
 export const updateChannelSchema = z.object({

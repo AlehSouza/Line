@@ -52,6 +52,8 @@ export interface Channel {
   name: string;
   topic: string;
   position: number;
+  /** Canal privado: só o dono do servidor e os membros escolhidos enxergam. */
+  isPrivate?: boolean;
   /** Só para dm / group_dm. */
   recipients?: PublicUser[];
   /** Dono da DM em grupo ou quem criou a thread. */

@@ -83,11 +83,14 @@ export function Avatar({
   ring = 'side',
   className,
   src,
+  dotSize,
 }: {
   name: string;
   color: string;
   src?: string | null;
   size?: number;
+  /** Tamanho da bolinha de status (padrão: 30% do avatar). */
+  dotSize?: number;
   presence?: Presence;
   ring?: Ring;
   className?: string;
@@ -109,7 +112,7 @@ export function Avatar({
         <PresenceDot
           presence={presence}
           ring={ring}
-          size={Math.max(9, Math.round(size * 0.3))}
+          size={dotSize ?? Math.max(9, Math.round(size * 0.3))}
           className="absolute -right-0.5 -bottom-0.5"
         />
       )}
@@ -251,6 +254,7 @@ export const Icons = {
   FileText: icon(L.FileText),
   Download: icon(L.Download),
   Folder: icon(L.Folder),
+  Lock: icon(L.Lock),
   Upload: icon(L.Upload),
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),

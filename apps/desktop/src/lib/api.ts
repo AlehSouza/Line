@@ -145,6 +145,7 @@ export const api = {
   deleteChannel: (id: string) => request<void>('DELETE', `/channels/${enc(id)}`),
   createCategory: (serverId: string, name: string) =>
     request<Category>('POST', `/servers/${enc(serverId)}/categories`, { name }),
+  renameCategory: (id: string, name: string) => request<Category>('PATCH', `/categories/${enc(id)}`, { name }),
   deleteCategory: (id: string) => request<void>('DELETE', `/categories/${enc(id)}`),
 
   messages: (channelId: string, before?: string, limit = 50) =>

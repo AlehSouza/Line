@@ -77,7 +77,10 @@ impl App {
             return;
         };
         match &channel.server_id {
-            Some(server_id) => self.to_server(server_id, event, data),
+            Some(server_id) => match q.private_audience(&channel.id) {
+                Some(ids) => self.to_users(&ids, event, data),
+                None => self.to_server(server_id, event, data),
+            },
             None => self.to_users(&q.recipient_ids(&channel.id), event, data),
         }
     }
@@ -254,9 +257,14 @@ async fn typing_start(
     };
     let payload =
         json!({ "channelId": channel_id, "userId": me, "displayName": user.display_name });
-    match &channel.server_id {
-        Some(server_id) => now(s.to(server_room(server_id)).emit("typing:start", &payload)),
-        None => {
+    let private = channel.server_id.as_ref().and_then(|_| q.private_audience(&channel.id));
+    match (&channel.server_id, private) {
+        (Some(_), Some(ids)) => {
+            let others: Vec<String> = ids.into_iter().filter(|r| *r != me).collect();
+            app.to_users(&others, "typing:start", &payload);
+        }
+        (Some(server_id), None) => now(s.to(server_room(server_id)).emit("typing:start", &payload)),
+        (None, _) => {
             let others: Vec<String> = q
                 .recipient_ids(&channel.id)
                 .into_iter()

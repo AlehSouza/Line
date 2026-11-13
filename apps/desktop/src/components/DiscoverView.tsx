@@ -50,7 +50,7 @@ export function DiscoverView() {
             <div className="h-16" style={{ background: `linear-gradient(135deg, ${s.iconColor}, transparent)` }} />
             <div className="-mt-7 flex flex-1 flex-col gap-2 px-4 pb-4">
               <span
-                className="flex h-14 w-14 items-center justify-center rounded-2xl text-lg font-bold text-rail ring-4 ring-side"
+                className="flex h-14 w-14 items-center justify-center rounded-[17px] text-lg font-bold text-rail ring-4 ring-side"
                 style={{ background: s.iconColor }}
               >
                 {initials(s.name)}
