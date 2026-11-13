@@ -220,6 +220,7 @@ const icon = (C: LucideIcon) =>
 export const Icons = {
   Hash: icon(L.Hash),
   Speaker: icon(L.Volume2),
+  SpeakerOff: icon(L.VolumeX),
   Plus: icon(L.Plus),
   Compass: icon(L.Compass),
   Users: icon(L.Users),
@@ -278,6 +279,7 @@ export const Icons = {
   Smile: icon(L.Smile),
   SmilePlus: icon(L.SmilePlus),
   EyeOff: icon(L.EyeOff),
+  Eye: icon(L.Eye),
 };
 
 /** Bloco de carregamento com brilho animado. */

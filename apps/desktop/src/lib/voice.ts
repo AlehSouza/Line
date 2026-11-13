@@ -100,6 +100,28 @@ function loadUserVolumes(): Record<string, number> {
   }
 }
 
+const SCREEN_AUDIO_KEY = 'line.voice.screenAudio';
+
+/** Som da tela que cada pessoa transmite: volume (0 a 1) e silenciado. Guardado só neste aparelho. */
+function loadScreenAudio(): { screenVolume: Record<string, number>; screenMuted: Record<string, boolean> } {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SCREEN_AUDIO_KEY) : null;
+    const v = raw ? (JSON.parse(raw) as Partial<{ volume: Record<string, number>; muted: Record<string, boolean> }>) : {};
+    return { screenVolume: v.volume ?? {}, screenMuted: v.muted ?? {} };
+  } catch {
+    return { screenVolume: {}, screenMuted: {} };
+  }
+}
+
+function saveScreenAudio() {
+  const { screenVolume, screenMuted } = getV();
+  try {
+    localStorage.setItem(SCREEN_AUDIO_KEY, JSON.stringify({ volume: screenVolume, muted: screenMuted }));
+  } catch {
+    // sem localStorage: vale só nesta sessão
+  }
+}
+
 export interface VoiceStore {
   /** Estados de voz visíveis, por usuário. */
   states: Record<string, VoiceState>;
@@ -107,6 +129,10 @@ export interface VoiceStore {
   userVolume: Record<string, number>;
   localMuted: Record<string, boolean>;
   hiddenVideo: Record<string, boolean>;
+  /** Som da tela transmitida por cada pessoa (separado da voz) e telas que parei de assistir. Só valem para mim. */
+  screenVolume: Record<string, number>;
+  screenMuted: Record<string, boolean>;
+  hiddenScreen: Record<string, boolean>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
   channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
@@ -134,6 +160,8 @@ export const useVoice = create<VoiceStore>(() => ({
   userVolume: loadUserVolumes(),
   localMuted: {},
   hiddenVideo: {},
+  ...loadScreenAudio(),
+  hiddenScreen: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -190,6 +218,8 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       return { states };
     });
     if (uid === myId) return applyMute();
+    // A tela dessa pessoa pode ter começado/parado: reaplica o volume da voz ou da tela em cada áudio dela.
+    for (const el of audioEls.values()) if (el.dataset.peer === uid) applyPeerAudio(el);
     const mine = getV().channelId;
     if (!mine) return;
     // Quem chega é quem abre a conexão (no rejoin). Se os dois lados criassem a conexão ao mesmo tempo,
@@ -351,11 +381,36 @@ function applyMute() {
 
 /** Ensurdecido (por mim ou pelo servidor), silenciado localmente e volume de cada pessoa. */
 function applyPeerAudio(el: HTMLAudioElement) {
-  const { deafened, states, localMuted, userVolume } = getV();
+  const { deafened, states, localMuted, userVolume, screenVolume, screenMuted, hiddenScreen } = getV();
   const peer = el.dataset.peer ?? '';
   const forced = myId ? states[myId]?.serverDeafened : false;
-  el.muted = deafened || !!forced || !!localMuted[peer];
-  el.volume = Math.min(1, Math.max(0, userVolume[peer] ?? 1));
+  // O áudio da tela vem no mesmo stream do vídeo da tela; o resto é a voz.
+  const isScreen = !!states[peer]?.screenStreamId && el.dataset.stream === states[peer]?.screenStreamId;
+  const off = isScreen ? !!screenMuted[peer] || !!hiddenScreen[peer] : !!localMuted[peer];
+  el.muted = deafened || !!forced || off;
+  el.volume = Math.min(1, Math.max(0, (isScreen ? screenVolume[peer] : userVolume[peer]) ?? 1));
+}
+
+export function setScreenVolume(userId: string, volume: number) {
+  setV((v) => ({
+    screenVolume: { ...v.screenVolume, [userId]: volume },
+    // Mexer no volume tira do silencioso.
+    screenMuted: volume > 0 ? { ...v.screenMuted, [userId]: false } : v.screenMuted,
+  }));
+  saveScreenAudio();
+  applyMute();
+}
+
+export function toggleScreenMute(userId: string) {
+  setV((v) => ({ screenMuted: { ...v.screenMuted, [userId]: !v.screenMuted[userId] } }));
+  saveScreenAudio();
+  applyMute();
+}
+
+/** Parar de assistir: esconde a tela da pessoa e corta o som dela, só para mim. */
+export function toggleHiddenScreen(userId: string) {
+  setV((v) => ({ hiddenScreen: { ...v.hiddenScreen, [userId]: !v.hiddenScreen[userId] } }));
+  applyMute();
 }
 
 export function setUserVolume(userId: string, volume: number) {
@@ -778,6 +833,7 @@ function attachAudio(peerId: string, stream: MediaStream) {
   el.autoplay = true;
   el.srcObject = stream;
   el.dataset.peer = peerId;
+  el.dataset.stream = stream.id;
   applyPeerAudio(el);
   applySink(el);
   document.body.appendChild(el);
