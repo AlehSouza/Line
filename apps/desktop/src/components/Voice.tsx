@@ -445,6 +445,107 @@ function NoiseToggle({ on }: { on: boolean }) {
   );
 }
 
+const METER_BARS = 24;
+
+/** Popover da supressão de ruído: liga/desliga, explicação e teste do microfone com medidor ao vivo. */
+function NoisePopover({ onClose }: { onClose: () => void }) {
+  const on = useVoice((v) => v.noiseSuppression);
+  const inputId = useVoice((v) => v.inputId);
+  const ref = useRef<HTMLDivElement>(null);
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState(0);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  // Teste: abre o microfone à parte e mede o volume, sem mandar nada para a chamada.
+  useEffect(() => {
+    if (!testing) return;
+    let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
+    let raf = 0;
+    let alive = true;
+    navigator.mediaDevices
+      .getUserMedia({ audio: { deviceId: inputId ? { exact: inputId } : undefined, noiseSuppression: on, echoCancellation: true } })
+      .then((s) => {
+        if (!alive) return s.getTracks().forEach((t) => t.stop());
+        stream = s;
+        ctx = new AudioContext();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        ctx.createMediaStreamSource(s).connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+        const tick = () => {
+          analyser.getByteTimeDomainData(buf);
+          let peak = 0;
+          for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
+          setLevel(Math.min(1, peak / 64));
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      })
+      .catch(() => setTesting(false));
+    return () => {
+      alive = false;
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close();
+      setLevel(0);
+    };
+  }, [testing, inputId, on]);
+
+  const lit = Math.round(level * METER_BARS);
+  return (
+    <div ref={ref} className="absolute bottom-full right-0 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
+      <div className="flex items-center justify-between">
+        <span className="font-bold">Supressão de ruído</span>
+        <button
+          role="switch"
+          aria-checked={on}
+          onClick={() => void setNoiseSuppression(!on)}
+          className={cx('relative h-6 w-11 rounded-full transition-colors', on ? 'bg-accent' : 'bg-edge')}
+        >
+          <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', on ? 'left-[22px]' : 'left-0.5')} />
+        </button>
+      </div>
+      <p className="text-sm text-soft">
+        Tira teclado, ventilador e outros barulhos de fundo da sua voz. Tente bater palmas enquanto fala: a galera só vai ouvir você.
+      </p>
+      <div>
+        <p className="mb-2 font-semibold">Teste do microfone</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setTesting((v) => !v)}
+            className={cx('shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold', testing ? 'bg-accent text-white' : 'bg-raise hover:bg-hover')}
+          >
+            {testing ? 'Parar' : 'Testar'}
+          </button>
+          <div className="flex h-6 flex-1 items-center gap-[3px]">
+            {Array.from({ length: METER_BARS }, (_, i) => (
+              <span key={i} className={cx('h-full flex-1 rounded-full transition-colors', i < lit ? 'bg-online' : 'bg-edge')} />
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="border-t border-edge pt-3">
+        <p className="text-xs text-muted">Fornecido por</p>
+        <p className="text-sm font-semibold">RNNoise</p>
+        <p className="text-xs text-muted">Rede neural de código aberto que roda no seu próprio computador. Sua voz não sai daqui para ser filtrada.</p>
+      </div>
+    </div>
+  );
+}
+
 // ---------- barra "voz conectada" na lateral ----------
 
 export function VoiceBar() {
@@ -459,6 +560,7 @@ export function VoiceBar() {
   const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
   const [modal, setModal] = useState<'screen' | 'settings' | null>(null);
+  const [noiseOpen, setNoiseOpen] = useState(false);
   if (!channelId) return null;
 
   const label = channel ? (channel.serverId ? `${channel.name} / ${server?.name ?? ''}` : dmTitle(channel, meId, users)) : '';
@@ -485,13 +587,16 @@ export function VoiceBar() {
             <span className="block truncate text-xs text-muted">{label}</span>
           </span>
         </button>
-        <button
-          title={noise ? 'Supressor de ruído ligado' : 'Supressor de ruído desligado'}
-          onClick={() => void setNoiseSuppression(!noise)}
-          className={cx('rounded-md p-1.5 hover:bg-hover', noise ? 'text-accent' : 'text-muted hover:text-fg')}
-        >
-          <Icons.Waves size={18} />
-        </button>
+        <span className="relative">
+          <button
+            title="Supressão de ruído"
+            onClick={() => setNoiseOpen((v) => !v)}
+            className={cx('rounded-md p-1.5 hover:bg-hover', noise ? 'text-accent' : 'text-muted hover:text-fg', noiseOpen && 'bg-hover')}
+          >
+            <Icons.Waves size={18} />
+          </button>
+          {noiseOpen && <NoisePopover onClose={() => setNoiseOpen(false)} />}
+        </span>
         <button title="Sair da chamada" onClick={() => leaveVoice()} className="rounded-md p-1.5 text-muted hover:bg-hover hover:text-danger">
           <Icons.PhoneOff size={18} />
         </button>
