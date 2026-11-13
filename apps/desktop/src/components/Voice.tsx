@@ -171,6 +171,45 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   const focused = tiles.find((t) => t.key === focus);
   const others = focused ? tiles.filter((t) => t !== focused) : tiles;
 
+  // Canal vazio: tela de espera colorida, com o convite para entrar no centro.
+  if (count === 0 && !inCall) {
+    return (
+      <div
+        className={cx('relative flex flex-col overflow-hidden', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}
+        style={{
+          background:
+            'radial-gradient(120% 80% at 50% 110%, color-mix(in srgb, var(--color-accent) 70%, transparent) 0%, color-mix(in srgb, var(--color-accent) 25%, transparent) 45%, transparent 75%), linear-gradient(to bottom, var(--color-rail), color-mix(in srgb, var(--color-accent) 18%, var(--color-rail)))',
+        }}
+      >
+        {!compact && (
+          <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+            <Icons.Speaker size={20} className="text-soft" />
+            <h1 className="font-bold">{title}</h1>
+          </header>
+        )}
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+          <h2 className="text-3xl font-bold text-white drop-shadow">{title}</h2>
+          <p className="text-soft">Ninguém está em voz no momento.</p>
+          <button
+            disabled={connecting}
+            onClick={() => joinVoice(channel.id)}
+            className="mt-4 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-[#141418] shadow-lg transition hover:scale-[1.03] hover:bg-white/90 disabled:opacity-60"
+          >
+            {connecting ? 'Conectando…' : 'Entrar na chamada de voz'}
+          </button>
+          {error && (
+            <p className="mt-3 flex items-center gap-2 rounded-lg bg-danger/15 px-3 py-1.5 text-sm text-danger">
+              {error}
+              <button onClick={clearVoiceError} className="hover:text-fg">
+                <Icons.X size={14} />
+              </button>
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
       {!compact && (
