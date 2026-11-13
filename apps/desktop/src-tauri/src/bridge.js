@@ -22,6 +22,11 @@
         const internals = window.__TAURI_INTERNALS__;
         return internals ? internals.invoke('update_install') : Promise.reject(new Error('indisponível'));
       },
+      /** Abre a janelinha que procura, baixa e instala a atualização. */
+      run: () => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('update_run') : Promise.reject(new Error('indisponível'));
+      },
     },
     window: {
       minimize: () => void invoke('window_minimize'),
