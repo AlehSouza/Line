@@ -272,8 +272,8 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
               <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
             <div className="mt-2 flex items-center gap-2 px-4 text-xs text-muted">
-              <span className="shrink-0">{items.length === 1 ? '1 resposta' : `${items.length} respostas`}</span>
               <span className="h-px flex-1 bg-edge" />
+              <span className="shrink-0">{items.length === 1 ? '1 resposta' : `${items.length} respostas`}</span>
             </div>
           </div>
         )}
