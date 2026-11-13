@@ -102,8 +102,9 @@ function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fra
 
 export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
-  register: (username: string, password: string, displayName?: string, email?: string) =>
-    request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email }),
+  register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
+    request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),
+  authConfig: () => request<{ turnstileSiteKey: string | null }>('GET', '/auth/config'),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/auth/login', { username, password }),
 
   me: () => request<SelfUser>('GET', '/users/@me'),

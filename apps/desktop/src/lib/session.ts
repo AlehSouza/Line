@@ -69,12 +69,13 @@ export async function authenticate(
   password: string,
   displayName?: string,
   email?: string,
+  captchaToken?: string,
 ) {
   let url = serverUrl.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
   // Aceita "10.0.0.5:4000" ou "line.exemplo.com" sem o http(s)://
   if (!/^https?:\/\//i.test(url)) url = `${/^(localhost|\d{1,3}(\.\d{1,3}){3})(:|$)/.test(url) ? 'http' : 'https'}://${url}`;
   configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
-  const res = mode === 'login' ? await api.login(username, password) : await api.register(username, password, displayName, email);
+  const res = mode === 'login' ? await api.login(username, password) : await api.register(username, password, displayName, email, captchaToken);
   storage.set(STORAGE_URL, url);
   storage.set(STORAGE_TOKEN, res.token);
   configureApi({ token: res.token });

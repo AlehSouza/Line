@@ -61,6 +61,7 @@ impl FromRequestParts<Arc<App>> for Me {
 pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
     let api = Router::new()
         .route("/auth/register", post(register))
+        .route("/auth/config", get(auth_config))
         .route("/auth/login", post(login))
         .route("/users/@me", get(get_me).patch(update_me))
         .route("/users/{id}", get(get_user))
@@ -147,8 +148,29 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
 
 // ---------- auth ----------
 
-async fn register(State(app): S, b: Bytes) -> Res {
+/// O que a tela de login precisa saber antes do cadastro (ex.: chave pública do captcha).
+async fn auth_config(State(app): S) -> Res {
+    Ok(Json(json!({ "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()) })).into_response())
+}
+
+/// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
+fn client_ip(headers: &HeaderMap) -> Option<String> {
+    let v = headers.get("x-forwarded-for")?.to_str().ok()?;
+    v.split(',').next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+async fn register(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let input = body::<validate::Register>(&b)?.check()?;
+    let ip = client_ip(&headers);
+    if let Some(turnstile) = &app.turnstile {
+        let token = input.captcha_token.as_deref().unwrap_or_default();
+        if token.is_empty() || !turnstile.verify(token, ip.as_deref()).await {
+            return Err(validation("Confirme que você não é um robô."));
+        }
+    }
+    if ip.as_deref().is_some_and(|ip| !app.signups.allow(ip)) {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitas contas criadas daqui. Tente de novo mais tarde."));
+    }
     if app.store.q().user_by_username(&input.username).is_some() {
         return Err(conflict("Esse nome de usuário já está em uso"));
     }

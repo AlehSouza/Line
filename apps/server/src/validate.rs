@@ -94,6 +94,8 @@ pub struct Register {
     pub username: String,
     #[serde(default)]
     pub email: Option<String>,
+    #[serde(default)]
+    pub captcha_token: Option<String>,
     pub display_name: Option<String>,
     pub password: String,
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { api, configureApi } from '@/lib/api';
 import { authenticate, savedServerUrl } from '@/lib/session';
 import { Button, ErrorText, Field, Input, Logo } from './ui';
 
@@ -12,6 +13,14 @@ export function AuthScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState('');
+  const [captchaRun, setCaptchaRun] = useState(0);
+
+  useEffect(() => {
+    configureApi({ baseUrl: serverUrl });
+    api.authConfig().then((c) => setSiteKey(c.turnstileSiteKey)).catch(() => {});
+  }, [serverUrl]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -22,11 +31,20 @@ export function AuthScreen() {
       setError('As senhas não são iguais.');
       return;
     }
+    if (mode === 'register' && siteKey && !captcha) {
+      setError('Confirme que você não é um robô.');
+      return;
+    }
     setBusy(true);
     try {
-      await authenticate(mode, serverUrl, username, password, displayName || undefined, mode === 'register' ? email.trim() : undefined);
+      await authenticate(mode, serverUrl, username, password, displayName || undefined, mode === 'register' ? email.trim() : undefined, mode === 'register' ? captcha || undefined : undefined);
     } catch (err) {
       setError((err as Error).message);
+      // Cada token do captcha vale uma vez só: gera outro para a próxima tentativa.
+      if (mode === 'register' && siteKey) {
+        setCaptcha('');
+        setCaptchaRun((n) => n + 1);
+      }
     } finally {
       setBusy(false);
     }
@@ -97,6 +115,8 @@ export function AuthScreen() {
         )}
 
 
+        {mode === 'register' && siteKey && <Turnstile key={captchaRun} siteKey={siteKey} onToken={setCaptcha} />}
+
         <ErrorText>{error}</ErrorText>
 
         <Button type="submit" disabled={busy} className="w-full py-2.5">
@@ -164,4 +184,56 @@ function EyeOff() {
       <path d="M2 2l20 20" />
     </svg>
   );
+}
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      remove: (id: string) => void;
+    };
+  }
+}
+
+let turnstileScript: Promise<void> | null = null;
+function loadTurnstile() {
+  turnstileScript ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => {
+      turnstileScript = null;
+      reject(new Error('captcha'));
+    };
+    document.head.appendChild(s);
+  });
+  return turnstileScript;
+}
+
+/** Captcha da Cloudflare (Turnstile): na maioria das vezes passa sozinho, sem clicar em nada. */
+function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (t: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let id: string | null = null;
+    let alive = true;
+    loadTurnstile()
+      .then(() => {
+        if (!alive || !ref.current || !window.turnstile) return;
+        id = window.turnstile.render(ref.current, {
+          sitekey: siteKey,
+          theme: 'dark',
+          language: 'pt-br',
+          callback: (t: string) => onToken(t),
+          'expired-callback': () => onToken(''),
+          'error-callback': () => onToken(''),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      if (id) window.turnstile?.remove(id);
+    };
+  }, [siteKey, onToken]);
+  return <div ref={ref} className="flex min-h-[65px] justify-center" />;
 }

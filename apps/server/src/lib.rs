@@ -3,6 +3,7 @@
 //! Usado de dois jeitos: como binário (`line-server`) e embutido no app desktop (Tauri),
 //! que sobe o servidor junto com a janela.
 pub mod auth;
+pub mod captcha;
 pub mod db;
 pub mod errors;
 pub mod gateway;
@@ -33,6 +34,9 @@ pub struct App {
     /// Interface web servida na raiz (para usar o Line pelo navegador).
     pub web: Option<WebSource>,
     pub turn: Option<TurnConfig>,
+    /// Captcha do cadastro (TURNSTILE_SITE_KEY + TURNSTILE_SECRET). Sem as duas, o cadastro não pede captcha.
+    pub turnstile: Option<captcha::Turnstile>,
+    pub signups: captcha::SignupLimiter,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -199,6 +203,8 @@ pub fn build(
         uploads_dir,
         web,
         turn,
+        turnstile: captcha::Turnstile::from_env(),
+        signups: captcha::SignupLimiter::new(),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);
