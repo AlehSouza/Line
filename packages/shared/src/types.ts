@@ -183,7 +183,9 @@ export interface VoiceState {
 /** Mensagem de sinalização WebRTC repassada pelo servidor entre dois participantes. */
 export type VoiceSignal =
   | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
-  | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null };
+  | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null }
+  /** Quem assiste avisa quem transmite: só quem pediu recebe o vídeo e o som da tela. */
+  | { type: 'watch'; on: boolean };
 
 export interface PollOption {
   id: string;

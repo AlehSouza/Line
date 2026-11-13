@@ -132,7 +132,8 @@ export interface VoiceStore {
   /** Som da tela transmitida por cada pessoa (separado da voz) e telas que parei de assistir. Só valem para mim. */
   screenVolume: Record<string, number>;
   screenMuted: Record<string, boolean>;
-  hiddenScreen: Record<string, boolean>;
+  /** Telas que eu escolhi assistir (por quem transmite). Sem clicar em "Assistir", não recebo vídeo nem som. */
+  watching: Record<string, boolean>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
   channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
@@ -161,7 +162,7 @@ export const useVoice = create<VoiceStore>(() => ({
   localMuted: {},
   hiddenVideo: {},
   ...loadScreenAudio(),
-  hiddenScreen: {},
+  watching: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -218,6 +219,8 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       return { states };
     });
     if (uid === myId) return applyMute();
+    // Parou de transmitir (ou saiu): na próxima vez, assistir de novo é escolha minha.
+    if (!state?.screenStreamId && getV().watching[uid]) setV((v) => ({ watching: { ...v.watching, [uid]: false } }));
     // A tela dessa pessoa pode ter começado/parado: reaplica o volume da voz ou da tela em cada áudio dela.
     for (const el of audioEls.values()) if (el.dataset.peer === uid) applyPeerAudio(el);
     const mine = getV().channelId;
@@ -381,14 +384,61 @@ function applyMute() {
 
 /** Ensurdecido (por mim ou pelo servidor), silenciado localmente e volume de cada pessoa. */
 function applyPeerAudio(el: HTMLAudioElement) {
-  const { deafened, states, localMuted, userVolume, screenVolume, screenMuted, hiddenScreen } = getV();
+  const { deafened, states, localMuted, userVolume, screenVolume, screenMuted, watching } = getV();
   const peer = el.dataset.peer ?? '';
   const forced = myId ? states[myId]?.serverDeafened : false;
   // O áudio da tela vem no mesmo stream do vídeo da tela; o resto é a voz.
   const isScreen = !!states[peer]?.screenStreamId && el.dataset.stream === states[peer]?.screenStreamId;
-  const off = isScreen ? !!screenMuted[peer] || !!hiddenScreen[peer] : !!localMuted[peer];
-  el.muted = deafened || !!forced || off;
-  el.volume = Math.min(1, Math.max(0, (isScreen ? screenVolume[peer] : userVolume[peer]) ?? 1));
+  const off = deafened || !!forced || (isScreen ? !!screenMuted[peer] || !watching[peer] : !!localMuted[peer]);
+  const volume = Math.min(2, Math.max(0, (isScreen ? screenVolume[peer] : userVolume[peer]) ?? 1));
+  const boost = volume > 1 ? boostFor(el) : null;
+  if (boost) {
+    // Acima de 100%: o elemento fica mudo e o som sai amplificado pelo GainNode.
+    el.muted = true;
+    boost.gain.value = off ? 0 : volume;
+  } else {
+    const g = boosts.get(el);
+    if (g) g.gain.value = 0;
+    el.muted = off;
+    el.volume = Math.min(1, volume);
+  }
+}
+
+/** Saída amplificada (até 200%) de cada áudio remoto, criada só quando alguém passa de 100%. */
+let playCtx: AudioContext | null = null;
+const boosts = new Map<HTMLAudioElement, GainNode>();
+
+function boostFor(el: HTMLAudioElement): GainNode | null {
+  const existing = boosts.get(el);
+  if (existing) return existing;
+  const stream = el.srcObject as MediaStream | null;
+  if (!stream?.getAudioTracks().length || typeof AudioContext === 'undefined') return null;
+  try {
+    if (!playCtx) {
+      playCtx = new AudioContext();
+      applyCtxSink();
+    }
+    void playCtx.resume();
+    const source = playCtx.createMediaStreamSource(stream);
+    const gain = playCtx.createGain();
+    source.connect(gain).connect(playCtx.destination);
+    boosts.set(el, gain);
+    return gain;
+  } catch {
+    return null;
+  }
+}
+
+function applyCtxSink() {
+  const sink = (playCtx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null)?.setSinkId;
+  if (playCtx && sink) void sink.call(playCtx, getV().outputId ?? '').catch(() => {});
+}
+
+function dropBoost(el: HTMLAudioElement) {
+  const g = boosts.get(el);
+  if (!g) return;
+  g.disconnect();
+  boosts.delete(el);
 }
 
 export function setScreenVolume(userId: string, volume: number) {
@@ -407,9 +457,10 @@ export function toggleScreenMute(userId: string) {
   applyMute();
 }
 
-/** Parar de assistir: esconde a tela da pessoa e corta o som dela, só para mim. */
-export function toggleHiddenScreen(userId: string) {
-  setV((v) => ({ hiddenScreen: { ...v.hiddenScreen, [userId]: !v.hiddenScreen[userId] } }));
+/** Assistir / sair da transmissão de alguém. Avisa quem transmite, que passa a mandar (ou para de mandar) a tela só para mim. */
+export function setWatching(userId: string, on: boolean) {
+  setV((v) => ({ watching: { ...v.watching, [userId]: on } }));
+  send(userId, { type: 'watch', on });
   applyMute();
 }
 
@@ -515,6 +566,7 @@ export function setOutputDevice(deviceId: string | null) {
   setV({ outputId: deviceId });
   savePrefs();
   for (const el of audioEls.values()) applySink(el);
+  applyCtxSink();
 }
 
 function applySink(el: HTMLAudioElement) {
@@ -660,6 +712,7 @@ function stopScreen() {
   const { screen } = getV();
   if (!screen) return;
   removeStreamFromPeers(screen);
+  watchers.clear();
   stopStream(screen);
   nativeStop?.();
   nativeStop = null;
@@ -673,6 +726,9 @@ export function clearVoiceError() {
 }
 
 // ---------- WebRTC ----------
+
+/** Quem está assistindo à minha tela: só essas conexões recebem o vídeo e o som dela. */
+const watchers = new Set<string>();
 
 function send(to: string, signal: VoiceSignal) {
   socket?.emit('voice:signal', { to, signal });
@@ -718,7 +774,9 @@ function createPeer(peerId: string): Peer {
   if (mic) for (const t of mic.getTracks()) pc.addTrack(t, mic);
   const { camera, screen } = getV();
   if (camera) addStream(pc, camera);
-  if (screen) addStream(pc, screen);
+  if (screen && watchers.has(peerId)) addStream(pc, screen);
+  // Conexão nova com quem eu já assistia: avisa de novo para a tela voltar.
+  if (getV().watching[peerId]) queueMicrotask(() => send(peerId, { type: 'watch', on: true }));
   return peer;
 }
 
@@ -728,6 +786,18 @@ async function onSignal(from: string, signal: VoiceSignal) {
   if (!mine) return;
   const peer = peers.get(from) ?? createPeer(from);
   const { pc } = peer;
+  if (signal.type === 'watch') {
+    const { screen } = getV();
+    if (signal.on) {
+      if (watchers.has(from)) return;
+      watchers.add(from);
+      if (screen) addStream(pc, screen);
+    } else {
+      watchers.delete(from);
+      if (screen) removeStreamFrom(pc, screen);
+    }
+    return;
+  }
   try {
     if (signal.type === 'description') {
       const desc = signal.description;
@@ -752,6 +822,7 @@ async function onSignal(from: string, signal: VoiceSignal) {
 }
 
 function closePeer(peerId: string) {
+  watchers.delete(peerId);
   const peer = peers.get(peerId);
   if (!peer) return;
   peer.pc.close();
@@ -765,7 +836,9 @@ function closePeer(peerId: string) {
 }
 
 function addStreamToPeers(stream: MediaStream) {
-  for (const { pc } of peers.values()) addStream(pc, stream);
+  // A tela só vai para quem clicou em "Assistir transmissão".
+  const isScreen = stream === getV().screen;
+  for (const [id, { pc }] of peers) if (!isScreen || watchers.has(id)) addStream(pc, stream);
 }
 
 /** Adiciona câmera ou tela numa conexão. A tela vai com a taxa de bits da qualidade escolhida. */
@@ -821,10 +894,12 @@ async function tuneScreenSender(sender: RTCRtpSender, fps: Fps) {
 }
 
 function removeStreamFromPeers(stream: MediaStream) {
+  for (const { pc } of peers.values()) removeStreamFrom(pc, stream);
+}
+
+function removeStreamFrom(pc: RTCPeerConnection, stream: MediaStream) {
   const ids = new Set(stream.getTracks().map((t) => t.id));
-  for (const { pc } of peers.values()) {
-    for (const sender of pc.getSenders()) if (sender.track && ids.has(sender.track.id)) pc.removeTrack(sender);
-  }
+  for (const sender of pc.getSenders()) if (sender.track && ids.has(sender.track.id)) pc.removeTrack(sender);
 }
 
 function attachAudio(peerId: string, stream: MediaStream) {
@@ -844,6 +919,7 @@ function attachAudio(peerId: string, stream: MediaStream) {
 function dropRemoteStream(id: string) {
   const el = audioEls.get(id);
   if (el) {
+    dropBoost(el);
     el.srcObject = null;
     el.remove();
     audioEls.delete(id);
