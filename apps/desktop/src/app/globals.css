@@ -102,3 +102,28 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
 }
+
+/* Slider de volume do player de vídeo: trilho cinza com preenchimento violeta. */
+.line-range {
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-accent) var(--fill, 100%), rgb(255 255 255 / 0.25) var(--fill, 100%));
+  cursor: pointer;
+}
+.line-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
+.line-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--color-accent);
+}
