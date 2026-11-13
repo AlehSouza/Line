@@ -15,10 +15,10 @@ export type Modal =
   | { kind: 'server-settings'; serverId: string }
   | { kind: 'invite'; serverId: string }
   | { kind: 'profile' }
-  | { kind: 'settings' }
+  | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' }
   | { kind: 'create-poll'; channelId: string }
   | { kind: 'new-dm' }
-  | { kind: 'user'; userId: string }
+  | { kind: 'user'; userId: string; at?: { x: number; y: number } }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
   | { kind: 'image'; url: string; filename: string }
   | null;

@@ -406,7 +406,7 @@ function MessageRow({
             {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         ) : (
-          <button onClick={() => actions.openModal({ kind: 'user', userId: message.author.id })}>
+          <button onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}>
             <Avatar name={authorName} color={authorColor} src={(useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
           </button>
         )}
@@ -415,7 +415,7 @@ function MessageRow({
         {!grouped && (
           <div className="flex items-baseline gap-2">
             <button
-              onClick={() => actions.openModal({ kind: 'user', userId: message.author.id })}
+              onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
               className="font-semibold hover:underline"
               style={{ color: authorColor }}
             >

@@ -255,6 +255,11 @@ export const Icons = {
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),
   Camera: icon(L.Camera),
+  UserPlus: icon(L.UserPlus),
+  UserCheck: icon(L.UserCheck),
+  Clock: icon(L.Clock),
+  More: icon(L.Ellipsis),
+  Copy: icon(L.Copy),
   ArrowLeft: icon(L.ArrowLeft),
   ZoomIn: icon(L.ZoomIn),
   ZoomOut: icon(L.ZoomOut),
@@ -399,5 +404,23 @@ export function Select({
           document.body,
         )}
     </>
+  );
+}
+
+/** Checkbox no estilo do app. Usa um input real escondido, então funciona dentro de <label>. */
+export function Checkbox({ checked, onChange, className }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) {
+  return (
+    <span className={cx('relative inline-flex h-5 w-5 shrink-0', className)}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer absolute inset-0 cursor-pointer opacity-0" />
+      <span
+        aria-hidden
+        className={cx(
+          'pointer-events-none flex h-5 w-5 items-center justify-center rounded-md border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent/60 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-side',
+          checked ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-rail peer-hover:border-soft/50',
+        )}
+      >
+        {checked && <L.Check size={14} strokeWidth={3} />}
+      </span>
+    </span>
   );
 }

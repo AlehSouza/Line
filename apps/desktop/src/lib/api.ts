@@ -124,6 +124,7 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>('POST', '/users/@me/password', { currentPassword, newPassword }),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
+  mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
   servers: () => request<Server[]>('GET', '/servers'),
   discover: (q = '') => request<Server[]>('GET', `/servers/discover?q=${enc(q)}`),

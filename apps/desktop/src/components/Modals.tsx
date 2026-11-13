@@ -1,12 +1,13 @@
 'use client';
 
-import { ProfileCard, ProfileEditor } from './ProfileEditor';
+import { ProfileEditor } from './ProfileEditor';
+import { UserCard } from './UserCard';
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
 import { SettingsModal } from './Settings';
-import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
+import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
@@ -28,13 +29,13 @@ export function Modals() {
     case 'profile':
       return <ProfileModal onClose={close} />;
     case 'settings':
-      return <SettingsModal onClose={close} />;
+      return <SettingsModal onClose={close} initial={modal.section} />;
     case 'create-poll':
       return <CreatePollModal channelId={modal.channelId} onClose={close} />;
     case 'new-dm':
       return <NewDmModal onClose={close} />;
     case 'user':
-      return <UserModal userId={modal.userId} onClose={close} />;
+      return <UserCard userId={modal.userId} at={modal.at} onClose={close} />;
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
@@ -98,7 +99,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
               <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
             </Field>
             <label className="flex items-center gap-3 text-sm">
-              <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+              <Checkbox checked={isPublic} onChange={setIsPublic} />
               Público (aparece em Explorar para qualquer pessoa entrar)
             </label>
           </>
@@ -310,7 +311,7 @@ function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: (
           )}
         </div>
         <label className="flex items-center gap-2 text-sm text-soft">
-          <input type="checkbox" checked={multi} onChange={(e) => setMulti(e.target.checked)} className="accent-[var(--color-accent)]" />
+          <Checkbox checked={multi} onChange={setMulti} />
           Permitir escolher mais de uma opção
         </label>
         <ErrorText>{error}</ErrorText>
@@ -417,7 +418,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
           <ColorPicker value={color} onChange={setColor} />
         </Field>
         <label className="flex items-center gap-3 text-sm">
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+          <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
         <Field label={`Membros (${Object.keys(members ?? {}).length})`}>
@@ -543,7 +544,7 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
                   <span className="block text-sm font-medium">{u.displayName}</span>
                   <span className="block text-xs text-muted">@{u.username}</span>
                 </span>
-                <input type="checkbox" checked={selected.includes(u.id)} onChange={() => toggle(u.id)} className="h-4 w-4 accent-[var(--color-accent)]" />
+                <Checkbox checked={selected.includes(u.id)} onChange={() => toggle(u.id)} />
               </label>
             );
           })}
@@ -556,89 +557,6 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
         <ErrorText>{error}</ErrorText>
       </div>
     </Modal>
-  );
-}
-
-function UserModal({ userId, onClose }: { userId: string; onClose: () => void }) {
-  const user = useLine((s) => s.users[userId]);
-  const me = useLine((s) => s.me);
-  const friend = useLine((s) => s.friends[userId]);
-  const { busy, error, run } = useAction();
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  if (!user) return null;
-  const isMe = me?.id === userId;
-  const state = friend?.state;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
-      <div className="w-full max-w-[360px]" onMouseDown={(e) => e.stopPropagation()}>
-        <ProfileCard
-          name={user.displayName}
-          username={user.username}
-          pronouns={user.pronouns}
-          thought={user.thought}
-          bio={user.bio}
-          status={user.customStatus || presenceLabel[user.presence]}
-          color={user.avatarColor}
-          avatarUrl={user.avatarUrl}
-          bannerUrl={user.bannerUrl}
-        >
-          <ErrorText>{error}</ErrorText>
-          {!isMe && state !== 'blocked' && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                disabled={busy}
-                className="flex-1"
-                onClick={() =>
-                  run(async () => {
-                    const dm = await api.openDm([user.id]);
-                    actions.upsertChannel(dm);
-                    actions.goHome(dm.id);
-                    onClose();
-                  })
-                }
-              >
-                <Icons.Message size={16} /> Mensagem
-              </Button>
-              {!state && (
-                <Button variant="subtle" disabled={busy} onClick={() => run(async () => actions.upsertFriend(await api.addFriend(user.username)))}>
-                  <Icons.Plus size={16} /> Adicionar amigo
-                </Button>
-              )}
-              {state === 'incoming' && (
-                <Button variant="subtle" disabled={busy} onClick={() => run(async () => actions.upsertFriend(await api.acceptFriend(user.id)))}>
-                  <Icons.Check size={16} /> Aceitar pedido
-                </Button>
-              )}
-              {state === 'outgoing' && (
-                <Button variant="subtle" disabled>
-                  Pedido enviado
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                title="Bloquear"
-                disabled={busy}
-                onClick={() => {
-                  if (confirm(`Bloquear ${user.displayName}?`)) run(async () => actions.upsertFriend(await api.blockUser(user.id)));
-                }}
-              >
-                <Icons.Ban size={16} />
-              </Button>
-            </div>
-          )}
-          {state === 'blocked' && (
-            <Button variant="subtle" className="mt-3 w-full" disabled={busy} onClick={() => run(async () => { await api.unblockUser(user.id); actions.removeFriend(user.id); })}>
-              Desbloquear
-            </Button>
-          )}
-        </ProfileCard>
-      </div>
-    </div>
   );
 }
 

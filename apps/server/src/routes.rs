@@ -67,6 +67,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
+        .route("/users/{id}/mutual", get(get_mutual))
         .route("/gifs", get(search_gifs))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
@@ -347,6 +348,27 @@ async fn get_user(State(app): S, Me(_): Me, Path(id): Path<String>) -> Res {
         .q()
         .public_user(&id)
         .ok_or_else(|| not_found("Usuário"))?)
+}
+
+/// Amigos e servidores em comum com outra pessoa (cartão de perfil).
+async fn get_mutual(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    q.public_user(&id).ok_or_else(|| not_found("Usuário"))?;
+    let theirs: std::collections::HashSet<String> = q
+        .friends(&id)
+        .into_iter()
+        .filter(|f| f.state == "friends")
+        .map(|f| f.user.id)
+        .collect();
+    let friends: Vec<PublicUser> = q
+        .friends(&me)
+        .into_iter()
+        .filter(|f| f.state == "friends" && theirs.contains(&f.user.id))
+        .map(|f| f.user)
+        .collect();
+    let their_servers: std::collections::HashSet<String> = q.server_ids_of(&id).into_iter().collect();
+    let servers: Vec<Server> = q.servers_of(&me).into_iter().filter(|s| their_servers.contains(&s.id)).collect();
+    Ok(Json(json!({ "friends": friends, "servers": servers })).into_response())
 }
 
 // ---------- servidores ----------

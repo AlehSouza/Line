@@ -17,9 +17,9 @@ const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] =
 ];
 
 /** Configurações do usuário em tela cheia: navegação à esquerda, conteúdo à direita. */
-export function SettingsModal({ onClose }: { onClose: () => void }) {
+export function SettingsModal({ onClose, initial }: { onClose: () => void; initial?: Section }) {
   const me = useLine((s) => s.me);
-  const [section, setSection] = useState<Section>('account');
+  const [section, setSection] = useState<Section>(initial ?? 'account');
   const [query, setQuery] = useState('');
 
   useEffect(() => {

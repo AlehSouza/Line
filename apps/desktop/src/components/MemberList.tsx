@@ -30,7 +30,7 @@ export function MemberList({ serverId }: { serverId: string }) {
         {list.map((m) => (
           <button
             key={m.userId}
-            onClick={() => actions.openModal({ kind: 'user', userId: m.userId })}
+            onClick={(e) => actions.openModal({ kind: 'user', userId: m.userId, at: { x: e.clientX, y: e.clientY } })}
             className={cx(
               'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-hover',
               m.user.presence === 'offline' && 'opacity-40 hover:opacity-100',
