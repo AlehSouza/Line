@@ -142,6 +142,8 @@ echo "==> Pasta de atualizações do app"
 # Usuário sem privilégios que o CI usa para enviar os arquivos (chave pública em /etc/line/deploy.pub).
 id line-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash line-deploy
 install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates /opt/line/site
+# O CI também publica o app web (mesmo build do desktop) a cada merge.
+chown -R line-deploy:line-deploy /opt/line/web
 # Primeira instalação: coloca o site da branch já baixada (depois o CI mantém atualizado).
 if [ ! -f /opt/line/site/index.html ] && [ -f "$SRC/apps/site/index.html" ]; then
   cp -r "$SRC/apps/site/." /opt/line/site/ && chown -R line-deploy:line-deploy /opt/line/site

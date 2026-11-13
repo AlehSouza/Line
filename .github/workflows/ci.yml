@@ -96,6 +96,12 @@ jobs:
           name: Line-linux-deb
           path: target/release/bundle/deb/*.deb
           if-no-files-found: error
+      # A interface web (useline.tech/app) é o mesmo build que vai dentro do app desktop.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Line-web
+          path: apps/desktop/out
+          if-no-files-found: error
 
   macos:
     name: App macOS (Tauri, universal)
@@ -185,6 +191,10 @@ jobs:
         with:
           name: Line-macos
           path: mac
+      - uses: actions/download-artifact@v4
+        with:
+          name: Line-web
+          path: web
       - name: Enviar instalador e latest.json para useline.tech/updates
         env:
           DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
@@ -253,3 +263,11 @@ jobs:
           # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
           scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \
             || echo "Sem /opt/line/site na VPS: rode o install.sh de novo para ativar o site."
+          # App web (useline.tech/app): sai junto com o desktop, mesma versão. Os arquivos novos
+          # entram por cima; o index.html vai por último para nunca apontar para um arquivo que falta.
+          if tar czf - -C web --exclude=./index.html . | ssh -i ~/.ssh/deploy "line-deploy@$HOST" "tar xzf - -C /opt/line/web" \
+            && scp -i ~/.ssh/deploy web/index.html "line-deploy@$HOST:/opt/line/web/index.html"; then
+            echo "App web atualizado para $version."
+          else
+            echo "Sem permissão em /opt/line/web: rode o install.sh de novo para o CI publicar a web."
+          fi
