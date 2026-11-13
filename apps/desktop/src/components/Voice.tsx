@@ -182,11 +182,18 @@ function TileView({
   const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !v.watching[tile.state.userId]);
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
+  // Clique direito no quadro: o mesmo menu da pessoa na lista do canal de voz.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={onClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       onKeyDown={(e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && onClick?.()}
       className={cx(
         'group relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-raise transition-shadow',
@@ -234,6 +241,18 @@ function TileView({
         <span className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 group-hover:block">
           <Icons.Expand size={14} />
         </span>
+      )}
+      {menu && (
+        // O menu fica dentro do quadro no React: barra o clique para não focar/desfocar o quadro.
+        <div onClick={(e) => e.stopPropagation()}>
+          <VoiceUserMenu
+            userId={tile.state.userId}
+            channelId={tile.state.channelId}
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+          />
+        </div>
       )}
     </div>
   );
