@@ -62,6 +62,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
     let api = Router::new()
         .route("/auth/register", post(register))
         .route("/auth/config", get(auth_config))
+        .route("/auth/captcha", get(captcha_page))
         .route("/auth/login", post(login))
         .route("/users/@me", get(get_me).patch(update_me))
         .route("/users/@me/account", patch(update_account))
@@ -162,6 +163,26 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
 /// O que a tela de login precisa saber antes do cadastro (ex.: chave pública do captcha).
 async fn auth_config(State(app): S) -> Res {
     Ok(Json(json!({ "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()) })).into_response())
+}
+
+/// Página do captcha servida pelo próprio domínio: o app desktop (origem tauri.localhost, que a
+/// Cloudflare não aceita) a abre num iframe e recebe o token por postMessage.
+async fn captcha_page(State(app): S) -> Res {
+    let Some(t) = &app.turnstile else {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "CAPTCHA_DISABLED", "Captcha desativado."));
+    };
+    let key = serde_json::to_string(&t.site_key).unwrap_or_default();
+    let html = format!(
+        r##"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<style>html,body{{margin:0;background:transparent;overflow:hidden}}body{{display:flex;justify-content:center}}</style>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=go" async defer></script>
+<script>
+function send(token){{parent.postMessage({{type:"line-captcha",token:token}},"*")}}
+function go(){{turnstile.render("#w",{{sitekey:{key},theme:"dark",language:"pt-br",
+callback:send,"expired-callback":function(){{send("")}},"error-callback":function(){{send("")}}}})}}
+</script></head><body><div id="w"></div></body></html>"##
+    );
+    Ok(([(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
 }
 
 /// GIFs do GIPHY: `?q=` busca, sem `q` devolve os em alta.
