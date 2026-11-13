@@ -168,6 +168,10 @@ export const api = {
     request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),
   createPoll: (channelId: string, question: string, options: string[], multi: boolean) =>
     request<Message>('POST', `/channels/${enc(channelId)}/polls`, { question, options, multi }),
+  addReaction: (messageId: string, emoji: string) =>
+    request<Message>('PUT', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
+  removeReaction: (messageId: string, emoji: string) =>
+    request<Message>('DELETE', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
   votePoll: (messageId: string, optionId: string) =>
     request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),

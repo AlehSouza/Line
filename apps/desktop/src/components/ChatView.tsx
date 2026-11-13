@@ -2,6 +2,7 @@
 
 import type { Attachment, Channel, Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
+import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
@@ -388,6 +389,7 @@ function MessageRow({
   tight?: boolean;
 }) {
   const [draft, setDraft] = useState(message.content);
+  const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const showThreadAction = canThread && !message.thread;
   const mentionsMe = !!myUsername && message.content.toLowerCase().includes(`@${myUsername}`);
 
@@ -470,10 +472,34 @@ function MessageRow({
         <AttachmentList attachments={message.attachments} />
         {message.poll && <PollView message={message} poll={message.poll} />}
         {message.thread && <ThreadChip thread={message.thread} />}
+        {!!message.reactions?.length && (
+          <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
+        )}
       </div>
 
-      {!editing && (mine || canDelete || showThreadAction) && (
-        <div className="absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex">
+      {reactAnchor && (
+        <EmojiPicker
+          anchor={reactAnchor}
+          onClose={() => setReactAnchor(null)}
+          onPick={(emoji, keepOpen) => {
+            void toggleReaction(message, emoji);
+            if (!keepOpen) setReactAnchor(null);
+          }}
+        />
+      )}
+
+      {!editing && (
+        <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', reactAnchor && 'flex')}>
+          <button
+            title="Adicionar reação"
+            onClick={(e) => {
+              const el = e.currentTarget;
+              setReactAnchor((a) => (a ? null : el));
+            }}
+            className="p-1.5 text-muted hover:text-fg"
+          >
+            <Icons.SmilePlus size={16} />
+          </button>
           {showThreadAction && (
             <button
               title="Responder"
@@ -505,6 +531,78 @@ function MessageRow({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Põe ou tira a sua reação com esse emoji (o resto da sala recebe pelo WebSocket). */
+async function toggleReaction(message: Message, emoji: string) {
+  const meId = useLine.getState().me?.id;
+  const current = useLine.getState().messages[message.channelId]?.items.find((m) => m.id === message.id) ?? message;
+  const mine = !!meId && !!current.reactions?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
+  if (!mine) pushRecentEmoji(emoji);
+  try {
+    const updated = mine ? await api.removeReaction(message.id, emoji) : await api.addReaction(message.id, emoji);
+    actions.updateMessage(updated);
+  } catch (e) {
+    alert((e as Error).message);
+  }
+}
+
+function reactorNames(userIds: string[], meId?: string) {
+  const users = useLine.getState().users;
+  const names = userIds.map((id) => (id === meId ? 'Você' : users[id]?.displayName ?? 'Alguém'));
+  const shown = names.slice(0, 6);
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(', ')} e mais ${rest}`;
+  return shown.length > 1 ? `${shown.slice(0, -1).join(', ')} e ${shown.at(-1)}` : (shown[0] ?? '');
+}
+
+/** Pílulas de reação embaixo da mensagem. Destacadas na cor do Line só quando você está entre quem reagiu. */
+function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: HTMLElement) => void; adding: boolean }) {
+  const meId = useLine((s) => s.me?.id);
+  useLine((s) => s.users);
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1">
+      {message.reactions!.map((r) => {
+        const mine = !!meId && r.userIds.includes(meId);
+        return (
+          <span key={r.emoji} className="group/react relative">
+            <button
+              onClick={() => void toggleReaction(message, r.emoji)}
+              aria-pressed={mine}
+              aria-label={`${r.emoji} ${r.userIds.length}: ${reactorNames(r.userIds, meId)}`}
+              className={cx(
+                'flex h-7 items-center gap-1.5 rounded-lg border px-2 text-sm font-semibold transition-colors',
+                mine ? 'border-accent bg-accent/20 text-fg' : 'border-transparent bg-raise text-soft hover:border-edge',
+              )}
+            >
+              <span className="text-base leading-none" style={{ fontFamily: EMOJI_FONT }}>
+                {r.emoji}
+              </span>
+              <span className={cx('tabular-nums', mine && 'text-accent')}>{r.userIds.length}</span>
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-max max-w-64 -translate-x-1/2 items-center gap-2 rounded-lg border border-edge bg-rail px-3 py-2 text-xs text-soft shadow-xl group-hover/react:flex">
+              <span className="text-2xl leading-none" style={{ fontFamily: EMOJI_FONT }}>
+                {r.emoji}
+              </span>
+              <span>
+                <strong className="text-fg">{reactorNames(r.userIds, meId)}</strong> reagiu com {r.emoji}
+              </span>
+            </span>
+          </span>
+        );
+      })}
+      <button
+        title="Adicionar reação"
+        onClick={(e) => onAdd(e.currentTarget)}
+        className={cx(
+          'flex h-7 items-center rounded-lg bg-raise px-2 text-muted transition-opacity hover:text-fg',
+          adding ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
+        <Icons.SmilePlus size={16} />
+      </button>
     </div>
   );
 }
@@ -616,6 +714,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const [notice, setNotice] = useState('');
   const [recording, setRecording] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
+  const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const pendingRef = useRef(pending);
@@ -665,6 +764,19 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     window.addEventListener('line:mention', onMention);
     return () => window.removeEventListener('line:mention', onMention);
   }, [channel.type]);
+
+  /** Põe o texto onde está o cursor do campo (usado pelo seletor de emojis). */
+  function insertText(piece: string) {
+    const el = ref.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    setText((t) => t.slice(0, start) + piece + t.slice(end));
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(start + piece.length, start + piece.length);
+    });
+  }
 
   /** GIF escolhido vira anexo pendente, para mandar junto com texto (ou sozinho). */
   async function addGif(url: string, title: string) {
@@ -825,6 +937,28 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         />
         )}
         {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
+        <span className="relative shrink-0">
+          <button
+            title="Emojis"
+            onClick={(e) => {
+              const el = e.currentTarget;
+              setEmojiAnchor((a) => (a ? null : el));
+            }}
+            className={cx('flex h-6 items-center text-soft hover:text-fg', emojiAnchor && 'text-fg')}
+          >
+            <Icons.Smile size={22} />
+          </button>
+          {emojiAnchor && (
+            <EmojiPicker
+              anchor={emojiAnchor}
+              onClose={() => setEmojiAnchor(null)}
+              onPick={(emoji, keepOpen) => {
+                insertText(emoji);
+                if (!keepOpen) setEmojiAnchor(null);
+              }}
+            />
+          )}
+        </span>
         <span className="relative shrink-0">
           <button
             title="GIFs"

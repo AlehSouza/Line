@@ -107,6 +107,14 @@ export interface Message {
   /** Thread aberta a partir desta mensagem. */
   thread: ThreadSummary | null;
   poll?: Poll | null;
+  /** Reações agrupadas por emoji, na ordem em que apareceram. */
+  reactions?: Reaction[];
+}
+
+export interface Reaction {
+  emoji: string;
+  /** Quem reagiu, na ordem em que reagiu. */
+  userIds: string[];
 }
 
 export type FriendState = 'friends' | 'incoming' | 'outgoing' | 'blocked';
