@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { disposeNoiseSuppressor, suppressNoise } from './noise';
 import { api } from './api';
+import { hasNativeScreen, startNativeScreen } from './nativeScreen';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -489,30 +490,51 @@ export async function toggleCamera() {
   }
 }
 
-/** Liga/desliga o compartilhamento de tela. Sem `sourceId`, o seletor é o do próprio sistema (WebView2/navegador). */
-export async function toggleScreen(sourceId?: string) {
+/** Captura do seletor próprio (Windows): para quando a tela parar e tamanho real da fonte. */
+let nativeStop: (() => void) | null = null;
+let screenSize: { width: number; height: number } | null = null;
+
+/**
+ * Liga/desliga o compartilhamento de tela.
+ * Com `source` (app do Windows), captura a janela/tela escolhida no seletor do Line.
+ * Sem ela, usa o seletor do próprio navegador (web, macOS, Linux).
+ */
+export async function toggleScreen(source?: { id: string; audio: boolean }) {
   const { screen } = getV();
   if (screen) {
     stopScreen();
     return;
   }
+  const { resolution, fps } = getV().screenQuality;
   try {
-    if (sourceId) await window.line?.selectScreenSource?.(sourceId);
-    const { resolution, fps } = getV().screenQuality;
-    const r = RESOLUTIONS[resolution];
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        width: { ideal: r.width, max: r.width },
-        height: { ideal: r.height, max: r.height },
-        frameRate: { ideal: fps, max: fps },
-      },
-      audio: true,
-      // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
-      systemAudio: 'include',
-      windowAudio: 'system',
-      // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
-      restrictOwnAudio: true,
-    } as DisplayMediaStreamOptions);
+    let stream: MediaStream;
+    if (source && hasNativeScreen()) {
+      const native = await startNativeScreen(source.id, { fps, audio: source.audio, onEnded: stopScreen });
+      // Saiu da chamada enquanto abria: solta a captura.
+      if (!getV().channelId) {
+        native.stop();
+        return;
+      }
+      stream = native.stream;
+      nativeStop = native.stop;
+      screenSize = { width: native.width, height: native.height };
+    } else {
+      const r = RESOLUTIONS[resolution];
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: r.width, max: r.width },
+          height: { ideal: r.height, max: r.height },
+          frameRate: { ideal: fps, max: fps },
+        },
+        audio: true,
+        // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
+        systemAudio: 'include',
+        windowAudio: 'system',
+        // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
+        restrictOwnAudio: true,
+      } as DisplayMediaStreamOptions);
+      screenSize = null;
+    }
     const video = stream.getVideoTracks()[0];
     // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
     if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
@@ -530,6 +552,9 @@ function stopScreen() {
   if (!screen) return;
   removeStreamFromPeers(screen);
   stopStream(screen);
+  nativeStop?.();
+  nativeStop = null;
+  screenSize = null;
   setV({ screen: null });
   socket?.emit('voice:state', { screenStreamId: null });
 }
@@ -646,11 +671,18 @@ function addStream(pc: RTCPeerConnection, stream: MediaStream) {
     const transceiver = pc.addTransceiver(track, {
       direction: 'sendonly',
       streams: [stream],
-      sendEncodings: [{ maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000, maxFramerate: fps }],
+      sendEncodings: [{ maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000, maxFramerate: fps, scaleResolutionDownBy: downscale(resolution) }],
     });
     preferHardwareCodec(transceiver, resolution);
     void tuneScreenSender(transceiver.sender, fps);
   }
+}
+
+/** Captura do Rust vem no tamanho real da fonte: reduz no envio até a resolução escolhida. */
+function downscale(resolution: Resolution) {
+  if (!screenSize) return 1;
+  const r = RESOLUTIONS[resolution];
+  return Math.max(1, screenSize.width / r.width, screenSize.height / r.height);
 }
 
 /** Acima de 1080p, prefere H.264 (codificado pela placa de vídeo) para aguentar 1440p/4K a 60fps. */

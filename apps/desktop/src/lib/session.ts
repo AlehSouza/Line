@@ -327,8 +327,6 @@ declare global {
         check: () => Promise<string | null>;
         install: () => Promise<void>;
       };
-      getScreenSources?: () => Promise<{ id: string; name: string; thumbnail: string; isScreen: boolean }[]>;
-      selectScreenSource?: (id: string) => Promise<void>;
     };
   }
 }

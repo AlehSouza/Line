@@ -28,6 +28,7 @@ import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 import { VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
 import { fileUrl } from '@/lib/api';
+import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
 function usePing(active: boolean) {
@@ -519,55 +520,155 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
+  // App do Windows: seletor próprio com janelas e telas. Web/macOS/Linux: o do navegador.
+  const native = useMemo(() => hasNativeScreen(), []);
+  const [tab, setTab] = useState<'apps' | 'screens'>('apps');
+  const [sources, setSources] = useState<ScreenSource[] | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [audio, setAudio] = useState(true);
+
+  const load = () => {
+    setSources(null);
+    void listScreenSources().then((list) => {
+      setSources(list);
+      // Sem janelas abertas, já mostra as telas.
+      if (!list.some((s) => !s.isScreen)) setTab('screens');
+    });
+  };
+  useEffect(() => {
+    if (native) load();
+  }, [native]);
+
+  const visible = (sources ?? []).filter((s) => s.isScreen === (tab === 'screens'));
   const start = () => {
+    if (native && !selected) return;
     setScreenQuality({ resolution, fps });
     onClose();
-    void toggleScreen();
+    void toggleScreen(native && selected ? { id: selected, audio } : undefined);
   };
   const choice = (active: boolean) =>
     cx(
       'flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
       active ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-hover hover:text-fg',
     );
+  const tabBtn = (t: 'apps' | 'screens', label: string, Icon: typeof Icons.Monitor) => (
+    <button
+      onClick={() => setTab(t)}
+      className={cx(
+        'flex items-center gap-1.5 border-b-2 px-1 pb-2 text-sm font-semibold transition-colors',
+        tab === t ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg',
+      )}
+    >
+      <Icon size={16} /> {label}
+    </button>
+  );
 
   return (
     <Modal
       title="Transmitir tela"
-      subtitle="Escolha a qualidade. Depois o Windows pergunta qual tela ou janela mostrar (e se o áudio vai junto)."
+      subtitle={
+        native
+          ? 'Escolha uma janela ou tela para a galera assistir.'
+          : 'Escolha a qualidade. Depois o sistema pergunta qual tela ou janela mostrar (e se o áudio vai junto).'
+      }
       onClose={onClose}
-      width={480}
+      width={native ? 760 : 480}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={start}>
-            <Icons.Screen size={16} /> Ao vivo
+          <Button onClick={start} disabled={native && !selected}>
+            <Icons.Screen size={16} /> Transmitir
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <div>
-          <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Resolução</p>
-          <div className="flex gap-2">
-            {(Object.keys(RESOLUTIONS) as Resolution[]).map((r) => (
-              <button key={r} onClick={() => setResolution(r)} className={choice(resolution === r)}>
-                {RESOLUTIONS[r].label}
+        {native && (
+          <div>
+            <div className="mb-3 flex items-center gap-5 border-b border-edge">
+              {tabBtn('apps', 'Aplicativos', Icons.AppWindow)}
+              {tabBtn('screens', 'Telas', Icons.Monitor)}
+              <button title="Atualizar lista" onClick={load} className="ml-auto mb-2 rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
+                <Icons.Refresh size={16} />
               </button>
-            ))}
+            </div>
+            {!sources ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="aspect-video animate-pulse rounded-lg bg-raise" />
+                ))}
+              </div>
+            ) : visible.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted">
+                {tab === 'apps' ? 'Nenhuma janela aberta para transmitir.' : 'Nenhuma tela encontrada.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {visible.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setSelected(s.id)}
+                    onDoubleClick={() => {
+                      setSelected(s.id);
+                      setScreenQuality({ resolution, fps });
+                      onClose();
+                      void toggleScreen({ id: s.id, audio });
+                    }}
+                    title={s.name}
+                    className={cx(
+                      'group min-w-0 rounded-xl border-2 p-1.5 text-left transition-colors',
+                      selected === s.id ? 'border-accent bg-accent/10' : 'border-transparent hover:bg-hover',
+                    )}
+                  >
+                    <div className="flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-rail">
+                      {s.thumbnail ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={s.thumbnail} alt="" className="h-full w-full object-contain" />
+                      ) : s.isScreen ? (
+                        <Icons.Monitor size={28} className="text-muted" />
+                      ) : (
+                        <Icons.AppWindow size={28} className="text-muted" />
+                      )}
+                    </div>
+                    <p className={cx('mt-1.5 truncate px-0.5 text-center text-xs font-semibold', selected === s.id ? 'text-fg' : 'text-soft')}>
+                      {s.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div className={cx(native && 'grid gap-4 sm:grid-cols-2')}>
+          <div>
+            <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Resolução</p>
+            <div className="flex gap-2">
+              {(Object.keys(RESOLUTIONS) as Resolution[]).map((r) => (
+                <button key={r} onClick={() => setResolution(r)} className={choice(resolution === r)}>
+                  {RESOLUTIONS[r].label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={cx(!native && 'mt-4')}>
+            <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Taxa de quadros</p>
+            <div className="flex gap-2">
+              {([30, 60] as Fps[]).map((f) => (
+                <button key={f} onClick={() => setFps(f)} className={choice(fps === f)}>
+                  {f} fps
+                </button>
+              ))}
+            </div>
           </div>
         </div>
-        <div>
-          <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Taxa de quadros</p>
-          <div className="flex gap-2">
-            {([30, 60] as Fps[]).map((f) => (
-              <button key={f} onClick={() => setFps(f)} className={choice(fps === f)}>
-                {f} fps
-              </button>
-            ))}
-          </div>
-        </div>
+        {native && (
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-soft">
+            <input type="checkbox" checked={audio} onChange={(e) => setAudio(e.target.checked)} className="accent-[var(--color-accent)]" />
+            {tab === 'apps' ? 'Transmitir o som do aplicativo' : 'Transmitir o som do computador (sem o som do Line)'}
+          </label>
+        )}
         <p className="text-xs text-muted">
           Até {(RESOLUTIONS[resolution].kbps[fps] / 1000).toLocaleString('pt-BR')} Mbps para cada pessoa na chamada.
           {resolution === '2160' && ' Em 4K, sua internet de upload e a placa de vídeo precisam aguentar; com muita gente na call, prefira 1440p.'}

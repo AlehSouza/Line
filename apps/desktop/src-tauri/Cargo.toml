@@ -25,3 +25,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 # Ligar WebRTC/microfone no WebKitGTK (vem desligado por padrão).
 webkit2gtk = { version = "2.0", features = ["v2_38"] }
+
+[target.'cfg(windows)'.dependencies]
+# Seletor próprio de compartilhar tela: lista janelas/telas com miniaturas (xcap)
+# e captura a escolhida pelo Windows Graphics Capture (windows-capture).
+xcap = "0.9"
+windows-capture = "2"
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Threading", "Win32_System_Variant", "Win32_Foundation", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia"] }
+windows-core = "0.62"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
