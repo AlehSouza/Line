@@ -42,11 +42,27 @@ jobs:
         shell: bash
         env:
           HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-        run: echo "{\"version\":\"0.1.${{ github.run_number }}\",\"bundle\":{\"createUpdaterArtifacts\":$HAS_KEY}}" > apps/desktop/src-tauri/ci.conf.json
+          # Assinatura de código (tira o aviso do SmartScreen). Só liga quando os secrets do
+          # Azure Trusted Signing existirem; sem eles o instalador sai sem assinatura, como antes.
+          HAS_SIGNING: ${{ secrets.AZURE_CLIENT_ID != '' }}
+          SIGN_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          SIGN_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          SIGN_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+        run: |
+          sign=""
+          if [ "$HAS_SIGNING" = "true" ]; then
+            cargo install trusted-signing-cli --locked
+            sign=",\"windows\":{\"signCommand\":\"trusted-signing-cli -e $SIGN_ENDPOINT -a $SIGN_ACCOUNT -c $SIGN_PROFILE -d Line %1\"}"
+          fi
+          echo "{\"version\":\"0.1.${{ github.run_number }}\",\"bundle\":{\"createUpdaterArtifacts\":$HAS_KEY$sign}}" > apps/desktop/src-tauri/ci.conf.json
+          cat apps/desktop/src-tauri/ci.conf.json
       - run: npm run dist:win -w @line/desktop -- --config src-tauri/ci.conf.json
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
       - uses: actions/upload-artifact@v4
         with:
           name: Line-instalador-windows
@@ -190,7 +206,7 @@ jobs:
           scp -i ~/.ssh/deploy "$macgz" "line-deploy@$HOST:/opt/line/updates/$macname"
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz | tail -n +4 | xargs -r rm --"
-          # Links fixos usados pela aba Downloads do site (useline.tech/#downloads).
+          # Links fixos usados pela aba Downloads do site (useline.tech/downloads).
           deb=$(ls deb/*.deb | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
