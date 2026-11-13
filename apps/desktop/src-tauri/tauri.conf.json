@@ -56,7 +56,9 @@
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
         "headerImage": "installer/header.bmp",
-        "sidebarImage": "installer/sidebar.bmp"
+        "sidebarImage": "installer/sidebar.bmp",
+        "uninstallerIcon": "icons/icon.ico",
+        "uninstallerHeaderImage": "installer/header.bmp"
       }
     },
     "publisher": "Line",
