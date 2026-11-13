@@ -2507,6 +2507,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tracing",
  "tracing-subscriber",
+ "webkit2gtk",
 ]
 
 [[package]]
@@ -2517,6 +2518,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "futures-util",
+ "hmac 0.13.0",
  "jsonwebtoken",
  "mime",
  "rand 0.9.5",
@@ -2525,6 +2527,7 @@ dependencies = [
  "scrypt",
  "serde",
  "serde_json",
+ "sha1",
  "socketioxide",
  "subtle",
  "tokio",

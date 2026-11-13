@@ -16,7 +16,14 @@ import type {
   UpdateServerInput,
 } from '@line/shared';
 
-export const DEFAULT_SERVER_URL = 'http://localhost:4000';
+/**
+ * No app desktop o padrão é o servidor embutido. Aberto pelo navegador a partir de um
+ * servidor Line (ex.: https://line.seudominio), usa o próprio endereço da página.
+ */
+export const DEFAULT_SERVER_URL =
+  typeof window !== 'undefined' && !window.line && /^https?:$/.test(window.location.protocol) && window.location.port !== '3000'
+    ? window.location.origin
+    : 'http://localhost:4000';
 
 export class ApiError extends Error {
   constructor(
@@ -135,6 +142,8 @@ export const api = {
     request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
+
+  iceServers: () => request<{ iceServers: RTCIceServer[] }>('GET', '/voice/ice'),
 
   dms: () => request<Channel[]>('GET', '/dms'),
   openDm: (userIds: string[], name?: string) => request<Channel>('POST', '/dms', { userIds, name }),

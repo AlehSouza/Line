@@ -8,6 +8,7 @@ Os instaladores mais recentes ficam em **[Releases](https://github.com/AlehSouza
 
 - **Windows 10/11**: baixe o `Line_*_x64-setup.exe` e execute (instala só para o seu usuário, sem pedir administrador).
 - **Linux (Debian 12+, Ubuntu 22.04+ e derivados)**: baixe o `Line_*_amd64.deb` e rode `sudo apt install ./Line_*_amd64.deb`. Depois é só abrir "Line" no menu de aplicativos.
+- **Pelo navegador**: todo servidor Line também entrega o app web na raiz (`http://IP:4000/` ou `https://seu-dominio/`). É o caminho para chamadas de voz no Linux, porque o WebKitGTK do Debian/Ubuntu vem sem WebRTC e o app desktop de lá fica só com o chat. Microfone e câmera no navegador exigem HTTPS (ou `localhost`).
 
 Feito em **Rust** por baixo: o app é um casco **Tauri** (usa o WebView2 do Windows em vez de carregar um Chromium inteiro) com a interface em **Next.js + TypeScript**, e o servidor é **Rust (axum + Socket.IO + SQLite)**, que roda embutido no próprio app ou sozinho numa máquina sua.
 
