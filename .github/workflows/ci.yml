@@ -109,13 +109,18 @@ jobs:
   updates:
     name: Publicar atualização do app (VPS)
     if: github.event_name != 'pull_request'
-    needs: [server, windows]
+    needs: [server, windows, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: Line-instalador-windows
           path: win
+      - uses: actions/download-artifact@v4
+        with:
+          name: Line-linux-deb
+          path: deb
       - name: Enviar instalador e latest.json para useline.tech/updates
         env:
           DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
@@ -139,3 +144,13 @@ jobs:
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/$name"
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm --"
+          # Links fixos usados pela aba Downloads do site (useline.tech/#downloads).
+          deb=$(ls deb/*.deb | head -n1)
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
+          scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
+          scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.tmp"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb"
+          # Site de apresentação (raiz do useline.tech).
+          # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
+          scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \
+            || echo "Sem /opt/line/site na VPS: rode o install.sh de novo para ativar o site."

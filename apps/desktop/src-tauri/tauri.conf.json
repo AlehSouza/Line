@@ -48,9 +48,16 @@
         "languages": [
           "PortugueseBR"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp"
       }
-    }
+    },
+    "publisher": "Line",
+    "homepage": "https://useline.tech",
+    "copyright": "© 2026 Line",
+    "longDescription": "Line: chat, voz e comunidades para a sua galera."
   },
   "plugins": {
     "updater": {

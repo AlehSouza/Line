@@ -120,6 +120,17 @@ $DOMAIN {
 		root * /opt/line/updates
 		file_server
 	}
+	# Site de apresentação na raiz (o CI envia apps/site para /opt/line/site).
+	@site path / /index.html /site/*
+	handle @site {
+		root * /opt/line/site
+		file_server
+	}
+	# App web completo em /app/ (o servidor entrega a interface em /).
+	redir /app /app/
+	handle_path /app/* {
+		reverse_proxy 127.0.0.1:4000
+	}
 	handle {
 		reverse_proxy 127.0.0.1:4000
 	}
@@ -129,7 +140,11 @@ CADDY
 echo "==> Pasta de atualizações do app"
 # Usuário sem privilégios que o CI usa para enviar os arquivos (chave pública em /etc/line/deploy.pub).
 id line-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash line-deploy
-install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates
+install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates /opt/line/site
+# Primeira instalação: coloca o site da branch já baixada (depois o CI mantém atualizado).
+if [ ! -f /opt/line/site/index.html ] && [ -f "$SRC/apps/site/index.html" ]; then
+  cp -r "$SRC/apps/site/." /opt/line/site/ && chown -R line-deploy:line-deploy /opt/line/site
+fi
 if [ -f /etc/line/deploy.pub ]; then
   install -d -o line-deploy -g line-deploy -m 700 /home/line-deploy/.ssh
   install -o line-deploy -g line-deploy -m 600 /etc/line/deploy.pub /home/line-deploy/.ssh/authorized_keys
