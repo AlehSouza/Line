@@ -1,7 +1,7 @@
 'use client';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
 import {
   clearVoiceError,
@@ -16,11 +16,14 @@ import {
   setNoiseSuppression,
   setOutputDevice,
   setScreenQuality,
+  setScreenVolume,
   startCamera,
   toggleCamera,
   toggleDeafen,
+  toggleHiddenScreen,
   toggleMute,
   toggleScreen,
+  toggleScreenMute,
   useVoice,
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select } from './ui';
@@ -111,15 +114,54 @@ function useTiles(channelId: string) {
   }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo]);
 }
 
+/** Som e "parar de assistir" da tela de outra pessoa. Só mudam para mim. */
+function ScreenControls({ userId }: { userId: string }) {
+  const muted = useVoice((v) => !!v.screenMuted[userId]);
+  const volume = useVoice((v) => v.screenVolume[userId] ?? 1);
+  const silent = muted || volume === 0;
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+  return (
+    <div
+      onClick={stop}
+      onContextMenu={stop}
+      className="absolute top-2 left-2 z-20 hidden items-center gap-1 rounded-md bg-black/70 p-1 group-hover:flex"
+    >
+      <button
+        title={silent ? 'Ativar som da transmissão' : 'Silenciar transmissão'}
+        onClick={() => (volume === 0 ? setScreenVolume(userId, 1) : toggleScreenMute(userId))}
+        className={cx('rounded p-1 hover:bg-white/15', silent && 'text-danger')}
+      >
+        {silent ? <Icons.SpeakerOff size={16} /> : <Icons.Speaker size={16} />}
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        title="Volume da transmissão"
+        value={muted ? 0 : Math.round(volume * 100)}
+        onChange={(e) => setScreenVolume(userId, Number(e.target.value) / 100)}
+        className="w-24 accent-accent"
+      />
+      <button title="Parar de assistir" onClick={() => toggleHiddenScreen(userId)} className="rounded p-1 hover:bg-white/15">
+        <Icons.EyeOff size={16} />
+      </button>
+    </div>
+  );
+}
+
 function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?: () => void }) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
+  const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !!v.hiddenScreen[tile.state.userId]);
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ') && onClick?.()}
       className={cx(
-        'group relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl bg-raise transition-shadow',
+        'group relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl bg-raise transition-shadow',
         big && 'aspect-auto h-full',
       )}
     >
@@ -127,7 +169,20 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
       {tile.kind === 'person' && speaking && (
         <span className="pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-accent" />
       )}
-      {tile.stream ? (
+      {hidden ? (
+        <div className="flex flex-col items-center gap-2 text-center">
+          <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 96 : 48} />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleHiddenScreen(tile.state.userId);
+            }}
+            className="flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-[#141418] hover:bg-white/90"
+          >
+            <Icons.Eye size={14} /> Assistir
+          </button>
+        </div>
+      ) : tile.stream ? (
         <Video stream={tile.stream} mirror={tile.isMe && tile.kind === 'person'} contain={tile.kind === 'screen'} />
       ) : (
         <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
@@ -141,12 +196,13 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
           <Icons.MicOff size={14} className="text-danger" />
         ) : null}
       </span>
+      {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenControls userId={tile.state.userId} />}
       {onClick && (
         <span className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 group-hover:block">
           <Icons.Expand size={14} />
         </span>
       )}
-    </button>
+    </div>
   );
 }
 

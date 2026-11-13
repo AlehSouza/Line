@@ -12,11 +12,14 @@ import { actions, permsOf, useLine } from "@/lib/store";
 import {
   joinVoice,
   moderateVoice,
+  setScreenVolume,
   setUserVolume,
   toggleDeafen,
+  toggleHiddenScreen,
   toggleHiddenVideo,
   toggleLocalMute,
   toggleMute,
+  toggleScreenMute,
   useVoice,
 } from "@/lib/voice";
 import { cx, Icons } from "./ui";
@@ -78,6 +81,9 @@ export function VoiceUserMenu({
   const volume = useVoice((v) => v.userVolume[userId] ?? 1);
   const localMuted = useVoice((v) => !!v.localMuted[userId]);
   const hiddenVideo = useVoice((v) => !!v.hiddenVideo[userId]);
+  const screenVolume = useVoice((v) => v.screenVolume[userId] ?? 1);
+  const screenMuted = useVoice((v) => !!v.screenMuted[userId]);
+  const hiddenScreen = useVoice((v) => !!v.hiddenScreen[userId]);
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -216,6 +222,38 @@ export function VoiceUserMenu({
             >
               Desativar vídeo
             </Item>
+          )}
+          {state?.screenStreamId && (
+            <>
+              <Sep />
+              <div className="px-2.5 py-1.5">
+                <p className="mb-1.5 font-medium text-soft">
+                  Volume da transmissão
+                </p>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={screenMuted ? 0 : Math.round(screenVolume * 100)}
+                  onChange={(e) =>
+                    setScreenVolume(userId, Number(e.target.value) / 100)
+                  }
+                  className="w-full accent-accent"
+                />
+              </div>
+              <Item
+                onClick={run(() => toggleScreenMute(userId), true)}
+                check={screenMuted}
+              >
+                Silenciar transmissão
+              </Item>
+              <Item
+                onClick={run(() => toggleHiddenScreen(userId), true)}
+                check={hiddenScreen}
+              >
+                Parar de assistir
+              </Item>
+            </>
           )}
           {friend?.state !== "friends" && friend?.state !== "blocked" && (
             <Item
