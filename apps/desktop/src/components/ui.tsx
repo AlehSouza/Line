@@ -4,7 +4,8 @@ import type { Presence } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { fileUrl } from '@/lib/api';
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function cx(...parts: (string | number | false | null | undefined)[]) {
   return parts.filter((p) => typeof p === 'string' && p).join(' ');
@@ -294,5 +295,106 @@ export function ListSkeleton({ count = 6, avatar = false }: { count?: number; av
         </div>
       ))}
     </div>
+  );
+}
+
+/** Select próprio no padrão do app (a lista nativa não dá para estilizar). */
+export function Select({
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => button.current && setRect(button.current.getBoundingClientRect());
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!button.current?.contains(t) && !list.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  // Abre para cima quando não cabe embaixo.
+  const below = rect ? window.innerHeight - rect.bottom : 0;
+  const up = rect ? below < 260 && rect.top > below : false;
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cx(
+          'flex w-full items-center gap-3 rounded-lg border bg-rail py-2 pr-3 pl-3 text-left text-sm text-fg outline-none',
+          open ? 'border-accent' : 'border-edge hover:border-soft/40',
+          className,
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{current?.label ?? ''}</span>
+        <L.ChevronDown size={18} className={cx('shrink-0 text-muted transition-transform', open && 'rotate-180')} aria-hidden />
+      </button>
+      {open &&
+        rect &&
+        createPortal(
+          <div
+            ref={list}
+            role="listbox"
+            className="fixed z-[80] max-h-64 overflow-y-auto rounded-lg border border-edge bg-side p-1 shadow-2xl"
+            style={{ left: rect.left, width: rect.width, ...(up ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }) }}
+          >
+            {options.map((o) => {
+              const active = o.value === value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={cx(
+                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm',
+                    active ? 'bg-accent/15 text-fg' : 'text-soft hover:bg-accent/10 hover:text-fg',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {active && <L.Check size={16} className="shrink-0 text-accent" aria-hidden />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

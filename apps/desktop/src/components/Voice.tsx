@@ -23,7 +23,7 @@ import {
   toggleScreen,
   useVoice,
 } from '@/lib/voice';
-import { Avatar, Button, cx, Icons, Modal } from './ui';
+import { Avatar, Button, cx, Icons, Modal, Select } from './ui';
 
 // ---------- vídeo ----------
 
@@ -403,20 +403,14 @@ export function CameraModal({ onClose }: { onClose: () => void }) {
           {stream ? <Video stream={stream} mirror /> : <p className="text-sm text-muted">{error || 'Abrindo a câmera…'}</p>}
         </div>
         {cameras.length > 0 && (
-          <label className="block">
+          <div>
             <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Câmera</span>
-            <select
+            <Select
               value={activeId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              className="w-full rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-            >
-              {cameras.map((c, i) => (
-                <option key={c.deviceId || i} value={c.deviceId}>
-                  {c.label || `Câmera ${i + 1}`}
-                </option>
-              ))}
-            </select>
-          </label>
+              onChange={setDeviceId}
+              options={cameras.map((c, i) => ({ value: c.deviceId, label: c.label || `Câmera ${i + 1}` }))}
+            />
+          </div>
         )}
       </div>
     </Modal>
@@ -504,32 +498,25 @@ export function VoiceSettingsPanel() {
   useEffect(() => {
     listAudioDevices().then(setDevices).catch(() => setDevices({ inputs: [], outputs: [] }));
   }, []);
-  const select = 'w-full rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none focus:border-accent';
 
   return (
     <div className="space-y-4">
-        <label className="block">
+        <div>
           <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Microfone</span>
-          <select className={select} value={inputId ?? ''} onChange={(e) => void setInputDevice(e.target.value || null)}>
-            <option value="">Padrão do sistema</option>
-            {devices?.inputs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
+          <Select
+            value={inputId ?? ''}
+            onChange={(v) => void setInputDevice(v || null)}
+            options={[{ value: '', label: 'Padrão do sistema' }, ...(devices?.inputs ?? []).map((d) => ({ value: d.id, label: d.label }))]}
+          />
+        </div>
+        <div>
           <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Saída de áudio</span>
-          <select className={select} value={outputId ?? ''} onChange={(e) => setOutputDevice(e.target.value || null)}>
-            <option value="">Padrão do sistema</option>
-            {devices?.outputs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Select
+            value={outputId ?? ''}
+            onChange={(v) => setOutputDevice(v || null)}
+            options={[{ value: '', label: 'Padrão do sistema' }, ...(devices?.outputs ?? []).map((d) => ({ value: d.id, label: d.label }))]}
+          />
+        </div>
         <NoiseToggle on={noise} />
     </div>
   );
