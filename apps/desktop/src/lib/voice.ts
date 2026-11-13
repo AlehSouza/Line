@@ -134,6 +134,8 @@ export interface VoiceStore {
   screenMuted: Record<string, boolean>;
   /** Telas que eu escolhi assistir (por quem transmite). Sem clicar em "Assistir", não recebo vídeo nem som. */
   watching: Record<string, boolean>;
+  /** Miniatura estática da tela de cada pessoa que transmite (para o quadro de quem ainda não assiste). */
+  screenThumbs: Record<string, string>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
   channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
@@ -163,6 +165,7 @@ export const useVoice = create<VoiceStore>(() => ({
   hiddenVideo: {},
   ...loadScreenAudio(),
   watching: {},
+  screenThumbs: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -220,7 +223,13 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     });
     if (uid === myId) return applyMute();
     // Parou de transmitir (ou saiu): na próxima vez, assistir de novo é escolha minha.
-    if (!state?.screenStreamId && getV().watching[uid]) setV((v) => ({ watching: { ...v.watching, [uid]: false } }));
+    if (!state?.screenStreamId && (getV().watching[uid] || getV().screenThumbs[uid])) {
+      setV((v) => {
+        const screenThumbs = { ...v.screenThumbs };
+        delete screenThumbs[uid];
+        return { watching: { ...v.watching, [uid]: false }, screenThumbs };
+      });
+    }
     // A tela dessa pessoa pode ter começado/parado: reaplica o volume da voz ou da tela em cada áudio dela.
     for (const el of audioEls.values()) if (el.dataset.peer === uid) applyPeerAudio(el);
     const mine = getV().channelId;
@@ -702,6 +711,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
     video?.addEventListener('ended', stopScreen);
     setV({ screen: stream });
     addStreamToPeers(stream);
+    startThumbs(stream);
     socket?.emit('voice:state', { screenStreamId: stream.id });
   } catch (err) {
     if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível compartilhar a tela.' });
@@ -713,6 +723,7 @@ function stopScreen() {
   if (!screen) return;
   removeStreamFromPeers(screen);
   watchers.clear();
+  stopThumbs();
   stopStream(screen);
   nativeStop?.();
   nativeStop = null;
@@ -726,6 +737,55 @@ export function clearVoiceError() {
 }
 
 // ---------- WebRTC ----------
+
+// ---------- miniatura da tela ----------
+
+let thumbVideo: HTMLVideoElement | null = null;
+let thumbTimer: ReturnType<typeof setInterval> | null = null;
+let lastThumb: string | null = null;
+
+/** Tira um quadro pequeno da minha tela e manda para quem ainda não assiste (a cada 10 s). */
+function startThumbs(stream: MediaStream) {
+  stopThumbs();
+  const v = document.createElement('video');
+  v.muted = true;
+  v.playsInline = true;
+  v.srcObject = stream;
+  void v.play().catch(() => {});
+  thumbVideo = v;
+  const tick = () => {
+    const data = captureThumb();
+    if (!data) return;
+    lastThumb = data;
+    for (const id of peers.keys()) if (!watchers.has(id)) send(id, { type: 'thumb', data });
+  };
+  setTimeout(tick, 1500);
+  thumbTimer = setInterval(tick, 10_000);
+}
+
+function captureThumb(): string | null {
+  const v = thumbVideo;
+  if (!v || !v.videoWidth || !v.videoHeight) return null;
+  const width = 256;
+  const height = Math.max(1, Math.round((width * v.videoHeight) / v.videoWidth));
+  const c = document.createElement('canvas');
+  c.width = width;
+  c.height = height;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(v, 0, 0, width, height);
+  const data = c.toDataURL('image/jpeg', 0.5);
+  // O servidor de sinalização aceita mensagens pequenas.
+  return data.length < 60_000 ? data : null;
+}
+
+function stopThumbs() {
+  if (thumbTimer) clearInterval(thumbTimer);
+  thumbTimer = null;
+  if (thumbVideo) thumbVideo.srcObject = null;
+  thumbVideo = null;
+  lastThumb = null;
+}
 
 /** Quem está assistindo à minha tela: só essas conexões recebem o vídeo e o som dela. */
 const watchers = new Set<string>();
@@ -775,6 +835,11 @@ function createPeer(peerId: string): Peer {
   const { camera, screen } = getV();
   if (camera) addStream(pc, camera);
   if (screen && watchers.has(peerId)) addStream(pc, screen);
+  // Quem chega vê a miniatura da minha tela antes de escolher assistir.
+  if (screen && lastThumb) {
+    const thumb = lastThumb;
+    setTimeout(() => send(peerId, { type: 'thumb', data: thumb }), 500);
+  }
   // Conexão nova com quem eu já assistia: avisa de novo para a tela voltar.
   if (getV().watching[peerId]) queueMicrotask(() => send(peerId, { type: 'watch', on: true }));
   return peer;
@@ -786,6 +851,12 @@ async function onSignal(from: string, signal: VoiceSignal) {
   if (!mine) return;
   const peer = peers.get(from) ?? createPeer(from);
   const { pc } = peer;
+  if (signal.type === 'thumb') {
+    if (typeof signal.data === 'string' && signal.data.startsWith('data:image/jpeg')) {
+      setV((v) => ({ screenThumbs: { ...v.screenThumbs, [from]: signal.data } }));
+    }
+    return;
+  }
   if (signal.type === 'watch') {
     const { screen } = getV();
     if (signal.on) {

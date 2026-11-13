@@ -185,7 +185,9 @@ export type VoiceSignal =
   | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
   | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null }
   /** Quem assiste avisa quem transmite: só quem pediu recebe o vídeo e o som da tela. */
-  | { type: 'watch'; on: boolean };
+  | { type: 'watch'; on: boolean }
+  /** Miniatura estática (JPEG em data URL, pequena) da tela de quem transmite, para quem ainda não assiste. */
+  | { type: 'thumb'; data: string };
 
 export interface PollOption {
   id: string;

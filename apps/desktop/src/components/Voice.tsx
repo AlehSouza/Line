@@ -184,6 +184,7 @@ function TileView({
   const name = nick || tile.user?.displayName || 'Alguém';
   // Só dá para assistir à tela de quem está na mesma chamada que eu.
   const inSameCall = useVoice((v) => !!v.channelId && v.channelId === tile.state.channelId);
+  const thumb = useVoice((v) => (tile.kind === 'screen' ? v.screenThumbs[tile.state.userId] : undefined));
   const tint = useAvatarTint(tile.user?.avatarUrl, tile.user?.avatarColor ?? '#3a3a42');
   // Clique direito no quadro: o mesmo menu da pessoa na lista do canal de voz.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -202,7 +203,7 @@ function TileView({
         'group relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors',
         big && 'aspect-auto h-full',
       )}
-      style={{ background: tint }}
+      style={{ background: tile.kind === 'screen' ? '#000' : tint }}
     >
       {/* Borda de "falando" desenhada por dentro do tile, para a grade (overflow-hidden) não cortar. Some e aparece suave. */}
       {tile.kind === 'person' && (
@@ -215,7 +216,12 @@ function TileView({
       )}
       {hidden ? (
         <div className="flex flex-col items-center gap-2 text-center">
-          {big && <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={96} />}
+          {/* Miniatura estática e borrada da tela por trás do botão. */}
+          {thumb && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumb} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl" />
+          )}
+          <span className="pointer-events-none absolute inset-0 bg-black/30" />
           <button
             disabled={!inSameCall}
             title={inSameCall ? undefined : 'Entre na chamada para assistir'}
@@ -223,11 +229,11 @@ function TileView({
               e.stopPropagation();
               if (inSameCall) setWatching(tile.state.userId, true);
             }}
-            className="flex items-center gap-1.5 rounded-full bg-white px-4 py-1.5 text-sm font-semibold text-[#141418] hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white"
+            className="relative flex items-center gap-1.5 rounded-full bg-white/60 px-4 py-1.5 text-sm font-semibold text-[#141418] backdrop-blur-sm transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/60"
           >
             <Icons.Eye size={14} /> Assistir transmissão
           </button>
-          {!inSameCall && big && <p className="text-xs text-white/70">Entre na chamada para assistir.</p>}
+          {!inSameCall && big && <p className="relative text-xs text-white/80">Entre na chamada para assistir.</p>}
         </div>
       ) : tile.stream ? (
         <Video
