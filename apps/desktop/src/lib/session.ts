@@ -201,7 +201,8 @@ function onMessage(message: Message) {
 
   const mine = message.author.id === state.me?.id;
   if (mine) return;
-  const viewing = currentChannelId(state) === message.channelId && document.hasFocus();
+  const viewing =
+    (currentChannelId(state) === message.channelId || state.threadId === message.channelId) && document.hasFocus();
   if (!viewing) actions.markUnread(message.channelId);
 
   const channel = state.channels[message.channelId];
@@ -223,10 +224,12 @@ function notify(message: Message) {
   }
   window.line?.requestAttention();
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const n = new Notification(title, { body: message.content.slice(0, 200), silent: false });
+  const body = message.content || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
+  const n = new Notification(title, { body: body.slice(0, 200), silent: false });
   n.onclick = () => {
     window.focus();
-    if (channel?.serverId) actions.goServer(channel.serverId, channel.id);
+    if (channel?.type === 'thread') actions.openThread(channel.id);
+    else if (channel?.serverId) actions.goServer(channel.serverId, channel.id);
     else actions.goHome(message.channelId);
   };
 }
@@ -264,6 +267,12 @@ declare global {
       platform: string;
       requestAttention: () => void;
       setBadge: (count: number) => void;
+      window?: {
+        minimize: () => void;
+        toggleMaximize: () => Promise<boolean>;
+        isMaximized: () => Promise<boolean>;
+        close: () => void;
+      };
       getScreenSources?: () => Promise<{ id: string; name: string; thumbnail: string; isScreen: boolean }[]>;
       selectScreenSource?: (id: string) => Promise<void>;
     };

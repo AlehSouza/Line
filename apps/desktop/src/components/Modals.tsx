@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
@@ -28,6 +28,10 @@ export function Modals() {
       return <NewDmModal onClose={close} />;
     case 'user':
       return <UserModal userId={modal.userId} onClose={close} />;
+    case 'create-thread':
+      return <CreateThreadModal modal={modal} onClose={close} />;
+    case 'image':
+      return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
   }
 }
 
@@ -205,6 +209,73 @@ function CreateCategoryModal({ serverId, onClose }: { serverId: string; onClose:
         </div>
       </form>
     </Modal>
+  );
+}
+
+function CreateThreadModal({
+  modal,
+  onClose,
+}: {
+  modal: Extract<NonNullable<ModalState>, { kind: 'create-thread' }>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(modal.suggestedName ?? '');
+  const { busy, error, run } = useAction();
+  return (
+    <Modal
+      title="Criar thread"
+      subtitle={modal.messageId ? 'A conversa sobre essa mensagem continua num painel ao lado.' : 'Uma conversa paralela dentro deste canal.'}
+      onClose={onClose}
+    >
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            const thread = await api.createThread(modal.channelId, name, modal.messageId);
+            actions.upsertChannel(thread);
+            onClose();
+            actions.openThread(thread.id);
+          });
+        }}
+        className="space-y-4"
+      >
+        <Field label="Nome da thread">
+          <Input autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sobre o assunto" />
+        </Field>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={busy || !name.trim()}>
+            Criar thread
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ImageViewer({ url, filename, onClose }: { url: string; filename: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onMouseDown={onClose}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt={filename} className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl" onMouseDown={(e) => e.stopPropagation()} />
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onMouseDown={(e) => e.stopPropagation()}
+        className="text-sm text-soft hover:text-fg hover:underline"
+      >
+        Abrir original
+      </a>
+    </div>
   );
 }
 

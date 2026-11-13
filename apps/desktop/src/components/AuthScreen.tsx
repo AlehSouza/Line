@@ -28,7 +28,7 @@ export function AuthScreen() {
   }
 
   return (
-    <div className="glow relative flex h-screen items-center justify-center overflow-hidden bg-rail p-6">
+    <div className="glow relative flex h-full items-center justify-center overflow-hidden bg-rail p-6">
       {/* Fundo: linhas onduladas discretas + brilho violeta no topo */}
       <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-[0.04]" aria-hidden>
         <defs>

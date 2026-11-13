@@ -18,6 +18,28 @@ const MAIN: &str = "main";
 struct Embedded(Mutex<Option<RunningServer>>);
 
 #[tauri::command]
+fn window_minimize(window: WebviewWindow) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn window_toggle_maximize(window: WebviewWindow) -> bool {
+    let max = window.is_maximized().unwrap_or(false);
+    let _ = if max { window.unmaximize() } else { window.maximize() };
+    !max
+}
+
+#[tauri::command]
+fn window_is_maximized(window: WebviewWindow) -> bool {
+    window.is_maximized().unwrap_or(false)
+}
+
+#[tauri::command]
+fn window_close(window: WebviewWindow) {
+    let _ = window.close();
+}
+
+#[tauri::command]
 fn request_attention(window: WebviewWindow) {
     if !window.is_focused().unwrap_or(true) {
         let _ = window.request_user_attention(Some(UserAttentionType::Informational));
@@ -119,6 +141,9 @@ fn create_window(app: &tauri::App) -> tauri::Result<WebviewWindow> {
     let opener2 = app.handle().clone();
     let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Line")
+        // Sem a barra do Windows: a interface desenha a própria (com arrastar, minimizar etc).
+        .decorations(false)
+        .shadow(true)
         .inner_size(1280.0, 800.0)
         .min_inner_size(940.0, 560.0)
         .background_color(tauri::webview::Color(0x0a, 0x0a, 0x0c, 0xff))
@@ -179,7 +204,14 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![request_attention, set_badge])
+        .invoke_handler(tauri::generate_handler![
+            request_attention,
+            set_badge,
+            window_minimize,
+            window_toggle_maximize,
+            window_is_maximized,
+            window_close
+        ])
         .setup(|app| {
             let server = start_embedded_server(app);
             app.manage(Embedded(Mutex::new(server)));

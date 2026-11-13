@@ -28,6 +28,8 @@ pub struct App {
     pub tokens: auth::Tokens,
     pub io: SocketIo,
     pub voice: Mutex<voice::VoiceRegistry>,
+    /// Onde ficam os arquivos enviados no chat.
+    pub uploads_dir: PathBuf,
 }
 
 #[derive(Clone, Debug)]
@@ -100,7 +102,8 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     let addr = listener.local_addr()?;
 
-    let (app, io, router) = build(conn, &secret);
+    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"));
+    app.sweep_uploads();
     drop(app);
 
     let (tx, rx) = oneshot::channel::<()>();
@@ -126,7 +129,11 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
 }
 
 /// Monta o estado, o Socket.IO e as rotas.
-pub fn build(conn: rusqlite::Connection, secret: &[u8]) -> (Arc<App>, SocketIo, axum::Router) {
+pub fn build(
+    conn: rusqlite::Connection,
+    secret: &[u8],
+    uploads_dir: PathBuf,
+) -> (Arc<App>, SocketIo, axum::Router) {
     // O estado precisa do handle do Socket.IO e o Socket.IO precisa do estado:
     // criamos o handle primeiro e passamos o estado depois por uma célula.
     let cell: Arc<std::sync::OnceLock<Arc<App>>> = Arc::new(std::sync::OnceLock::new());
@@ -138,6 +145,7 @@ pub fn build(conn: rusqlite::Connection, secret: &[u8]) -> (Arc<App>, SocketIo, 
         tokens: auth::Tokens::new(secret),
         io: io.clone(),
         voice: Mutex::new(voice::VoiceRegistry::default()),
+        uploads_dir,
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);
@@ -159,5 +167,32 @@ impl std::ops::Deref for AppRef {
     type Target = App;
     fn deref(&self) -> &App {
         self.get()
+    }
+}
+
+impl App {
+    /// Apaga do disco os arquivos que não pertencem mais a nenhum anexo
+    /// (mensagem, canal ou servidor apagados) e anexos nunca usados há mais de um dia.
+    pub fn sweep_uploads(&self) {
+        let keep: std::collections::HashSet<String> = {
+            let q = self.store.q();
+            q.prune_unused_attachments();
+            q.all_attachment_ids().into_iter().collect()
+        };
+        let Ok(entries) = std::fs::read_dir(&self.uploads_dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !keep.contains(&name) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+
+    pub fn remove_upload_files(&self, ids: &[String]) {
+        for id in ids {
+            let _ = std::fs::remove_file(self.uploads_dir.join(id));
+        }
     }
 }

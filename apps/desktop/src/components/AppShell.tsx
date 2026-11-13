@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { ensureServerLoaded } from '@/lib/session';
 import { actions, firstTextChannel, useLine } from '@/lib/store';
 import { ChannelSidebar } from './ChannelSidebar';
-import { ChatView } from './ChatView';
+import { ChatView, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendsView } from './FriendsView';
@@ -17,6 +17,7 @@ import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
 export function AppShell() {
   const view = useLine((s) => s.view);
   const connection = useLine((s) => s.connection);
+  const thread = useLine((s) => (s.threadId ? s.channels[s.threadId] : undefined));
   const unreadTotal = useLine((s) => Object.values(s.unread).reduce((a, b) => a + b, 0));
   const channel = useLine((s) =>
     view.kind === 'server' && view.channelId ? s.channels[view.channelId] : view.kind === 'home' && view.dmId ? s.channels[view.dmId] : undefined,
@@ -50,7 +51,7 @@ export function AppShell() {
   else main = <EmptyServer />;
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-full flex-col">
       {connection === 'disconnected' && (
         <div className="bg-sun px-4 py-1 text-center text-xs font-semibold text-rail">
           Sem conexão com o servidor. Tentando reconectar…
@@ -68,7 +69,11 @@ export function AppShell() {
           </div>
         </aside>
         <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
-        {view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />}
+        {thread && channel?.type === 'text' ? (
+          <ThreadPanel thread={thread} />
+        ) : (
+          view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />
+        )}
       </div>
       <Modals />
       <IncomingCall />

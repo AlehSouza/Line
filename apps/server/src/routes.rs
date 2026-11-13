@@ -5,7 +5,12 @@ use crate::model::*;
 use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, ServerPatch};
 use crate::validate::{self, body};
 use crate::{App, VERSION, auth};
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
+use axum::extract::{DefaultBodyLimit, Request};
+use axum::http::HeaderMap;
+use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
+use tower::ServiceExt;
 use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode};
@@ -93,6 +98,12 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             "/messages/{id}",
             axum::routing::patch(edit_message).delete(delete_message),
         )
+        .route("/channels/{id}/threads", get(list_threads).post(create_thread))
+        .route(
+            "/attachments",
+            post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
+        )
+        .route("/attachments/{id}/{name}", get(serve_attachment))
         .route("/dms", get(list_dms).post(open_dm))
         .route("/dms/{id}/leave", post(leave_dm))
         .route("/friends", get(list_friends).post(add_friend))
@@ -309,6 +320,8 @@ async fn delete_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res
     app.to_server(&server.id, "server:delete", &json!({ "id": server.id }));
     app.close_server_room(&server.id);
     q.delete_server(&server.id);
+    drop(q);
+    app.sweep_uploads();
     no_content()
 }
 
@@ -481,7 +494,9 @@ fn require_channel_manager(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<
     let Some(server_id) = channel.server_id.clone() else {
         return Err(bad_request("Use as rotas de DM para conversas privadas"));
     };
-    if q.server(&server_id).is_none_or(|s| s.owner_id != user_id) {
+    let thread_owner = channel.kind == "thread"
+        && matches!(&channel.owner_id, Some(Some(o)) if o == user_id);
+    if !thread_owner && q.server(&server_id).is_none_or(|s| s.owner_id != user_id) {
         return Err(forbidden("Só o dono do servidor pode gerenciar canais"));
     }
     Ok((channel, server_id))
@@ -523,12 +538,18 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
             ..Default::default()
         },
     );
+    let threads = q.threads_of(&channel.id);
     q.delete_channel(&channel.id);
-    app.to_server(
-        &server_id,
-        "channel:delete",
-        &json!({ "id": channel.id, "serverId": server_id }),
-    );
+    for c in threads.iter().map(|t| &t.id).chain([&channel.id]) {
+        app.to_server(&server_id, "channel:delete", &json!({ "id": c, "serverId": server_id }));
+    }
+    if let Some(Some(mid)) = &channel.thread_message_id
+        && let Some(starter) = q.message(mid)
+    {
+        app.to_channel(&q, &starter.channel_id, "message:update", &starter);
+    }
+    drop(q);
+    app.sweep_uploads();
     no_content()
 }
 
@@ -558,10 +579,230 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
     }
-    let input = body::<validate::SendMessage>(&b)?.check()?;
-    let message = q.create_message(&channel.id, &me, &input.content);
+    let mut input = body::<validate::SendMessage>(&b)?.check()?;
+    // Tira repetidos mantendo a ordem em que a pessoa anexou.
+    let mut seen = std::collections::HashSet::new();
+    input.attachment_ids.retain(|a| seen.insert(a.clone()));
+    if q.pending_attachments(&me, &input.attachment_ids) != input.attachment_ids.len() {
+        return Err(bad_request("Anexo inválido ou já usado"));
+    }
+    let message = q.create_message(&channel.id, &me, &input.content, &input.attachment_ids);
     app.to_channel(&q, &channel.id, "message:create", &message);
+    if channel.kind == "thread" {
+        refresh_thread_starter(&app, &q, &channel);
+    }
     created(message)
+}
+
+/// Atualiza o contador de respostas mostrado embaixo da mensagem que abriu a thread.
+fn refresh_thread_starter(app: &App, q: &Q, thread: &Channel) {
+    let Some(Some(mid)) = &thread.thread_message_id else {
+        return;
+    };
+    if let Some(starter) = q.message(mid) {
+        app.to_channel(q, &starter.channel_id, "message:update", &starter);
+    }
+    if let (Some(server_id), Some(t)) = (&thread.server_id, q.channel(&thread.id)) {
+        app.to_server(server_id, "channel:update", &t);
+    }
+}
+
+// ----- threads -----
+
+async fn list_threads(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let channel = require_access(&q, &id, &me)?;
+    ok(q.threads_of(&channel.id))
+}
+
+async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let parent = require_access(&q, &id, &me)?;
+    if parent.kind != "text" {
+        return Err(bad_request("Threads só podem ser criadas em canais de texto"));
+    }
+    let input = body::<validate::CreateThread>(&b)?.check()?;
+    if let Some(mid) = &input.message_id {
+        if q.message(mid).is_none_or(|m| m.channel_id != parent.id) {
+            return Err(not_found("Mensagem"));
+        }
+        if q.thread_for_message(mid).is_some() {
+            return Err(conflict("Essa mensagem já tem uma thread"));
+        }
+    }
+    let thread = q.create_thread(&parent, &me, &input.name, input.message_id.as_deref());
+    if let Some(server_id) = &thread.server_id {
+        app.to_server(server_id, "channel:create", &thread);
+    }
+    if let Some(mid) = &input.message_id
+        && let Some(starter) = q.message(mid)
+    {
+        app.to_channel(&q, &parent.id, "message:update", &starter);
+    }
+    created(thread)
+}
+
+// ----- anexos -----
+
+const MAX_UPLOAD: usize = 100 * 1024 * 1024;
+
+/// Recebe o arquivo cru no corpo (nome no cabeçalho `x-filename`) e grava em disco.
+async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: Body) -> Res {
+    let filename = headers
+        .get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(percent_decode)
+        .map(|n| sanitize_filename(&n))
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "arquivo".into());
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<mime::Mime>().ok())
+        .filter(|m| *m != mime::APPLICATION_OCTET_STREAM)
+        .unwrap_or_else(|| mime_guess(&filename));
+
+    let id = crate::ids::attachment_id();
+    tokio::fs::create_dir_all(&app.uploads_dir)
+        .await
+        .map_err(|_| internal("Não deu para salvar o arquivo"))?;
+    let path = app.uploads_dir.join(&id);
+    let mut file = tokio::fs::File::create(&path)
+        .await
+        .map_err(|_| internal("Não deu para salvar o arquivo"))?;
+    let mut size: usize = 0;
+    let mut stream = body.into_data_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(_) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&path).await;
+                return Err(ApiError::new(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    "too_large",
+                    "Arquivo grande demais (máximo 100 MB)",
+                ));
+            }
+        };
+        size += chunk.len();
+        if file.write_all(&chunk).await.is_err() {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(internal("Não deu para salvar o arquivo"));
+        }
+    }
+    let _ = file.flush().await;
+    if size == 0 {
+        let _ = tokio::fs::remove_file(&path).await;
+        return Err(validation("Arquivo vazio"));
+    }
+    let attachment = app.store.q().create_attachment(
+        &id,
+        &me,
+        &filename,
+        content_type.essence_str(),
+        size as i64,
+    );
+    created(attachment)
+}
+
+/// Entrega o arquivo (com suporte a Range, para vídeos). O id longo e aleatório faz
+/// as vezes de senha, assim <img> e <video> funcionam sem cabeçalho de login.
+async fn serve_attachment(
+    State(app): S,
+    Path((id, _name)): Path<(String, String)>,
+    req: Request,
+) -> Result<Response, ApiError> {
+    let attachment = app.store.q().attachment(&id).ok_or_else(|| not_found("Arquivo"))?;
+    let mime: mime::Mime = attachment
+        .content_type
+        .parse()
+        .unwrap_or(mime::APPLICATION_OCTET_STREAM);
+    // Só tipos que o navegador mostra com segurança abrem inline; o resto vira download.
+    let inline = matches!(mime.type_(), mime::IMAGE | mime::VIDEO | mime::AUDIO)
+        && mime.subtype() != mime::SVG;
+    let served_as = if inline || mime.type_() == mime::TEXT {
+        if mime.type_() == mime::TEXT { mime::TEXT_PLAIN_UTF_8 } else { mime }
+    } else {
+        mime::APPLICATION_OCTET_STREAM
+    };
+    let svc = tower_http::services::ServeFile::new_with_mime(app.uploads_dir.join(&id), &served_as);
+    let mut res = svc
+        .oneshot(req)
+        .await
+        .map_err(|_| not_found("Arquivo"))?
+        .map(Body::new);
+    let h = res.headers_mut();
+    h.insert("x-content-type-options", "nosniff".parse().unwrap());
+    h.insert("cache-control", "private, max-age=31536000, immutable".parse().unwrap());
+    if !inline && let Ok(v) = format!("attachment; filename*=UTF-8''{}", url_encode(&attachment.filename)).parse() {
+        h.insert("content-disposition", v);
+    }
+    Ok(res)
+}
+
+fn internal(message: &str) -> ApiError {
+    ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "internal", message)
+}
+
+fn sanitize_filename(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("");
+    let cleaned: String = base
+        .chars()
+        .filter(|c| !c.is_control() && !matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+        .collect();
+    let cleaned = cleaned.trim().trim_start_matches('.').to_string();
+    cleaned.chars().take(180).collect()
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Some(v) = std::str::from_utf8(&b[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn url_encode(s: &str) -> String {
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
+}
+
+fn mime_guess(filename: &str) -> mime::Mime {
+    let ext = filename.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    let t = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "ogg" | "opus" => "audio/ogg",
+        "wav" => "audio/wav",
+        "txt" | "md" | "log" | "csv" | "json" | "ts" | "tsx" | "js" | "rs" | "py" | "toml" | "yaml" | "yml" => "text/plain",
+        _ => "application/octet-stream",
+    };
+    t.parse().unwrap()
 }
 
 async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
@@ -574,6 +815,9 @@ async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         return Err(forbidden("Você só pode editar suas próprias mensagens"));
     }
     let input = body::<validate::SendMessage>(&b)?.check()?;
+    if input.content.is_empty() && message.attachments.is_empty() {
+        return Err(validation("Mensagem vazia"));
+    }
     let updated = q.edit_message(&message.id, &input.content);
     app.to_channel(&q, &message.channel_id, "message:update", &updated);
     ok(updated)
@@ -596,7 +840,9 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
     if message.author.id != me && !is_server_owner {
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
+    let files = q.attachment_ids_of_message(&message.id);
     q.delete_message(&message.id);
+    app.remove_upload_files(&files);
     app.to_channel(
         &q,
         &channel.id,

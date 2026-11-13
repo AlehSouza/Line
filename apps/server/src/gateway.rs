@@ -290,7 +290,7 @@ async fn voice_join(
         let _ = ack.send(&json!({ "ok": false, "error": "Canal não encontrado" }));
         return;
     };
-    if channel.kind == "text" {
+    if !matches!(channel.kind.as_str(), "voice" | "dm" | "group_dm") {
         let _ = ack.send(&json!({ "ok": false, "error": "Esse canal é de texto" }));
         return;
     }

@@ -12,6 +12,13 @@
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),
     setBadge: (count) => void invoke('set_badge', { count: Math.max(0, Number(count) || 0) }),
+    /** Controles da janela para a barra de título desenhada pela interface. */
+    window: {
+      minimize: () => void invoke('window_minimize'),
+      toggleMaximize: () => invoke('window_toggle_maximize'),
+      isMaximized: () => invoke('window_is_maximized').then((v) => !!v),
+      close: () => void invoke('window_close'),
+    },
     // Sem getScreenSources: o compartilhamento usa o seletor do próprio WebView2/Windows,
     // que já oferece telas, janelas e "compartilhar áudio do sistema".
   };

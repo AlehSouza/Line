@@ -3,7 +3,9 @@ use rusqlite::Connection;
 /// Migrações em ordem. Cada uma roda uma vez; a versão atual fica em PRAGMA user_version.
 /// Para mudar o banco: adicione uma nova entrada no fim (nunca edite as antigas).
 /// A primeira é idêntica à do servidor antigo em Node, então o arquivo line.db existente continua valendo.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    // 1: fase 1 (mesmo esquema da versão Node)
+    r#"
   CREATE TABLE users (
     id            TEXT PRIMARY KEY,
     username      TEXT NOT NULL UNIQUE,
@@ -82,7 +84,27 @@ const MIGRATIONS: &[&str] = &[r#"
     PRIMARY KEY (requester_id, addressee_id)
   );
   CREATE INDEX friendships_addressee ON friendships(addressee_id);
-"#];
+"#,
+    // 2: anexos e threads
+    r#"
+  CREATE TABLE attachments (
+    id           TEXT PRIMARY KEY,
+    message_id   TEXT REFERENCES messages(id) ON DELETE CASCADE,
+    uploader_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    size         INTEGER NOT NULL,
+    position     INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL
+  );
+  CREATE INDEX attachments_message ON attachments(message_id);
+
+  ALTER TABLE channels ADD COLUMN parent_id TEXT REFERENCES channels(id) ON DELETE CASCADE;
+  ALTER TABLE channels ADD COLUMN thread_message_id TEXT;
+  CREATE INDEX channels_parent ON channels(parent_id);
+  CREATE INDEX channels_thread_message ON channels(thread_message_id);
+"#,
+];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
     let conn = if file == ":memory:" {

@@ -255,17 +255,42 @@ impl CreateCategory {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SendMessage {
+    #[serde(default)]
     pub content: String,
+    #[serde(default)]
+    pub attachment_ids: Vec<String>,
 }
 
 impl SendMessage {
     pub fn check(mut self) -> ApiResult<Self> {
         self.content = self.content.trim().to_string();
-        if self.content.is_empty() {
+        if self.attachment_ids.len() > 10 {
+            return Err(validation("No máximo 10 anexos por mensagem"));
+        }
+        if self.content.is_empty() && self.attachment_ids.is_empty() {
             return Err(validation("Mensagem vazia"));
         }
-        text(&self.content, 1, 4000, "A mensagem")?;
+        if len(&self.content) > 4000 {
+            return Err(validation("A mensagem pode ter no máximo 4000 caracteres"));
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateThread {
+    pub name: String,
+    #[serde(default)]
+    pub message_id: Option<String>,
+}
+
+impl CreateThread {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.name = self.name.trim().to_string();
+        text(&self.name, 1, 100, "O nome da thread")?;
         Ok(self)
     }
 }

@@ -1,4 +1,4 @@
-import type { AuthResponse, ClientToServerEvents, Message, ServerDetail, ServerToClientEvents } from '@line/shared';
+import type { Attachment, AuthResponse, Channel, ClientToServerEvents, Message, ServerDetail, ServerToClientEvents } from '@line/shared';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -288,5 +288,80 @@ describe('Line server', () => {
     expect((await api('DELETE', `/messages/${msg.data.id}`, fabi.token)).status).toBe(204);
     expect((await api('GET', '/nada', fabi.token)).status).toBe(404);
     expect((await api<{ ok: boolean }>('GET', '/health')).data.ok).toBe(true);
+  });
+
+  it('anexos e threads', async () => {
+    const hel = await register('helena');
+    const ivo = await register('ivo');
+    const srv = await api<{ id: string; inviteCode: string }>('POST', '/servers', hel.token, { name: 'Arquivos' });
+    await api('POST', `/invites/${srv.data.inviteCode}`, ivo.token);
+    const detail = await api<ServerDetail>('GET', `/servers/${srv.data.id}`, hel.token);
+    const text = detail.data.channels.find((c) => c.type === 'text')!;
+    const voice = detail.data.channels.find((c) => c.type === 'voice')!;
+
+    // Upload cru com o nome no cabeçalho
+    const bytes = new TextEncoder().encode('linha 1\nlinha 2\n');
+    const up = await fetch(`${base}/api/attachments`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${hel.token}`, 'x-filename': encodeURIComponent('notas da call.txt'), 'content-type': 'text/plain' },
+      body: bytes,
+    });
+    expect(up.status).toBe(201);
+    const att = (await up.json()) as Attachment;
+    expect(att).toMatchObject({ filename: 'notas da call.txt', contentType: 'text/plain', size: bytes.length });
+    expect(att.url).toBe(`/api/attachments/${att.id}/notas%20da%20call.txt`);
+    expect((await fetch(`${base}/api/attachments`, { method: 'POST', body: bytes })).status).toBe(401);
+
+    // Mensagem só com anexo; outra pessoa não pode reaproveitar o anexo
+    expect((await api('POST', `/channels/${text.id}/messages`, ivo.token, { attachmentIds: [att.id] })).status).toBe(400);
+    const is = await socketFor(ivo.token);
+    const got = next(is, 'message:create');
+    const msg = await api<Message>('POST', `/channels/${text.id}/messages`, hel.token, { attachmentIds: [att.id] });
+    expect(msg.status).toBe(201);
+    expect(msg.data.content).toBe('');
+    expect(msg.data.attachments).toEqual([att]);
+    expect((await got).attachments[0]?.id).toBe(att.id);
+    expect((await api('POST', `/channels/${text.id}/messages`, hel.token, { attachmentIds: [att.id] })).status).toBe(400);
+    expect((await api('POST', `/channels/${text.id}/messages`, hel.token, {})).status).toBe(400);
+
+    // Download sem login (id impossível de adivinhar), com Range
+    const file = await fetch(`${base}${att.url}`);
+    expect(file.status).toBe(200);
+    expect(file.headers.get('content-type')).toContain('text/plain');
+    expect(await file.text()).toBe('linha 1\nlinha 2\n');
+    const part = await fetch(`${base}${att.url}`, { headers: { range: 'bytes=0-4' } });
+    expect(part.status).toBe(206);
+    expect(await part.text()).toBe('linha');
+    expect((await fetch(`${base}/api/attachments/naoexiste/x.txt`)).status).toBe(404);
+
+    // Thread a partir da mensagem
+    expect((await api('POST', `/channels/${voice.id}/threads`, hel.token, { name: 'x' })).status).toBe(400);
+    const created = next(is, 'channel:create');
+    const updatedStarter = next(is, 'message:update');
+    const thread = await api<Channel>('POST', `/channels/${text.id}/threads`, ivo.token, { name: 'Sobre as notas', messageId: msg.data.id });
+    expect(thread.status).toBe(201);
+    expect(thread.data).toMatchObject({ type: 'thread', parentId: text.id, threadMessageId: msg.data.id, ownerId: ivo.user.id, messageCount: 0 });
+    expect((await created).id).toBe(thread.data.id);
+    expect((await updatedStarter).thread).toMatchObject({ id: thread.data.id, name: 'Sobre as notas', messageCount: 0 });
+    expect((await api('POST', `/channels/${text.id}/threads`, hel.token, { name: 'de novo', messageId: msg.data.id })).status).toBe(409);
+
+    // Responder na thread atualiza o contador na mensagem original
+    const counted = next(is, 'message:update');
+    await api('POST', `/channels/${thread.data.id}/messages`, hel.token, { content: 'boa' });
+    expect((await counted).thread?.messageCount).toBe(1);
+    const list = await api<Message[]>('GET', `/channels/${text.id}/messages`, ivo.token);
+    expect(list.data[0]?.thread?.messageCount).toBe(1);
+    expect((await api<Channel[]>('GET', `/channels/${text.id}/threads`, ivo.token)).data).toHaveLength(1);
+    expect((await is.emitWithAck('voice:join', { channelId: thread.data.id })).ok).toBe(false);
+
+    // Quem criou a thread pode apagar; o resumo some da mensagem
+    const gone = next(is, 'channel:delete');
+    expect((await api('DELETE', `/channels/${thread.data.id}`, ivo.token)).status).toBe(204);
+    expect((await gone).id).toBe(thread.data.id);
+    expect((await api<Message[]>('GET', `/channels/${text.id}/messages`, ivo.token)).data[0]?.thread).toBeNull();
+
+    // Apagar a mensagem apaga o arquivo
+    expect((await api('DELETE', `/messages/${msg.data.id}`, hel.token)).status).toBe(204);
+    expect((await fetch(`${base}${att.url}`)).status).toBe(404);
   });
 });

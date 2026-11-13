@@ -24,6 +24,14 @@ fn base36(mut n: u64, width: usize) -> String {
 /// IDs ordenáveis por tempo (timestamp + sequência + aleatório), em base36.
 /// Ordem lexicográfica = ordem de criação, o que facilita paginar mensagens.
 /// Mesmo formato do servidor antigo em Node, então bancos existentes continuam valendo.
+/// Id de anexo: ordenável por tempo e impossível de adivinhar (vai na URL pública do arquivo).
+pub fn attachment_id() -> String {
+    let mut bytes = [0u8; 16];
+    rand::rng().fill_bytes(&mut bytes);
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{}{hex}", new_id())
+}
+
 pub fn new_id() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -57,9 +57,16 @@ pub struct Channel {
     pub topic: String,
     pub position: i64,
     pub last_message_at: Option<String>,
-    /// Só para dm / group_dm.
+    /// Só para dm / group_dm / thread.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner_id: Option<Option<String>>,
+    /// Só para thread: o canal de texto onde ela nasceu e a mensagem que a começou.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_message_id: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub recipients: Option<Vec<PublicUser>>,
 }
@@ -88,6 +95,29 @@ pub struct Message {
     pub content: String,
     pub created_at: String,
     pub edited_at: Option<String>,
+    pub attachments: Vec<Attachment>,
+    /// Thread que começou nesta mensagem (se houver).
+    pub thread: Option<ThreadSummary>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub id: String,
+    pub filename: String,
+    pub content_type: String,
+    pub size: i64,
+    /// Caminho relativo ao servidor (o app junta com o endereço do servidor).
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSummary {
+    pub id: String,
+    pub name: String,
+    pub message_count: i64,
+    pub last_message_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -113,6 +113,8 @@ struct ChannelRow {
     position: i64,
     owner_id: Option<String>,
     last_message_at: Option<String>,
+    parent_id: Option<String>,
+    thread_message_id: Option<String>,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -126,7 +128,31 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         position: r.get("position")?,
         owner_id: r.get("owner_id")?,
         last_message_at: r.get("last_message_at")?,
+        parent_id: r.get("parent_id")?,
+        thread_message_id: r.get("thread_message_id")?,
     })
+}
+
+fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
+    let id: String = r.get("id")?;
+    let filename: String = r.get("filename")?;
+    Ok(Attachment {
+        url: format!("/api/attachments/{id}/{}", url_segment(&filename)),
+        id,
+        filename,
+        content_type: r.get("content_type")?,
+        size: r.get("size")?,
+    })
+}
+
+/// Codifica o nome do arquivo para caber num caminho de URL.
+fn url_segment(name: &str) -> String {
+    name.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 #[derive(Default)]
@@ -532,9 +558,13 @@ impl Q<'_> {
 
     fn to_channel(&self, row: ChannelRow) -> Channel {
         let is_dm = row.kind == "dm" || row.kind == "group_dm";
+        let is_thread = row.kind == "thread";
         Channel {
             recipients: is_dm.then(|| self.recipients(&row.id)),
-            owner_id: is_dm.then_some(row.owner_id),
+            message_count: is_thread.then(|| self.message_count(&row.id)),
+            owner_id: (is_dm || is_thread).then_some(row.owner_id),
+            parent_id: if is_thread { row.parent_id } else { None },
+            thread_message_id: is_thread.then_some(row.thread_message_id),
             id: row.id,
             kind: row.kind,
             server_id: row.server_id,
@@ -716,6 +746,8 @@ impl Q<'_> {
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,
                     edited_at: r.get("edited_at")?,
+                    attachments: Vec::new(),
+                    thread: None,
                 };
                 Ok((user, msg))
             }))
@@ -724,6 +756,8 @@ impl Q<'_> {
         rows.into_iter()
             .map(|(u, mut m)| {
                 m.author = self.to_public_user(&u);
+                m.attachments = self.attachments_of(&m.id);
+                m.thread = self.thread_of_message(&m.id);
                 m
             })
             .collect()
@@ -756,7 +790,7 @@ impl Q<'_> {
         rows
     }
 
-    pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str) -> Message {
+    pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str, attachment_ids: &[String]) -> Message {
         let id = new_id();
         let at = now_iso();
         self.tx(|| {
@@ -765,8 +799,110 @@ impl Q<'_> {
                 params![id, channel_id, author_id, content, at],
             ));
             ok(self.c.execute("UPDATE channels SET last_message_at = ? WHERE id = ?", [&at, channel_id]));
+            for (pos, a) in attachment_ids.iter().enumerate() {
+                ok(self.c.execute(
+                    "UPDATE attachments SET message_id = ?, position = ? WHERE id = ? AND uploader_id = ? AND message_id IS NULL",
+                    params![id, pos as i64, a, author_id],
+                ));
+            }
         });
         self.message(&id).unwrap()
+    }
+
+    // ---------- anexos ----------
+
+    pub fn create_attachment(&self, id: &str, uploader_id: &str, filename: &str, content_type: &str, size: i64) -> Attachment {
+        ok(self.c.execute(
+            "INSERT INTO attachments (id, uploader_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            params![id, uploader_id, filename, content_type, size, now_iso()],
+        ));
+        self.attachment(id).unwrap()
+    }
+
+    pub fn attachment(&self, id: &str) -> Option<Attachment> {
+        ok(self.c.query_row("SELECT * FROM attachments WHERE id = ?", [id], attachment_from_row).optional())
+    }
+
+    /// Anexos enviados por `user_id` e ainda soltos (prontos para entrar numa mensagem).
+    pub fn pending_attachments(&self, user_id: &str, ids: &[String]) -> usize {
+        ids.iter()
+            .filter(|id| {
+                ok(self
+                    .c
+                    .query_row(
+                        "SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ? AND message_id IS NULL",
+                        [id.as_str(), user_id],
+                        |_| Ok(()),
+                    )
+                    .optional())
+                .is_some()
+            })
+            .count()
+    }
+
+    fn attachments_of(&self, message_id: &str) -> Vec<Attachment> {
+        let mut st = ok(self.c.prepare_cached("SELECT * FROM attachments WHERE message_id = ? ORDER BY position, id"));
+        ok(ok(st.query_map([message_id], attachment_from_row)).collect())
+    }
+
+    /// Ids dos arquivos de um canal inteiro (inclui threads), para apagar do disco.
+    pub fn attachment_ids_in_channel(&self, channel_id: &str) -> Vec<String> {
+        self.ids(
+            "SELECT a.id FROM attachments a JOIN messages m ON m.id = a.message_id
+             WHERE m.channel_id = ?1 OR m.channel_id IN (SELECT id FROM channels WHERE parent_id = ?1)",
+            [channel_id],
+        )
+    }
+
+    pub fn all_attachment_ids(&self) -> Vec<String> {
+        self.ids("SELECT id FROM attachments", [])
+    }
+
+    /// Anexos enviados mas nunca colocados numa mensagem.
+    pub fn prune_unused_attachments(&self) {
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        ok(self.c.execute("DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?", [cutoff]));
+    }
+
+    pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
+        self.ids("SELECT id FROM attachments WHERE message_id = ?", [message_id])
+    }
+
+    // ---------- threads ----------
+
+    fn message_count(&self, channel_id: &str) -> i64 {
+        ok(self.c.query_row("SELECT COUNT(*) FROM messages WHERE channel_id = ?", [channel_id], |r| r.get(0)))
+    }
+
+    fn thread_of_message(&self, message_id: &str) -> Option<ThreadSummary> {
+        let row: Option<(String, String, Option<String>)> = ok(self
+            .c
+            .query_row(
+                "SELECT id, name, last_message_at FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1",
+                [message_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional());
+        let (id, name, last_message_at) = row?;
+        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at })
+    }
+
+    pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {
+        self.channel_rows("SELECT * FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1", [message_id]).pop()
+    }
+
+    pub fn threads_of(&self, parent_id: &str) -> Vec<Channel> {
+        self.channel_rows("SELECT * FROM channels WHERE parent_id = ? ORDER BY id", [parent_id])
+    }
+
+    pub fn create_thread(&self, parent: &Channel, owner_id: &str, name: &str, message_id: Option<&str>) -> Channel {
+        let id = new_id();
+        ok(self.c.execute(
+            "INSERT INTO channels (id, type, server_id, name, owner_id, parent_id, thread_message_id, created_at)
+             VALUES (?, 'thread', ?, ?, ?, ?, ?, ?)",
+            params![id, parent.server_id, name, owner_id, parent.id, message_id, now_iso()],
+        ));
+        self.channel(&id).unwrap()
     }
 
     pub fn edit_message(&self, id: &str, content: &str) -> Message {
