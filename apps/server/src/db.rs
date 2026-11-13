@@ -136,6 +136,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE users ADD COLUMN pronouns TEXT NOT NULL DEFAULT '';
   ALTER TABLE users ADD COLUMN thought TEXT;
 "#,
+    // 6: canais privados (quem pode ver fica em channel_recipients)
+    r#"
+  ALTER TABLE channels ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

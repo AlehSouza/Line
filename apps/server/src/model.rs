@@ -62,6 +62,8 @@ pub struct Channel {
     pub name: String,
     pub topic: String,
     pub position: i64,
+    /// Canal privado: só o dono do servidor e os membros escolhidos enxergam.
+    pub is_private: bool,
     pub last_message_at: Option<String>,
     /// Só para dm / group_dm / thread.
     #[serde(skip_serializing_if = "Option::is_none")]
