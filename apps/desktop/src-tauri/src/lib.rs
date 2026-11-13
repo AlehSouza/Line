@@ -42,6 +42,10 @@ fn window_is_maximized(window: WebviewWindow) -> bool {
 
 #[tauri::command]
 fn window_close(window: WebviewWindow) {
+    // Com a bandeja, o X só esconde: o app continua rodando em segundo plano.
+    #[cfg(any(windows, target_os = "macos"))]
+    let _ = window.hide();
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = window.close();
 }
 
@@ -157,6 +161,10 @@ async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool 
 /// Botão "Procurar atualizações" das Configurações: mesma janelinha da abertura.
 #[tauri::command]
 async fn update_run(app: tauri::AppHandle) -> Result<(), String> {
+    run_update_window(app).await
+}
+
+async fn run_update_window(app: tauri::AppHandle) -> Result<(), String> {
     if app.get_webview_window(SPLASH).is_some() {
         return Ok(());
     }
@@ -166,6 +174,62 @@ async fn update_run(app: tauri::AppHandle) -> Result<(), String> {
         tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
     }
     let _ = splash.close();
+    Ok(())
+}
+
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window(MAIN) {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Ícone na bandeja: clique reabre a janela; o menu confere atualizações ou sai do app.
+#[cfg(any(windows, target_os = "macos"))]
+fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let title = MenuItemBuilder::with_id("title", "Line").enabled(false).build(app)?;
+    let updates = MenuItemBuilder::with_id("updates", "Conferir atualizações").build(app)?;
+    let quit = MenuItemBuilder::with_id("quit", "Sair do Line").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&title)
+        .separator()
+        .item(&updates)
+        .separator()
+        .item(&quit)
+        .build()?;
+
+    let mut tray = TrayIconBuilder::with_id("line")
+        .tooltip("Line")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "updates" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = run_update_window(app).await;
+                });
+            }
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main(tray.app_handle());
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
     Ok(())
 }
 
@@ -269,10 +333,17 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     enable_linux_media(&window);
 
     let w = window.clone();
-    window.on_window_event(move |event| {
-        if let WindowEvent::Focused(true) = event {
+    window.on_window_event(move |event| match event {
+        WindowEvent::Focused(true) => {
             let _ = w.request_user_attention(None);
         }
+        // Fechar (X, Alt+F4) só esconde; sair de verdade é pelo menu da bandeja.
+        #[cfg(any(windows, target_os = "macos"))]
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            let _ = w.hide();
+        }
+        _ => {}
     });
 
     #[cfg(debug_assertions)]
@@ -292,11 +363,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         // Uma janela só: abrir o Line de novo traz a janela que já existe para frente.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window(MAIN) {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            show_main(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -319,6 +386,8 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
+            #[cfg(any(windows, target_os = "macos"))]
+            create_tray(&handle)?;
             // Windows e macOS: antes de abrir o app, uma janelinha procura atualização,
             // baixa e instala. Sem atualização (ou sem internet), segue direto para o app.
             if cfg!(any(windows, target_os = "macos")) && !cfg!(debug_assertions) {

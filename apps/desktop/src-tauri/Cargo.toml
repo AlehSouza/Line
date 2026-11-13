@@ -27,6 +27,10 @@ tokio = { version = "1", features = ["time"] }
 # Ligar WebRTC/microfone no WebKitGTK (vem desligado por padrão).
 webkit2gtk = { version = "2.0", features = ["v2_38"] }
 
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+# Ícone na bandeja: fechar no X só esconde a janela (no Linux precisaria do appindicator).
+tauri = { version = "2.12", features = ["tray-icon"] }
+
 [target.'cfg(windows)'.dependencies]
 # Seletor próprio de compartilhar tela: lista janelas/telas com miniaturas (xcap)
 # e captura a escolhida pelo Windows Graphics Capture (windows-capture).
