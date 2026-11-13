@@ -238,12 +238,15 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
               <TileView tile={focused} big onClick={() => setFocus(null)} />
             </div>
             {others.length > 0 && (
-              <div className="flex h-28 shrink-0 gap-3 overflow-x-auto">
-                {others.map((t) => (
-                  <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
-                    <TileView tile={t} onClick={() => setFocus(t.key)} />
-                  </div>
-                ))}
+              <div className="flex h-28 shrink-0 overflow-x-auto">
+                {/* mx-auto centraliza; se não couber, a margem zera e a fileira rola sem cortar o começo. */}
+                <div className="mx-auto flex h-full gap-3">
+                  {others.map((t) => (
+                    <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
+                      <TileView tile={t} onClick={() => setFocus(t.key)} />
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </>
