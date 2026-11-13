@@ -15,7 +15,8 @@
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "dist:win": "npm run dist:win -w @line/desktop",
-    "dist:linux": "npm run dist:linux -w @line/desktop"
+    "dist:linux": "npm run dist:linux -w @line/desktop",
+    "dist:mac": "npm run dist:mac -w @line/desktop"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

@@ -11,6 +11,7 @@
     "build": "tauri build --no-bundle",
     "dist:win": "tauri build --bundles nsis",
     "dist:linux": "tauri build --bundles deb",
+    "dist:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json"
   },
