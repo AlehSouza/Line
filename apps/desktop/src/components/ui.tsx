@@ -258,6 +258,8 @@ export const Icons = {
   Download: icon(L.Download),
   Folder: icon(L.Folder),
   Lock: icon(L.Lock),
+  Shield: icon(L.Shield),
+  Grip: icon(L.GripVertical),
   Upload: icon(L.Upload),
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),

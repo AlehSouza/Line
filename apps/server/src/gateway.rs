@@ -3,6 +3,8 @@
 //! Mensagens de DM vão direto para as salas dos participantes.
 //!
 //! Regra de travas: pegue o banco (`store.q()`) antes do registro de voz e nunca o contrário.
+use crate::model::Server;
+use crate::perms::{self, has};
 use crate::store::{Q, lock};
 use crate::voice::VoicePatch;
 use crate::{App, AppRef};
@@ -83,6 +85,17 @@ impl App {
             },
             None => self.to_users(&q.recipient_ids(&channel.id), event, data),
         }
+    }
+
+    /// Manda o servidor atualizado; só quem pode criar convite recebe o código.
+    pub fn server_updated(&self, q: &Q, server: &Server) {
+        let (with, without): (Vec<String>, Vec<String>) = q
+            .member_ids(&server.id)
+            .into_iter()
+            .partition(|u| has(q.permissions(&server.id, u), perms::CREATE_INVITE));
+        self.to_users(&with, "server:update", server);
+        let hidden = Server { invite_code: String::new(), ..server.clone() };
+        self.to_users(&without, "server:update", &hidden);
     }
 
     pub fn broadcast_presence(&self, q: &Q, user_id: &str) {
@@ -319,6 +332,11 @@ async fn voice_join(
         let _ = ack.send(&json!({ "ok": false, "error": "Esse canal é de texto" }));
         return;
     }
+    let p = channel.server_id.as_deref().map(|sid| q.permissions(sid, &me)).unwrap_or(perms::ALL);
+    if !has(p, perms::CONNECT) {
+        let _ = ack.send(&json!({ "ok": false, "error": "Você não tem permissão para entrar neste canal de voz" }));
+        return;
+    }
 
     let current = lock(&app.voice).get(&me).cloned();
     if let Some(current) = current {
@@ -342,7 +360,7 @@ async fn voice_join(
         s.id,
         &channel.id,
         channel.server_id.clone(),
-        truthy("muted"),
+        truthy("muted") || !has(p, perms::SPEAK),
         truthy("deafened"),
     );
     app.to_channel(
@@ -382,12 +400,27 @@ async fn voice_state(
         return;
     }
     let q = app.store.q();
+    let server_id = lock(&app.voice).get(&me).and_then(|v| v.state.server_id.clone());
+    let p = server_id.as_deref().map(|sid| q.permissions(sid, &me)).unwrap_or(perms::ALL);
+    let mut patch = VoicePatch::from_json(&patch);
+    // Sem "Falar" fica sempre mudo; sem "Vídeo" não liga câmera nem compartilha tela.
+    if !has(p, perms::SPEAK) && patch.muted == Some(false) {
+        patch.muted = None;
+    }
+    if !has(p, perms::VIDEO) {
+        if matches!(patch.camera_stream_id, Some(Some(_))) {
+            patch.camera_stream_id = None;
+        }
+        if matches!(patch.screen_stream_id, Some(Some(_))) {
+            patch.screen_stream_id = None;
+        }
+    }
     let state = {
         let mut voice = lock(&app.voice);
         if voice.get(&me).is_none_or(|v| v.sid != s.id) {
             return;
         }
-        voice.update(&me, VoicePatch::from_json(&patch))
+        voice.update(&me, patch)
     };
     if let Some(state) = state {
         app.to_channel(
@@ -423,10 +456,10 @@ async fn voice_status(
     }
 }
 
-/// Quem pode silenciar, mover e desconectar os outros na voz deste servidor.
-/// Por enquanto só o dono; quando existirem cargos, a permissão entra aqui.
-fn can_moderate_voice(q: &Q, user_id: &str, server_id: &str) -> bool {
-    q.server(server_id).is_some_and(|s| s.owner_id == user_id)
+/// Silenciar pede "Silenciar membros"; mover e desconectar pedem "Mover membros".
+fn can_moderate_voice(q: &Q, user_id: &str, server_id: &str, action: &str) -> bool {
+    let flag = if matches!(action, "mute" | "deafen") { perms::MUTE_MEMBERS } else { perms::MOVE_MEMBERS };
+    has(q.permissions(server_id, user_id), flag)
 }
 
 async fn voice_moderate(
@@ -448,7 +481,7 @@ async fn voice_moderate(
     let Some(server_id) = entry.state.server_id.clone() else {
         return;
     };
-    if !can_moderate_voice(&q, &me, &server_id) {
+    if !can_moderate_voice(&q, &me, &server_id, action) {
         return;
     }
     let value = d.get("value").and_then(|v| v.as_bool());

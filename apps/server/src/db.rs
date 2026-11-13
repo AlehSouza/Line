@@ -156,6 +156,42 @@ const MIGRATIONS: &[&str] = &[
   );
   CREATE INDEX IF NOT EXISTS message_reactions_message ON message_reactions(message_id, created_at);
 "#,
+    // 9: cargos e permissões. O cargo @everyone de cada servidor tem o mesmo id do servidor.
+    // 48913 = ver canais, criar convite, enviar mensagens, anexar, criar threads, conectar, falar, vídeo, alterar apelido.
+    r#"
+  CREATE TABLE roles (
+    id          TEXT PRIMARY KEY,
+    server_id   TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    color       TEXT,
+    permissions INTEGER NOT NULL DEFAULT 0,
+    position    INTEGER NOT NULL DEFAULT 0,
+    mentionable INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+  );
+  CREATE INDEX roles_server ON roles(server_id);
+
+  CREATE TABLE member_roles (
+    server_id TEXT NOT NULL,
+    user_id   TEXT NOT NULL,
+    role_id   TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, user_id),
+    FOREIGN KEY (server_id, user_id) REFERENCES members(server_id, user_id) ON DELETE CASCADE
+  );
+  CREATE INDEX member_roles_member ON member_roles(server_id, user_id);
+
+  CREATE TABLE channel_roles (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    role_id    TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (channel_id, role_id)
+  );
+
+  ALTER TABLE messages ADD COLUMN mention_everyone INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE messages ADD COLUMN mention_roles TEXT NOT NULL DEFAULT '';
+
+  INSERT INTO roles (id, server_id, name, permissions, position, created_at)
+    SELECT id, id, '@everyone', 48913, 0, created_at FROM servers;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

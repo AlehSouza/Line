@@ -6,6 +6,15 @@ import { create } from 'zustand';
 import { disposeNoiseSuppressor, suppressNoise } from './noise';
 import { api } from './api';
 import { hasNativeScreen, startNativeScreen } from './nativeScreen';
+import { hasPerm, Perm } from '@line/shared';
+import { permsOf, useLine } from './store';
+
+/** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
+function voiceCan(flag: number, channelId = getV().channelId): boolean {
+  const s = useLine.getState();
+  const serverId = channelId ? s.channels[channelId]?.serverId : null;
+  return hasPerm(permsOf(s, serverId, s.me?.id), flag);
+}
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -234,6 +243,12 @@ export async function joinVoice(channelId: string) {
     });
     return;
   }
+  if (!voiceCan(Perm.Connect, channelId)) {
+    setV({ error: 'Você não tem permissão para entrar neste canal de voz.' });
+    return;
+  }
+  // Sem "Falar" entra mutado (o servidor também garante isso).
+  if (!voiceCan(Perm.Speak, channelId)) setV({ muted: true });
   setV({ channelId, connecting: true, error: null });
   try {
     await refreshIceServers();
@@ -287,6 +302,11 @@ export function toggleMute() {
   const { muted, deafened } = getV();
   // Desmutar enquanto ensurdecido também tira o ensurdecer.
   const next = deafened ? { muted: false, deafened: false } : { muted: !muted };
+  if (next.muted === false && !voiceCan(Perm.Speak)) {
+    setV({ error: 'Você não tem permissão para falar neste canal.' });
+    if (!deafened) return;
+    next.muted = true;
+  }
   setV(next);
   applyMute();
   socket?.emit('voice:state', next);
@@ -294,7 +314,7 @@ export function toggleMute() {
 
 export function toggleDeafen() {
   const deafened = !getV().deafened;
-  const next = { deafened, muted: deafened ? true : false };
+  const next = { deafened, muted: deafened ? true : !voiceCan(Perm.Speak) };
   setV(next);
   applyMute();
   socket?.emit('voice:state', next);
@@ -468,6 +488,10 @@ export async function toggleCamera() {
     socket?.emit('voice:state', { cameraStreamId: null });
     return;
   }
+  if (!voiceCan(Perm.Video)) {
+    setV({ error: 'Você não tem permissão para usar vídeo neste canal.' });
+    return;
+  }
   cameraOpening = true;
   cameraCancelled = false;
   try {
@@ -503,6 +527,10 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
   const { screen } = getV();
   if (screen) {
     stopScreen();
+    return;
+  }
+  if (!voiceCan(Perm.Video)) {
+    setV({ error: 'Você não tem permissão para compartilhar a tela neste canal.' });
     return;
   }
   const { resolution, fps } = getV().screenQuality;

@@ -328,6 +328,8 @@ pub struct CreateChannel {
     pub topic: Option<String>,
     pub is_private: Option<bool>,
     pub member_ids: Option<Vec<String>>,
+    /// Cargos que podem ver o canal privado.
+    pub role_ids: Option<Vec<String>>,
 }
 
 impl CreateChannel {
@@ -337,7 +339,7 @@ impl CreateChannel {
         if kind != "text" && kind != "voice" {
             return Err(validation("Tipo de canal inválido"));
         }
-        if self.member_ids.as_ref().is_some_and(|m| m.len() > 500) {
+        if self.member_ids.as_ref().is_some_and(|m| m.len() > 500) || self.role_ids.as_ref().is_some_and(|m| m.len() > 250) {
             return Err(validation("Membros demais no canal privado"));
         }
         if let Some(t) = &self.topic {
@@ -451,5 +453,84 @@ impl FriendRequest {
     pub fn check(mut self) -> ApiResult<Self> {
         self.username = username(&self.username)?;
         Ok(self)
+    }
+}
+
+fn role_name(raw: &str) -> ApiResult<String> {
+    let s = raw.trim().to_string();
+    text(&s, 1, 100, "O nome do cargo")?;
+    if s == "@everyone" || s == "@here" {
+        return Err(validation("Esse nome é reservado"));
+    }
+    Ok(s)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRole {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub color: Option<Option<String>>,
+    pub permissions: Option<i64>,
+    pub mentionable: Option<bool>,
+}
+
+impl CreateRole {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.name = Some(role_name(self.name.as_deref().unwrap_or("novo cargo"))?);
+        if let Some(Some(c)) = &self.color {
+            color(c)?;
+        }
+        if self.permissions.is_some_and(|p| p < 0) {
+            return Err(validation("Permissões inválidas"));
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRole {
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub color: Option<Option<String>>,
+    pub permissions: Option<i64>,
+    pub mentionable: Option<bool>,
+}
+
+impl UpdateRole {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.name = self.name.as_deref().map(role_name).transpose()?;
+        if let Some(Some(c)) = &self.color {
+            color(c)?;
+        }
+        if self.permissions.is_some_and(|p| p < 0) {
+            return Err(validation("Permissões inválidas"));
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderRoles {
+    pub role_ids: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateMember {
+    #[serde(default, deserialize_with = "nullable")]
+    pub nickname: Option<Option<String>>,
+}
+
+impl UpdateMember {
+    /// Apelido vazio volta para o nome de exibição (None).
+    pub fn check(self) -> ApiResult<Option<String>> {
+        let nick = self.nickname.flatten().map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+        if let Some(n) = &nick {
+            text(n, 1, 32, "O apelido")?;
+        }
+        Ok(nick)
     }
 }

@@ -60,6 +60,8 @@ export const createChannelSchema = z.object({
   isPrivate: z.boolean().optional(),
   /** Quem pode ver o canal privado (o dono do servidor sempre vê). */
   memberIds: z.array(z.string()).max(500).optional(),
+  /** Cargos que podem ver o canal privado. */
+  roleIds: z.array(z.string()).max(250).optional(),
 });
 
 export const updateChannelSchema = z.object({

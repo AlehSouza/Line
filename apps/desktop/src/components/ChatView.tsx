@@ -1,6 +1,6 @@
 'use client';
 
-import type { Attachment, Channel, Message } from '@line/shared';
+import { hasPerm, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
@@ -8,8 +8,9 @@ import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
-import { loadMessages, sendTyping } from '@/lib/session';
-import { actions, dmTitle, useLine } from '@/lib/store';
+import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
+import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
+import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
@@ -86,8 +87,8 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
   const composer = useRef<ComposerHandle>(null);
   const drop = useFileDrop((files) => composer.current?.addFiles(files));
   const meId = useLine((s) => s.me?.id);
-  const isServerOwner = useLine((s) => (thread.serverId ? s.servers[thread.serverId]?.ownerId === meId : false));
-  const canDelete = !thread.id.startsWith("draft:") && (isServerOwner || thread.ownerId === meId);
+  const canManage = useCan(thread.serverId, Perm.ManageChannels);
+  const canDelete = !thread.id.startsWith("draft:") && (canManage || thread.ownerId === meId);
 
   useEffect(() => {
     actions.markRead(thread.id);
@@ -177,7 +178,17 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const meId = useLine((s) => s.me?.id);
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
-  const isOwner = useLine((s) => (channel.serverId ? s.servers[channel.serverId]?.ownerId === meId : false));
+  const canManageMessages = useCan(channel.serverId, Perm.ManageMessages);
+  const canCreateThreads = useCan(channel.serverId, Perm.CreateThreads);
+  // Apelido e cor do cargo mais alto de quem escreveu (só em servidor).
+  const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
+  const serverRoles = useLine((s) => (channel.serverId ? s.roles[channel.serverId] : undefined));
+  const colorOf = (userId: string) => {
+    const mine = serverMembers?.[userId]?.roleIds;
+    return mine?.length ? (serverRoles ?? []).find((r) => r.color && mine.includes(r.id))?.color ?? undefined : undefined;
+  };
+  const nameOf = (userId: string, fallback: string) => serverMembers?.[userId]?.nickname || fallback;
+  const mentionCtx = useMentionContext(channel.serverId);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const prevHeight = useRef(0);
@@ -274,7 +285,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                     <span className="font-semibold">{(users[starter.author.id] ?? starter.author).displayName}</span>
                     <span className="text-xs text-muted">{formatTime(starter.createdAt)}</span>
                   </p>
-                  {starter.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(starter.content, myUsername)}</div>}
+                  {starter.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(starter.content, myUsername, mentionCtx)}</div>}
                   <AttachmentList attachments={starter.attachments} compact />
                 </div>
               </div>
@@ -316,16 +327,18 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
               <MessageRow
                 highlighted={highlight === m.id}
                 message={m}
-                authorName={author.displayName}
+                authorName={nameOf(m.author.id, author.displayName)}
                 authorColor={author.avatarColor}
+                nameColor={colorOf(m.author.id)}
+                mentionCtx={mentionCtx}
                 grouped={grouped}
                 mine={m.author.id === meId}
-                canDelete={m.author.id === meId || isOwner}
+                canDelete={m.author.id === meId || canManageMessages}
                 editing={editing === m.id}
                 onEdit={() => setEditing(m.id)}
                 onDoneEditing={() => setEditing(null)}
                 myUsername={myUsername}
-                canThread={channel.type === 'text'}
+                canThread={channel.type === 'text' && canCreateThreads}
                 tight={isThread}
               />
             </Fragment>
@@ -364,6 +377,8 @@ function MessageRow({
   message,
   authorName,
   authorColor,
+  nameColor,
+  mentionCtx,
   grouped,
   mine,
   canDelete,
@@ -378,6 +393,8 @@ function MessageRow({
   message: Message;
   authorName: string;
   authorColor: string;
+  nameColor?: string;
+  mentionCtx?: ReturnType<typeof useMentionContext>;
   grouped: boolean;
   mine: boolean;
   canDelete: boolean;
@@ -388,13 +405,14 @@ function MessageRow({
   canThread: boolean;
   tight?: boolean;
 }) {
+  const serverId = useLine((s) => s.channels[message.channelId]?.serverId);
   const [draft, setDraft] = useState(message.content);
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const showThreadAction = canThread && !message.thread;
-  const mentionsMe = !!myUsername && message.content.toLowerCase().includes(`@${myUsername}`);
+  const mentionsMe = !mine && messageMentionsMe(message);
 
   async function saveEdit() {
-    const content = draft.trim();
+    const content = textToMentions(draft.trim(), serverId);
     if ((!content && !message.attachments.length) || content === message.content) return onDoneEditing();
     try {
       await api.editMessage(message.id, content);
@@ -431,7 +449,7 @@ function MessageRow({
             <button
               onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
               className="font-semibold hover:underline"
-              style={{ color: authorColor }}
+              style={{ color: nameColor }}
             >
               {authorName}
             </button>
@@ -464,7 +482,7 @@ function MessageRow({
             <GifEmbed url={gifFromContent(message.content)!} />
           ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
-              {renderMarkdown(message.content, myUsername)}
+              {renderMarkdown(message.content, myUsername, mentionCtx)}
               {message.editedAt && <span className="ml-1 text-[10px] text-muted">(editado)</span>}
             </div>
           ))
@@ -514,7 +532,7 @@ function MessageRow({
             </button>
           )}
           {mine && (
-            <button title="Editar" onClick={() => { setDraft(message.content); onEdit(); }} className="p-1.5 text-muted hover:text-fg">
+            <button title="Editar" onClick={() => { setDraft(mentionsToText(message.content, serverId)); onEdit(); }} className="p-1.5 text-muted hover:text-fg">
               <Icons.Edit size={16} />
             </button>
           )}
@@ -717,12 +735,22 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const mentions = useRef<MentionPickerHandle>(null);
+  const [caret, setCaret] = useState(0);
+  const myPerms = useLine((s) => permsOf(s, channel.serverId, s.me?.id));
+  const canSend = hasPerm(myPerms, Perm.SendMessages);
+  const canAttach = hasPerm(myPerms, Perm.AttachFiles);
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
 
   const patch = (key: string, p: Partial<Pending>) => setPending((list) => list.map((x) => (x.key === key ? { ...x, ...p } : x)));
 
   function addFiles(files: File[]) {
+    if (!canAttach) {
+      setNotice('Você não tem permissão para anexar arquivos aqui.');
+      window.setTimeout(() => setNotice(''), 4000);
+      return;
+    }
     const room = MAX_FILES - pendingRef.current.length;
     if (files.length > room) {
       setNotice(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`);
@@ -832,7 +860,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
 
   async function send(gif?: string) {
-    const content = gif ?? text.trim();
+    const content = gif ?? textToMentions(text.trim(), channel.serverId);
     if (!gif && ((!content && !ready.length) || uploading)) return;
     if (sending) return;
     setSending(true);
@@ -862,6 +890,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentions.current?.onKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -871,7 +900,26 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   return (
     <div className="shrink-0 px-4 pb-2">
       {notice && <p className="mb-1.5 px-1 text-xs font-semibold text-sun">{notice}</p>}
-      <div className="rounded-xl bg-raise">
+      <div className="relative rounded-xl bg-raise">
+        {canSend && (
+          <MentionPicker
+            ref={mentions}
+            serverId={channel.serverId}
+            channelId={channel.id}
+            text={text}
+            caret={caret}
+            onPick={(start, end, insert) => {
+              const next = text.slice(0, start) + insert + text.slice(end);
+              setText(next);
+              const pos = start + insert.length;
+              setCaret(pos);
+              requestAnimationFrame(() => {
+                ref.current?.focus();
+                ref.current?.setSelectionRange(pos, pos);
+              });
+            }}
+          />
+        )}
         {pending.length > 0 && (
           <div className="flex gap-2 overflow-x-auto border-b border-edge p-3">
             {pending.map((p) => (
@@ -880,6 +928,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           </div>
         )}
         <div className="flex items-end gap-2 px-3 py-2.5">
+        {canSend && (
         <span className="relative shrink-0">
           <button
             title="Mais opções"
@@ -892,15 +941,16 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             <ComposerMenu
               onClose={() => setMenu(false)}
               items={[
-                { icon: <Icons.Upload size={18} />, label: 'Enviar um arquivo', run: () => picker.current?.click() },
+                ...(canAttach ? [{ icon: <Icons.Upload size={18} />, label: 'Enviar um arquivo', run: () => picker.current?.click() }] : []),
                 ...(!channel.id.startsWith('draft:')
                   ? [{ icon: <Icons.Poll size={18} />, label: 'Criar enquete', run: () => actions.openModal({ kind: 'create-poll', channelId: channel.id }) }]
                   : []),
-                { icon: <Icons.Mic size={18} />, label: 'Gravar mensagem de voz', run: () => setRecording(true) },
+                ...(canAttach ? [{ icon: <Icons.Mic size={18} />, label: 'Gravar mensagem de voz', run: () => setRecording(true) }] : []),
               ]}
             />
           )}
         </span>
+        )}
         <input
           ref={picker}
           type="file"
@@ -919,12 +969,16 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
               addFiles([file]);
             }}
           />
+        ) : !canSend ? (
+          <p className="flex-1 py-0.5 text-[15px] text-muted">Você não tem permissão para enviar mensagens neste canal.</p>
         ) : (
         <textarea
           ref={ref}
           value={text}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onChange={(e) => {
             setText(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
             if (e.target.value && !channel.id.startsWith('draft:')) sendTyping(channel.id);
           }}
           onKeyDown={onKeyDown}
@@ -937,6 +991,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         />
         )}
         {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
+        {canSend && (
         <span className="relative shrink-0">
           <button
             title="Emojis"
@@ -959,6 +1014,8 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             />
           )}
         </span>
+        )}
+        {canSend && canAttach && (
         <span className="relative shrink-0">
           <button
             title="GIFs"
@@ -977,6 +1034,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             />
           )}
         </span>
+        )}
         </div>
       </div>
       <div className="h-5 px-1 pt-0.5 text-xs text-soft">

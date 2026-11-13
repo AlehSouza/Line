@@ -94,6 +94,21 @@ export interface Member {
   user: PublicUser;
   nickname: string | null;
   joinedAt: string;
+  /** Cargos da pessoa (sem o @everyone). */
+  roleIds: string[];
+}
+
+export interface Role {
+  /** O @everyone tem o mesmo id do servidor. */
+  id: string;
+  serverId: string;
+  name: string;
+  color: string | null;
+  permissions: number;
+  /** Maior = mais alto. O @everyone fica em 0. */
+  position: number;
+  mentionable: boolean;
+  memberCount: number;
 }
 
 export interface Message {
@@ -107,6 +122,10 @@ export interface Message {
   /** Thread aberta a partir desta mensagem. */
   thread: ThreadSummary | null;
   poll?: Poll | null;
+  /** @everyone/@here que vale (quem mandou tinha permissão). */
+  mentionEveryone?: boolean;
+  /** Cargos mencionados (`<@&id>` no texto) que valem. */
+  mentionRoleIds?: string[];
   /** Reações agrupadas por emoji, na ordem em que apareceram. */
   reactions?: Reaction[];
 }
@@ -130,6 +149,7 @@ export interface ServerDetail {
   categories: Category[];
   channels: Channel[];
   members: Member[];
+  roles: Role[];
 }
 
 export interface AuthResponse {
