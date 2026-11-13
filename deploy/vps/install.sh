@@ -135,7 +135,7 @@ TURN
 sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn 2>/dev/null || true
 
 echo "==> Firewall da máquina (as imagens da Oracle bloqueiam tudo por padrão)"
-open_port() { iptables -C INPUT -p "$1" --dport "$2" -j ACCEPT 2>/dev/null || iptables -I INPUT 5 -p "$1" --dport "$2" -j ACCEPT; }
+open_port() { iptables -C INPUT -p "$1" --dport "$2" -j ACCEPT 2>/dev/null || iptables -I INPUT -p "$1" --dport "$2" -j ACCEPT; }
 open_port tcp 80
 open_port tcp 443
 open_port udp 443
