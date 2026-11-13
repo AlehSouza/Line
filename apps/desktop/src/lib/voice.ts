@@ -223,10 +223,13 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
 export async function syncVoice() {
   const s = socket;
   if (!s?.connected) return;
-  const res = await s.timeout(10_000).emitWithAck('voice:sync').catch(() => null);
+  const res: { states: VoiceState[]; statuses: Record<string, string> } | null = await s
+    .timeout(10_000)
+    .emitWithAck('voice:sync')
+    .catch(() => null);
   if (!res || socket !== s) return;
   setV((v) => {
-    const states = Object.fromEntries(res.states.map((st) => [st.userId, st]));
+    const states = Object.fromEntries(res.states.map((st: VoiceState) => [st.userId, st]));
     // Enquanto entro num canal, meu próprio estado ainda pode não estar no retrato.
     const mine = myId ? v.states[myId] : undefined;
     if (mine && v.connecting && !states[mine.userId]) states[mine.userId] = mine;
