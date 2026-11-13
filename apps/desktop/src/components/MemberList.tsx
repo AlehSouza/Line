@@ -4,6 +4,7 @@ import type { PublicUser } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { SearchBox, SearchResults } from './SearchPanel';
 import { actions, useLine } from '@/lib/store';
+import { openContextMenu, userMenu } from './ContextMenu';
 import { Avatar, cx, ListSkeleton } from './ui';
 
 export function MemberList({ serverId }: { serverId: string }) {
@@ -35,6 +36,7 @@ export function MemberList({ serverId }: { serverId: string }) {
           <button
             key={m.userId}
             onClick={(e) => actions.openModal({ kind: 'user', userId: m.userId, at: { x: e.clientX, y: e.clientY } })}
+            onContextMenu={(e) => openContextMenu(e, userMenu(m.userId, { x: e.clientX, y: e.clientY }, serverId))}
             className={cx(
               'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-hover',
               m.user.presence === 'offline' && 'opacity-40 hover:opacity-100',
