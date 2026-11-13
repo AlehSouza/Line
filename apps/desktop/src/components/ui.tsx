@@ -75,6 +75,55 @@ export function PresenceDot({
   );
 }
 
+const tintCache = new Map<string, string | null>();
+
+/** Cor média de uma imagem (amostra 16x16). null se não der para ler (ex.: sem CORS). */
+function averageColor(url: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = c.height = 16;
+        const ctx = c.getContext('2d');
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const d = ctx.getImageData(0, 0, 16, 16).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 128) continue;
+          r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+        }
+        resolve(n ? `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})` : null);
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+/** Fundo do quadro da chamada: a cor predominante do avatar (ou a cor da pessoa), puxada para o cinza. */
+export function useAvatarTint(src: string | null | undefined, color: string) {
+  const url = src ? fileUrl(src) : null;
+  const [picked, setPicked] = useState<string | null>(() => (url ? (tintCache.get(url) ?? null) : null));
+  useEffect(() => {
+    if (!url) return setPicked(null);
+    if (tintCache.has(url)) return setPicked(tintCache.get(url) ?? null);
+    let alive = true;
+    void averageColor(url).then((c) => {
+      tintCache.set(url, c);
+      if (alive) setPicked(c);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+  return `color-mix(in srgb, ${picked ?? color} 32%, #26262b)`;
+}
+
 export function Avatar({
   name,
   color,

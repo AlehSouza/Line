@@ -84,6 +84,9 @@ export function VoiceUserMenu({
   const screenVolume = useVoice((v) => v.screenVolume[userId] ?? 1);
   const screenMuted = useVoice((v) => !!v.screenMuted[userId]);
   const watching = useVoice((v) => !!v.watching[userId]);
+  const inSameCall = useVoice(
+    (v) => !!v.channelId && v.channelId === v.states[userId]?.channelId,
+  );
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -250,7 +253,10 @@ export function VoiceUserMenu({
               >
                 Silenciar transmissão
               </Item>
-              <Item onClick={run(() => setWatching(userId, !watching))}>
+              <Item
+                disabled={!watching && !inSameCall}
+                onClick={run(() => setWatching(userId, !watching))}
+              >
                 {watching ? "Sair da transmissão" : "Assistir transmissão"}
               </Item>
             </>
