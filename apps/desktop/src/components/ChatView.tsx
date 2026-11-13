@@ -651,6 +651,20 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   useImperativeHandle(handle, () => ({ addFiles }));
 
+  /** GIF escolhido vira anexo pendente, para mandar junto com texto (ou sozinho). */
+  async function addGif(url: string, title: string) {
+    try {
+      const res = await fetch(url.replace(/\.webp(\?|$)/, '.gif$1'));
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const name = `${(title || 'gif').replace(/[^\w\- ]+/g, '').trim().slice(0, 40) || 'gif'}.gif`;
+      addFiles([new File([blob], name, { type: blob.type || 'image/gif' })]);
+    } catch {
+      // Sem acesso ao arquivo: manda o link mesmo.
+      void send(url);
+    }
+  }
+
   function remove(key: string) {
     setPending((list) => {
       const item = list.find((x) => x.key === key);
@@ -809,7 +823,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
               onClose={() => setGifOpen(false)}
               onPick={(g) => {
                 setGifOpen(false);
-                void send(g.url);
+                void addGif(g.url, g.title);
               }}
             />
           )}

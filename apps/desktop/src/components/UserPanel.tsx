@@ -27,7 +27,7 @@ export function UserPanel() {
         title="Ver meu perfil"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
-          actions.openModal({ kind: 'user', userId: me.id, at: { x: r.left - 8, y: r.top - 420 } });
+          actions.openModal({ kind: 'user', userId: me.id, at: { x: r.left - 4, y: r.top - 4, above: true } });
         }}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-hover"
       >

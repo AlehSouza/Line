@@ -16,7 +16,7 @@ export const statusOptions: { value: UserStatus; label: string; hint?: string; p
 const W = 340;
 
 /** Mini cartão de perfil que abre ao clicar em alguém (ou na sua própria caixa de usuário). */
-export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: number; y: number }; onClose: () => void }) {
+export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: number; y: number; above?: boolean }; onClose: () => void }) {
   const me = useLine((s) => s.me);
   const other = useLine((s) => s.users[userId]);
   const friend = useLine((s) => s.friends[userId]);
@@ -52,6 +52,8 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     if (!at) return setPos({ left: (vw - W) / 2, top: Math.max(12, (vh - h) / 2) });
+    // Ancorado em cima de um elemento (a caixa do usuário): abre logo acima dele.
+    if (at.above) return setPos({ left: Math.min(Math.max(12, at.x), vw - W - 12), top: Math.max(12, at.y - h - 8) });
     const left = at.x + 16 + W < vw ? at.x + 16 : Math.max(12, at.x - 16 - W);
     const top = Math.min(Math.max(12, at.y - 40), vh - h - 12);
     setPos({ left, top: Math.max(12, top) });
