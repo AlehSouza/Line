@@ -17,7 +17,9 @@ import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
 export function AppShell() {
   const view = useLine((s) => s.view);
   const connection = useLine((s) => s.connection);
-  const thread = useLine((s) => (s.threadId ? s.channels[s.threadId] : undefined));
+  const thread = useLine((s) =>
+    s.threadId ? s.channels[s.threadId] : s.threadDraft && s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId ? s.threadDraft : undefined,
+  );
   const unreadTotal = useLine((s) => Object.values(s.unread).reduce((a, b) => a + b, 0));
   const channel = useLine((s) =>
     view.kind === 'server' && view.channelId ? s.channels[view.channelId] : view.kind === 'home' && view.dmId ? s.channels[view.dmId] : undefined,

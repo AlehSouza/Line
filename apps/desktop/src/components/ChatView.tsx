@@ -93,7 +93,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
   const drop = useFileDrop((files) => composer.current?.addFiles(files));
   const meId = useLine((s) => s.me?.id);
   const isServerOwner = useLine((s) => (thread.serverId ? s.servers[thread.serverId]?.ownerId === meId : false));
-  const canDelete = isServerOwner || thread.ownerId === meId;
+  const canDelete = !thread.id.startsWith("draft:") && (isServerOwner || thread.ownerId === meId);
 
   useEffect(() => {
     actions.markRead(thread.id);
@@ -216,6 +216,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   useEffect(() => {
     stickToBottom.current = true;
     setError('');
+    if (channel.id.startsWith('draft:')) return;
     loadMessages(channel.id).catch((e) => setError(e.message));
   }, [channel.id]);
 
@@ -456,18 +457,15 @@ function MessageRow({
         <div className="absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex">
           {showThreadAction && (
             <button
-              title="Criar thread"
-              onClick={() =>
-                actions.openModal({
-                  kind: 'create-thread',
-                  channelId: message.channelId,
-                  messageId: message.id,
-                  suggestedName: (message.content.split('\n')[0] || message.attachments[0]?.filename || '').slice(0, 60),
-                })
-              }
+              title="Responder"
+              onClick={() => {
+                const parent = useLine.getState().channels[message.channelId];
+                const name = (message.content.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+                if (parent) actions.openThreadDraft(parent, message.id, name);
+              }}
               className="p-1.5 text-muted hover:text-fg"
             >
-              <Icons.Thread size={16} />
+              <Icons.Reply size={16} />
             </button>
           )}
           {mine && (
@@ -626,8 +624,16 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     if ((!content && !ready.length) || sending || uploading) return;
     setSending(true);
     try {
-      const message = await api.sendMessage(channel.id, content, ready);
+      // Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela.
+      let target = channel.id;
+      if (channel.id.startsWith('draft:') && channel.parentId) {
+        const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined);
+        actions.upsertChannel(thread);
+        target = thread.id;
+      }
+      const message = await api.sendMessage(target, content, ready);
       actions.addMessage(message);
+      if (target !== channel.id) actions.openThread(target);
       setText('');
       setPending((list) => {
         for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
@@ -681,7 +687,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            if (e.target.value) sendTyping(channel.id);
+            if (e.target.value && !channel.id.startsWith('draft:')) sendTyping(channel.id);
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}

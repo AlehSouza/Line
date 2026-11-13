@@ -58,6 +58,8 @@ export interface LineState {
   view: View;
   /** Thread aberta no painel lateral direito. */
   threadId: string | null;
+  /** "Responder" numa mensagem sem thread: painel aberto, thread criada só na primeira resposta. */
+  threadDraft: Channel | null;
   modal: Modal;
 }
 
@@ -79,6 +81,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   lastChannelByServer: {},
   view: { kind: 'home', dmId: null },
   threadId: null,
+  threadDraft: null,
   modal: null,
 };
 
@@ -363,10 +366,30 @@ export const actions = {
     set({ view: { kind: 'discover' }, threadId: null });
   },
 
+  /** Abre o painel de resposta de uma mensagem que ainda não tem thread. */
+  openThreadDraft(parent: Channel, messageId: string, name: string) {
+    const id = `draft:${messageId}`;
+    const draft: Channel = {
+      ...parent,
+      id,
+      type: 'thread',
+      name,
+      parentId: parent.id,
+      threadMessageId: messageId,
+      messageCount: 0,
+    };
+    set((s) => ({
+      threadDraft: draft,
+      threadId: null,
+      messages: { ...s.messages, [id]: { items: [], hasMore: false, loaded: true } },
+    }));
+  },
+
   /** Abre uma thread no painel lateral, indo para o canal onde ela nasceu. */
   openThread(threadId: string) {
     const thread = get().channels[threadId];
     if (!thread) return;
+    set({ threadDraft: null });
     if (thread.serverId && thread.parentId) {
       const v = get().view;
       if (v.kind !== 'server' || v.channelId !== thread.parentId) actions.goServer(thread.serverId, thread.parentId);
@@ -376,7 +399,7 @@ export const actions = {
   },
 
   closeThread() {
-    set({ threadId: null });
+    set({ threadId: null, threadDraft: null });
   },
 
   openModal(modal: Modal) {
