@@ -128,7 +128,7 @@
   /* Downloads */
   .dl { padding: 80px 0 100px; }
   .dl .sh { margin-bottom: 40px; }
-  .dls { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 900px; margin: 0 auto; }
+  .dls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; max-width: 1100px; margin: 0 auto; }
   .dlc { position: relative; background: var(--side); border-radius: 18px; padding: 30px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; flex-direction: column; }
   .dlc.rec { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, var(--edge)), 0 20px 70px -30px color-mix(in srgb, var(--accent) 60%, transparent); }
   .dlc .tag { position: absolute; top: 18px; right: 18px; font-size: 12px; font-weight: 700; color: #c9c1ff; background: color-mix(in srgb, var(--accent) 18%, transparent); padding: 3px 10px; border-radius: 999px; display: none; }
@@ -143,7 +143,7 @@
   .dlc li.warn svg { color: var(--sun); }
   .dlc .btn { margin-top: auto; justify-content: center; }
   .cmd { margin: -10px 0 20px; background: var(--rail); border-radius: 10px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; color: var(--soft); box-shadow: inset 0 0 0 1px var(--edge); overflow-x: auto; white-space: nowrap; }
-  .web { max-width: 900px; margin: 18px auto 0; background: var(--side); border-radius: 18px; padding: 22px 26px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; align-items: center; gap: 18px; }
+  .web { max-width: 1100px; margin: 18px auto 0; background: var(--side); border-radius: 18px; padding: 22px 26px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; align-items: center; gap: 18px; }
   .web .os { margin: 0; flex: none; }
   .web div { flex: 1; }
   .web h4 { margin: 0 0 2px; font-size: 17px; }
@@ -159,7 +159,7 @@
   @media (max-width: 900px) {
     .app { grid-template-columns: 56px 1fr; height: 400px; }
     .side, .mem { display: none; }
-    .grid { grid-template-columns: 1fr 1fr; }
+    .grid, .dls { grid-template-columns: 1fr 1fr; }
   }
   @media (max-width: 680px) {
     .wrap { padding: 0 16px; }
@@ -182,6 +182,7 @@
   <symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3Z"/></symbol>
   <symbol id="i-win" viewBox="0 0 24 24" fill="#7c6af2"><path d="M3 5.4 10.4 4.4v7.1H3zM11.4 4.2 21 3v8.5h-9.6zM3 12.5h7.4v7.1L3 18.6zM11.4 12.5H21V21l-9.6-1.3z"/></symbol>
+  <symbol id="i-mac" viewBox="0 0 24 24" fill="#e8e8ee"><path d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.2-1.7-3-1.9-3.6-2-1.5-.2-3 .9-3.8.9-.8 0-2-.9-3.3-.9-1.7 0-3.3 1-4.2 2.5-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6 1.3-.1 1.7-.8 3.3-.8 1.5 0 1.9.8 3.3.8 1.4 0 2.2-1.2 3-2.5.9-1.4 1.3-2.8 1.3-2.8s-2.5-1-2.5-4.3ZM14 5.3c.7-.8 1.2-2 1-3.1-1 0-2.2.7-2.9 1.5-.6.7-1.2 1.9-1 3 1.1.1 2.2-.6 2.9-1.4Z"/></symbol>
   <symbol id="i-linux" viewBox="0 0 24 24" fill="none" stroke="#f5c451" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3c-2.2 0-3.4 1.8-3.4 4.2 0 1.4.3 2.4-.6 3.9-1.2 2-2.6 3.6-2.6 6 0 .9.3 1.6.8 2.1"/><path d="M12 3c2.2 0 3.4 1.8 3.4 4.2 0 1.4-.3 2.4.6 3.9 1.2 2 2.6 3.6 2.6 6 0 .9-.3 1.6-.8 2.1"/><path d="M6.2 19.2c1 .9 2.6.4 3.3-.4.6.5 1.5.7 2.5.7s1.9-.2 2.5-.7c.7.8 2.3 1.3 3.3.4"/><circle cx="10.4" cy="7.4" r=".7" fill="#f5c451"/><circle cx="13.6" cy="7.4" r=".7" fill="#f5c451"/><path d="M10.6 9.6 12 10.6l1.4-1"/></symbol>
 </svg>
 
@@ -209,7 +210,7 @@
           <a class="btn btn-primary js-main-dl" href="#downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
           <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
         </div>
-        <p class="cta-note js-note">Windows 10 e 11 · Linux (Debian/Ubuntu) · qualquer navegador</p>
+        <p class="cta-note js-note">Windows 10 e 11 · macOS · Linux (Debian/Ubuntu) · qualquer navegador</p>
 
         <div class="shot" aria-hidden="true">
           <div class="tb"><img src="/site/icon.png" alt=""><div class="t">Resenha</div><div class="w"><span>—</span><span>☐</span><span>✕</span></div></div>
@@ -270,7 +271,7 @@
 
         <div class="band">
           <h2>Chame a galera para o Line</h2>
-          <p>Instale no Windows ou no Linux, ou entre direto pelo navegador. Sua conta funciona em todos.</p>
+          <p>Instale no Windows, no macOS ou no Linux, ou entre direto pelo navegador. Sua conta funciona em todos.</p>
           <div class="cta">
             <a class="btn btn-primary" href="#downloads"><svg><use href="#i-down"/></svg>Ver downloads</a>
             <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
@@ -285,7 +286,7 @@
     <div class="wrap dl">
       <div class="sh">
         <h2>Baixe o Line</h2>
-        <p>Escolha a versão do seu sistema. No Windows o app se atualiza sozinho.</p>
+        <p>Escolha a versão do seu sistema. No Windows e no macOS o app se atualiza sozinho.</p>
       </div>
       <div class="dls">
         <div class="dlc" data-os="windows">
@@ -300,6 +301,19 @@
             <li><svg><use href="#i-check"/></svg>Instala só para o seu usuário, sem pedir administrador</li>
           </ul>
           <a class="btn btn-primary" href="/updates/latest/Line-windows-setup.exe" download><svg><use href="#i-down"/></svg>Baixar para Windows</a>
+        </div>
+        <div class="dlc" data-os="mac">
+          <span class="tag">Recomendado para você</span>
+          <div class="os"><svg><use href="#i-mac"/></svg></div>
+          <h3>macOS</h3>
+          <div class="meta"><span class="js-ver">versão mais recente</span> · Apple Silicon e Intel · .dmg</div>
+          <ul>
+            <li><svg><use href="#i-check"/></svg>macOS 11 (Big Sur) e mais novos</li>
+            <li><svg><use href="#i-check"/></svg>Chamadas de voz e vídeo</li>
+            <li><svg><use href="#i-check"/></svg>Atualiza sozinho quando sai versão nova</li>
+            <li class="warn"><svg><use href="#i-info"/></svg>Ainda sem assinatura da Apple: na primeira vez, abra com o botão direito em Abrir</li>
+          </ul>
+          <a class="btn btn-ghost" href="/updates/latest/Line-macos.dmg" download><svg><use href="#i-down"/></svg>Baixar para macOS</a>
         </div>
         <div class="dlc" data-os="linux">
           <span class="tag">Recomendado para você</span>
@@ -320,7 +334,7 @@
         <div><h4>Sem instalar nada</h4><p>Use o Line completo, com chamadas, no Chrome, Edge, Firefox ou em qualquer sistema.</p></div>
         <a class="btn btn-ghost" href="/app/">Abrir On Line</a>
       </div>
-      <p class="fine">Ao abrir o instalador do Windows pela primeira vez, o SmartScreen pode avisar que o app é novo. Clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.</p>
+      <p class="fine">Ao abrir o instalador do Windows pela primeira vez, o SmartScreen pode avisar que o app é novo. Clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.<br>No macOS, arraste o Line para Aplicativos e, na primeira vez, clique nele com o botão direito e escolha <b>Abrir</b>. Se aparecer que o app está danificado, rode <code>xattr -cr /Applications/Line.app</code> no Terminal.</p>
     </div>
   </section>
 </main>
@@ -354,7 +368,7 @@
 
   // Destaca a versão do sistema de quem está visitando.
   const ua = navigator.userAgent;
-  const os = /Windows/i.test(ua) ? 'windows' : (/Linux/i.test(ua) && !/Android/i.test(ua)) ? 'linux' : null;
+  const os = /Windows/i.test(ua) ? 'windows' : (/Macintosh|Mac OS X/i.test(ua) && !/iPhone|iPad/i.test(ua)) ? 'mac' : (/Linux/i.test(ua) && !/Android/i.test(ua)) ? 'linux' : null;
   if (os) {
     document.querySelector(`.dlc[data-os="${os}"]`)?.classList.add('rec');
     const main = document.querySelector('.js-main-dl');
@@ -362,6 +376,10 @@
       main.href = '/updates/latest/Line-windows-setup.exe';
       main.setAttribute('download', '');
       main.querySelector('span').textContent = 'Baixar para Windows';
+    } else if (os === 'mac') {
+      main.href = '/updates/latest/Line-macos.dmg';
+      main.setAttribute('download', '');
+      main.querySelector('span').textContent = 'Baixar para macOS';
     }
   }
 

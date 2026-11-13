@@ -79,11 +79,43 @@ jobs:
           path: target/release/bundle/deb/*.deb
           if-no-files-found: error
 
+  macos:
+    name: App macOS (Tauri, universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Versão do build e assinatura do atualizador
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: echo "{\"version\":\"0.1.${{ github.run_number }}\",\"bundle\":{\"createUpdaterArtifacts\":$HAS_KEY}}" > apps/desktop/src-tauri/ci.conf.json
+      # Um app só que roda em Mac com Apple Silicon (M1+) e Intel.
+      - run: npm run dist:mac -w @line/desktop -- --config src-tauri/ci.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Line-macos
+          path: |
+            target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+
   release:
     name: Publicar download
     # Só na branch principal: cada push vira uma release com os dois instaladores.
     if: github.event_name != 'pull_request'
-    needs: [server, windows, linux]
+    needs: [server, windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -104,12 +136,13 @@ jobs:
             --notes "Instaladores gerados automaticamente a partir de ${{ github.sha }}.
 
           - **Windows**: baixe o \`.exe\` e execute (instala só para o seu usuário).
-          - **Linux (Debian/Ubuntu)**: baixe o \`.deb\` e rode \`sudo apt install ./Line_*_amd64.deb\`."
+          - **Linux (Debian/Ubuntu)**: baixe o \`.deb\` e rode \`sudo apt install ./Line_*_amd64.deb\`.
+          - **macOS**: baixe o \`.dmg\`, arraste o Line para Aplicativos e, na primeira vez, clique com o botão direito em Abrir (o app ainda não é assinado pela Apple)."
 
   updates:
     name: Publicar atualização do app (VPS)
     if: github.event_name != 'pull_request'
-    needs: [server, windows, linux]
+    needs: [server, windows, linux, macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,6 +154,10 @@ jobs:
         with:
           name: Line-linux-deb
           path: deb
+      - uses: actions/download-artifact@v4
+        with:
+          name: Line-macos
+          path: mac
       - name: Enviar instalador e latest.json para useline.tech/updates
         env:
           DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
@@ -136,20 +173,31 @@ jobs:
           jq -n --arg v "$version" --arg sig "$(cat "$exe.sig")" --arg url "https://$HOST/updates/$name" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{version: $v, notes: "Build \($v)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' > latest.json
+          # macOS: o mesmo app universal atende Apple Silicon e Intel.
+          macgz=$(ls mac/*.app.tar.gz | head -n1)
+          macname="Line_${version}_universal.app.tar.gz"
+          if [ -f "$macgz.sig" ]; then
+            jq --arg sig "$(cat "$macgz.sig")" --arg url "https://$HOST/updates/$macname" \
+              '.platforms["darwin-aarch64"] = {signature: $sig, url: $url} | .platforms["darwin-x86_64"] = {signature: $sig, url: $url}' \
+              latest.json > latest.tmp && mv latest.tmp latest.json
+          fi
           cat latest.json
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           # Instalador primeiro; o latest.json por último, para nunca apontar para um arquivo que ainda não chegou.
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/$name"
+          scp -i ~/.ssh/deploy "$macgz" "line-deploy@$HOST:/opt/line/updates/$macname"
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm --"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz | tail -n +4 | xargs -r rm --"
           # Links fixos usados pela aba Downloads do site (useline.tech/#downloads).
           deb=$(ls deb/*.deb | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
+          dmg=$(ls mac/*.dmg | head -n1)
           scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb"
+          scp -i ~/.ssh/deploy "$dmg" "line-deploy@$HOST:/opt/line/updates/latest/Line-macos.dmg.tmp"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb && mv Line-macos.dmg.tmp Line-macos.dmg"
           # Site de apresentação (raiz do useline.tech).
           # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
           scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- O Tauri junta este arquivo ao Info.plist do Line.app (macOS).
+     Sem estas chaves o macOS fecha o app ao pedir microfone ou câmera. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>O Line usa o microfone nas chamadas de voz e vídeo.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>O Line usa a câmera nas chamadas de vídeo.</string>
+</dict>
+</plist>
