@@ -16,9 +16,13 @@ import type {
   UpdateServerInput,
 } from '@line/shared';
 
-/** O Line tem um servidor público só. Em desenvolvimento (porta 3000) usa o servidor local. */
+/**
+ * O Line tem um servidor público só. Em desenvolvimento (porta 3000) usa o servidor local,
+ * a não ser que NEXT_PUBLIC_SERVER_URL diga outro (ex.: https://useline.tech para ver com dados reais).
+ */
 export const DEFAULT_SERVER_URL =
-  typeof window !== 'undefined' && window.location.port === '3000' ? 'http://localhost:4000' : 'https://useline.tech';
+  process.env.NEXT_PUBLIC_SERVER_URL ||
+  (typeof window !== 'undefined' && window.location.port === '3000' ? 'http://localhost:4000' : 'https://useline.tech');
 
 export class ApiError extends Error {
   constructor(
