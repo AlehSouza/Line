@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { AuthScreen } from '@/components/AuthScreen';
+import { ContextMenuHost } from '@/components/ContextMenu';
 import { TitleBar } from '@/components/TitleBar';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { Logo } from '@/components/ui';
@@ -22,6 +23,7 @@ export default function Home() {
       <TitleBar />
       <UpdateBanner />
       <div className="min-h-0 flex-1">{booting ? <Booting /> : token ? <AppShell /> : <AuthScreen />}</div>
+      <ContextMenuHost />
     </div>
   );
 }

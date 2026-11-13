@@ -4,7 +4,8 @@ import { hasPerm, Perm, type Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { actions, permsOf, useLine } from '@/lib/store';
-import { joinVoice, useVoice } from '@/lib/voice';
+import { joinVoice, leaveVoice, useVoice } from '@/lib/voice';
+import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
 import { CallTimer } from './VoiceInvite';
@@ -57,7 +58,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     const Icon = c.type === 'voice' ? Icons.Speaker : Icons.Hash;
     return (
       <div key={c.id}>
-        <div className="group relative">
+        <div className="group relative" onContextMenu={(e) => openContextMenu(e, channelMenu(c, canChannels, hasPerm(perms, Perm.CreateInvite)))}>
           <button
             onClick={() => {
               actions.goServer(serverId, c.id);
@@ -255,6 +256,50 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       </div>
     </div>
   );
+}
+
+/** Clique direito num canal da lista. */
+function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): MenuEntry[] {
+  const s = useLine.getState();
+  const inThis = useVoice.getState().channelId === c.id;
+  return [
+    {
+      label: 'Marcar como lido',
+      icon: <Icons.Check size={15} />,
+      disabled: !s.unread[c.id],
+      onClick: () => actions.markRead(c.id),
+    },
+    c.type === 'voice' &&
+      (inThis
+        ? { label: 'Sair da chamada', icon: <Icons.PhoneOff size={15} />, danger: true, onClick: () => leaveVoice() }
+        : {
+            label: 'Entrar na chamada',
+            icon: <Icons.Phone size={15} />,
+            onClick: () => {
+              actions.goServer(c.serverId!, c.id);
+              return joinVoice(c.id);
+            },
+          }),
+    'sep',
+    canInvite && c.serverId && {
+      label: 'Convidar pessoas',
+      icon: <Icons.UserPlus size={15} />,
+      onClick: () => actions.openModal({ kind: 'invite', serverId: c.serverId! }),
+    },
+    { label: 'Copiar ID do canal', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(c.id) },
+    canChannels && 'sep',
+    canChannels && {
+      label: 'Excluir canal',
+      icon: <Icons.Trash size={15} />,
+      danger: true,
+      onClick: async () => {
+        if (confirm(`Excluir o canal #${c.name}? As mensagens dele serão apagadas.`)) {
+          const { api } = await import('@/lib/api');
+          await api.deleteChannel(c.id);
+        }
+      },
+    },
+  ];
 }
 
 function MenuItem({

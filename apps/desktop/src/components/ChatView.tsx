@@ -2,6 +2,7 @@
 
 import { hasPerm, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
+import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
@@ -410,6 +411,46 @@ function MessageRow({
   return (
     <div
       data-mid={message.id}
+      onContextMenu={(e) => {
+        if (editing) return;
+        const row = e.currentTarget;
+        const startThread = () => {
+          const parent = useLine.getState().channels[message.channelId];
+          const name = (message.content.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+          if (parent) actions.openThreadDraft(parent, message.id, name);
+        };
+        const plain = message.content ? mentionsToText(message.content, serverId) : '';
+        openContextMenu(e, [
+          { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
+          showThreadAction && { label: 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: startThread },
+          mine && {
+            label: 'Editar mensagem',
+            icon: <Icons.Edit size={15} />,
+            onClick: () => {
+              setDraft(plain);
+              onEdit();
+            },
+          },
+          !mine && {
+            label: 'Mencionar autor',
+            icon: <Icons.AtSign size={15} />,
+            onClick: () =>
+              window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${message.author.username} ` })),
+          },
+          'sep',
+          !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(plain) },
+          { label: 'Copiar ID da mensagem', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(message.id) },
+          canDelete && 'sep',
+          canDelete && {
+            label: 'Apagar mensagem',
+            icon: <Icons.Trash size={15} />,
+            danger: true,
+            onClick: async () => {
+              if (confirm('Apagar esta mensagem?')) await api.deleteMessage(message.id);
+            },
+          },
+        ]);
+      }}
       className={cx(
         'group relative flex gap-4 px-4 py-1.5 transition-colors duration-700 hover:bg-black/10',
         !grouped && (tight ? 'mt-2' : 'mt-4'),
@@ -423,7 +464,10 @@ function MessageRow({
             {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         ) : (
-          <button onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}>
+          <button
+            onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
+            onContextMenu={(e) => openContextMenu(e, userMenu(message.author.id, { x: e.clientX, y: e.clientY }, serverId))}
+          >
             <Avatar name={authorName} color={authorColor} src={(useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
           </button>
         )}
@@ -433,6 +477,7 @@ function MessageRow({
           <div className="flex items-baseline gap-2">
             <button
               onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
+              onContextMenu={(e) => openContextMenu(e, userMenu(message.author.id, { x: e.clientX, y: e.clientY }, serverId))}
               className="font-semibold hover:underline"
               style={{ color: nameColor }}
             >
