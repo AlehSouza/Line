@@ -714,6 +714,7 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
       }
       onClose={onClose}
       width={native ? 760 : 480}
+      fixedBody={native}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -725,16 +726,18 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
         </>
       }
     >
-      <div className="space-y-4">
+      {/* Abas e opções ficam paradas; só a lista de janelas/telas rola. */}
+      <div className={cx(native ? 'flex min-h-0 flex-1 flex-col gap-4' : 'space-y-4')}>
         {native && (
-          <div>
-            <div className="mb-3 flex items-center gap-5 border-b border-edge">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-3 flex shrink-0 items-center gap-5 border-b border-edge">
               {tabBtn('apps', 'Aplicativos', Icons.AppWindow)}
               {tabBtn('screens', 'Telas', Icons.Monitor)}
               <button title="Atualizar lista" onClick={load} className="ml-auto mb-2 rounded-md p-1 text-muted hover:bg-hover hover:text-fg">
                 <Icons.Refresh size={16} />
               </button>
             </div>
+            <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
             {!sources ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {Array.from({ length: 6 }, (_, i) => (
@@ -782,9 +785,10 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             )}
+            </div>
           </div>
         )}
-        <div className={cx(native && 'grid gap-4 sm:grid-cols-2')}>
+        <div className={cx(native && 'grid shrink-0 gap-4 sm:grid-cols-2')}>
           <div>
             <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Resolução</p>
             <div className="flex gap-2">
@@ -807,12 +811,17 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         {native && (
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-soft">
-            <input type="checkbox" checked={audio} onChange={(e) => setAudio(e.target.checked)} className="accent-[var(--color-accent)]" />
+          <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-soft">
+            <input
+              type="checkbox"
+              checked={audio}
+              onChange={(e) => setAudio(e.target.checked)}
+              className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+            />
             {tab === 'apps' ? 'Transmitir o som do aplicativo' : 'Transmitir o som do computador (sem o som do Line)'}
           </label>
         )}
-        <p className="text-xs text-muted">
+        <p className="shrink-0 text-xs text-muted">
           Até {(RESOLUTIONS[resolution].kbps[fps] / 1000).toLocaleString('pt-BR')} Mbps para cada pessoa na chamada.
           {resolution === '2160' && ' Em 4K, sua internet de upload e a placa de vídeo precisam aguentar; com muita gente na call, prefira 1440p.'}
         </p>
