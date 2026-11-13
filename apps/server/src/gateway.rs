@@ -111,14 +111,22 @@ impl App {
     // ---------- voz ----------
 
     pub fn leave_voice(&self, q: &Q, user_id: &str) {
-        let state = lock(&self.voice).leave(user_id);
-        if let Some(state) = state {
+        let left = lock(&self.voice).leave(user_id);
+        if let Some((state, cleared)) = left {
             self.to_channel(
                 q,
                 &state.channel_id,
                 "voice:update",
                 &json!({ "userId": user_id, "channelId": state.channel_id, "state": null }),
             );
+            if cleared {
+                self.to_channel(
+                    q,
+                    &state.channel_id,
+                    "voice:status",
+                    &json!({ "channelId": state.channel_id, "status": null }),
+                );
+            }
         }
     }
 
@@ -201,6 +209,13 @@ async fn on_connect(
             .filter(|v| q.can_access(&user_id, &v.channel_id))
             .collect();
         let _ = s.emit("voice:snapshot", &visible);
+        let statuses: serde_json::Map<String, Value> = lock(&app.voice)
+            .statuses()
+            .into_iter()
+            .filter(|(c, _)| q.can_access(&user_id, c))
+            .map(|(c, st)| (c, Value::String(st)))
+            .collect();
+        let _ = s.emit("voice:statuses", &statuses);
     }
 
     s.on("typing:start", typing_start);
@@ -209,6 +224,7 @@ async fn on_connect(
     s.on("voice:leave", voice_leave);
     s.on("voice:state", voice_state);
     s.on("voice:signal", voice_signal);
+    s.on("voice:status", voice_status);
     s.on_disconnect(on_disconnect);
 }
 
@@ -370,6 +386,30 @@ async fn voice_state(
             &state.channel_id,
             "voice:update",
             &json!({ "userId": me, "channelId": state.channel_id, "state": state }),
+        );
+    }
+}
+
+async fn voice_status(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
+    let Ok(d) = d else { return };
+    let (Some(channel_id), Some(status)) = (
+        d.get("channelId").and_then(|c| c.as_str()),
+        d.get("status").and_then(|c| c.as_str()),
+    ) else {
+        return;
+    };
+    let q = app.store.q();
+    let set = lock(&app.voice).set_status(&me, channel_id, status);
+    if let Some(status) = set {
+        app.to_channel(
+            &q,
+            channel_id,
+            "voice:status",
+            &json!({ "channelId": channel_id, "status": status }),
         );
     }
 }

@@ -6,6 +6,9 @@ import { api, configureApi, DEFAULT_SERVER_URL } from './api';
 import { actions, currentChannelId, dmTitle, useLine, type View } from './store';
 import { bindVoiceSocket, unbindVoice } from './voice';
 
+/** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
+const previewContent = (c: string) => c.replace(/^\[\[voz:[\w-]+:[\w-]+:[\w-]+\]\]\s?(.*)$/, '🔊 Convite para a chamada de voz $1');
+
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const STORAGE_URL = 'line.serverUrl';
@@ -271,7 +274,7 @@ function notify(message: Message) {
   }
   window.line?.requestAttention();
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const body = message.content || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
+  const body = (message.content && previewContent(message.content)) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
   const n = new Notification(title, { body: body.slice(0, 200), silent: false });
   n.onclick = () => {
     window.focus();

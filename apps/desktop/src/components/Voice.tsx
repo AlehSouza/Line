@@ -24,6 +24,7 @@ import {
   useVoice,
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select } from './ui';
+import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 
 // ---------- vídeo ----------
 
@@ -721,32 +722,39 @@ export function VoiceBar() {
 
 // ---------- participantes embaixo do canal de voz ----------
 
-export function VoiceChannelMembers({ channelId }: { channelId: string }) {
+export function VoiceChannelMembers({ channelId, serverId }: { channelId: string; serverId?: string }) {
   const states = useVoice((v) => v.states);
   const speaking = useVoice((v) => v.speaking);
+  const myChannel = useVoice((v) => v.channelId);
   const users = useLine((s) => s.users);
   const list = participants(states, channelId);
-  if (!list.length) return null;
+  const canInvite = !!serverId && myChannel === channelId;
+  if (!list.length && !canInvite) return null;
   return (
-    <div className="ml-7 space-y-0.5 pb-1">
+    <div className="ml-6 space-y-1 pt-0.5 pb-2">
+      <VoiceStatusLine channelId={channelId} />
       {list.map((p) => {
         const u = users[p.userId];
         return (
-          <div key={p.userId} className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-soft">
-            <span className={cx('rounded-full', speaking[p.userId] && 'ring-2 ring-accent')}>
-              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={22} />
+          <div key={p.userId} className="flex items-center gap-2.5 rounded-md px-1.5 py-1 text-[15px] text-soft hover:bg-hover">
+            <span className={cx('shrink-0 rounded-full', speaking[p.userId] && 'ring-2 ring-accent')}>
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
             </span>
             <span className="flex-1 truncate">{u?.displayName ?? 'Alguém'}</span>
-            {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
-            {p.cameraStreamId && <Icons.Video size={14} className="text-muted" />}
-            {p.deafened ? (
-              <Icons.HeadphonesOff size={14} className="text-muted" />
-            ) : p.muted ? (
-              <Icons.MicOff size={14} className="text-muted" />
-            ) : null}
+            <span className="flex shrink-0 items-center gap-1.5 text-muted">
+              {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
+              {p.cameraStreamId && <Icons.Video size={15} />}
+              {(p.muted || p.deafened) && (
+                <span title={p.deafened ? 'Microfone e áudio desativados' : 'Microfone desativado'} className="flex items-center gap-1.5">
+                  <Icons.MicOff size={15} />
+                  {p.deafened && <Icons.HeadphonesOff size={15} />}
+                </span>
+              )}
+            </span>
           </div>
         );
       })}
+      {canInvite && <InviteToVoiceItem serverId={serverId} channelId={channelId} />}
     </div>
   );
 }

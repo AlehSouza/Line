@@ -42,6 +42,10 @@ export interface ServerToClientEvents {
   'voice:signal': (payload: { from: string; signal: VoiceSignal }) => void;
   /** Você foi desconectado da voz (ex.: entrou em outro canal por outra janela). */
   'voice:kicked': (payload: { channelId: string }) => void;
+  /** Status temporário dos canais de voz que você pode ver (enviado ao conectar). */
+  'voice:statuses': (statuses: Record<string, string>) => void;
+  /** Status de um canal de voz mudou (null = sumiu, ex.: todos saíram). */
+  'voice:status': (payload: { channelId: string; status: string | null }) => void;
 }
 
 export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; error: string };
@@ -54,4 +58,6 @@ export interface ClientToServerEvents {
   'voice:leave': () => void;
   'voice:state': (patch: Partial<Pick<VoiceState, 'muted' | 'deafened' | 'cameraStreamId' | 'screenStreamId'>>) => void;
   'voice:signal': (payload: { to: string; signal: VoiceSignal }) => void;
+  /** Define o status do canal de voz em que você está ('' limpa). */
+  'voice:status': (payload: { channelId: string; status: string }) => void;
 }

@@ -6,6 +6,7 @@ import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffe
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
+import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
@@ -455,7 +456,9 @@ function MessageRow({
           </div>
         ) : (
           message.content &&
-          (gifFromContent(message.content) ? (
+          (voiceInviteFromContent(message.content) ? (
+            <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
+          ) : gifFromContent(message.content) ? (
             <GifEmbed url={gifFromContent(message.content)!} />
           ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">

@@ -82,6 +82,8 @@ function savePrefs() {
 export interface VoiceStore {
   /** Estados de voz visíveis, por usuário. */
   states: Record<string, VoiceState>;
+  /** Status temporário de cada canal de voz (some quando todos saem). */
+  channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
   channelId: string | null;
   connecting: boolean;
@@ -103,6 +105,7 @@ export interface VoiceStore {
 
 export const useVoice = create<VoiceStore>(() => ({
   states: {},
+  channelStatus: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -168,6 +171,16 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
 
   s.on('voice:signal', ({ from, signal }) => void onSignal(from, signal));
 
+  s.on('voice:statuses', (channelStatus) => setV({ channelStatus }));
+  s.on('voice:status', ({ channelId, status }) =>
+    setV((v) => {
+      const channelStatus = { ...v.channelStatus };
+      if (status) channelStatus[channelId] = status;
+      else delete channelStatus[channelId];
+      return { channelStatus };
+    }),
+  );
+
   s.on('voice:kicked', () => {
     void leaveVoice(false);
   });
@@ -177,7 +190,12 @@ export function unbindVoice() {
   void leaveVoice(false);
   socket = null;
   myId = null;
-  setV({ states: {} });
+  setV({ states: {}, channelStatus: {} });
+}
+
+/** Define o status do canal de voz em que estou ('' limpa). */
+export function setChannelStatus(channelId: string, status: string) {
+  socket?.emit('voice:status', { channelId, status });
 }
 
 // ---------- entrar / sair ----------

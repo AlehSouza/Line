@@ -53,6 +53,8 @@ impl VoicePatch {
 #[derive(Default)]
 pub struct VoiceRegistry {
     by_user: HashMap<String, VoiceEntry>,
+    /// Status temporário de cada canal de voz; some quando o canal esvazia.
+    statuses: HashMap<String, String>,
 }
 
 impl VoiceRegistry {
@@ -107,8 +109,42 @@ impl VoiceRegistry {
         Some(s.clone())
     }
 
-    pub fn leave(&mut self, user_id: &str) -> Option<VoiceState> {
-        self.by_user.remove(user_id).map(|e| e.state)
+    /// Tira o usuário da voz. O bool diz se o canal ficou vazio e perdeu o status.
+    pub fn leave(&mut self, user_id: &str) -> Option<(VoiceState, bool)> {
+        let state = self.by_user.remove(user_id)?.state;
+        let empty = !self
+            .by_user
+            .values()
+            .any(|e| e.state.channel_id == state.channel_id);
+        let cleared = empty && self.statuses.remove(&state.channel_id).is_some();
+        Some((state, cleared))
+    }
+
+    /// Define (ou limpa, com texto vazio) o status do canal. Só quem está no canal pode mexer.
+    pub fn set_status(
+        &mut self,
+        user_id: &str,
+        channel_id: &str,
+        status: &str,
+    ) -> Option<Option<String>> {
+        if self.by_user.get(user_id)?.state.channel_id != channel_id {
+            return None;
+        }
+        let status: String = status.trim().chars().take(100).collect();
+        if status.is_empty() {
+            self.statuses.remove(channel_id);
+            Some(None)
+        } else {
+            self.statuses.insert(channel_id.to_string(), status.clone());
+            Some(Some(status))
+        }
+    }
+
+    pub fn statuses(&self) -> Vec<(String, String)> {
+        self.statuses
+            .iter()
+            .map(|(c, s)| (c.clone(), s.clone()))
+            .collect()
     }
 
     pub fn in_channel(&self, channel_id: &str) -> Vec<VoiceState> {
