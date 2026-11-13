@@ -192,6 +192,19 @@ impl CreatePoll {
     }
 }
 
+/// Reação: um emoji Unicode (pode ter modificadores, ZWJ e bandeiras), sem letras, números ou espaços.
+pub fn reaction_emoji(raw: &str) -> ApiResult<String> {
+    let e = raw.trim();
+    let n = e.chars().count();
+    if n == 0 || n > 16 || e.len() > 64 || e.chars().any(|c| c.is_ascii_alphabetic() || c.is_whitespace() || c.is_control()) {
+        return Err(validation("Emoji inválido"));
+    }
+    if !e.chars().any(|c| (c as u32) >= 0x2000) {
+        return Err(validation("Emoji inválido"));
+    }
+    Ok(e.to_string())
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Vote {

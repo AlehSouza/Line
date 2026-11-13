@@ -145,6 +145,17 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE servers ADD COLUMN icon_id TEXT;
   ALTER TABLE servers ADD COLUMN banner_id TEXT;
 "#,
+    // 8: reações nas mensagens (um emoji Unicode por linha; cada pessoa reage uma vez com cada emoji)
+    r#"
+  CREATE TABLE IF NOT EXISTS message_reactions (
+    message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (message_id, emoji, user_id)
+  );
+  CREATE INDEX IF NOT EXISTS message_reactions_message ON message_reactions(message_id, created_at);
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
