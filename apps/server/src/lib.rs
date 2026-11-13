@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod captcha;
 pub mod gifs;
+pub mod embeds;
 pub mod db;
 pub mod errors;
 pub mod gateway;
@@ -41,6 +42,8 @@ pub struct App {
     pub signups: captcha::SignupLimiter,
     /// Busca de GIFs (GIPHY_API_KEY). Sem a chave, o seletor de GIFs fica indisponível.
     pub giphy: Option<gifs::Giphy>,
+    /// Preview de links do chat (cache em memória).
+    pub embeds: embeds::EmbedCache,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -210,6 +213,7 @@ pub fn build(
         turnstile: captcha::Turnstile::from_env(),
         signups: captcha::SignupLimiter::new(),
         giphy: gifs::Giphy::from_env(),
+        embeds: embeds::EmbedCache::default(),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

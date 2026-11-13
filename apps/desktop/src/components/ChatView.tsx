@@ -8,6 +8,7 @@ import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffe
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
+import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
@@ -518,6 +519,9 @@ function MessageRow({
             </div>
           ))
         )}
+        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && (
+          <LinkPreviews content={message.content} />
+        )}
         <AttachmentList attachments={message.attachments} />
         {message.poll && <PollView message={message} poll={message.poll} />}
         {message.thread && <ThreadChip thread={message.thread} />}
@@ -597,6 +601,7 @@ function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; 
           <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
         </p>
         {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
+        {message.content && !gifFromContent(message.content) && <LinkPreviews content={message.content} />}
         <AttachmentList attachments={message.attachments} compact />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>

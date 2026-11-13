@@ -328,6 +328,7 @@ export const Icons = {
   ZoomOut: icon(L.ZoomOut),
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
+  Play: icon(L.Play),
   Smile: icon(L.Smile),
   SmilePlus: icon(L.SmilePlus),
   EyeOff: icon(L.EyeOff),
