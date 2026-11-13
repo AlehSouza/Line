@@ -161,7 +161,8 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     if (uid === myId) return;
     const mine = getV().channelId;
     if (!mine) return;
-    if (state && state.channelId === mine && !peers.has(uid)) createPeer(uid);
+    // Quem chega é quem abre a conexão (no rejoin). Se os dois lados criassem a conexão ao mesmo tempo,
+    // as ofertas colidiam e a câmera/tela de quem já estava na sala podia nunca chegar ao novato.
     if ((!state || state.channelId !== mine) && peers.has(uid)) closePeer(uid);
   });
 
@@ -482,7 +483,8 @@ function createPeer(peerId: string): Peer {
 
 async function onSignal(from: string, signal: VoiceSignal) {
   const mine = getV().channelId;
-  if (!mine || getV().states[from]?.channelId !== mine) return;
+  // O servidor só repassa sinais entre pessoas do mesmo canal; o estado local pode ainda não ter chegado.
+  if (!mine) return;
   const peer = peers.get(from) ?? createPeer(from);
   const { pc } = peer;
   try {
