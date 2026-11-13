@@ -24,13 +24,19 @@ export function ImageCropper({
   onCancel: () => void;
 }) {
   const frame = FRAMES[kind];
-  const [url] = useState(() => URL.createObjectURL(file));
+  const [url, setUrl] = useState<string | null>(null);
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [off, setOff] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
 
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Cria o link da imagem dentro do efeito: no modo dev o React monta duas vezes e
+  // revogar um link criado fora dele deixava a imagem sem carregar.
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -110,6 +116,7 @@ export function ImageCropper({
             onWheel={(e) => setZoomClamped(zoom - e.deltaY * 0.002)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
+            {url && (
             <img
               src={url}
               alt=""
@@ -118,6 +125,7 @@ export function ImageCropper({
               className="pointer-events-none absolute top-1/2 left-1/2 max-w-none"
               style={{ width: dw || undefined, height: dh || undefined, transform: `translate(calc(-50% + ${off.x}px), calc(-50% + ${off.y}px))`, opacity: img ? 1 : 0 }}
             />
+            )}
             {/* Área de corte: o resto fica escurecido. */}
             <div
               className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-white/90"
