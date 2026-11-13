@@ -35,11 +35,12 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
     setCrop({ file, kind });
   }
   function finish(file: File, kind: 'avatar' | 'banner') {
-    if (kind === 'avatar') void upload(file, setAvatar, () => setAvatarChanged(true));
-    else void upload(file, setBanner, () => setBannerChanged(true));
+    if (kind === 'avatar') void upload(file, avatar, setAvatar, () => setAvatarChanged(true));
+    else void upload(file, banner, setBanner, () => setBannerChanged(true));
   }
 
-  async function upload(file: File, set: (i: Image) => void, mark: () => void) {
+  /** `previous` volta se o envio falhar, para não apagar a foto atual ao salvar. */
+  async function upload(file: File, previous: Image, set: (i: Image) => void, mark: () => void) {
     if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return setError('Escolha uma imagem (PNG, JPG, GIF ou WebP).');
     if (file.size > 8 * 1024 * 1024) return setError('A imagem precisa ter até 8 MB.');
     setError('');
@@ -50,8 +51,8 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
       set({ id: a.id, url: local });
       mark();
     } catch (e) {
-      set({ id: null, url: null });
-      setError((e as Error).message);
+      set(previous);
+      setError(`Não deu para enviar a imagem: ${(e as Error).message}`);
     }
   }
 

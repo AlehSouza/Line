@@ -43,7 +43,9 @@ fi
 export PATH="/root/.cargo/bin:$PATH"
 
 echo "==> Código ($REF)"
-if [ -d "$SRC/.git" ]; then
+if [ "${SKIP_GIT:-}" = "1" ]; then
+  echo "    SKIP_GIT=1: usando o código já enviado para $SRC"
+elif [ -d "$SRC/.git" ]; then
   git -C "$SRC" fetch -q origin "$REF" && git -C "$SRC" checkout -q -B "$REF" FETCH_HEAD
 else
   mkdir -p /opt/line && git clone -q --branch "$REF" "$REPO" "$SRC"
