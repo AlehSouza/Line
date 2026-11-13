@@ -109,6 +109,10 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/channels/{id}/polls", post(create_poll))
         .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
+            "/messages/{id}/reactions/{emoji}",
+            put(add_reaction).delete(remove_reaction),
+        )
+        .route(
             "/attachments",
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
         )
@@ -851,6 +855,37 @@ async fn vote_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) 
     require_access(&q, &message.channel_id, &me)?;
     if !q.toggle_vote(&id, &input.option_id, &me) {
         return Err(bad_request("Opção inválida"));
+    }
+    let message = q.message(&id).unwrap_or(message);
+    app.to_channel(&q, &message.channel_id, "message:update", &message);
+    ok(message)
+}
+
+/// Máximo de emojis diferentes numa mensagem.
+const MAX_REACTION_KINDS: i64 = 20;
+
+async fn add_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String, String)>) -> Res {
+    let emoji = validate::reaction_emoji(&emoji)?;
+    let q = app.store.q();
+    let message = q.message(&id).ok_or_else(|| bad_request("Mensagem não encontrada"))?;
+    require_access(&q, &message.channel_id, &me)?;
+    if !q.has_reaction_emoji(&id, &emoji) && q.reaction_kinds(&id) >= MAX_REACTION_KINDS {
+        return Err(bad_request("Essa mensagem já tem reações demais"));
+    }
+    if !q.add_reaction(&id, &me, &emoji) {
+        return ok(message);
+    }
+    let message = q.message(&id).unwrap_or(message);
+    app.to_channel(&q, &message.channel_id, "message:update", &message);
+    ok(message)
+}
+
+async fn remove_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String, String)>) -> Res {
+    let q = app.store.q();
+    let message = q.message(&id).ok_or_else(|| bad_request("Mensagem não encontrada"))?;
+    require_access(&q, &message.channel_id, &me)?;
+    if !q.remove_reaction(&id, &me, &emoji) {
+        return ok(message);
     }
     let message = q.message(&id).unwrap_or(message);
     app.to_channel(&q, &message.channel_id, "message:update", &message);

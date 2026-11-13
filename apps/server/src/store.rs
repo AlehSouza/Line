@@ -926,6 +926,7 @@ impl Q<'_> {
                     attachments: Vec::new(),
                     thread: None,
                     poll: None,
+                    reactions: Vec::new(),
                 };
                 Ok((user, msg))
             }))
@@ -937,6 +938,7 @@ impl Q<'_> {
                 m.attachments = self.attachments_of(&m.id);
                 m.thread = self.thread_of_message(&m.id);
                 m.poll = self.poll_of(&m.id);
+                m.reactions = self.reactions_of(&m.id);
                 m
             })
             .collect()
@@ -1181,6 +1183,57 @@ impl Q<'_> {
             ok(self.c.execute("INSERT INTO poll_votes (option_id, user_id) VALUES (?, ?)", [option_id, user_id]));
         }
         true
+    }
+
+    // ---------- reações ----------
+
+    fn reactions_of(&self, message_id: &str) -> Vec<Reaction> {
+        let rows: Vec<(String, String)> = ok(self
+            .c
+            .prepare_cached(
+                "SELECT emoji, user_id FROM message_reactions WHERE message_id = ? ORDER BY created_at, rowid",
+            )
+            .and_then(|mut st| st.query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()));
+        let mut out: Vec<Reaction> = Vec::new();
+        for (emoji, user_id) in rows {
+            match out.iter_mut().find(|r| r.emoji == emoji) {
+                Some(r) => r.user_ids.push(user_id),
+                None => out.push(Reaction { emoji, user_ids: vec![user_id] }),
+            }
+        }
+        out
+    }
+
+    /// Quantos emojis diferentes a mensagem já tem.
+    pub fn reaction_kinds(&self, message_id: &str) -> i64 {
+        ok(self.c.query_row(
+            "SELECT COUNT(DISTINCT emoji) FROM message_reactions WHERE message_id = ?",
+            [message_id],
+            |r| r.get(0),
+        ))
+    }
+
+    pub fn has_reaction_emoji(&self, message_id: &str, emoji: &str) -> bool {
+        ok(self.c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM message_reactions WHERE message_id = ? AND emoji = ?)",
+            [message_id, emoji],
+            |r| r.get(0),
+        ))
+    }
+
+    /// Devolve true se mudou algo (já tinha reagido = nada muda).
+    pub fn add_reaction(&self, message_id: &str, user_id: &str, emoji: &str) -> bool {
+        ok(self.c.execute(
+            "INSERT OR IGNORE INTO message_reactions (message_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)",
+            params![message_id, user_id, emoji, now_iso()],
+        )) > 0
+    }
+
+    pub fn remove_reaction(&self, message_id: &str, user_id: &str, emoji: &str) -> bool {
+        ok(self.c.execute(
+            "DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?",
+            [message_id, user_id, emoji],
+        )) > 0
     }
 
     // ---------- threads ----------

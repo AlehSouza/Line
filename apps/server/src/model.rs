@@ -109,6 +109,16 @@ pub struct Message {
     /// Thread que começou nesta mensagem (se houver).
     pub thread: Option<ThreadSummary>,
     pub poll: Option<Poll>,
+    /// Reações agrupadas por emoji, na ordem em que cada emoji apareceu pela primeira vez.
+    pub reactions: Vec<Reaction>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reaction {
+    pub emoji: String,
+    /// Quem reagiu, na ordem em que reagiu.
+    pub user_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
