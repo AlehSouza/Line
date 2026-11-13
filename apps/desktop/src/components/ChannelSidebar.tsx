@@ -4,7 +4,7 @@ import type { Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { actions, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { cx, Icons } from './ui';
+import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
@@ -81,28 +81,6 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           )}
         </div>
         {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} />}
-        {threads[c.id] && (
-          <div className="relative ml-4 border-l border-edge pl-2">
-            {threads[c.id]!.map((t) => {
-              const open = t.id === openThreadId;
-              const tUnread = !!unread[t.id] && !open;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => (open ? actions.closeThread() : actions.openThread(t.id))}
-                  title={t.name}
-                  className={cx(
-                    'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-sm',
-                    open ? 'bg-hover text-fg' : tUnread ? 'font-semibold text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
-                  )}
-                >
-                  <Icons.Thread size={14} className="shrink-0 opacity-70" />
-                  <span className="truncate">{t.name}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     );
   };
@@ -174,7 +152,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
-        {!loaded && <p className="px-2 text-sm text-muted">Carregando…</p>}
+        {!loaded && <ListSkeleton count={8} />}
         {loose.length > 0 && <div className="space-y-0.5">{loose.map(renderChannel)}</div>}
         {categories.map((cat) => (
           <div key={cat.id}>

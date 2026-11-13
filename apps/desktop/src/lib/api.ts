@@ -17,13 +17,12 @@ import type {
 } from '@line/shared';
 
 /**
- * No app desktop o padrão é o servidor embutido. Aberto pelo navegador a partir de um
- * servidor Line (ex.: https://line.seudominio), usa o próprio endereço da página.
+ * O Line tem um servidor público só. Em desenvolvimento (porta 3000) usa o servidor local,
+ * a não ser que NEXT_PUBLIC_SERVER_URL diga outro (ex.: https://useline.tech para ver com dados reais).
  */
 export const DEFAULT_SERVER_URL =
-  typeof window !== 'undefined' && !window.line && /^https?:$/.test(window.location.protocol) && window.location.port !== '3000'
-    ? window.location.origin
-    : 'http://localhost:4000';
+  process.env.NEXT_PUBLIC_SERVER_URL ||
+  (typeof window !== 'undefined' && window.location.port === '3000' ? 'http://localhost:4000' : 'https://useline.tech');
 
 export class ApiError extends Error {
   constructor(
@@ -101,15 +100,31 @@ function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fra
   });
 }
 
+/** GIF do GIPHY, buscado pelo servidor. */
+export interface Gif {
+  id: string;
+  title: string;
+  preview: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
-  register: (username: string, password: string, displayName?: string) =>
-    request<AuthResponse>('POST', '/auth/register', { username, password, displayName }),
+  register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
+    request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),
+  authConfig: () => request<{ turnstileSiteKey: string | null }>('GET', '/auth/config'),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/auth/login', { username, password }),
 
   me: () => request<SelfUser>('GET', '/users/@me'),
   updateMe: (patch: UpdateProfileInput) => request<SelfUser>('PATCH', '/users/@me', patch),
+  updateAccount: (patch: { username?: string; email?: string | null; currentPassword: string }) =>
+    request<SelfUser>('PATCH', '/users/@me/account', patch),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('POST', '/users/@me/password', { currentPassword, newPassword }),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
+  mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
   servers: () => request<Server[]>('GET', '/servers'),
   discover: (q = '') => request<Server[]>('GET', `/servers/discover?q=${enc(q)}`),
@@ -134,12 +149,26 @@ export const api = {
 
   messages: (channelId: string, before?: string, limit = 50) =>
     request<Message[]>('GET', `/channels/${enc(channelId)}/messages?limit=${limit}${before ? `&before=${enc(before)}` : ''}`),
+  messagesAround: (channelId: string, messageId: string) =>
+    request<Message[]>('GET', `/channels/${enc(channelId)}/messages?around=${enc(messageId)}`),
+  search: (params: Record<string, string | undefined>) =>
+    request<Message[]>(
+      'GET',
+      `/search?${Object.entries(params)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}=${enc(v!)}`)
+        .join('&')}`,
+    ),
   sendMessage: (channelId: string, content: string, attachmentIds: string[] = []) =>
     request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds }),
   uploadAttachment,
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),
   createThread: (channelId: string, name: string, messageId?: string) =>
     request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),
+  createPoll: (channelId: string, question: string, options: string[], multi: boolean) =>
+    request<Message>('POST', `/channels/${enc(channelId)}/polls`, { question, options, multi }),
+  votePoll: (messageId: string, optionId: string) =>
+    request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
 
@@ -153,4 +182,8 @@ export const api = {
   addFriend: (username: string) => request<Friend>('POST', '/friends', { username }),
   acceptFriend: (userId: string) => request<Friend>('PUT', `/friends/${enc(userId)}`),
   removeFriend: (userId: string) => request<void>('DELETE', `/friends/${enc(userId)}`),
+  blockUser: (userId: string) => request<Friend>('PUT', `/friends/${enc(userId)}/block`),
+  unblockUser: (userId: string) => request<void>('DELETE', `/friends/${enc(userId)}/block`),
+
+  gifs: (q = '', offset = 0) => request<Gif[]>('GET', `/gifs?q=${enc(q)}&offset=${offset}`),
 };

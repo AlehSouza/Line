@@ -13,6 +13,10 @@
     requestAttention: () => void invoke('request_attention'),
     setBadge: (count) => void invoke('set_badge', { count: Math.max(0, Number(count) || 0) }),
     /** Controles da janela para a barra de título desenhada pela interface. */
+    updates: {
+      check: () => invoke('update_check').then((v) => v || null),
+      install: () => (internals ? internals.invoke('update_install') : Promise.reject(new Error('indisponível'))),
+    },
     window: {
       minimize: () => void invoke('window_minimize'),
       toggleMaximize: () => invoke('window_toggle_maximize'),

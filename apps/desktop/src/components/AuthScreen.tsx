@@ -1,27 +1,51 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { api, configureApi } from '@/lib/api';
 import { authenticate, savedServerUrl } from '@/lib/session';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button, ErrorText, Field, Input, Logo } from './ui';
 
 export function AuthScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
-  const [serverUrl, setServerUrl] = useState(savedServerUrl);
+  const serverUrl = savedServerUrl();
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState('');
+  const [captchaRun, setCaptchaRun] = useState(0);
+
+  useEffect(() => {
+    configureApi({ baseUrl: serverUrl });
+    api.authConfig().then((c) => setSiteKey(c.turnstileSiteKey)).catch(() => {});
+  }, [serverUrl]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [showServer, setShowServer] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    if (mode === 'register' && password !== confirm) {
+      setError('As senhas não são iguais.');
+      return;
+    }
+    if (mode === 'register' && siteKey && !captcha) {
+      setError('Confirme que você não é um robô.');
+      return;
+    }
     setBusy(true);
     try {
-      await authenticate(mode, serverUrl, username, password, displayName || undefined);
+      await authenticate(mode, serverUrl, username, password, displayName || undefined, mode === 'register' ? email.trim() : undefined, mode === 'register' ? captcha || undefined : undefined);
     } catch (err) {
       setError((err as Error).message);
+      // Cada token do captcha vale uma vez só: gera outro para a próxima tentativa.
+      if (mode === 'register' && siteKey) {
+        setCaptcha('');
+        setCaptchaRun((n) => n + 1);
+      }
     } finally {
       setBusy(false);
     }
@@ -65,30 +89,34 @@ export function AuthScreen() {
         </Field>
 
         {mode === 'register' && (
+          <Field label="Email">
+            <Input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@exemplo.com" autoComplete="email" />
+          </Field>
+        )}
+
+        {mode === 'register' && (
           <Field label="Nome de exibição" hint="Como os outros vão te ver. Dá pra mudar depois.">
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="João" />
           </Field>
         )}
 
         <Field label="Senha">
-          <Input
-            required
-            type="password"
+          <PasswordInput
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={setPassword}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           />
         </Field>
 
-        {showServer ? (
-          <Field label="Endereço do servidor" hint="O servidor do Line que você ou seu amigo hospeda.">
-            <Input value={serverUrl} onChange={(e) => setServerUrl(e.target.value)} placeholder="http://localhost:4000" />
+        {mode === 'register' && (
+          <Field label="Confirmar senha">
+            <PasswordInput value={confirm} onChange={setConfirm} autoComplete="new-password" />
+            {confirm && confirm !== password && <p className="mt-1 text-xs text-red-400">As senhas não são iguais.</p>}
           </Field>
-        ) : (
-          <button type="button" onClick={() => setShowServer(true)} className="text-xs text-muted hover:text-fg">
-            Servidor: <span className="font-mono">{serverUrl}</span> (alterar)
-          </button>
         )}
+
+
+        {mode === 'register' && siteKey && <Turnstile key={captchaRun} siteKey={siteKey} onToken={setCaptcha} />}
 
         <ErrorText>{error}</ErrorText>
 
@@ -112,4 +140,82 @@ export function AuthScreen() {
       </form>
     </div>
   );
+}
+
+/** Campo de senha com o botão de olho para mostrar ou esconder o que foi digitado. */
+function PasswordInput({ value, onChange, autoComplete }: { value: string; onChange: (v: string) => void; autoComplete: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        required
+        type={visible ? 'text' : 'password'}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        className="pr-10"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        title={visible ? 'Esconder senha' : 'Mostrar senha'}
+        aria-label={visible ? 'Esconder senha' : 'Mostrar senha'}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted hover:text-fg"
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+}
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+      remove: (id: string) => void;
+    };
+  }
+}
+
+let turnstileScript: Promise<void> | null = null;
+function loadTurnstile() {
+  turnstileScript ??= new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => {
+      turnstileScript = null;
+      reject(new Error('captcha'));
+    };
+    document.head.appendChild(s);
+  });
+  return turnstileScript;
+}
+
+/** Captcha da Cloudflare (Turnstile): na maioria das vezes passa sozinho, sem clicar em nada. */
+function Turnstile({ siteKey, onToken }: { siteKey: string; onToken: (t: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let id: string | null = null;
+    let alive = true;
+    loadTurnstile()
+      .then(() => {
+        if (!alive || !ref.current || !window.turnstile) return;
+        id = window.turnstile.render(ref.current, {
+          sitekey: siteKey,
+          theme: 'dark',
+          language: 'pt-br',
+          callback: (t: string) => onToken(t),
+          'expired-callback': () => onToken(''),
+          'error-callback': () => onToken(''),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      if (id) window.turnstile?.remove(id);
+    };
+  }, [siteKey, onToken]);
+  return <div ref={ref} className="flex min-h-[65px] justify-center" />;
 }

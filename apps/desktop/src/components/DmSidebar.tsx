@@ -67,6 +67,7 @@ export function DmSidebar() {
                   <Avatar
                     name={isGroup ? dmTitle(dm, me?.id, users) : first.displayName}
                     color={isGroup ? '#3a3a42' : first.avatarColor}
+                    src={isGroup ? null : first.avatarUrl}
                     size={32}
                     presence={isGroup ? undefined : (users[first.id]?.presence ?? first.presence)}
                     ring={active ? 'raise' : 'side'}

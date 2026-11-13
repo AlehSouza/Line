@@ -1,9 +1,13 @@
 'use client';
 
+import { ProfileEditor } from './ProfileEditor';
+import { UserCard } from './UserCard';
+
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
-import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
+import { SettingsModal } from './Settings';
+import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
@@ -24,10 +28,14 @@ export function Modals() {
       return <InviteModal serverId={modal.serverId} onClose={close} />;
     case 'profile':
       return <ProfileModal onClose={close} />;
+    case 'settings':
+      return <SettingsModal onClose={close} initial={modal.section} />;
+    case 'create-poll':
+      return <CreatePollModal channelId={modal.channelId} onClose={close} />;
     case 'new-dm':
       return <NewDmModal onClose={close} />;
     case 'user':
-      return <UserModal userId={modal.userId} onClose={close} />;
+      return <UserCard userId={modal.userId} at={modal.at} onClose={close} />;
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
@@ -91,7 +99,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
               <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
             </Field>
             <label className="flex items-center gap-3 text-sm">
-              <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+              <Checkbox checked={isPublic} onChange={setIsPublic} />
               Público (aparece em Explorar para qualquer pessoa entrar)
             </label>
           </>
@@ -256,6 +264,70 @@ function CreateThreadModal({
   );
 }
 
+function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: () => void }) {
+  const [question, setQuestion] = useState('');
+  const [options, setOptions] = useState(['', '']);
+  const [multi, setMulti] = useState(false);
+  const { busy, error, run } = useAction();
+  const filled = options.filter((o) => o.trim()).length;
+  const setOption = (i: number, v: string) => setOptions((list) => list.map((o, j) => (j === i ? v : o)));
+
+  return (
+    <Modal title="Criar enquete" subtitle="Pergunte algo e deixe a galera votar." onClose={onClose} width={480}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            actions.addMessage(await api.createPoll(channelId, question, options, multi));
+            onClose();
+          });
+        }}
+        className="space-y-4"
+      >
+        <Field label="Pergunta">
+          <Input autoFocus required maxLength={300} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Qual jogo hoje?" />
+        </Field>
+        <div className="space-y-2">
+          <span className="block text-xs font-bold tracking-wide text-muted uppercase">Opções</span>
+          {options.map((o, i) => (
+            <div key={i} className="flex gap-2">
+              <Input maxLength={100} value={o} onChange={(e) => setOption(i, e.target.value)} placeholder={`Opção ${i + 1}`} />
+              {options.length > 2 && (
+                <button
+                  type="button"
+                  title="Remover opção"
+                  onClick={() => setOptions((list) => list.filter((_, j) => j !== i))}
+                  className="rounded-md px-2 text-muted hover:bg-hover hover:text-danger"
+                >
+                  <Icons.X size={16} />
+                </button>
+              )}
+            </div>
+          ))}
+          {options.length < 10 && (
+            <button type="button" onClick={() => setOptions((list) => [...list, ''])} className="flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline">
+              <Icons.Plus size={16} /> Adicionar opção
+            </button>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-soft">
+          <Checkbox checked={multi} onChange={setMulti} />
+          Permitir escolher mais de uma opção
+        </label>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={busy || !question.trim() || filled < 2}>
+            Publicar enquete
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function ImageViewer({ url, filename, onClose }: { url: string; filename: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -346,7 +418,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
           <ColorPicker value={color} onChange={setColor} />
         </Field>
         <label className="flex items-center gap-3 text-sm">
-          <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} className="h-4 w-4 accent-[var(--color-accent)]" />
+          <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
         <Field label={`Membros (${Object.keys(members ?? {}).length})`}>
@@ -356,7 +428,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
               if (!u) return null;
               return (
                 <div key={m.userId} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-hover">
-                  <Avatar name={u.displayName} color={u.avatarColor} size={24} />
+                  <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={24} />
                   <span className="flex-1 truncate text-sm">
                     {u.displayName} <span className="text-muted">@{u.username}</span>
                   </span>
@@ -418,76 +490,13 @@ function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => v
 }
 
 function ProfileModal({ onClose }: { onClose: () => void }) {
-  const me = useLine((s) => s.me);
-  const [displayName, setDisplayName] = useState(me?.displayName ?? '');
-  const [bio, setBio] = useState(me?.bio ?? '');
-  const [customStatus, setCustomStatus] = useState(me?.customStatus ?? '');
-  const [color, setColor] = useState(me?.avatarColor ?? COLORS[0]!);
-  const { busy, error, run } = useAction();
-  if (!me) return null;
-
   return (
-    <Modal
-      title="Meu perfil"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                actions.setMe(
-                  await api.updateMe({ displayName, bio, avatarColor: color, customStatus: customStatus.trim() || null }),
-                );
-                onClose();
-              })
-            }
-          >
-            Salvar
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="flex items-center gap-4 rounded-xl bg-rail p-4">
-          <Avatar name={displayName || me.username} color={color} size={64} />
-          <div className="min-w-0">
-            <p className="truncate text-lg font-bold">{displayName || me.username}</p>
-            <p className="text-sm text-muted">@{me.username}</p>
-            {customStatus && <p className="truncate text-sm text-soft">{customStatus}</p>}
-          </div>
-        </div>
-        <Field label="Nome de exibição">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
-        </Field>
-        <Field label="Status personalizado">
-          <Input
-            value={customStatus}
-            onChange={(e) => setCustomStatus(e.target.value)}
-            maxLength={128}
-            placeholder="Jogando, estudando, no rolê…"
-          />
-        </Field>
-        <Field label="Sobre mim">
-          <textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            maxLength={190}
-            rows={3}
-            className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
-          />
-        </Field>
-        <Field label="Cor do avatar">
-          <ColorPicker value={color} onChange={setColor} />
-        </Field>
-        <ErrorText>{error}</ErrorText>
-      </div>
+    <Modal title="Meu perfil" onClose={onClose} width={900}>
+      <ProfileEditor onSaved={onClose} onCancel={onClose} />
     </Modal>
   );
 }
+
 
 function NewDmModal({ onClose }: { onClose: () => void }) {
   const friends = useLine((s) => s.friends);
@@ -530,12 +539,12 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
             const u = users[f.user.id] ?? f.user;
             return (
               <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
-                <Avatar name={u.displayName} color={u.avatarColor} size={32} presence={u.presence} />
+                <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={32} presence={u.presence} />
                 <span className="flex-1">
                   <span className="block text-sm font-medium">{u.displayName}</span>
                   <span className="block text-xs text-muted">@{u.username}</span>
                 </span>
-                <input type="checkbox" checked={selected.includes(u.id)} onChange={() => toggle(u.id)} className="h-4 w-4 accent-[var(--color-accent)]" />
+                <Checkbox checked={selected.includes(u.id)} onChange={() => toggle(u.id)} />
               </label>
             );
           })}
@@ -546,60 +555,6 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
           </Field>
         )}
         <ErrorText>{error}</ErrorText>
-      </div>
-    </Modal>
-  );
-}
-
-function UserModal({ userId, onClose }: { userId: string; onClose: () => void }) {
-  const user = useLine((s) => s.users[userId]);
-  const me = useLine((s) => s.me);
-  const friend = useLine((s) => s.friends[userId]);
-  const { busy, error, run } = useAction();
-  if (!user) return null;
-  const isMe = me?.id === userId;
-
-  return (
-    <Modal title={user.displayName} onClose={onClose} width={380}>
-      <div className="space-y-3">
-        <Avatar name={user.displayName} color={user.avatarColor} size={72} presence={user.presence} />
-        <div>
-          <p className="text-xl font-bold">{user.displayName}</p>
-          <p className="text-sm text-muted">
-            @{user.username} · {presenceLabel[user.presence]}
-          </p>
-        </div>
-        {user.customStatus && <p className="text-sm text-soft">{user.customStatus}</p>}
-        {user.bio && (
-          <div className="rounded-lg bg-rail p-3">
-            <p className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Sobre mim</p>
-            <p className="text-sm whitespace-pre-wrap text-soft">{user.bio}</p>
-          </div>
-        )}
-        <ErrorText>{error}</ErrorText>
-        {!isMe && (
-          <div className="flex gap-2">
-            <Button
-              disabled={busy}
-              className="flex-1"
-              onClick={() =>
-                run(async () => {
-                  const dm = await api.openDm([user.id]);
-                  actions.upsertChannel(dm);
-                  actions.goHome(dm.id);
-                  onClose();
-                })
-              }
-            >
-              Enviar mensagem
-            </Button>
-            {!friend && (
-              <Button variant="subtle" disabled={busy} onClick={() => run(async () => void (await api.addFriend(user.username)))}>
-                Adicionar amigo
-              </Button>
-            )}
-          </div>
-        )}
       </div>
     </Modal>
   );

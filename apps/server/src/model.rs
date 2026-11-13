@@ -11,6 +11,11 @@ pub struct PublicUser {
     pub bio: String,
     pub custom_status: Option<String>,
     pub presence: &'static str,
+    pub avatar_url: Option<String>,
+    pub banner_url: Option<String>,
+    pub pronouns: String,
+    /// O "pensamento": balãozinho ao lado da foto no cartão de perfil.
+    pub thought: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -20,6 +25,7 @@ pub struct SelfUser {
     pub public: PublicUser,
     pub status: String,
     pub created_at: String,
+    pub email: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -98,6 +104,23 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
     /// Thread que começou nesta mensagem (se houver).
     pub thread: Option<ThreadSummary>,
+    pub poll: Option<Poll>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Poll {
+    pub question: String,
+    pub multi: bool,
+    pub options: Vec<PollOption>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PollOption {
+    pub id: String,
+    pub text: String,
+    pub voter_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -118,12 +141,16 @@ pub struct ThreadSummary {
     pub name: String,
     pub message_count: i64,
     pub last_message_at: Option<String>,
+    /// Quem respondeu por último (até 3, mais recente primeiro), para os mini avatares.
+    pub participant_ids: Vec<String>,
+    /// Quantas pessoas diferentes responderam.
+    pub participant_count: i64,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Friend {
     pub user: PublicUser,
-    /// friends | incoming | outgoing
+    /// friends | incoming | outgoing | blocked
     pub state: &'static str,
     pub since: String,
 }

@@ -10,6 +10,7 @@ export const usernameSchema = z
 
 export const registerSchema = z.object({
   username: usernameSchema,
+  email: z.string().trim().email('Digite um email válido').max(254).optional(),
   displayName: z.string().trim().min(1).max(32).optional(),
   password: z.string().min(6, 'A senha precisa ter pelo menos 6 caracteres').max(128),
 });
@@ -25,6 +26,10 @@ export const updateProfileSchema = z.object({
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   customStatus: z.string().max(128).nullable().optional(),
   status: z.enum(['online', 'idle', 'dnd', 'invisible']).optional(),
+  pronouns: z.string().max(40).optional(),
+  thought: z.string().max(80).nullable().optional(),
+  avatarId: z.string().nullable().optional(),
+  bannerId: z.string().nullable().optional(),
 });
 
 export const createServerSchema = z.object({

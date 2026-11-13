@@ -43,7 +43,9 @@ fi
 export PATH="/root/.cargo/bin:$PATH"
 
 echo "==> Código ($REF)"
-if [ -d "$SRC/.git" ]; then
+if [ "${SKIP_GIT:-}" = "1" ]; then
+  echo "    SKIP_GIT=1: usando o código já enviado para $SRC"
+elif [ -d "$SRC/.git" ]; then
   git -C "$SRC" fetch -q origin "$REF" && git -C "$SRC" checkout -q -B "$REF" FETCH_HEAD
 else
   mkdir -p /opt/line && git clone -q --branch "$REF" "$REPO" "$SRC"
@@ -89,6 +91,9 @@ Wants=network-online.target
 User=line
 Group=line
 EnvironmentFile=/etc/line/line.env
+# Opcional, não é sobrescrito pelo script: TURNSTILE_SITE_KEY e TURNSTILE_SECRET (captcha do cadastro).
+EnvironmentFile=-/etc/line/captcha.env
+EnvironmentFile=-/etc/line/giphy.env
 ExecStart=/opt/line/line-server
 Restart=always
 RestartSec=2
@@ -109,9 +114,26 @@ $DOMAIN {
 	request_body {
 		max_size 110MB
 	}
-	reverse_proxy 127.0.0.1:4000
+	# Atualizações do app desktop (o CI envia instalador + latest.json para cá).
+	handle_path /updates/* {
+		header /latest.json Cache-Control "no-cache"
+		root * /opt/line/updates
+		file_server
+	}
+	handle {
+		reverse_proxy 127.0.0.1:4000
+	}
 }
 CADDY
+
+echo "==> Pasta de atualizações do app"
+# Usuário sem privilégios que o CI usa para enviar os arquivos (chave pública em /etc/line/deploy.pub).
+id line-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash line-deploy
+install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates
+if [ -f /etc/line/deploy.pub ]; then
+  install -d -o line-deploy -g line-deploy -m 700 /home/line-deploy/.ssh
+  install -o line-deploy -g line-deploy -m 600 /etc/line/deploy.pub /home/line-deploy/.ssh/authorized_keys
+fi
 
 echo "==> TURN (coturn)"
 cat > /etc/turnserver.conf <<TURN

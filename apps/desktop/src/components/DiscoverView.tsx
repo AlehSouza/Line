@@ -4,7 +4,7 @@ import type { Server } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { actions } from '@/lib/store';
-import { Button, Icons, initials, Input } from './ui';
+import { Button, Icons, initials, Input, Skeleton } from './ui';
 
 export function DiscoverView() {
   const [query, setQuery] = useState('');
@@ -43,6 +43,7 @@ export function DiscoverView() {
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-8">
         {error && <p className="text-danger">{error}</p>}
+        {!servers && !error && Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
         {servers?.length === 0 && <p className="text-muted">Nenhum servidor público encontrado.</p>}
         {servers?.map((s) => (
           <div key={s.id} className="flex flex-col overflow-hidden rounded-xl border border-edge bg-side">

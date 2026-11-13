@@ -1,9 +1,10 @@
 'use client';
 
 import type { PublicUser } from '@line/shared';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { SearchBox, SearchResults } from './SearchPanel';
 import { actions, useLine } from '@/lib/store';
-import { Avatar, cx } from './ui';
+import { Avatar, cx, ListSkeleton } from './ui';
 
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
@@ -30,13 +31,13 @@ export function MemberList({ serverId }: { serverId: string }) {
         {list.map((m) => (
           <button
             key={m.userId}
-            onClick={() => actions.openModal({ kind: 'user', userId: m.userId })}
+            onClick={(e) => actions.openModal({ kind: 'user', userId: m.userId, at: { x: e.clientX, y: e.clientY } })}
             className={cx(
               'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left hover:bg-hover',
               m.user.presence === 'offline' && 'opacity-40 hover:opacity-100',
             )}
           >
-            <Avatar name={m.user.displayName} color={m.user.avatarColor} size={32} presence={m.user.presence} />
+            <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
               <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: m.user.avatarColor }}>
                 {m.nickname ?? m.user.displayName}
@@ -54,9 +55,30 @@ export function MemberList({ serverId }: { serverId: string }) {
     );
 
   return (
-    <aside className="hidden w-60 shrink-0 space-y-5 overflow-y-auto bg-side px-2 py-4 lg:block">
-      {section('Online', online)}
-      {section('Offline', offline)}
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-4">
+      {!members ? (
+        <ListSkeleton count={8} avatar />
+      ) : (
+        <>
+          {section('Online', online)}
+          {section('Offline', offline)}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Coluna da direita do servidor: busca no topo e, embaixo, membros ou resultados. */
+export function ServerSidePanel({ serverId }: { serverId: string }) {
+  const [query, setQuery] = useState<string | null>(null);
+  return (
+    <aside className={cx('hidden shrink-0 flex-col bg-side transition-[width] lg:flex', query ? 'w-[420px]' : 'w-60')}>
+      <div className="flex h-12 shrink-0 items-center border-b border-rail px-2 shadow-sm">
+        <div className="flex-1">
+          <SearchBox serverId={serverId} active={!!query} onSearch={setQuery} onClear={() => setQuery(null)} />
+        </div>
+      </div>
+      {query ? <SearchResults key={query} serverId={serverId} query={query} /> : <MemberList serverId={serverId} />}
     </aside>
   );
 }

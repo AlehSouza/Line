@@ -1,7 +1,11 @@
 'use client';
 
 import type { Presence } from '@line/shared';
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import * as L from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { fileUrl } from '@/lib/api';
+import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function cx(...parts: (string | number | false | null | undefined)[]) {
   return parts.filter((p) => typeof p === 'string' && p).join(' ');
@@ -78,9 +82,11 @@ export function Avatar({
   presence,
   ring = 'side',
   className,
+  src,
 }: {
   name: string;
   color: string;
+  src?: string | null;
   size?: number;
   presence?: Presence;
   ring?: Ring;
@@ -92,7 +98,12 @@ export function Avatar({
         className="flex h-full w-full items-center justify-center rounded-full font-semibold text-rail select-none"
         style={{ background: color, fontSize: size * 0.38 }}
       >
-        {initials(name)}
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={fileUrl(src)} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
+        ) : (
+          initials(name)
+        )}
       </span>
       {presence && (
         <PresenceDot
@@ -197,118 +208,220 @@ export function ErrorText({ children }: { children: ReactNode }) {
 // ---------- ícones (SVG próprios, traço simples) ----------
 
 type IconProps = { size?: number; className?: string };
-const icon = (path: ReactNode) =>
+/** Ícones do Lucide com o mesmo tamanho padrão e traço do app. */
+const icon = (C: LucideIcon) =>
   function Icon({ size = 20, className }: IconProps) {
-    return (
-      <svg
-        width={size}
-        height={size}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={className}
-        aria-hidden
-      >
-        {path}
-      </svg>
-    );
+    return <C size={size} strokeWidth={2} className={className} aria-hidden />;
   };
 
 export const Icons = {
-  Hash: icon(<path d="M5 9h14M5 15h14M10 3 8 21M16 3l-2 18" />),
-  Speaker: icon(
-    <>
-      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-      <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14" />
-    </>,
-  ),
-  Plus: icon(<path d="M12 5v14M5 12h14" />),
-  Compass: icon(
-    <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="m15.5 8.5-2 5-5 2 2-5 5-2Z" />
-    </>,
-  ),
-  Users: icon(
-    <>
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6" />
-    </>,
-  ),
-  Settings: icon(
-    <>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
-    </>,
-  ),
-  Chevron: icon(<path d="m6 9 6 6 6-6" />),
-  X: icon(<path d="M18 6 6 18M6 6l12 12" />),
-  Edit: icon(<path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />),
-  Trash: icon(<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />),
-  Logout: icon(<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />),
-  Link: icon(<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />),
-  Check: icon(<path d="M20 6 9 17l-5-5" />),
-  Message: icon(<path d="M21 12a8 8 0 0 1-11.6 7.1L3 21l1.9-6.4A8 8 0 1 1 21 12Z" />),
-  Search: icon(
-    <>
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </>,
-  ),
-  Mic: icon(
-    <>
-      <rect x="9" y="2" width="6" height="12" rx="3" />
-      <path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8" />
-    </>,
-  ),
-  MicOff: icon(
-    <>
-      <path d="M15 9.3V5a3 3 0 0 0-5.7-1.3M9 9v2a3 3 0 0 0 4.7 2.5M5 10a7 7 0 0 0 11.5 5.4M19 10a7 7 0 0 1-.6 2.8M12 17v4M8 21h8M3 3l18 18" />
-    </>,
-  ),
-  Headphones: icon(<path d="M3 18v-6a9 9 0 0 1 18 0v6M21 19a2 2 0 0 1-2 2h-1v-6h3ZM3 19a2 2 0 0 0 2 2h1v-6H3Z" />),
-  HeadphonesOff: icon(<path d="M3 18v-6a9 9 0 0 1 14.5-7.1M21 12v6M21 19a2 2 0 0 1-2 2h-1v-6h3ZM3 19a2 2 0 0 0 2 2h1v-6H3ZM3 3l18 18" />),
-  Video: icon(
-    <>
-      <rect x="2" y="6" width="14" height="12" rx="2" />
-      <path d="m16 10 6-3v10l-6-3" />
-    </>,
-  ),
-  VideoOff: icon(<path d="M10.7 6H14a2 2 0 0 1 2 2v3.3l1 1 5-2.3v10l-5-2.5M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2M3 3l18 18" />),
-  Screen: icon(
-    <>
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <path d="M8 21h8M12 17v4M12 7v6M9 10l3-3 3 3" />
-    </>,
-  ),
-  Phone: icon(<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z" />),
-  PhoneOff: icon(<path d="M10.7 13.3a16 16 0 0 0 3.3 2.5l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2v3a2 2 0 0 1-2.2 2A19.8 19.8 0 0 1 3.1 4.2 2 2 0 0 1 5.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L9 9.8M22 2 2 22" />),
-  Expand: icon(<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />),
-  Waves: icon(<path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0" />),
-  Signal: icon(<path d="M4 20v-3M9 20v-7M14 20V9M19 20V4" />),
-  Sliders: icon(<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />),
-  Paperclip: icon(<path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" />),
-  Thread: icon(
-    <>
-      <path d="M21 11.5a7.5 7.5 0 0 1-11 6.6L4 20l1.9-5.5A7.5 7.5 0 1 1 21 11.5Z" />
-      <path d="M8.5 10h7M8.5 13.5h4.5" />
-    </>,
-  ),
-  File: icon(
-    <>
-      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
-      <path d="M14 3v6h6" />
-    </>,
-  ),
-  FileText: icon(
-    <>
-      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z" />
-      <path d="M14 3v6h6M8 13h8M8 17h5" />
-    </>,
-  ),
-  Download: icon(<path d="M12 3v12M7 10l5 5 5-5M4 21h16" />),
-  Folder: icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />),
+  Hash: icon(L.Hash),
+  Speaker: icon(L.Volume2),
+  Plus: icon(L.Plus),
+  Compass: icon(L.Compass),
+  Users: icon(L.Users),
+  Settings: icon(L.Settings),
+  Chevron: icon(L.ChevronDown),
+  User: icon(L.User),
+  Reply: icon(L.Reply),
+  X: icon(L.X),
+  Edit: icon(L.Pencil),
+  Trash: icon(L.Trash2),
+  Logout: icon(L.LogOut),
+  Link: icon(L.Link),
+  Check: icon(L.Check),
+  Message: icon(L.MessageCircle),
+  Search: icon(L.Search),
+  Mic: icon(L.Mic),
+  MicOff: icon(L.MicOff),
+  Headphones: icon(L.Headphones),
+  HeadphonesOff: icon(L.HeadphoneOff),
+  Video: icon(L.Video),
+  VideoOff: icon(L.VideoOff),
+  Screen: icon(L.MonitorUp),
+  Phone: icon(L.Phone),
+  PhoneOff: icon(L.PhoneOff),
+  Expand: icon(L.Maximize2),
+  Waves: icon(L.AudioLines),
+  Signal: icon(L.Signal),
+  Sliders: icon(L.SlidersHorizontal),
+  Paperclip: icon(L.Paperclip),
+  Thread: icon(L.MessagesSquare),
+  File: icon(L.File),
+  FileText: icon(L.FileText),
+  Download: icon(L.Download),
+  Folder: icon(L.Folder),
+  Upload: icon(L.Upload),
+  Poll: icon(L.ChartBar),
+  Ban: icon(L.Ban),
+  Camera: icon(L.Camera),
+  AtSign: icon(L.AtSign),
+  UserPlus: icon(L.UserPlus),
+  UserCheck: icon(L.UserCheck),
+  Clock: icon(L.Clock),
+  More: icon(L.Ellipsis),
+  Copy: icon(L.Copy),
+  ArrowLeft: icon(L.ArrowLeft),
+  ZoomIn: icon(L.ZoomIn),
+  ZoomOut: icon(L.ZoomOut),
+  UserMinus: icon(L.UserMinus),
+  Gif: icon(L.ImagePlay),
 };
+
+/** Bloco de carregamento com brilho animado. */
+export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return <div aria-hidden className={cx('skeleton rounded-md', className)} style={style} />;
+}
+
+/** Linhas de mensagem fantasma enquanto o histórico carrega. */
+export function MessageSkeletons({ count = 7 }: { count?: number }) {
+  const widths = [72, 45, 88, 60, 35, 80, 52, 66];
+  return (
+    <div className="space-y-5 px-4 py-4" aria-label="Carregando mensagens">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex gap-4" style={{ opacity: 1 - i * 0.09 }}>
+          <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2 pt-1">
+            <Skeleton className="h-3.5 w-32" />
+            <Skeleton className="h-3.5" style={{ width: `${widths[i % widths.length]}%` }} />
+            {i % 3 === 1 && <Skeleton className="h-28 w-64 rounded-lg" />}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Lista fantasma (canais, membros, conversas). */
+export function ListSkeleton({ count = 6, avatar = false }: { count?: number; avatar?: boolean }) {
+  const widths = [70, 55, 80, 45, 65, 50, 75, 60];
+  return (
+    <div className="space-y-2 px-2 py-1" aria-label="Carregando">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex items-center gap-2.5 px-1 py-1">
+          {avatar ? <Skeleton className="h-8 w-8 shrink-0 rounded-full" /> : <Skeleton className="h-4 w-4 shrink-0 rounded" />}
+          <Skeleton className="h-3.5" style={{ width: `${widths[i % widths.length]}%` }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Select próprio no padrão do app (a lista nativa não dá para estilizar). */
+export function Select({
+  value,
+  onChange,
+  options,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const current = options.find((o) => o.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => button.current && setRect(button.current.getBoundingClientRect());
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!button.current?.contains(t) && !list.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [open]);
+
+  // Abre para cima quando não cabe embaixo.
+  const below = rect ? window.innerHeight - rect.bottom : 0;
+  const up = rect ? below < 260 && rect.top > below : false;
+
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cx(
+          'flex w-full items-center gap-3 rounded-lg border bg-rail py-2 pr-3 pl-3 text-left text-sm text-fg outline-none',
+          open ? 'border-accent' : 'border-edge hover:border-soft/40',
+          className,
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{current?.label ?? ''}</span>
+        <L.ChevronDown size={18} className={cx('shrink-0 text-muted transition-transform', open && 'rotate-180')} aria-hidden />
+      </button>
+      {open &&
+        rect &&
+        createPortal(
+          <div
+            ref={list}
+            role="listbox"
+            className="fixed z-[80] max-h-64 overflow-y-auto rounded-lg border border-edge bg-side p-1 shadow-2xl"
+            style={{ left: rect.left, width: rect.width, ...(up ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }) }}
+          >
+            {options.map((o) => {
+              const active = o.value === value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  onClick={() => {
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  className={cx(
+                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm',
+                    active ? 'bg-accent/15 text-fg' : 'text-soft hover:bg-accent/10 hover:text-fg',
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                  {active && <L.Check size={16} className="shrink-0 text-accent" aria-hidden />}
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+/** Checkbox no estilo do app. Usa um input real escondido, então funciona dentro de <label>. */
+export function Checkbox({ checked, onChange, className }: { checked: boolean; onChange: (checked: boolean) => void; className?: string }) {
+  return (
+    <span className={cx('relative inline-flex h-5 w-5 shrink-0', className)}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer absolute inset-0 cursor-pointer opacity-0" />
+      <span
+        aria-hidden
+        className={cx(
+          'pointer-events-none flex h-5 w-5 items-center justify-center rounded-md border-2 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-accent/60 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-side',
+          checked ? 'border-accent bg-accent text-on-accent' : 'border-edge bg-rail peer-hover:border-soft/50',
+        )}
+      >
+        {checked && <L.Check size={14} strokeWidth={3} />}
+      </span>
+    </span>
+  );
+}

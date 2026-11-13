@@ -8,7 +8,7 @@ import { ChatView, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendsView } from './FriendsView';
-import { MemberList } from './MemberList';
+import { ServerSidePanel } from './MemberList';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
@@ -17,7 +17,9 @@ import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
 export function AppShell() {
   const view = useLine((s) => s.view);
   const connection = useLine((s) => s.connection);
-  const thread = useLine((s) => (s.threadId ? s.channels[s.threadId] : undefined));
+  const thread = useLine((s) =>
+    s.threadId ? s.channels[s.threadId] : s.threadDraft && s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId ? s.threadDraft : undefined,
+  );
   const unreadTotal = useLine((s) => Object.values(s.unread).reduce((a, b) => a + b, 0));
   const channel = useLine((s) =>
     view.kind === 'server' && view.channelId ? s.channels[view.channelId] : view.kind === 'home' && view.dmId ? s.channels[view.dmId] : undefined,
@@ -58,21 +60,29 @@ export function AppShell() {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <ServerRail />
-        <aside className="flex w-60 shrink-0 flex-col bg-side">
-          <div className="min-h-0 flex-1">
-            {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
+        {/* Coluna da esquerda: servidores + canais, com a caixa do usuário embaixo ocupando as duas. */}
+        <div
+          className="flex w-[312px] shrink-0 flex-col"
+          style={{ background: 'linear-gradient(to right, var(--color-rail) 72px, var(--color-side) 72px)' }}
+        >
+          <div className="flex min-h-0 flex-1">
+            <ServerRail />
+            <aside className="flex w-60 shrink-0 flex-col bg-side">
+              <div className="min-h-0 flex-1">
+                {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
+              </div>
+            </aside>
           </div>
           <div className="m-2 mt-1 rounded-xl border border-edge bg-rail shadow-lg">
             <VoiceBar />
             <UserPanel />
           </div>
-        </aside>
+        </div>
         <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
         ) : (
-          view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />
+          view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />
         )}
       </div>
       <Modals />

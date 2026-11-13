@@ -13,11 +13,16 @@ export interface PublicUser {
   bio: string;
   customStatus: string | null;
   presence: Presence;
+  avatarUrl?: string | null;
+  bannerUrl?: string | null;
+  pronouns?: string;
+  thought?: string | null;
 }
 
 export interface SelfUser extends PublicUser {
   status: UserStatus;
   createdAt: string;
+  email?: string | null;
 }
 
 export interface Server {
@@ -74,6 +79,8 @@ export interface ThreadSummary {
   name: string;
   messageCount: number;
   lastMessageAt: string | null;
+  participantIds?: string[];
+  participantCount?: number;
 }
 
 export interface Member {
@@ -93,9 +100,10 @@ export interface Message {
   attachments: Attachment[];
   /** Thread aberta a partir desta mensagem. */
   thread: ThreadSummary | null;
+  poll?: Poll | null;
 }
 
-export type FriendState = 'friends' | 'incoming' | 'outgoing';
+export type FriendState = 'friends' | 'incoming' | 'outgoing' | 'blocked';
 
 export interface Friend {
   user: PublicUser;
@@ -139,3 +147,15 @@ export interface VoiceState {
 export type VoiceSignal =
   | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
   | { type: 'candidate'; candidate: { candidate: string; sdpMid?: string | null; sdpMLineIndex?: number | null; usernameFragment?: string | null } | null };
+
+export interface PollOption {
+  id: string;
+  text: string;
+  voterIds: string[];
+}
+
+export interface Poll {
+  question: string;
+  multi: boolean;
+  options: PollOption[];
+}

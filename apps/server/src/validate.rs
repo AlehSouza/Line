@@ -92,6 +92,10 @@ pub fn channel_name(raw: &str) -> ApiResult<String> {
 #[serde(rename_all = "camelCase")]
 pub struct Register {
     pub username: String,
+    #[serde(default)]
+    pub email: Option<String>,
+    #[serde(default)]
+    pub captcha_token: Option<String>,
     pub display_name: Option<String>,
     pub password: String,
 }
@@ -100,12 +104,98 @@ impl Register {
     pub fn check(mut self) -> ApiResult<Self> {
         self.username = username(&self.username)?;
         self.display_name = self.display_name.as_deref().map(display_name).transpose()?;
+        self.email = optional_email(self.email.as_deref())?;
         if len(&self.password) < 6 {
             return Err(validation("A senha precisa ter pelo menos 6 caracteres"));
         }
         text(&self.password, 6, 128, "A senha")?;
         Ok(self)
     }
+}
+
+/// Email opcional: vazio vira None; o resto precisa ter cara de email. Guardado em minúsculas.
+pub fn optional_email(raw: Option<&str>) -> ApiResult<Option<String>> {
+    match raw.map(str::trim) {
+        None | Some("") => Ok(None),
+        Some(e) => {
+            let e = e.to_lowercase();
+            let valid = e.len() <= 254
+                && !e.contains(char::is_whitespace)
+                && e.split_once('@').is_some_and(|(user, host)| {
+                    !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.')
+                });
+            if !valid {
+                return Err(validation("Digite um email válido"));
+            }
+            Ok(Some(e))
+        }
+    }
+}
+
+/// Trocar nome de usuário ou email: pede a senha atual.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAccount {
+    pub username: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub email: Option<Option<String>>,
+    pub current_password: String,
+}
+
+impl UpdateAccount {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.username = self.username.as_deref().map(username).transpose()?;
+        if let Some(e) = &self.email {
+            self.email = Some(optional_email(e.as_deref())?);
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChangePassword {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+impl ChangePassword {
+    pub fn check(self) -> ApiResult<Self> {
+        if len(&self.new_password) < 6 {
+            return Err(validation("A senha precisa ter pelo menos 6 caracteres"));
+        }
+        text(&self.new_password, 6, 128, "A senha")?;
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CreatePoll {
+    pub question: String,
+    pub options: Vec<String>,
+    #[serde(default)]
+    pub multi: bool,
+}
+
+impl CreatePoll {
+    pub fn check(mut self) -> ApiResult<Self> {
+        self.question = self.question.trim().to_string();
+        text(&self.question, 1, 300, "A pergunta")?;
+        self.options = self.options.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+        if self.options.len() < 2 || self.options.len() > 10 {
+            return Err(validation("A enquete precisa de 2 a 10 opções"));
+        }
+        for o in &self.options {
+            text(o, 1, 100, "A opção")?;
+        }
+        Ok(self)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Vote {
+    pub option_id: String,
 }
 
 #[derive(Deserialize)]
@@ -131,6 +221,13 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "nullable")]
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    pub pronouns: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub thought: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub avatar_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub banner_id: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -147,6 +244,13 @@ impl UpdateProfile {
             && !["online", "idle", "dnd", "invisible"].contains(&s.as_str())
         {
             return Err(validation("Status inválido"));
+        }
+        if let Some(p) = &mut self.pronouns {
+            *p = p.trim().to_string();
+            text(p, 0, 40, "Os pronomes")?;
+        }
+        if let Some(Some(t)) = &self.thought {
+            text(t, 0, 80, "O pensamento")?;
         }
         Ok(self)
     }

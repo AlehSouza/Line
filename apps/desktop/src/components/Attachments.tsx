@@ -4,7 +4,7 @@ import type { Attachment } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
-import { cx, Icons } from './ui';
+import { cx, Icons, Skeleton } from './ui';
 
 export function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -22,18 +22,18 @@ export function attachmentKind(contentType: string, filename = '') {
 }
 
 /** Anexos de uma mensagem: imagens e GIFs, vídeos, áudios, textos com prévia e demais arquivos. */
-export function AttachmentList({ attachments }: { attachments: Attachment[] }) {
+export function AttachmentList({ attachments, compact }: { attachments: Attachment[]; compact?: boolean }) {
   if (!attachments.length) return null;
   return (
     <div className="mt-1 flex flex-col items-start gap-2">
       {attachments.map((a) => (
-        <AttachmentView key={a.id} attachment={a} />
+        <AttachmentView key={a.id} attachment={a} compact={compact} />
       ))}
     </div>
   );
 }
 
-function AttachmentView({ attachment: a }: { attachment: Attachment }) {
+function AttachmentView({ attachment: a, compact }: { attachment: Attachment; compact?: boolean }) {
   const url = fileUrl(a.url);
   switch (attachmentKind(a.contentType, a.filename)) {
     case 'image':
@@ -43,8 +43,7 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={a.filename} loading="lazy" className="block max-h-[350px] max-w-[420px] object-contain" />
+          <LoadingImage src={url} alt={a.filename} compact={compact} />
         </button>
       );
     case 'video':
@@ -53,7 +52,7 @@ function AttachmentView({ attachment: a }: { attachment: Attachment }) {
           src={url}
           controls
           preload="metadata"
-          className="max-h-[360px] w-[520px] max-w-full rounded-lg border border-edge bg-black"
+          className={cx('max-w-full rounded-lg border border-edge bg-black', compact ? 'max-h-[180px] w-[280px]' : 'max-h-[360px] w-[520px]')}
         />
       );
     case 'audio':
@@ -121,7 +120,11 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
         <FileHeader attachment={a} url={url} icon={<Icons.FileText size={24} />} />
       </div>
       {text === null ? (
-        <p className="px-3 py-2 text-xs text-muted">Carregando prévia…</p>
+        <div className="space-y-2 px-3 py-3">
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-3 w-1/2" />
+          <Skeleton className="h-3 w-2/3" />
+        </div>
       ) : text ? (
         <pre className={cx('overflow-x-auto px-3 py-2 font-mono text-[13px] leading-5 text-soft', expanded && 'max-h-[420px] overflow-y-auto')}>
           {shown}
@@ -133,5 +136,24 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
         </button>
       )}
     </div>
+  );
+}
+
+/** Imagem com skeleton animado até carregar. */
+function LoadingImage({ src, alt, compact }: { src: string; alt: string; compact?: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <span className={cx('relative block', !loaded && (compact ? 'h-[120px] w-[200px]' : 'h-[220px] w-[320px]'))}>
+      {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        onError={() => setLoaded(true)}
+        className={cx('block object-contain', compact ? 'max-h-[160px] max-w-[220px]' : 'max-h-[350px] max-w-[420px]', !loaded && 'absolute opacity-0')}
+      />
+    </span>
   );
 }

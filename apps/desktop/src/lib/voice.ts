@@ -161,7 +161,8 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     if (uid === myId) return;
     const mine = getV().channelId;
     if (!mine) return;
-    if (state && state.channelId === mine && !peers.has(uid)) createPeer(uid);
+    // Quem chega é quem abre a conexão (no rejoin). Se os dois lados criassem a conexão ao mesmo tempo,
+    // as ofertas colidiam e a câmera/tela de quem já estava na sala podia nunca chegar ao novato.
     if ((!state || state.channelId !== mine) && peers.has(uid)) closePeer(uid);
   });
 
@@ -228,6 +229,7 @@ async function rejoin(channelId: string) {
 
 export async function leaveVoice(notify = true) {
   if (notify) socket?.emit('voice:leave');
+  if (cameraOpening) cameraCancelled = true;
   cleanupPeers();
   stopStream(getV().camera);
   stopStream(getV().screen);
@@ -364,8 +366,27 @@ export function setScreenQuality(q: ScreenQuality) {
   savePrefs();
 }
 
+// Câmera abrindo (getUserMedia pode demorar): um segundo clique cancela em vez de abrir outra.
+let cameraOpening = false;
+let cameraCancelled = false;
+
+/** Liga a câmera com um stream já aberto (o da prévia), sem abrir o dispositivo de novo. */
+export function startCamera(stream: MediaStream) {
+  if (!getV().channelId || getV().camera) {
+    stopStream(stream);
+    return;
+  }
+  setV({ camera: stream });
+  addStreamToPeers(stream);
+  socket?.emit('voice:state', { cameraStreamId: stream.id });
+}
+
 export async function toggleCamera() {
   const { camera } = getV();
+  if (cameraOpening) {
+    cameraCancelled = true;
+    return;
+  }
   if (camera) {
     removeStreamFromPeers(camera);
     stopStream(camera);
@@ -373,16 +394,25 @@ export async function toggleCamera() {
     socket?.emit('voice:state', { cameraStreamId: null });
     return;
   }
+  cameraOpening = true;
+  cameraCancelled = false;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
       audio: false,
     });
+    // Desligou (ou saiu da chamada) enquanto a câmera abria: solta o dispositivo na hora.
+    if (cameraCancelled || !getV().channelId) {
+      stopStream(stream);
+      return;
+    }
     setV({ camera: stream });
     addStreamToPeers(stream);
     socket?.emit('voice:state', { cameraStreamId: stream.id });
   } catch (err) {
     setV({ error: (err as Error).name === 'NotAllowedError' ? 'Sem permissão para usar a câmera.' : 'Não foi possível abrir a câmera.' });
+  } finally {
+    cameraOpening = false;
   }
 }
 
@@ -404,7 +434,12 @@ export async function toggleScreen(sourceId?: string) {
         frameRate: { ideal: fps, max: fps },
       },
       audio: true,
-    });
+      // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
+      systemAudio: 'include',
+      windowAudio: 'system',
+      // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
+      restrictOwnAudio: true,
+    } as DisplayMediaStreamOptions);
     const video = stream.getVideoTracks()[0];
     // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
     if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
@@ -482,7 +517,8 @@ function createPeer(peerId: string): Peer {
 
 async function onSignal(from: string, signal: VoiceSignal) {
   const mine = getV().channelId;
-  if (!mine || getV().states[from]?.channelId !== mine) return;
+  // O servidor só repassa sinais entre pessoas do mesmo canal; o estado local pode ainda não ter chegado.
+  if (!mine) return;
   const peer = peers.get(from) ?? createPeer(from);
   const { pc } = peer;
   try {

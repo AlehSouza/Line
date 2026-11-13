@@ -1,14 +1,15 @@
 'use client';
 
 import type { Attachment, Channel, Message } from '@line/shared';
-import { Fragment, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
+import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
+import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
-import { Avatar, cx, Icons } from './ui';
+import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
@@ -39,7 +40,7 @@ export function ChatView({ channel }: { channel: Channel }) {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         {isDm ? (
           other ? (
-            <Avatar name={title} color={(users[other.id] ?? other).avatarColor} size={24} presence={(users[other.id] ?? other).presence} ring="main" />
+            <Avatar name={title} color={(users[other.id] ?? other).avatarColor} src={(users[other.id] ?? other).avatarUrl} size={24} presence={(users[other.id] ?? other).presence} ring="main" />
           ) : (
             <Icons.Users size={20} className="text-muted" />
           )
@@ -52,15 +53,6 @@ export function ChatView({ channel }: { channel: Channel }) {
             <span className="mx-2 h-6 w-px bg-edge" />
             <p className="truncate text-sm text-muted">{channel.topic}</p>
           </>
-        )}
-        {channel.type === 'text' && (
-          <button
-            title="Criar thread"
-            onClick={() => actions.openModal({ kind: 'create-thread', channelId: channel.id })}
-            className="ml-auto rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
-          >
-            <Icons.Thread size={20} />
-          </button>
         )}
         {isDm && !inCall && (
           <div className="ml-auto flex gap-1">
@@ -93,7 +85,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
   const drop = useFileDrop((files) => composer.current?.addFiles(files));
   const meId = useLine((s) => s.me?.id);
   const isServerOwner = useLine((s) => (thread.serverId ? s.servers[thread.serverId]?.ownerId === meId : false));
-  const canDelete = isServerOwner || thread.ownerId === meId;
+  const canDelete = !thread.id.startsWith("draft:") && (isServerOwner || thread.ownerId === meId);
 
   useEffect(() => {
     actions.markRead(thread.id);
@@ -103,8 +95,8 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
     <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main" {...drop.handlers}>
       {drop.over && <DropOverlay target={thread.name} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
-        <Icons.Thread size={20} className="shrink-0 text-muted" />
-        <h2 className="truncate font-bold">{thread.name}</h2>
+        <h2 className="font-bold">Conversa</h2>
+        <span className="truncate text-sm text-muted">{thread.name}</span>
         <div className="ml-auto flex gap-1">
           {canDelete && (
             <button
@@ -124,8 +116,11 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
           </button>
         </div>
       </header>
-      <MessageList channel={thread} title={thread.name} />
-      <Composer ref={composer} channel={thread} placeholder={`Responder em ${thread.name}`} />
+      <MessageList
+        channel={thread}
+        title={thread.name}
+        footer={<Composer ref={composer} channel={thread} placeholder="Responder…" />}
+      />
     </aside>
   );
 }
@@ -175,7 +170,7 @@ function useFileDrop(onFiles: (files: File[]) => void) {
   };
 }
 
-function MessageList({ channel, title }: { channel: Channel; title: string }) {
+function MessageList({ channel, title, footer }: { channel: Channel; title: string; footer?: ReactNode }) {
   const bucket = useLine((s) => s.messages[channel.id]);
   const meId = useLine((s) => s.me?.id);
   const myUsername = useLine((s) => s.me?.username);
@@ -213,8 +208,24 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
   useEffect(() => {
     stickToBottom.current = true;
     setError('');
+    if (channel.id.startsWith('draft:')) return;
     loadMessages(channel.id).catch((e) => setError(e.message));
   }, [channel.id]);
+
+  // Pular para uma mensagem (resultado de busca): rola até ela e destaca por um tempo.
+  const highlight = useLine((s) => (s.highlight?.channelId === channel.id ? s.highlight.messageId : null));
+  useEffect(() => {
+    if (!highlight || !items.some((m) => m.id === highlight)) return;
+    stickToBottom.current = false;
+    const t = window.setTimeout(() => {
+      scroller.current?.querySelector(`[data-mid="${highlight}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 60);
+    const clear = window.setTimeout(() => actions.setHighlight(null), 2600);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(clear);
+    };
+  }, [highlight, items]);
 
   // Mantém a rolagem no fim quando chegam mensagens novas, e a posição quando carregamos antigas.
   useLayoutEffect(() => {
@@ -223,7 +234,7 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
     if (loadingOlder.current) {
       el.scrollTop = el.scrollHeight - prevHeight.current;
       loadingOlder.current = false;
-    } else if (stickToBottom.current) {
+    } else if (stickToBottom.current && !useLine.getState().highlight) {
       el.scrollTop = el.scrollHeight;
     }
   }, [items]);
@@ -245,22 +256,32 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
 
   return (
     <div ref={scroller} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto [overflow-anchor:none]">
-      <div ref={content} className="flex min-h-full flex-col justify-end pb-4">
+      <div ref={content} className={cx('flex flex-col', isThread ? 'pb-2' : 'min-h-full justify-end pb-4')}>
         {bucket && !bucket.hasMore && isThread && (
-          <div className="px-4 pt-8 pb-2">
-            <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-raise text-accent">
-              <Icons.Thread size={28} />
-            </div>
-            <h2 className="text-2xl font-bold">{title}</h2>
+          <div className="pt-3">
             {starter ? (
-              <div className="mt-3 rounded-lg border border-edge bg-side/60 p-3">
-                <p className="mb-1 text-xs font-semibold text-muted">Mensagem original de {users[starter.author.id]?.displayName ?? starter.author.displayName}</p>
-                {starter.content && <div className="text-[14px] break-words whitespace-pre-wrap text-soft">{renderMarkdown(starter.content, myUsername)}</div>}
-                <AttachmentList attachments={starter.attachments} />
+              <div className="flex gap-3 px-4 py-1">
+                <Avatar
+                  name={(users[starter.author.id] ?? starter.author).displayName}
+                  color={(users[starter.author.id] ?? starter.author).avatarColor}
+                  src={(users[starter.author.id] ?? starter.author).avatarUrl}
+                  size={36}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-baseline gap-2">
+                    <span className="font-semibold">{(users[starter.author.id] ?? starter.author).displayName}</span>
+                    <span className="text-xs text-muted">{formatTime(starter.createdAt)}</span>
+                  </p>
+                  {starter.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(starter.content, myUsername)}</div>}
+                  <AttachmentList attachments={starter.attachments} compact />
+                </div>
               </div>
             ) : (
-              <p className="mt-1 text-muted">Este é o começo da thread.</p>
+              <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
+            <div className="mt-2 flex justify-end px-4 text-xs text-muted">
+              <span className="shrink-0">{items.length === 1 ? '1 resposta' : `${items.length} respostas`}</span>
+            </div>
           </div>
         )}
         {bucket && !bucket.hasMore && !isThread && (
@@ -276,7 +297,7 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
             </p>
           </div>
         )}
-        {!bucket && !error && <p className="px-4 py-6 text-sm text-muted">Carregando mensagens…</p>}
+        {!bucket && !error && <MessageSkeletons />}
         {error && <p className="px-4 py-6 text-sm text-danger">{error}</p>}
 
         {items.map((m, i) => {
@@ -291,6 +312,7 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
             <Fragment key={m.id}>
               {newDay && <DayDivider date={m.createdAt} />}
               <MessageRow
+                highlighted={highlight === m.id}
                 message={m}
                 authorName={author.displayName}
                 authorColor={author.avatarColor}
@@ -302,11 +324,14 @@ function MessageList({ channel, title }: { channel: Channel; title: string }) {
                 onDoneEditing={() => setEditing(null)}
                 myUsername={myUsername}
                 canThread={channel.type === 'text'}
+                tight={isThread}
               />
             </Fragment>
           );
         })}
       </div>
+      {/* Na thread a caixa de resposta fica logo abaixo da última resposta (e gruda embaixo quando a conversa é longa). */}
+      {footer && <div className="sticky bottom-0 bg-main pt-1">{footer}</div>}
     </div>
   );
 }
@@ -333,6 +358,7 @@ function formatTime(iso: string) {
 }
 
 function MessageRow({
+  highlighted,
   message,
   authorName,
   authorColor,
@@ -344,7 +370,9 @@ function MessageRow({
   onDoneEditing,
   myUsername,
   canThread,
+  tight,
 }: {
+  highlighted?: boolean;
   message: Message;
   authorName: string;
   authorColor: string;
@@ -356,6 +384,7 @@ function MessageRow({
   onDoneEditing: () => void;
   myUsername?: string;
   canThread: boolean;
+  tight?: boolean;
 }) {
   const [draft, setDraft] = useState(message.content);
   const showThreadAction = canThread && !message.thread;
@@ -374,10 +403,12 @@ function MessageRow({
 
   return (
     <div
+      data-mid={message.id}
       className={cx(
-        'group relative flex gap-4 px-4 py-0.5 hover:bg-black/10',
-        !grouped && 'mt-4',
+        'group relative flex gap-4 px-4 py-1.5 transition-colors duration-700 hover:bg-black/10',
+        !grouped && (tight ? 'mt-2' : 'mt-4'),
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
+        highlighted && 'bg-accent/15',
       )}
     >
       <div className="w-10 shrink-0">
@@ -386,8 +417,8 @@ function MessageRow({
             {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
         ) : (
-          <button onClick={() => actions.openModal({ kind: 'user', userId: message.author.id })}>
-            <Avatar name={authorName} color={authorColor} size={40} />
+          <button onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}>
+            <Avatar name={authorName} color={authorColor} src={(useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
           </button>
         )}
       </div>
@@ -395,7 +426,7 @@ function MessageRow({
         {!grouped && (
           <div className="flex items-baseline gap-2">
             <button
-              onClick={() => actions.openModal({ kind: 'user', userId: message.author.id })}
+              onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
               className="font-semibold hover:underline"
               style={{ color: authorColor }}
             >
@@ -423,14 +454,18 @@ function MessageRow({
             <p className="text-xs text-muted">Esc para cancelar · Enter para salvar</p>
           </div>
         ) : (
-          message.content && (
+          message.content &&
+          (gifFromContent(message.content) ? (
+            <GifEmbed url={gifFromContent(message.content)!} />
+          ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
               {renderMarkdown(message.content, myUsername)}
               {message.editedAt && <span className="ml-1 text-[10px] text-muted">(editado)</span>}
             </div>
-          )
+          ))
         )}
         <AttachmentList attachments={message.attachments} />
+        {message.poll && <PollView message={message} poll={message.poll} />}
         {message.thread && <ThreadChip thread={message.thread} />}
       </div>
 
@@ -438,18 +473,15 @@ function MessageRow({
         <div className="absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex">
           {showThreadAction && (
             <button
-              title="Criar thread"
-              onClick={() =>
-                actions.openModal({
-                  kind: 'create-thread',
-                  channelId: message.channelId,
-                  messageId: message.id,
-                  suggestedName: (message.content.split('\n')[0] || message.attachments[0]?.filename || '').slice(0, 60),
-                })
-              }
+              title="Responder"
+              onClick={() => {
+                const parent = useLine.getState().channels[message.channelId];
+                const name = (message.content.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+                if (parent) actions.openThreadDraft(parent, message.id, name);
+              }}
               className="p-1.5 text-muted hover:text-fg"
             >
-              <Icons.Thread size={16} />
+              <Icons.Reply size={16} />
             </button>
           )}
           {mine && (
@@ -474,21 +506,83 @@ function MessageRow({
   );
 }
 
+function PollView({ message, poll }: { message: Message; poll: NonNullable<Message['poll']> }) {
+  const meId = useLine((s) => s.me?.id);
+  const voters = new Set(poll.options.flatMap((o) => o.voterIds));
+  const total = poll.options.reduce((n, o) => n + o.voterIds.length, 0);
+  const vote = (optionId: string) => void api.votePoll(message.id, optionId).then(actions.addMessage).catch((e) => alert(e.message));
+  return (
+    <div className="mt-1 w-full max-w-[440px] rounded-xl border border-edge bg-side/70 p-4">
+      <p className="flex items-center gap-2 font-semibold">
+        <Icons.Poll size={18} className="shrink-0 text-accent" />
+        {poll.question}
+      </p>
+      <p className="mt-0.5 mb-3 text-xs text-muted">{poll.multi ? 'Escolha uma ou mais opções' : 'Escolha uma opção'}</p>
+      <div className="space-y-2">
+        {poll.options.map((o) => {
+          const mine = !!meId && o.voterIds.includes(meId);
+          const pct = total ? Math.round((o.voterIds.length / total) * 100) : 0;
+          return (
+            <button
+              key={o.id}
+              onClick={() => vote(o.id)}
+              className={cx(
+                'relative w-full overflow-hidden rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                mine ? 'border-accent' : 'border-edge hover:border-accent/50',
+              )}
+            >
+              <span className={cx('absolute inset-y-0 left-0 transition-all', mine ? 'bg-accent/30' : 'bg-white/5')} style={{ width: `${pct}%` }} />
+              <span className="relative flex items-center gap-2">
+                <span className={cx('flex h-4 w-4 shrink-0 items-center justify-center border', poll.multi ? 'rounded' : 'rounded-full', mine ? 'border-accent bg-accent text-white' : 'border-muted')}>
+                  {mine && <Icons.Check size={12} />}
+                </span>
+                <span className="flex-1">{o.text}</span>
+                <span className="text-xs text-muted">{o.voterIds.length} · {pct}%</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-xs text-muted">{voters.size === 1 ? '1 pessoa votou' : `${voters.size} pessoas votaram`}</p>
+    </div>
+  );
+}
+
 function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
   const open = useLine((s) => s.threadId === thread.id);
+  const users = useLine((s) => s.users);
   const n = thread.messageCount;
+  const ids = (thread.participantIds ?? []).slice(0, 3);
+  const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
   return (
     <button
       onClick={() => (open ? actions.closeThread() : actions.openThread(thread.id))}
-      className={cx(
-        'mt-1.5 flex max-w-[420px] items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm',
-        open ? 'border-accent/60 bg-accent/10' : 'border-edge bg-side/60 hover:border-accent/40 hover:bg-hover',
-      )}
+      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
     >
-      <Icons.Thread size={16} className="shrink-0 text-accent" />
-      <span className="truncate font-semibold text-fg">{thread.name}</span>
-      <span className="shrink-0 text-xs text-accent">{n === 0 ? 'Sem respostas' : n === 1 ? '1 mensagem' : `${n} mensagens`}</span>
-      {thread.lastMessageAt && n > 0 && <span className="shrink-0 truncate text-xs text-muted">{formatTime(thread.lastMessageAt)}</span>}
+      {ids.length > 0 ? (
+        <span className="flex items-center -space-x-1.5">
+          {ids.map((id) => (
+            <span key={id} className="rounded-full ring-2 ring-main">
+              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} src={users[id]?.avatarUrl} size={22} />
+            </span>
+          ))}
+          {extra > 0 && (
+            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft ring-2 ring-main">
+              +{extra}
+            </span>
+          )}
+        </span>
+      ) : (
+        <Icons.Thread size={18} className="text-accent" />
+      )}
+      <span className="font-semibold text-accent group-hover/thread:underline">
+        {n === 0 ? 'Responder' : n === 1 ? '1 resposta' : `${n} respostas`}
+      </span>
+      {thread.lastMessageAt && n > 0 && (
+        <span className="text-xs text-muted opacity-0 transition-opacity group-hover/thread:opacity-100">
+          Última resposta {formatTime(thread.lastMessageAt)}
+        </span>
+      )}
     </button>
   );
 }
@@ -507,7 +601,7 @@ interface Pending {
 }
 
 const MAX_FILE = 100 * 1024 * 1024;
-const MAX_FILES = 10;
+const MAX_FILES = 5;
 /** Texto colado maior que isso vira um arquivo .txt (como no Discord). */
 const LONG_PASTE = 2000;
 
@@ -515,6 +609,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [menu, setMenu] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [recording, setRecording] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const pendingRef = useRef(pending);
@@ -524,7 +622,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   function addFiles(files: File[]) {
     const room = MAX_FILES - pendingRef.current.length;
-    if (files.length > room) alert(`Dá para enviar até ${MAX_FILES} arquivos por mensagem.`);
+    if (files.length > room) {
+      setNotice(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`);
+      window.setTimeout(() => setNotice(''), 4000);
+    }
     for (const file of files.slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
       const name = file.name || 'arquivo';
@@ -549,6 +650,20 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   }
 
   useImperativeHandle(handle, () => ({ addFiles }));
+
+  /** GIF escolhido vira anexo pendente, para mandar junto com texto (ou sozinho). */
+  async function addGif(url: string, title: string) {
+    try {
+      const res = await fetch(url.replace(/\.webp(\?|$)/, '.gif$1'));
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const name = `${(title || 'gif').replace(/[^\w\- ]+/g, '').trim().slice(0, 40) || 'gif'}.gif`;
+      addFiles([new File([blob], name, { type: blob.type || 'image/gif' })]);
+    } catch {
+      // Sem acesso ao arquivo: manda o link mesmo.
+      void send(url);
+    }
+  }
 
   function remove(key: string) {
     setPending((list) => {
@@ -589,13 +704,23 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const uploading = pending.some((x) => !x.attachment && !x.error);
   const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
 
-  async function send() {
-    const content = text.trim();
-    if ((!content && !ready.length) || sending || uploading) return;
+  async function send(gif?: string) {
+    const content = gif ?? text.trim();
+    if (!gif && ((!content && !ready.length) || uploading)) return;
+    if (sending) return;
     setSending(true);
     try {
-      const message = await api.sendMessage(channel.id, content, ready);
+      // Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela.
+      let target = channel.id;
+      if (channel.id.startsWith('draft:') && channel.parentId) {
+        const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined);
+        actions.upsertChannel(thread);
+        target = thread.id;
+      }
+      const message = await api.sendMessage(target, content, gif ? [] : ready);
       actions.addMessage(message);
+      if (target !== channel.id) actions.openThread(target);
+      if (gif) return;
       setText('');
       setPending((list) => {
         for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
@@ -618,6 +743,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   return (
     <div className="shrink-0 px-4 pb-2">
+      {notice && <p className="mb-1.5 px-1 text-xs font-semibold text-sun">{notice}</p>}
       <div className="rounded-xl bg-raise">
         {pending.length > 0 && (
           <div className="flex gap-2 overflow-x-auto border-b border-edge p-3">
@@ -627,13 +753,27 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           </div>
         )}
         <div className="flex items-end gap-2 px-3 py-2.5">
-        <button
-          title="Anexar arquivo"
-          onClick={() => picker.current?.click()}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-soft hover:text-fg"
-        >
-          <Icons.Plus size={20} />
-        </button>
+        <span className="relative shrink-0">
+          <button
+            title="Mais opções"
+            onClick={() => setMenu((v) => !v)}
+            className={cx('flex h-6 w-6 items-center justify-center rounded-full text-soft transition-transform hover:text-fg', menu && 'rotate-45 text-fg')}
+          >
+            <Icons.Plus size={20} />
+          </button>
+          {menu && (
+            <ComposerMenu
+              onClose={() => setMenu(false)}
+              items={[
+                { icon: <Icons.Upload size={18} />, label: 'Enviar um arquivo', run: () => picker.current?.click() },
+                ...(!channel.id.startsWith('draft:')
+                  ? [{ icon: <Icons.Poll size={18} />, label: 'Criar enquete', run: () => actions.openModal({ kind: 'create-poll', channelId: channel.id }) }]
+                  : []),
+                { icon: <Icons.Mic size={18} />, label: 'Gravar mensagem de voz', run: () => setRecording(true) },
+              ]}
+            />
+          )}
+        </span>
         <input
           ref={picker}
           type="file"
@@ -644,12 +784,21 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             e.target.value = '';
           }}
         />
+        {recording ? (
+          <VoiceRecorder
+            onCancel={() => setRecording(false)}
+            onDone={(file) => {
+              setRecording(false);
+              addFiles([file]);
+            }}
+          />
+        ) : (
         <textarea
           ref={ref}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            if (e.target.value) sendTyping(channel.id);
+            if (e.target.value && !channel.id.startsWith('draft:')) sendTyping(channel.id);
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -659,7 +808,26 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           className="max-h-60 min-h-6 flex-1 resize-none bg-transparent text-[15px] leading-6 outline-none placeholder:text-muted"
           style={{ height: `${Math.min(240, 24 * Math.max(1, text.split('\n').length))}px` }}
         />
+        )}
         {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
+        <span className="relative shrink-0">
+          <button
+            title="GIFs"
+            onClick={() => setGifOpen((v) => !v)}
+            className={cx('flex h-6 items-center text-soft hover:text-fg', gifOpen && 'text-fg')}
+          >
+            <Icons.Gif size={22} />
+          </button>
+          {gifOpen && (
+            <GifPicker
+              onClose={() => setGifOpen(false)}
+              onPick={(g) => {
+                setGifOpen(false);
+                void addGif(g.url, g.title);
+              }}
+            />
+          )}
+        </span>
         </div>
       </div>
       <div className="h-5 px-1 pt-0.5 text-xs text-soft">
@@ -671,6 +839,111 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+function ComposerMenu({ items, onClose }: { items: { icon: ReactNode; label: string; run: () => void }[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.parentElement?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+  return (
+    <div ref={ref} className="absolute bottom-full left-0 z-30 mb-3 w-60 rounded-xl border border-edge bg-rail p-1.5 shadow-2xl">
+      {items.map((it) => (
+        <button
+          key={it.label}
+          onClick={() => {
+            onClose();
+            it.run();
+          }}
+          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium text-soft hover:bg-hover hover:text-fg"
+        >
+          <span className="text-muted">{it.icon}</span>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Grava um áudio com o microfone e devolve como arquivo para anexar. */
+function VoiceRecorder({ onDone, onCancel }: { onDone: (file: File) => void; onCancel: () => void }) {
+  const [seconds, setSeconds] = useState(0);
+  const [error, setError] = useState('');
+  const rec = useRef<MediaRecorder | null>(null);
+  const cancelled = useRef(false);
+
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    const chunks: Blob[] = [];
+    let timer = 0;
+    navigator.mediaDevices
+      .getUserMedia({ audio: { noiseSuppression: true, echoCancellation: true } })
+      .then((s) => {
+        stream = s;
+        const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+        const r = new MediaRecorder(s, type ? { mimeType: type } : undefined);
+        rec.current = r;
+        r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+        r.onstop = () => {
+          stream?.getTracks().forEach((t) => t.stop());
+          if (cancelled.current || !chunks.length) return;
+          const mime = r.mimeType.split(';')[0] || 'audio/webm';
+          const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+          const stamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+          onDone(new File(chunks, `mensagem-de-voz-${stamp}.${ext}`, { type: mime }));
+        };
+        r.start();
+        timer = window.setInterval(() => setSeconds((n) => n + 1), 1000);
+      })
+      .catch(() => setError('Sem acesso ao microfone.'));
+    return () => {
+      window.clearInterval(timer);
+      cancelled.current = true;
+      if (rec.current?.state === 'recording') rec.current.stop();
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const stop = () => {
+    cancelled.current = false;
+    if (rec.current?.state === 'recording') rec.current.stop();
+  };
+  const mm = String(Math.floor(seconds / 60)).padStart(1, '0');
+  const ss = String(seconds % 60).padStart(2, '0');
+
+  return (
+    <div className="flex min-h-6 flex-1 items-center gap-3 text-sm">
+      {error ? (
+        <span className="flex-1 text-danger">{error}</span>
+      ) : (
+        <>
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
+          <span className="font-mono text-soft">
+            {mm}:{ss}
+          </span>
+          <span className="flex-1 text-muted">Gravando mensagem de voz…</span>
+        </>
+      )}
+      <button onClick={onCancel} className="rounded-md px-2 py-0.5 text-muted hover:bg-hover hover:text-fg">
+        Cancelar
+      </button>
+      {!error && (
+        <button onClick={stop} className="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-0.5 font-semibold text-white hover:brightness-110">
+          <Icons.Check size={14} /> Pronto
+        </button>
+      )}
     </div>
   );
 }

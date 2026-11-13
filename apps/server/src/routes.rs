@@ -2,7 +2,7 @@
 use crate::errors::*;
 use crate::gateway::VoiceFilter;
 use crate::model::*;
-use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, ServerPatch};
+use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, SearchFilter, SearchScope, ServerPatch};
 use crate::validate::{self, body};
 use crate::{App, VERSION, auth};
 use axum::body::{Body, Bytes};
@@ -15,7 +15,7 @@ use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::json;
 use socketioxide::layer::SocketIoLayer;
@@ -61,9 +61,15 @@ impl FromRequestParts<Arc<App>> for Me {
 pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
     let api = Router::new()
         .route("/auth/register", post(register))
+        .route("/auth/config", get(auth_config))
         .route("/auth/login", post(login))
         .route("/users/@me", get(get_me).patch(update_me))
+        .route("/users/@me/account", patch(update_account))
+        .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
+        .route("/users/{id}/mutual", get(get_mutual))
+        .route("/search", get(search))
+        .route("/gifs", get(search_gifs))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
         .route(
@@ -99,6 +105,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             axum::routing::patch(edit_message).delete(delete_message),
         )
         .route("/channels/{id}/threads", get(list_threads).post(create_thread))
+        .route("/channels/{id}/polls", post(create_poll))
+        .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
             "/attachments",
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
@@ -111,6 +119,10 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route(
             "/friends/{user_id}",
             put(accept_friend).delete(remove_friend),
+        )
+        .route(
+            "/friends/{user_id}/block",
+            put(block_user).delete(unblock_user),
         );
 
     let cors = CorsLayer::new()
@@ -147,10 +159,50 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
 
 // ---------- auth ----------
 
-async fn register(State(app): S, b: Bytes) -> Res {
+/// O que a tela de login precisa saber antes do cadastro (ex.: chave pública do captcha).
+async fn auth_config(State(app): S) -> Res {
+    Ok(Json(json!({ "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()) })).into_response())
+}
+
+/// GIFs do GIPHY: `?q=` busca, sem `q` devolve os em alta.
+async fn search_gifs(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let Some(giphy) = &app.giphy else {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "GIFS_DISABLED", "GIFs indisponíveis neste servidor."));
+    };
+    let q: String = qs.get("q").map(|s| s.trim().chars().take(50).collect()).unwrap_or_default();
+    let offset = qs.get("offset").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0).min(4900);
+    match giphy.search(&q, offset).await {
+        Ok(list) => Ok(Json(list).into_response()),
+        Err(err) => {
+            tracing::warn!("GIPHY indisponível: {err}");
+            Err(ApiError::new(StatusCode::BAD_GATEWAY, "GIFS_UNAVAILABLE", "Não deu para carregar os GIFs agora."))
+        }
+    }
+}
+
+/// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
+fn client_ip(headers: &HeaderMap) -> Option<String> {
+    let v = headers.get("x-forwarded-for")?.to_str().ok()?;
+    v.split(',').next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+async fn register(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let input = body::<validate::Register>(&b)?.check()?;
+    let ip = client_ip(&headers);
+    if let Some(turnstile) = &app.turnstile {
+        let token = input.captcha_token.as_deref().unwrap_or_default();
+        if token.is_empty() || !turnstile.verify(token, ip.as_deref()).await {
+            return Err(validation("Confirme que você não é um robô."));
+        }
+    }
+    if ip.as_deref().is_some_and(|ip| !app.signups.allow(ip)) {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitas contas criadas daqui. Tente de novo mais tarde."));
+    }
     if app.store.q().user_by_username(&input.username).is_some() {
         return Err(conflict("Esse nome de usuário já está em uso"));
+    }
+    if input.email.as_deref().is_some_and(|e| app.store.q().email_in_use(e)) {
+        return Err(conflict("Esse email já tem uma conta"));
     }
     // scrypt é pesado de propósito: roda fora das threads de rede.
     let password = input.password.clone();
@@ -162,8 +214,12 @@ async fn register(State(app): S, b: Bytes) -> Res {
         if q.user_by_username(&input.username).is_some() {
             return Err(conflict("Esse nome de usuário já está em uso"));
         }
+        if input.email.as_deref().is_some_and(|e| q.email_in_use(e)) {
+            return Err(conflict("Esse email já tem uma conta"));
+        }
         q.create_user(
             &input.username,
+            input.email.as_deref(),
             input.display_name.as_deref().unwrap_or(&input.username),
             &hash,
         )
@@ -208,9 +264,63 @@ async fn get_me(State(app): S, Me(me): Me) -> Res {
     ok(app.store.q().self_user(&me))
 }
 
+/// Confere a senha atual (scrypt fora das threads de rede).
+async fn check_password(app: &App, me: &str, password: String) -> ApiResult<()> {
+    let stored = app.store.q().user_row(me).map(|r| r.password_hash).unwrap_or_default();
+    let valid = tokio::task::spawn_blocking(move || auth::verify_password(&password, &stored))
+        .await
+        .unwrap_or(false);
+    if valid { Ok(()) } else { Err(validation("Senha atual incorreta")) }
+}
+
+async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let input = body::<validate::UpdateAccount>(&b)?.check()?;
+    check_password(&app, &me, input.current_password.clone()).await?;
+    let q = app.store.q();
+    if let Some(name) = &input.username
+        && q.user_by_username(name).is_some_and(|u| u.id != me)
+    {
+        return Err(conflict("Esse nome de usuário já está em uso"));
+    }
+    if let Some(Some(email)) = &input.email
+        && q.user_row(&me).and_then(|u| u.email).as_deref() != Some(email.as_str())
+        && q.email_in_use(email)
+    {
+        return Err(conflict("Esse email já tem uma conta"));
+    }
+    if let Some(name) = &input.username {
+        q.set_username(&me, name);
+    }
+    if let Some(email) = &input.email {
+        q.set_email(&me, email.as_deref());
+    }
+    let user = q.self_user(&me).ok_or_else(|| validation("Conta não encontrada"))?;
+    app.to_user(&me, "self:update", &user);
+    if let Some(public) = q.public_user(&me) {
+        app.to_users(&q.audience_of(&me), "user:update", &public);
+    }
+    ok(user)
+}
+
+async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let input = body::<validate::ChangePassword>(&b)?.check()?;
+    check_password(&app, &me, input.current_password).await?;
+    let password = input.new_password;
+    let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .expect("scrypt");
+    app.store.q().set_password_hash(&me, &hash);
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let p = body::<validate::UpdateProfile>(&b)?.check()?;
     let q = app.store.q();
+    for id in [&p.avatar_id, &p.banner_id].into_iter().flatten().flatten() {
+        if !q.own_image(&me, id) {
+            return Err(bad_request("Imagem inválida"));
+        }
+    }
     let user = q.update_user(
         &me,
         ProfilePatch {
@@ -219,6 +329,10 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             avatar_color: p.avatar_color,
             custom_status: p.custom_status,
             status: p.status,
+            pronouns: p.pronouns,
+            thought: p.thought,
+            avatar_id: p.avatar_id,
+            banner_id: p.banner_id,
         },
     );
     app.to_user(&me, "self:update", &user);
@@ -235,6 +349,62 @@ async fn get_user(State(app): S, Me(_): Me, Path(id): Path<String>) -> Res {
         .q()
         .public_user(&id)
         .ok_or_else(|| not_found("Usuário"))?)
+}
+
+/// Busca de mensagens: `server` ou `channel`, mais `q`, `author`, `in`, `mentions` e `has`.
+async fn search(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let q = app.store.q();
+    let get = |k: &str| qs.get(k).map(|s| s.trim()).filter(|s| !s.is_empty()).map(|s| s.chars().take(100).collect::<String>());
+    let scope = if let Some(server) = get("server") {
+        if !q.is_member(&server, &me) {
+            return Err(not_found("Servidor"));
+        }
+        SearchScope::Server(server)
+    } else if let Some(channel) = get("channel") {
+        SearchScope::Channel(require_access(&q, &channel, &me)?.id)
+    } else {
+        return Err(bad_request("Diga onde buscar"));
+    };
+    let user = |name: Option<String>| -> ApiResult<Option<String>> {
+        match name {
+            None => Ok(None),
+            Some(n) => Ok(Some(
+                q.user_by_username(&n.trim_start_matches('@').to_lowercase())
+                    .ok_or_else(|| not_found(&format!("Usuário \"{n}\"")))?
+                    .id,
+            )),
+        }
+    };
+    let filter = SearchFilter {
+        text: get("q").unwrap_or_default(),
+        author_id: user(get("author"))?,
+        channel_id: get("in"),
+        mentions: get("mentions").map(|m| m.trim_start_matches('@').to_lowercase()),
+        has: get("has"),
+    };
+    let offset = qs.get("offset").and_then(|o| o.parse::<i64>().ok()).unwrap_or(0).min(10_000);
+    ok(q.search_messages(&scope, &filter, offset))
+}
+
+/// Amigos e servidores em comum com outra pessoa (cartão de perfil).
+async fn get_mutual(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    q.public_user(&id).ok_or_else(|| not_found("Usuário"))?;
+    let theirs: std::collections::HashSet<String> = q
+        .friends(&id)
+        .into_iter()
+        .filter(|f| f.state == "friends")
+        .map(|f| f.user.id)
+        .collect();
+    let friends: Vec<PublicUser> = q
+        .friends(&me)
+        .into_iter()
+        .filter(|f| f.state == "friends" && theirs.contains(&f.user.id))
+        .map(|f| f.user)
+        .collect();
+    let their_servers: std::collections::HashSet<String> = q.server_ids_of(&id).into_iter().collect();
+    let servers: Vec<Server> = q.servers_of(&me).into_iter().filter(|s| their_servers.contains(&s.id)).collect();
+    Ok(Json(json!({ "friends": friends, "servers": servers })).into_response())
 }
 
 // ---------- servidores ----------
@@ -570,6 +740,9 @@ async fn list_messages(
         .filter(|l| *l != 0.0 && l.is_finite())
         .unwrap_or(50.0);
     let limit = limit.clamp(1.0, 100.0) as i64;
+    if let Some(around) = qs.get("around").filter(|a| !a.is_empty()) {
+        return ok(q.messages_around(&channel.id, around));
+    }
     let before = qs.get("before").filter(|b| !b.is_empty());
     ok(q.messages(&channel.id, before.map(|s| s.as_str()), limit))
 }
@@ -579,6 +752,11 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     let channel = require_access(&q, &id, &me)?;
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
+    }
+    if channel.kind == "dm"
+        && q.recipient_ids(&channel.id).iter().any(|u| u != &me && q.is_blocked(&me, u))
+    {
+        return Err(bad_request("Não é possível mandar mensagem para essa pessoa"));
     }
     let mut input = body::<validate::SendMessage>(&b)?.check()?;
     // Tira repetidos mantendo a ordem em que a pessoa anexou.
@@ -593,6 +771,36 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         refresh_thread_starter(&app, &q, &channel);
     }
     created(message)
+}
+
+async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<validate::CreatePoll>(&b)?.check()?;
+    let q = app.store.q();
+    let channel = require_access(&q, &id, &me)?;
+    if channel.kind == "voice" {
+        return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
+    }
+    let created_msg = q.create_message(&channel.id, &me, "", &[]);
+    q.create_poll(&created_msg.id, &input.question, &input.options, input.multi);
+    let message = q.message(&created_msg.id).unwrap_or(created_msg);
+    app.to_channel(&q, &channel.id, "message:create", &message);
+    if channel.kind == "thread" {
+        refresh_thread_starter(&app, &q, &channel);
+    }
+    created(message)
+}
+
+async fn vote_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<validate::Vote>(&b)?;
+    let q = app.store.q();
+    let message = q.message(&id).ok_or_else(|| bad_request("Mensagem não encontrada"))?;
+    require_access(&q, &message.channel_id, &me)?;
+    if !q.toggle_vote(&id, &input.option_id, &me) {
+        return Err(bad_request("Opção inválida"));
+    }
+    let message = q.message(&id).unwrap_or(message);
+    app.to_channel(&q, &message.channel_id, "message:update", &message);
+    ok(message)
 }
 
 /// Atualiza o contador de respostas mostrado embaixo da mensagem que abriu a thread.
@@ -877,6 +1085,9 @@ async fn open_dm(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if ids.is_empty() {
         return Err(bad_request("Escolha pelo menos uma outra pessoa"));
     }
+    if ids.len() == 1 && q.is_blocked(&me, &ids[0]) {
+        return Err(bad_request("Não é possível conversar com essa pessoa"));
+    }
     if ids.len() == 1
         && let Some(existing) = q.find_direct_dm(&me, &ids[0])
     {
@@ -939,6 +1150,9 @@ async fn add_friend(State(app): S, Me(me): Me, b: Bytes) -> Res {
         return Err(bad_request("Você não pode adicionar a si mesmo"));
     }
     let result = q.request_friend(&me, &target.id);
+    if matches!(result, FriendRequest::Blocked) {
+        return Err(bad_request("Não foi possível enviar o pedido para essa pessoa"));
+    }
     if matches!(result, FriendRequest::Exists) {
         return Err(conflict("Vocês já são amigos ou o pedido já foi enviado"));
     }
@@ -966,6 +1180,35 @@ async fn remove_friend(State(app): S, Me(me): Me, Path(other): Path<String>) -> 
     }
     app.to_user(&me, "friend:remove", &json!({ "userId": other }));
     app.to_user(&other, "friend:remove", &json!({ "userId": me }));
+    no_content()
+}
+
+async fn block_user(State(app): S, Me(me): Me, Path(other): Path<String>) -> Res {
+    let q = app.store.q();
+    if other == me {
+        return Err(bad_request("Você não pode bloquear a si mesmo"));
+    }
+    q.public_user(&other).ok_or_else(|| not_found("Usuário"))?;
+    let was_friend = q.friend(&me, &other).is_some_and(|f| f.state == "friends");
+    q.block_user(&me, &other);
+    // Para a outra pessoa, a amizade ou o pedido simplesmente some.
+    app.to_user(&other, "friend:remove", &json!({ "userId": me }));
+    if let Some(f) = q.friend(&me, &other) {
+        app.to_user(&me, "friend:update", &f);
+    }
+    if was_friend {
+        app.broadcast_presence(&q, &me);
+        app.broadcast_presence(&q, &other);
+    }
+    ok(q.friend(&me, &other))
+}
+
+async fn unblock_user(State(app): S, Me(me): Me, Path(other): Path<String>) -> Res {
+    let q = app.store.q();
+    if !q.unblock_user(&me, &other) {
+        return Err(not_found("Bloqueio"));
+    }
+    app.to_user(&me, "friend:remove", &json!({ "userId": other }));
     no_content()
 }
 

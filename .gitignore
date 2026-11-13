@@ -13,3 +13,4 @@ apps/server/data/
 target/
 apps/desktop/src-tauri/gen/
 apps/desktop/public/noise/
+apps/desktop/src-tauri/ci.conf.json

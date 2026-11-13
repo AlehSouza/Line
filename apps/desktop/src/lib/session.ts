@@ -3,7 +3,7 @@
 import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/shared';
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
-import { actions, currentChannelId, dmTitle, useLine } from './store';
+import { actions, currentChannelId, dmTitle, useLine, type View } from './store';
 import { bindVoiceSocket, unbindVoice } from './voice';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -37,12 +37,14 @@ const storage = {
 };
 
 export function savedServerUrl() {
-  return storage.get(STORAGE_URL) ?? DEFAULT_SERVER_URL;
+  return DEFAULT_SERVER_URL;
 }
 
 /** Tenta reabrir a sessão salva. Retorna true se conseguiu. */
 export async function restoreSession(): Promise<boolean> {
   const serverUrl = savedServerUrl();
+  // Login feito em outro servidor (antes do useline.tech) não vale aqui: começa do zero.
+  if ((storage.get(STORAGE_URL) ?? serverUrl) !== serverUrl) storage.set(STORAGE_TOKEN, null);
   const token = storage.get(STORAGE_TOKEN);
   useLine.setState({ serverUrl });
   configureApi({ baseUrl: serverUrl, token, onUnauthorized: logout });
@@ -66,12 +68,14 @@ export async function authenticate(
   username: string,
   password: string,
   displayName?: string,
+  email?: string,
+  captchaToken?: string,
 ) {
   let url = serverUrl.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
   // Aceita "10.0.0.5:4000" ou "line.exemplo.com" sem o http(s)://
   if (!/^https?:\/\//i.test(url)) url = `${/^(localhost|\d{1,3}(\.\d{1,3}){3})(:|$)/.test(url) ? 'http' : 'https'}://${url}`;
   configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
-  const res = mode === 'login' ? await api.login(username, password) : await api.register(username, password, displayName);
+  const res = mode === 'login' ? await api.login(username, password) : await api.register(username, password, displayName, email, captchaToken);
   storage.set(STORAGE_URL, url);
   storage.set(STORAGE_TOKEN, res.token);
   configureApi({ token: res.token });
@@ -96,10 +100,30 @@ async function bootstrap() {
   actions.setServers(servers);
   actions.setDms(dms);
   actions.setFriends(friends);
+  restoreView();
   connectSocket();
   setupIdleDetection();
   if (!typingTicker) typingTicker = setInterval(actions.pruneTyping, 2000);
   requestNotificationPermission();
+}
+
+const STORAGE_VIEW = 'line.view';
+let viewSaver: (() => void) | null = null;
+
+/** Volta para o servidor/canal ou conversa privada que estava aberto antes do F5. */
+function restoreView() {
+  try {
+    const saved = JSON.parse(storage.get(STORAGE_VIEW) ?? 'null') as View | null;
+    const s = useLine.getState();
+    if (saved?.kind === 'server' && s.servers[saved.serverId]) actions.goServer(saved.serverId, saved.channelId);
+    else if (saved?.kind === 'home' && saved.dmId && s.channels[saved.dmId]) actions.goHome(saved.dmId);
+    else if (saved?.kind === 'discover') actions.goDiscover();
+  } catch {
+    /* sem lugar salvo */
+  }
+  viewSaver ??= useLine.subscribe((st, prev) => {
+    if (st.view !== prev.view) storage.set(STORAGE_VIEW, JSON.stringify(st.view));
+  });
 }
 
 export async function ensureServerLoaded(serverId: string, force = false) {
@@ -107,6 +131,27 @@ export async function ensureServerLoaded(serverId: string, force = false) {
   const detail = await api.server(serverId);
   actions.upsertServer(detail.server);
   actions.loadServerDetail(serverId, detail.categories, detail.channels, detail.members);
+}
+
+/** Abre o canal (ou a thread) da mensagem e rola até ela. */
+export async function jumpToMessage(message: Message) {
+  const s = useLine.getState();
+  const channel = s.channels[message.channelId];
+  if (!channel) return;
+  const bucket = s.messages[channel.id];
+  if (!bucket?.items.some((m) => m.id === message.id)) {
+    const items = await api.messagesAround(channel.id, message.id);
+    actions.setMessages(channel.id, items, true);
+  }
+  if (channel.type === 'thread' && channel.parentId && channel.serverId) {
+    actions.goServer(channel.serverId, channel.parentId);
+    actions.openThread(channel.id);
+  } else if (channel.serverId) {
+    actions.goServer(channel.serverId, channel.id);
+  } else {
+    actions.goHome(channel.id);
+  }
+  actions.setHighlight({ channelId: channel.id, messageId: message.id });
 }
 
 export async function loadMessages(channelId: string, older = false) {
@@ -274,6 +319,10 @@ declare global {
         toggleMaximize: () => Promise<boolean>;
         isMaximized: () => Promise<boolean>;
         close: () => void;
+      };
+      updates?: {
+        check: () => Promise<string | null>;
+        install: () => Promise<void>;
       };
       getScreenSources?: () => Promise<{ id: string; name: string; thumbnail: string; isScreen: boolean }[]>;
       selectScreenSource?: (id: string) => Promise<void>;

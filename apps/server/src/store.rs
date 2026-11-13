@@ -52,6 +52,12 @@ pub struct UserRow {
     pub custom_status: Option<String>,
     pub status: String,
     pub created_at: String,
+    /// Só vem nas consultas da própria tabela users (as junções não trazem).
+    pub email: Option<String>,
+    pub avatar_id: Option<String>,
+    pub banner_id: Option<String>,
+    pub pronouns: String,
+    pub thought: Option<String>,
 }
 
 impl UserRow {
@@ -66,11 +72,16 @@ impl UserRow {
             custom_status: r.get("custom_status")?,
             status: r.get("status")?,
             created_at: r.get("created_at")?,
+            email: r.get::<_, Option<String>>("email").unwrap_or(None),
+            avatar_id: r.get("avatar_id").unwrap_or(None),
+            banner_id: r.get("banner_id").unwrap_or(None),
+            pronouns: r.get("pronouns").unwrap_or_default(),
+            thought: r.get("thought").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count FROM servers s";
 
 fn message_select() -> String {
@@ -162,6 +173,10 @@ pub struct ProfilePatch {
     pub avatar_color: Option<String>,
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    pub pronouns: Option<String>,
+    pub thought: Option<Option<String>>,
+    pub avatar_id: Option<Option<String>>,
+    pub banner_id: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -180,10 +195,26 @@ pub struct ChannelPatch {
     pub position: Option<i64>,
 }
 
+pub enum SearchScope {
+    Server(String),
+    Channel(String),
+}
+
+#[derive(Default)]
+pub struct SearchFilter {
+    pub text: String,
+    pub author_id: Option<String>,
+    pub channel_id: Option<String>,
+    pub mentions: Option<String>,
+    pub has: Option<String>,
+}
+
 pub enum FriendRequest {
     Created,
     Accepted,
     Exists,
+    /// Uma das duas pessoas bloqueou a outra.
+    Blocked,
 }
 
 pub struct Q<'a> {
@@ -214,7 +245,7 @@ impl Q<'_> {
 
     // ---------- usuários ----------
 
-    fn user_row(&self, id: &str) -> Option<UserRow> {
+    pub fn user_row(&self, id: &str) -> Option<UserRow> {
         ok(self
             .c
             .query_row("SELECT * FROM users WHERE id = ?", [id], UserRow::from_row)
@@ -251,7 +282,28 @@ impl Q<'_> {
                 row.custom_status.clone()
             },
             presence,
+            avatar_url: row.avatar_id.as_deref().map(|id| self.profile_image_url(id)),
+            banner_url: row.banner_id.as_deref().map(|id| self.profile_image_url(id)),
+            pronouns: row.pronouns.clone(),
+            thought: if presence == "offline" { None } else { row.thought.clone() },
         }
+    }
+
+    fn profile_image_url(&self, attachment_id: &str) -> String {
+        self.attachment(attachment_id).map(|a| a.url).unwrap_or_default()
+    }
+
+    /// Imagem enviada por esta pessoa que pode virar foto ou banner do perfil.
+    pub fn own_image(&self, user_id: &str, attachment_id: &str) -> bool {
+        ok(self
+            .c
+            .query_row(
+                "SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ? AND content_type LIKE 'image/%' AND content_type != 'image/svg+xml'",
+                [attachment_id, user_id],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some()
     }
 
     pub fn to_self_user(&self, row: &UserRow) -> SelfUser {
@@ -261,7 +313,20 @@ impl Q<'_> {
             public,
             status: row.status.clone(),
             created_at: row.created_at.clone(),
+            email: row.email.clone(),
         }
+    }
+
+    pub fn set_username(&self, id: &str, username: &str) {
+        ok(self.c.execute("UPDATE users SET username = ? WHERE id = ?", params![username, id]));
+    }
+
+    pub fn set_email(&self, id: &str, email: Option<&str>) {
+        ok(self.c.execute("UPDATE users SET email = ? WHERE id = ?", params![email, id]));
+    }
+
+    pub fn set_password_hash(&self, id: &str, hash: &str) {
+        ok(self.c.execute("UPDATE users SET password_hash = ? WHERE id = ?", params![hash, id]));
     }
 
     pub fn public_user(&self, id: &str) -> Option<PublicUser> {
@@ -278,11 +343,19 @@ impl Q<'_> {
             .unwrap_or_else(|| "online".into())
     }
 
-    pub fn create_user(&self, username: &str, display_name: &str, password_hash: &str) -> SelfUser {
+    pub fn email_in_use(&self, email: &str) -> bool {
+        ok(self
+            .c
+            .query_row("SELECT 1 FROM users WHERE email = ?", [email], |_| Ok(()))
+            .optional())
+        .is_some()
+    }
+
+    pub fn create_user(&self, username: &str, email: Option<&str>, display_name: &str, password_hash: &str) -> SelfUser {
         let id = new_id();
         ok(self.c.execute(
-            "INSERT INTO users (id, username, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            params![id, username, display_name, password_hash, random_color(), now_iso()],
+            "INSERT INTO users (id, username, email, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![id, username, email, display_name, password_hash, random_color(), now_iso()],
         ));
         self.self_user(&id).unwrap()
     }
@@ -313,6 +386,19 @@ impl Q<'_> {
         }
         if let Some(v) = patch.status {
             set("status", v.into());
+        }
+        if let Some(v) = patch.pronouns {
+            set("pronouns", v.into());
+        }
+        let opt = |v: Option<String>| v.filter(|s| !s.is_empty()).map(Value::from).unwrap_or(Value::Null);
+        if let Some(v) = patch.thought {
+            set("thought", opt(v));
+        }
+        if let Some(v) = patch.avatar_id {
+            set("avatar_id", opt(v));
+        }
+        if let Some(v) = patch.banner_id {
+            set("banner_id", opt(v));
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());
@@ -742,12 +828,17 @@ impl Q<'_> {
                         bio: String::new(),
                         custom_status: None,
                         presence: "offline",
+                        avatar_url: None,
+                        banner_url: None,
+                        pronouns: String::new(),
+                        thought: None,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,
                     edited_at: r.get("edited_at")?,
                     attachments: Vec::new(),
                     thread: None,
+                    poll: None,
                 };
                 Ok((user, msg))
             }))
@@ -758,6 +849,7 @@ impl Q<'_> {
                 m.author = self.to_public_user(&u);
                 m.attachments = self.attachments_of(&m.id);
                 m.thread = self.thread_of_message(&m.id);
+                m.poll = self.poll_of(&m.id);
                 m
             })
             .collect()
@@ -788,6 +880,69 @@ impl Q<'_> {
         };
         rows.reverse();
         rows
+    }
+
+    /// Mensagens em volta de uma (para pular até ela): 25 antes e até 500 depois.
+    pub fn messages_around(&self, channel_id: &str, around: &str) -> Vec<Message> {
+        let mut before = self.message_rows(
+            &format!("{} WHERE m.channel_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT 25", message_select()),
+            params![channel_id, around],
+        );
+        before.reverse();
+        let after = self.message_rows(
+            &format!("{} WHERE m.channel_id = ? AND m.id >= ? ORDER BY m.id ASC LIMIT 500", message_select()),
+            params![channel_id, around],
+        );
+        before.extend(after);
+        before
+    }
+
+    /// Busca nas mensagens de um servidor (canais e threads) ou de uma conversa.
+    pub fn search_messages(&self, scope: &SearchScope, f: &SearchFilter, offset: i64) -> Vec<Message> {
+        let mut sql = format!("{} WHERE ", message_select());
+        let mut args: Vec<String> = Vec::new();
+        match scope {
+            SearchScope::Server(id) => {
+                sql.push_str(
+                    "m.channel_id IN (SELECT id FROM channels WHERE type != 'voice' AND (server_id = ? OR parent_id IN (SELECT id FROM channels WHERE server_id = ?)))",
+                );
+                args.push(id.clone());
+                args.push(id.clone());
+            }
+            SearchScope::Channel(id) => {
+                sql.push_str("m.channel_id = ?");
+                args.push(id.clone());
+            }
+        }
+        let like = |t: &str| format!("%{}%", t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        for word in f.text.split_whitespace().take(8) {
+            sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
+            args.push(like(word));
+        }
+        if let Some(a) = &f.author_id {
+            sql.push_str(" AND m.author_id = ?");
+            args.push(a.clone());
+        }
+        if let Some(c) = &f.channel_id {
+            sql.push_str(" AND (m.channel_id = ? OR m.channel_id IN (SELECT id FROM channels WHERE parent_id = ?))");
+            args.push(c.clone());
+            args.push(c.clone());
+        }
+        if let Some(u) = &f.mentions {
+            sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
+            args.push(like(&format!("@{u}")));
+        }
+        match f.has.as_deref() {
+            Some("link") => sql.push_str(" AND (m.content LIKE '%http://%' OR m.content LIKE '%https://%')"),
+            Some("anexo") => sql.push_str(" AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)"),
+            Some("imagem") => sql.push_str(" AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.content_type LIKE 'image/%')"),
+            Some("arquivo") => sql.push_str(
+                " AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.content_type NOT LIKE 'image/%' AND a.content_type NOT LIKE 'video/%')",
+            ),
+            _ => {}
+        }
+        sql.push_str(&format!(" ORDER BY m.id DESC LIMIT 25 OFFSET {}", offset.max(0)));
+        self.message_rows(&sql, rusqlite::params_from_iter(args))
     }
 
     pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str, attachment_ids: &[String]) -> Message {
@@ -861,11 +1016,78 @@ impl Q<'_> {
     /// Anexos enviados mas nunca colocados numa mensagem.
     pub fn prune_unused_attachments(&self) {
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        ok(self.c.execute("DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?", [cutoff]));
+        ok(self.c.execute(
+            "DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?
+             AND id NOT IN (SELECT avatar_id FROM users WHERE avatar_id IS NOT NULL)
+             AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)",
+            [cutoff],
+        ));
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
         self.ids("SELECT id FROM attachments WHERE message_id = ?", [message_id])
+    }
+
+    // ---------- enquetes ----------
+
+    pub fn create_poll(&self, message_id: &str, question: &str, options: &[String], multi: bool) {
+        ok(self.c.execute(
+            "INSERT INTO polls (message_id, question, multi) VALUES (?, ?, ?)",
+            params![message_id, question, multi as i64],
+        ));
+        for (i, text) in options.iter().enumerate() {
+            ok(self.c.execute(
+                "INSERT INTO poll_options (id, message_id, position, text) VALUES (?, ?, ?, ?)",
+                params![new_id(), message_id, i as i64, text],
+            ));
+        }
+    }
+
+    fn poll_of(&self, message_id: &str) -> Option<Poll> {
+        let (question, multi): (String, i64) = ok(self
+            .c
+            .query_row("SELECT question, multi FROM polls WHERE message_id = ?", [message_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional())?;
+        let opts: Vec<(String, String)> = ok(self
+            .c
+            .prepare_cached("SELECT id, text FROM poll_options WHERE message_id = ? ORDER BY position")
+            .and_then(|mut st| st.query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()));
+        let options = opts
+            .into_iter()
+            .map(|(id, text)| {
+                let voter_ids = ok(self
+                    .c
+                    .prepare_cached("SELECT user_id FROM poll_votes WHERE option_id = ?")
+                    .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect()));
+                PollOption { id, text, voter_ids }
+            })
+            .collect();
+        Some(Poll { question, multi: multi != 0, options })
+    }
+
+    /// Marca ou desmarca o voto. Em enquete de escolha única, trocar de opção tira o voto anterior.
+    /// Devolve false se a opção não for dessa enquete.
+    pub fn toggle_vote(&self, message_id: &str, option_id: &str, user_id: &str) -> bool {
+        let multi: Option<i64> = ok(self
+            .c
+            .query_row(
+                "SELECT p.multi FROM poll_options o JOIN polls p ON p.message_id = o.message_id WHERE o.id = ? AND o.message_id = ?",
+                [option_id, message_id],
+                |r| r.get(0),
+            )
+            .optional());
+        let Some(multi) = multi else { return false };
+        let removed = ok(self.c.execute("DELETE FROM poll_votes WHERE option_id = ? AND user_id = ?", [option_id, user_id]));
+        if removed == 0 {
+            if multi == 0 {
+                ok(self.c.execute(
+                    "DELETE FROM poll_votes WHERE user_id = ? AND option_id IN (SELECT id FROM poll_options WHERE message_id = ?)",
+                    [user_id, message_id],
+                ));
+            }
+            ok(self.c.execute("INSERT INTO poll_votes (option_id, user_id) VALUES (?, ?)", [option_id, user_id]));
+        }
+        true
     }
 
     // ---------- threads ----------
@@ -884,7 +1106,18 @@ impl Q<'_> {
             )
             .optional());
         let (id, name, last_message_at) = row?;
-        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at })
+        let participant_ids = ok(self
+            .c
+            .prepare_cached(
+                "SELECT author_id FROM messages WHERE channel_id = ? GROUP BY author_id ORDER BY MAX(created_at) DESC LIMIT 3",
+            )
+            .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()));
+        let participant_count: i64 = ok(self.c.query_row(
+            "SELECT COUNT(DISTINCT author_id) FROM messages WHERE channel_id = ?",
+            [&id],
+            |r| r.get(0),
+        ));
+        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at, participant_ids, participant_count })
     }
 
     pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {
@@ -935,7 +1168,13 @@ impl Q<'_> {
     /// Relação vista por `viewer_id`.
     pub fn friend(&self, viewer_id: &str, other_id: &str) -> Option<Friend> {
         let (requester, _, status, since) = self.friendship_row(viewer_id, other_id)?;
-        let state = if status == "accepted" {
+        let state = if status == "blocked" {
+            // Quem foi bloqueado não fica sabendo.
+            if requester != viewer_id {
+                return None;
+            }
+            "blocked"
+        } else if status == "accepted" {
             "friends"
         } else if requester == viewer_id {
             "outgoing"
@@ -974,8 +1213,44 @@ impl Q<'_> {
                 self.accept_friend(from, to);
                 FriendRequest::Accepted
             }
+            Some((_, _, status, _)) if status == "blocked" => FriendRequest::Blocked,
             Some(_) => FriendRequest::Exists,
         }
+    }
+
+    /// Bloqueia: desfaz amizade ou pedido e impede novos pedidos e mensagens diretas.
+    pub fn block_user(&self, blocker: &str, other: &str) {
+        if let Some((requester, _, status, _)) = self.friendship_row(blocker, other)
+            && status == "blocked"
+            && requester != blocker
+        {
+            // A outra pessoa já bloqueou; mantém o bloqueio dela.
+            return;
+        }
+        self.remove_relation(blocker, other);
+        ok(self.c.execute(
+            "INSERT INTO friendships (requester_id, addressee_id, status, created_at) VALUES (?, ?, 'blocked', ?)",
+            params![blocker, other, now_iso()],
+        ));
+    }
+
+    pub fn unblock_user(&self, blocker: &str, other: &str) -> bool {
+        ok(self.c.execute(
+            "DELETE FROM friendships WHERE requester_id = ? AND addressee_id = ? AND status = 'blocked'",
+            [blocker, other],
+        )) > 0
+    }
+
+    /// Alguma das duas bloqueou a outra?
+    pub fn is_blocked(&self, a: &str, b: &str) -> bool {
+        matches!(self.friendship_row(a, b), Some((_, _, status, _)) if status == "blocked")
+    }
+
+    fn remove_relation(&self, a: &str, b: &str) -> bool {
+        ok(self.c.execute(
+            "DELETE FROM friendships WHERE (requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)",
+            [a, b],
+        )) > 0
     }
 
     pub fn accept_friend(&self, user_id: &str, requester_id: &str) -> bool {
@@ -985,9 +1260,10 @@ impl Q<'_> {
         )) > 0
     }
 
+    /// Desfaz amizade, recusa ou cancela pedido. Bloqueios saem só por `unblock_user`.
     pub fn remove_friend(&self, a: &str, b: &str) -> bool {
         ok(self.c.execute(
-            "DELETE FROM friendships WHERE (requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)",
+            "DELETE FROM friendships WHERE ((requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)) AND status != 'blocked'",
             [a, b],
         )) > 0
     }
