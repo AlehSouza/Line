@@ -654,6 +654,18 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   useImperativeHandle(handle, () => ({ addFiles }));
 
+  // "Mencionar" do menu de usuário da voz: só o campo do canal principal (não o da thread).
+  useEffect(() => {
+    if (channel.type === 'thread') return;
+    const onMention = (e: Event) => {
+      const tag = (e as CustomEvent<string>).detail;
+      setText((t) => (t && !t.endsWith(' ') ? `${t} ${tag}` : t + tag));
+      ref.current?.focus();
+    };
+    window.addEventListener('line:mention', onMention);
+    return () => window.removeEventListener('line:mention', onMention);
+  }, [channel.type]);
+
   /** GIF escolhido vira anexo pendente, para mandar junto com texto (ou sozinho). */
   async function addGif(url: string, title: string) {
     try {

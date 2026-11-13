@@ -14,6 +14,9 @@ pub struct VoiceState {
     pub deafened: bool,
     pub camera_stream_id: Option<String>,
     pub screen_stream_id: Option<String>,
+    /// Silenciado / com áudio desativado por um moderador do servidor.
+    pub server_muted: bool,
+    pub server_deafened: bool,
     pub joined_at: String,
 }
 
@@ -79,6 +82,8 @@ impl VoiceRegistry {
             deafened,
             camera_stream_id: None,
             screen_stream_id: None,
+            server_muted: false,
+            server_deafened: false,
             joined_at: now_iso(),
         };
         self.by_user.insert(
@@ -110,6 +115,18 @@ impl VoiceRegistry {
     }
 
     /// Tira o usuário da voz. O bool diz se o canal ficou vazio e perdeu o status.
+    /// Silenciar / desativar áudio no servidor (moderação).
+    pub fn set_server_flags(&mut self, user_id: &str, muted: Option<bool>, deafened: Option<bool>) -> Option<VoiceState> {
+        let s = &mut self.by_user.get_mut(user_id)?.state;
+        if let Some(m) = muted {
+            s.server_muted = m;
+        }
+        if let Some(d) = deafened {
+            s.server_deafened = d;
+        }
+        Some(s.clone())
+    }
+
     pub fn leave(&mut self, user_id: &str) -> Option<(VoiceState, bool)> {
         let state = self.by_user.remove(user_id)?.state;
         let empty = !self

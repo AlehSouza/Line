@@ -1,6 +1,6 @@
 'use client';
 
-import type { ClientToServerEvents, ServerToClientEvents, VoiceSignal, VoiceState } from '@line/shared';
+import type { ClientToServerEvents, ServerToClientEvents, VoiceModeration, VoiceSignal, VoiceState } from '@line/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { disposeNoiseSuppressor, suppressNoise } from './noise';
@@ -79,9 +79,24 @@ function savePrefs() {
   }
 }
 
+const VOLUMES_KEY = 'line.voice.volumes';
+
+function loadUserVolumes(): Record<string, number> {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(VOLUMES_KEY) : null;
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export interface VoiceStore {
   /** Estados de voz visíveis, por usuário. */
   states: Record<string, VoiceState>;
+  /** Volume local de cada pessoa (0 a 1), silenciar localmente e esconder vídeo. Só valem para mim. */
+  userVolume: Record<string, number>;
+  localMuted: Record<string, boolean>;
+  hiddenVideo: Record<string, boolean>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
   channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
@@ -106,6 +121,9 @@ export interface VoiceStore {
 export const useVoice = create<VoiceStore>(() => ({
   states: {},
   channelStatus: {},
+  userVolume: loadUserVolumes(),
+  localMuted: {},
+  hiddenVideo: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -161,7 +179,7 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       else if (states[uid]?.channelId === channelId) delete states[uid];
       return { states };
     });
-    if (uid === myId) return;
+    if (uid === myId) return applyMute();
     const mine = getV().channelId;
     if (!mine) return;
     // Quem chega é quem abre a conexão (no rejoin). Se os dois lados criassem a conexão ao mesmo tempo,
@@ -170,6 +188,8 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
   });
 
   s.on('voice:signal', ({ from, signal }) => void onSignal(from, signal));
+
+  s.on('voice:move', ({ channelId }) => void joinVoice(channelId));
 
   s.on('voice:statuses', (channelStatus) => setV({ channelStatus }));
   s.on('voice:status', ({ channelId, status }) =>
@@ -280,9 +300,44 @@ export function toggleDeafen() {
 }
 
 function applyMute() {
-  const { muted, deafened } = getV();
-  for (const s of [rawMic, mic]) s?.getAudioTracks().forEach((t) => (t.enabled = !muted && !deafened));
-  for (const el of audioEls.values()) el.muted = deafened;
+  const { muted, deafened, states } = getV();
+  const forced = myId ? states[myId] : undefined;
+  const silent = muted || deafened || !!forced?.serverMuted || !!forced?.serverDeafened;
+  for (const s of [rawMic, mic]) s?.getAudioTracks().forEach((t) => (t.enabled = !silent));
+  for (const el of audioEls.values()) applyPeerAudio(el);
+}
+
+/** Ensurdecido (por mim ou pelo servidor), silenciado localmente e volume de cada pessoa. */
+function applyPeerAudio(el: HTMLAudioElement) {
+  const { deafened, states, localMuted, userVolume } = getV();
+  const peer = el.dataset.peer ?? '';
+  const forced = myId ? states[myId]?.serverDeafened : false;
+  el.muted = deafened || !!forced || !!localMuted[peer];
+  el.volume = Math.min(1, Math.max(0, userVolume[peer] ?? 1));
+}
+
+export function setUserVolume(userId: string, volume: number) {
+  setV((v) => ({ userVolume: { ...v.userVolume, [userId]: volume } }));
+  try {
+    localStorage.setItem(VOLUMES_KEY, JSON.stringify(getV().userVolume));
+  } catch {
+    // sem localStorage: vale só nesta sessão
+  }
+  applyMute();
+}
+
+export function toggleLocalMute(userId: string) {
+  setV((v) => ({ localMuted: { ...v.localMuted, [userId]: !v.localMuted[userId] } }));
+  applyMute();
+}
+
+export function toggleHiddenVideo(userId: string) {
+  setV((v) => ({ hiddenVideo: { ...v.hiddenVideo, [userId]: !v.hiddenVideo[userId] } }));
+}
+
+/** Moderação de voz (dono do servidor, por enquanto). */
+export function moderateVoice(m: VoiceModeration) {
+  socket?.emit('voice:moderate', m);
 }
 
 // ---------- microfone, supressor de ruído e dispositivos ----------
@@ -636,8 +691,8 @@ function attachAudio(peerId: string, stream: MediaStream) {
   const el = document.createElement('audio');
   el.autoplay = true;
   el.srcObject = stream;
-  el.muted = getV().deafened;
   el.dataset.peer = peerId;
+  applyPeerAudio(el);
   applySink(el);
   document.body.appendChild(el);
   void el.play().catch(() => {});

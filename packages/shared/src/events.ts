@@ -46,6 +46,8 @@ export interface ServerToClientEvents {
   'voice:statuses': (statuses: Record<string, string>) => void;
   /** Status de um canal de voz mudou (null = sumiu, ex.: todos saíram). */
   'voice:status': (payload: { channelId: string; status: string | null }) => void;
+  /** Um moderador te moveu para outro canal de voz. */
+  'voice:move': (payload: { channelId: string }) => void;
 }
 
 export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; error: string };
@@ -60,4 +62,11 @@ export interface ClientToServerEvents {
   'voice:signal': (payload: { to: string; signal: VoiceSignal }) => void;
   /** Define o status do canal de voz em que você está ('' limpa). */
   'voice:status': (payload: { channelId: string; status: string }) => void;
+  /** Moderação de voz (dono do servidor, por enquanto). */
+  'voice:moderate': (payload: VoiceModeration) => void;
 }
+
+export type VoiceModeration =
+  | { userId: string; action: 'mute' | 'deafen'; value: boolean }
+  | { userId: string; action: 'disconnect' }
+  | { userId: string; action: 'move'; channelId: string };
