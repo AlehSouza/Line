@@ -1,6 +1,7 @@
 'use client';
 
 import type { Attachment, Channel, Message } from '@line/shared';
+import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
@@ -39,7 +40,7 @@ export function ChatView({ channel }: { channel: Channel }) {
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         {isDm ? (
           other ? (
-            <Avatar name={title} color={(users[other.id] ?? other).avatarColor} size={24} presence={(users[other.id] ?? other).presence} ring="main" />
+            <Avatar name={title} color={(users[other.id] ?? other).avatarColor} src={(users[other.id] ?? other).avatarUrl} size={24} presence={(users[other.id] ?? other).presence} ring="main" />
           ) : (
             <Icons.Users size={20} className="text-muted" />
           )
@@ -257,6 +258,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 <Avatar
                   name={(users[starter.author.id] ?? starter.author).displayName}
                   color={(users[starter.author.id] ?? starter.author).avatarColor}
+                  src={(users[starter.author.id] ?? starter.author).avatarUrl}
                   size={36}
                 />
                 <div className="min-w-0 flex-1">
@@ -271,8 +273,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             ) : (
               <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
-            <div className="mt-2 flex items-center gap-2 px-4 text-xs text-muted">
-              <span className="h-px flex-1 bg-edge" />
+            <div className="mt-2 flex justify-end px-4 text-xs text-muted">
               <span className="shrink-0">{items.length === 1 ? '1 resposta' : `${items.length} respostas`}</span>
             </div>
           </div>
@@ -406,7 +407,7 @@ function MessageRow({
           </span>
         ) : (
           <button onClick={() => actions.openModal({ kind: 'user', userId: message.author.id })}>
-            <Avatar name={authorName} color={authorColor} size={40} />
+            <Avatar name={authorName} color={authorColor} src={(useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
           </button>
         )}
       </div>
@@ -442,12 +443,15 @@ function MessageRow({
             <p className="text-xs text-muted">Esc para cancelar · Enter para salvar</p>
           </div>
         ) : (
-          message.content && (
+          message.content &&
+          (gifFromContent(message.content) ? (
+            <GifEmbed url={gifFromContent(message.content)!} />
+          ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
               {renderMarkdown(message.content, myUsername)}
               {message.editedAt && <span className="ml-1 text-[10px] text-muted">(editado)</span>}
             </div>
-          )
+          ))
         )}
         <AttachmentList attachments={message.attachments} />
         {message.poll && <PollView message={message} poll={message.poll} />}
@@ -548,7 +552,7 @@ function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
         <span className="flex items-center -space-x-1.5">
           {ids.map((id) => (
             <span key={id} className="rounded-full ring-2 ring-main">
-              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} size={22} />
+              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} src={users[id]?.avatarUrl} size={22} />
             </span>
           ))}
           {extra > 0 && (
@@ -586,7 +590,7 @@ interface Pending {
 }
 
 const MAX_FILE = 100 * 1024 * 1024;
-const MAX_FILES = 10;
+const MAX_FILES = 5;
 /** Texto colado maior que isso vira um arquivo .txt (como no Discord). */
 const LONG_PASTE = 2000;
 
@@ -595,7 +599,9 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
   const [menu, setMenu] = useState(false);
+  const [notice, setNotice] = useState('');
   const [recording, setRecording] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const pendingRef = useRef(pending);
@@ -605,7 +611,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   function addFiles(files: File[]) {
     const room = MAX_FILES - pendingRef.current.length;
-    if (files.length > room) alert(`Dá para enviar até ${MAX_FILES} arquivos por mensagem.`);
+    if (files.length > room) {
+      setNotice(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`);
+      window.setTimeout(() => setNotice(''), 4000);
+    }
     for (const file of files.slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
       const name = file.name || 'arquivo';
@@ -670,9 +679,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const uploading = pending.some((x) => !x.attachment && !x.error);
   const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
 
-  async function send() {
-    const content = text.trim();
-    if ((!content && !ready.length) || sending || uploading) return;
+  async function send(gif?: string) {
+    const content = gif ?? text.trim();
+    if (!gif && ((!content && !ready.length) || uploading)) return;
+    if (sending) return;
     setSending(true);
     try {
       // Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela.
@@ -682,9 +692,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         actions.upsertChannel(thread);
         target = thread.id;
       }
-      const message = await api.sendMessage(target, content, ready);
+      const message = await api.sendMessage(target, content, gif ? [] : ready);
       actions.addMessage(message);
       if (target !== channel.id) actions.openThread(target);
+      if (gif) return;
       setText('');
       setPending((list) => {
         for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
@@ -707,6 +718,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   return (
     <div className="shrink-0 px-4 pb-2">
+      {notice && <p className="mb-1.5 px-1 text-xs font-semibold text-sun">{notice}</p>}
       <div className="rounded-xl bg-raise">
         {pending.length > 0 && (
           <div className="flex gap-2 overflow-x-auto border-b border-edge p-3">
@@ -729,9 +741,6 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
               onClose={() => setMenu(false)}
               items={[
                 { icon: <Icons.Upload size={18} />, label: 'Enviar um arquivo', run: () => picker.current?.click() },
-                ...(channel.type === 'text'
-                  ? [{ icon: <Icons.Thread size={18} />, label: 'Criar tópico', run: () => actions.openModal({ kind: 'create-thread', channelId: channel.id }) }]
-                  : []),
                 ...(!channel.id.startsWith('draft:')
                   ? [{ icon: <Icons.Poll size={18} />, label: 'Criar enquete', run: () => actions.openModal({ kind: 'create-poll', channelId: channel.id }) }]
                   : []),
@@ -776,6 +785,24 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         />
         )}
         {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
+        <span className="relative shrink-0">
+          <button
+            title="GIFs"
+            onClick={() => setGifOpen((v) => !v)}
+            className={cx('flex h-6 items-center text-soft hover:text-fg', gifOpen && 'text-fg')}
+          >
+            <Icons.Gif size={22} />
+          </button>
+          {gifOpen && (
+            <GifPicker
+              onClose={() => setGifOpen(false)}
+              onPick={(g) => {
+                setGifOpen(false);
+                void send(g.url);
+              }}
+            />
+          )}
+        </span>
         </div>
       </div>
       <div className="h-5 px-1 pt-0.5 text-xs text-soft">

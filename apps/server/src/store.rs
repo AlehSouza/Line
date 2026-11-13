@@ -54,6 +54,10 @@ pub struct UserRow {
     pub created_at: String,
     /// Só vem nas consultas da própria tabela users (as junções não trazem).
     pub email: Option<String>,
+    pub avatar_id: Option<String>,
+    pub banner_id: Option<String>,
+    pub pronouns: String,
+    pub thought: Option<String>,
 }
 
 impl UserRow {
@@ -69,11 +73,15 @@ impl UserRow {
             status: r.get("status")?,
             created_at: r.get("created_at")?,
             email: r.get::<_, Option<String>>("email").unwrap_or(None),
+            avatar_id: r.get("avatar_id").unwrap_or(None),
+            banner_id: r.get("banner_id").unwrap_or(None),
+            pronouns: r.get("pronouns").unwrap_or_default(),
+            thought: r.get("thought").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count FROM servers s";
 
 fn message_select() -> String {
@@ -165,6 +173,10 @@ pub struct ProfilePatch {
     pub avatar_color: Option<String>,
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    pub pronouns: Option<String>,
+    pub thought: Option<Option<String>>,
+    pub avatar_id: Option<Option<String>>,
+    pub banner_id: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -187,6 +199,8 @@ pub enum FriendRequest {
     Created,
     Accepted,
     Exists,
+    /// Uma das duas pessoas bloqueou a outra.
+    Blocked,
 }
 
 pub struct Q<'a> {
@@ -254,7 +268,28 @@ impl Q<'_> {
                 row.custom_status.clone()
             },
             presence,
+            avatar_url: row.avatar_id.as_deref().map(|id| self.profile_image_url(id)),
+            banner_url: row.banner_id.as_deref().map(|id| self.profile_image_url(id)),
+            pronouns: row.pronouns.clone(),
+            thought: if presence == "offline" { None } else { row.thought.clone() },
         }
+    }
+
+    fn profile_image_url(&self, attachment_id: &str) -> String {
+        self.attachment(attachment_id).map(|a| a.url).unwrap_or_default()
+    }
+
+    /// Imagem enviada por esta pessoa que pode virar foto ou banner do perfil.
+    pub fn own_image(&self, user_id: &str, attachment_id: &str) -> bool {
+        ok(self
+            .c
+            .query_row(
+                "SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ? AND content_type LIKE 'image/%' AND content_type != 'image/svg+xml'",
+                [attachment_id, user_id],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some()
     }
 
     pub fn to_self_user(&self, row: &UserRow) -> SelfUser {
@@ -337,6 +372,19 @@ impl Q<'_> {
         }
         if let Some(v) = patch.status {
             set("status", v.into());
+        }
+        if let Some(v) = patch.pronouns {
+            set("pronouns", v.into());
+        }
+        let opt = |v: Option<String>| v.filter(|s| !s.is_empty()).map(Value::from).unwrap_or(Value::Null);
+        if let Some(v) = patch.thought {
+            set("thought", opt(v));
+        }
+        if let Some(v) = patch.avatar_id {
+            set("avatar_id", opt(v));
+        }
+        if let Some(v) = patch.banner_id {
+            set("banner_id", opt(v));
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());
@@ -766,6 +814,10 @@ impl Q<'_> {
                         bio: String::new(),
                         custom_status: None,
                         presence: "offline",
+                        avatar_url: None,
+                        banner_url: None,
+                        pronouns: String::new(),
+                        thought: None,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,
@@ -887,7 +939,12 @@ impl Q<'_> {
     /// Anexos enviados mas nunca colocados numa mensagem.
     pub fn prune_unused_attachments(&self) {
         let cutoff = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        ok(self.c.execute("DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?", [cutoff]));
+        ok(self.c.execute(
+            "DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?
+             AND id NOT IN (SELECT avatar_id FROM users WHERE avatar_id IS NOT NULL)
+             AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)",
+            [cutoff],
+        ));
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
@@ -1034,7 +1091,13 @@ impl Q<'_> {
     /// Relação vista por `viewer_id`.
     pub fn friend(&self, viewer_id: &str, other_id: &str) -> Option<Friend> {
         let (requester, _, status, since) = self.friendship_row(viewer_id, other_id)?;
-        let state = if status == "accepted" {
+        let state = if status == "blocked" {
+            // Quem foi bloqueado não fica sabendo.
+            if requester != viewer_id {
+                return None;
+            }
+            "blocked"
+        } else if status == "accepted" {
             "friends"
         } else if requester == viewer_id {
             "outgoing"
@@ -1073,8 +1136,44 @@ impl Q<'_> {
                 self.accept_friend(from, to);
                 FriendRequest::Accepted
             }
+            Some((_, _, status, _)) if status == "blocked" => FriendRequest::Blocked,
             Some(_) => FriendRequest::Exists,
         }
+    }
+
+    /// Bloqueia: desfaz amizade ou pedido e impede novos pedidos e mensagens diretas.
+    pub fn block_user(&self, blocker: &str, other: &str) {
+        if let Some((requester, _, status, _)) = self.friendship_row(blocker, other)
+            && status == "blocked"
+            && requester != blocker
+        {
+            // A outra pessoa já bloqueou; mantém o bloqueio dela.
+            return;
+        }
+        self.remove_relation(blocker, other);
+        ok(self.c.execute(
+            "INSERT INTO friendships (requester_id, addressee_id, status, created_at) VALUES (?, ?, 'blocked', ?)",
+            params![blocker, other, now_iso()],
+        ));
+    }
+
+    pub fn unblock_user(&self, blocker: &str, other: &str) -> bool {
+        ok(self.c.execute(
+            "DELETE FROM friendships WHERE requester_id = ? AND addressee_id = ? AND status = 'blocked'",
+            [blocker, other],
+        )) > 0
+    }
+
+    /// Alguma das duas bloqueou a outra?
+    pub fn is_blocked(&self, a: &str, b: &str) -> bool {
+        matches!(self.friendship_row(a, b), Some((_, _, status, _)) if status == "blocked")
+    }
+
+    fn remove_relation(&self, a: &str, b: &str) -> bool {
+        ok(self.c.execute(
+            "DELETE FROM friendships WHERE (requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)",
+            [a, b],
+        )) > 0
     }
 
     pub fn accept_friend(&self, user_id: &str, requester_id: &str) -> bool {
@@ -1084,9 +1183,10 @@ impl Q<'_> {
         )) > 0
     }
 
+    /// Desfaz amizade, recusa ou cancela pedido. Bloqueios saem só por `unblock_user`.
     pub fn remove_friend(&self, a: &str, b: &str) -> bool {
         ok(self.c.execute(
-            "DELETE FROM friendships WHERE (requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)",
+            "DELETE FROM friendships WHERE ((requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)) AND status != 'blocked'",
             [a, b],
         )) > 0
     }

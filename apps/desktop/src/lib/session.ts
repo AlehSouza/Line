@@ -3,7 +3,7 @@
 import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/shared';
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
-import { actions, currentChannelId, dmTitle, useLine } from './store';
+import { actions, currentChannelId, dmTitle, useLine, type View } from './store';
 import { bindVoiceSocket, unbindVoice } from './voice';
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -100,10 +100,30 @@ async function bootstrap() {
   actions.setServers(servers);
   actions.setDms(dms);
   actions.setFriends(friends);
+  restoreView();
   connectSocket();
   setupIdleDetection();
   if (!typingTicker) typingTicker = setInterval(actions.pruneTyping, 2000);
   requestNotificationPermission();
+}
+
+const STORAGE_VIEW = 'line.view';
+let viewSaver: (() => void) | null = null;
+
+/** Volta para o servidor/canal ou conversa privada que estava aberto antes do F5. */
+function restoreView() {
+  try {
+    const saved = JSON.parse(storage.get(STORAGE_VIEW) ?? 'null') as View | null;
+    const s = useLine.getState();
+    if (saved?.kind === 'server' && s.servers[saved.serverId]) actions.goServer(saved.serverId, saved.channelId);
+    else if (saved?.kind === 'home' && saved.dmId && s.channels[saved.dmId]) actions.goHome(saved.dmId);
+    else if (saved?.kind === 'discover') actions.goDiscover();
+  } catch {
+    /* sem lugar salvo */
+  }
+  viewSaver ??= useLine.subscribe((st, prev) => {
+    if (st.view !== prev.view) storage.set(STORAGE_VIEW, JSON.stringify(st.view));
+  });
 }
 
 export async function ensureServerLoaded(serverId: string, force = false) {

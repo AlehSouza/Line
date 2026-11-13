@@ -91,6 +91,7 @@ Group=line
 EnvironmentFile=/etc/line/line.env
 # Opcional, não é sobrescrito pelo script: TURNSTILE_SITE_KEY e TURNSTILE_SECRET (captcha do cadastro).
 EnvironmentFile=-/etc/line/captcha.env
+EnvironmentFile=-/etc/line/giphy.env
 ExecStart=/opt/line/line-server
 Restart=always
 RestartSec=2

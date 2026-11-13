@@ -4,6 +4,7 @@
 //! que sobe o servidor junto com a janela.
 pub mod auth;
 pub mod captcha;
+pub mod gifs;
 pub mod db;
 pub mod errors;
 pub mod gateway;
@@ -37,6 +38,8 @@ pub struct App {
     /// Captcha do cadastro (TURNSTILE_SITE_KEY + TURNSTILE_SECRET). Sem as duas, o cadastro não pede captcha.
     pub turnstile: Option<captcha::Turnstile>,
     pub signups: captcha::SignupLimiter,
+    /// Busca de GIFs (GIPHY_API_KEY). Sem a chave, o seletor de GIFs fica indisponível.
+    pub giphy: Option<gifs::Giphy>,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -205,6 +208,7 @@ pub fn build(
         turn,
         turnstile: captcha::Turnstile::from_env(),
         signups: captcha::SignupLimiter::new(),
+        giphy: gifs::Giphy::from_env(),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

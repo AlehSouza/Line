@@ -100,6 +100,16 @@ function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fra
   });
 }
 
+/** GIF do GIPHY, buscado pelo servidor. */
+export interface Gif {
+  id: string;
+  title: string;
+  preview: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
@@ -161,4 +171,8 @@ export const api = {
   addFriend: (username: string) => request<Friend>('POST', '/friends', { username }),
   acceptFriend: (userId: string) => request<Friend>('PUT', `/friends/${enc(userId)}`),
   removeFriend: (userId: string) => request<void>('DELETE', `/friends/${enc(userId)}`),
+  blockUser: (userId: string) => request<Friend>('PUT', `/friends/${enc(userId)}/block`),
+  unblockUser: (userId: string) => request<void>('DELETE', `/friends/${enc(userId)}/block`),
+
+  gifs: (q = '', offset = 0) => request<Gif[]>('GET', `/gifs?q=${enc(q)}&offset=${offset}`),
 };

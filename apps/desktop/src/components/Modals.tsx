@@ -1,5 +1,7 @@
 'use client';
 
+import { ProfileCard, ProfileEditor } from './ProfileEditor';
+
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
@@ -425,7 +427,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
               if (!u) return null;
               return (
                 <div key={m.userId} className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-hover">
-                  <Avatar name={u.displayName} color={u.avatarColor} size={24} />
+                  <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={24} />
                   <span className="flex-1 truncate text-sm">
                     {u.displayName} <span className="text-muted">@{u.username}</span>
                   </span>
@@ -488,82 +490,12 @@ function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => v
 
 function ProfileModal({ onClose }: { onClose: () => void }) {
   return (
-    <Modal title="Meu perfil" onClose={onClose}>
-      <ProfileForm onSaved={onClose} onCancel={onClose} />
+    <Modal title="Meu perfil" onClose={onClose} width={900}>
+      <ProfileEditor onSaved={onClose} onCancel={onClose} />
     </Modal>
   );
 }
 
-/** Nome de exibição, status, bio e cor do avatar. Usado no modal de perfil e nas configurações. */
-export function ProfileForm({ onSaved, onCancel }: { onSaved?: () => void; onCancel?: () => void }) {
-  const me = useLine((s) => s.me);
-  const [displayName, setDisplayName] = useState(me?.displayName ?? '');
-  const [bio, setBio] = useState(me?.bio ?? '');
-  const [customStatus, setCustomStatus] = useState(me?.customStatus ?? '');
-  const [color, setColor] = useState(me?.avatarColor ?? COLORS[0]!);
-  const [saved, setSaved] = useState(false);
-  const { busy, error, run } = useAction();
-  if (!me) return null;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4 rounded-xl bg-rail p-4">
-        <Avatar name={displayName || me.username} color={color} size={64} />
-        <div className="min-w-0">
-          <p className="truncate text-lg font-bold">{displayName || me.username}</p>
-          <p className="text-sm text-muted">@{me.username}</p>
-          {customStatus && <p className="truncate text-sm text-soft">{customStatus}</p>}
-        </div>
-      </div>
-      <Field label="Nome de exibição">
-        <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
-      </Field>
-      <Field label="Status personalizado">
-        <Input
-          value={customStatus}
-          onChange={(e) => setCustomStatus(e.target.value)}
-          maxLength={128}
-          placeholder="Jogando, estudando, no rolê…"
-        />
-      </Field>
-      <Field label="Sobre mim">
-        <textarea
-          value={bio}
-          onChange={(e) => setBio(e.target.value)}
-          maxLength={190}
-          rows={3}
-          className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
-        />
-      </Field>
-      <Field label="Cor do avatar">
-        <ColorPicker value={color} onChange={setColor} />
-      </Field>
-      <ErrorText>{error}</ErrorText>
-      <div className="flex items-center justify-end gap-2">
-        {saved && <span className="mr-auto text-sm text-muted">Perfil salvo.</span>}
-        {onCancel && (
-          <Button variant="ghost" onClick={onCancel}>
-            Cancelar
-          </Button>
-        )}
-        <Button
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              actions.setMe(
-                await api.updateMe({ displayName, bio, avatarColor: color, customStatus: customStatus.trim() || null }),
-              );
-              setSaved(true);
-              onSaved?.();
-            })
-          }
-        >
-          Salvar
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function NewDmModal({ onClose }: { onClose: () => void }) {
   const friends = useLine((s) => s.friends);
@@ -606,7 +538,7 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
             const u = users[f.user.id] ?? f.user;
             return (
               <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
-                <Avatar name={u.displayName} color={u.avatarColor} size={32} presence={u.presence} />
+                <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={32} presence={u.presence} />
                 <span className="flex-1">
                   <span className="block text-sm font-medium">{u.displayName}</span>
                   <span className="block text-xs text-muted">@{u.username}</span>
@@ -632,52 +564,81 @@ function UserModal({ userId, onClose }: { userId: string; onClose: () => void })
   const me = useLine((s) => s.me);
   const friend = useLine((s) => s.friends[userId]);
   const { busy, error, run } = useAction();
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   if (!user) return null;
   const isMe = me?.id === userId;
+  const state = friend?.state;
 
   return (
-    <Modal title={user.displayName} onClose={onClose} width={380}>
-      <div className="space-y-3">
-        <Avatar name={user.displayName} color={user.avatarColor} size={72} presence={user.presence} />
-        <div>
-          <p className="text-xl font-bold">{user.displayName}</p>
-          <p className="text-sm text-muted">
-            @{user.username} · {presenceLabel[user.presence]}
-          </p>
-        </div>
-        {user.customStatus && <p className="text-sm text-soft">{user.customStatus}</p>}
-        {user.bio && (
-          <div className="rounded-lg bg-rail p-3">
-            <p className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Sobre mim</p>
-            <p className="text-sm whitespace-pre-wrap text-soft">{user.bio}</p>
-          </div>
-        )}
-        <ErrorText>{error}</ErrorText>
-        {!isMe && (
-          <div className="flex gap-2">
-            <Button
-              disabled={busy}
-              className="flex-1"
-              onClick={() =>
-                run(async () => {
-                  const dm = await api.openDm([user.id]);
-                  actions.upsertChannel(dm);
-                  actions.goHome(dm.id);
-                  onClose();
-                })
-              }
-            >
-              Enviar mensagem
-            </Button>
-            {!friend && (
-              <Button variant="subtle" disabled={busy} onClick={() => run(async () => void (await api.addFriend(user.username)))}>
-                Adicionar amigo
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
+      <div className="w-full max-w-[360px]" onMouseDown={(e) => e.stopPropagation()}>
+        <ProfileCard
+          name={user.displayName}
+          username={user.username}
+          pronouns={user.pronouns}
+          thought={user.thought}
+          bio={user.bio}
+          status={user.customStatus || presenceLabel[user.presence]}
+          color={user.avatarColor}
+          avatarUrl={user.avatarUrl}
+          bannerUrl={user.bannerUrl}
+        >
+          <ErrorText>{error}</ErrorText>
+          {!isMe && state !== 'blocked' && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                disabled={busy}
+                className="flex-1"
+                onClick={() =>
+                  run(async () => {
+                    const dm = await api.openDm([user.id]);
+                    actions.upsertChannel(dm);
+                    actions.goHome(dm.id);
+                    onClose();
+                  })
+                }
+              >
+                <Icons.Message size={16} /> Mensagem
               </Button>
-            )}
-          </div>
-        )}
+              {!state && (
+                <Button variant="subtle" disabled={busy} onClick={() => run(async () => actions.upsertFriend(await api.addFriend(user.username)))}>
+                  <Icons.Plus size={16} /> Adicionar amigo
+                </Button>
+              )}
+              {state === 'incoming' && (
+                <Button variant="subtle" disabled={busy} onClick={() => run(async () => actions.upsertFriend(await api.acceptFriend(user.id)))}>
+                  <Icons.Check size={16} /> Aceitar pedido
+                </Button>
+              )}
+              {state === 'outgoing' && (
+                <Button variant="subtle" disabled>
+                  Pedido enviado
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                title="Bloquear"
+                disabled={busy}
+                onClick={() => {
+                  if (confirm(`Bloquear ${user.displayName}?`)) run(async () => actions.upsertFriend(await api.blockUser(user.id)));
+                }}
+              >
+                <Icons.Ban size={16} />
+              </Button>
+            </div>
+          )}
+          {state === 'blocked' && (
+            <Button variant="subtle" className="mt-3 w-full" disabled={busy} onClick={() => run(async () => { await api.unblockUser(user.id); actions.removeFriend(user.id); })}>
+              Desbloquear
+            </Button>
+          )}
+        </ProfileCard>
       </div>
-    </Modal>
+    </div>
   );
 }
 

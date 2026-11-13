@@ -11,6 +11,11 @@ pub struct PublicUser {
     pub bio: String,
     pub custom_status: Option<String>,
     pub presence: &'static str,
+    pub avatar_url: Option<String>,
+    pub banner_url: Option<String>,
+    pub pronouns: String,
+    /// O "pensamento": balãozinho ao lado da foto no cartão de perfil.
+    pub thought: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -145,7 +150,7 @@ pub struct ThreadSummary {
 #[derive(Clone, Debug, Serialize)]
 pub struct Friend {
     pub user: PublicUser,
-    /// friends | incoming | outgoing
+    /// friends | incoming | outgoing | blocked
     pub state: &'static str,
     pub since: String,
 }

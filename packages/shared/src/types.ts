@@ -13,6 +13,10 @@ export interface PublicUser {
   bio: string;
   customStatus: string | null;
   presence: Presence;
+  avatarUrl?: string | null;
+  bannerUrl?: string | null;
+  pronouns?: string;
+  thought?: string | null;
 }
 
 export interface SelfUser extends PublicUser {
@@ -99,7 +103,7 @@ export interface Message {
   poll?: Poll | null;
 }
 
-export type FriendState = 'friends' | 'incoming' | 'outgoing';
+export type FriendState = 'friends' | 'incoming' | 'outgoing' | 'blocked';
 
 export interface Friend {
   user: PublicUser;

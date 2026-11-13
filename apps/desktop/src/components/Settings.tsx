@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { logout } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
-import { ProfileForm } from './Modals';
+import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
 
@@ -43,7 +43,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       >
         <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-edge bg-side p-3">
           <button onClick={() => setSection('profile')} className="flex items-center gap-3 rounded-lg p-2 text-left hover:bg-hover">
-            <Avatar name={me.displayName} color={me.avatarColor} size={44} />
+            <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={44} />
             <div className="min-w-0">
               <p className="truncate font-semibold">{me.displayName}</p>
               <p className="flex items-center gap-1 text-xs text-muted">
@@ -112,9 +112,9 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
             </button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
-            <div className="mx-auto max-w-[700px] px-6 py-10">
+            <div className={cx('mx-auto px-6 py-10', section === 'profile' ? 'max-w-[1000px]' : 'max-w-[700px]')}>
               {section === 'account' && <AccountSection />}
-              {section === 'profile' && <ProfileForm />}
+              {section === 'profile' && <ProfileEditor />}
               {section === 'voice' && <VoiceSettingsPanel />}
             </div>
           </div>

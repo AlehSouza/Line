@@ -221,6 +221,13 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "nullable")]
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    pub pronouns: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub thought: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub avatar_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub banner_id: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -237,6 +244,13 @@ impl UpdateProfile {
             && !["online", "idle", "dnd", "invisible"].contains(&s.as_str())
         {
             return Err(validation("Status inválido"));
+        }
+        if let Some(p) = &mut self.pronouns {
+            *p = p.trim().to_string();
+            text(p, 0, 40, "Os pronomes")?;
+        }
+        if let Some(Some(t)) = &self.thought {
+            text(t, 0, 80, "O pensamento")?;
         }
         Ok(self)
     }

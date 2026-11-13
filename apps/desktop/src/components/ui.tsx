@@ -3,6 +3,7 @@
 import type { Presence } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { fileUrl } from '@/lib/api';
 import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function cx(...parts: (string | number | false | null | undefined)[]) {
@@ -80,9 +81,11 @@ export function Avatar({
   presence,
   ring = 'side',
   className,
+  src,
 }: {
   name: string;
   color: string;
+  src?: string | null;
   size?: number;
   presence?: Presence;
   ring?: Ring;
@@ -94,7 +97,12 @@ export function Avatar({
         className="flex h-full w-full items-center justify-center rounded-full font-semibold text-rail select-none"
         style={{ background: color, fontSize: size * 0.38 }}
       >
-        {initials(name)}
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={fileUrl(src)} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
+        ) : (
+          initials(name)
+        )}
       </span>
       {presence && (
         <PresenceDot
@@ -244,6 +252,9 @@ export const Icons = {
   Folder: icon(L.Folder),
   Upload: icon(L.Upload),
   Poll: icon(L.ChartBar),
+  Ban: icon(L.Ban),
+  UserMinus: icon(L.UserMinus),
+  Gif: icon(L.ImagePlay),
 };
 
 /** Bloco de carregamento com brilho animado. */

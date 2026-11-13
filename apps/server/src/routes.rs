@@ -67,6 +67,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
+        .route("/gifs", get(search_gifs))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
         .route(
@@ -116,6 +117,10 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route(
             "/friends/{user_id}",
             put(accept_friend).delete(remove_friend),
+        )
+        .route(
+            "/friends/{user_id}/block",
+            put(block_user).delete(unblock_user),
         );
 
     let cors = CorsLayer::new()
@@ -155,6 +160,22 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
 /// O que a tela de login precisa saber antes do cadastro (ex.: chave pública do captcha).
 async fn auth_config(State(app): S) -> Res {
     Ok(Json(json!({ "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()) })).into_response())
+}
+
+/// GIFs do GIPHY: `?q=` busca, sem `q` devolve os em alta.
+async fn search_gifs(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let Some(giphy) = &app.giphy else {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "GIFS_DISABLED", "GIFs indisponíveis neste servidor."));
+    };
+    let q: String = qs.get("q").map(|s| s.trim().chars().take(50).collect()).unwrap_or_default();
+    let offset = qs.get("offset").and_then(|s| s.parse::<u32>().ok()).unwrap_or(0).min(4900);
+    match giphy.search(&q, offset).await {
+        Ok(list) => Ok(Json(list).into_response()),
+        Err(err) => {
+            tracing::warn!("GIPHY indisponível: {err}");
+            Err(ApiError::new(StatusCode::BAD_GATEWAY, "GIFS_UNAVAILABLE", "Não deu para carregar os GIFs agora."))
+        }
+    }
 }
 
 /// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
@@ -293,6 +314,11 @@ async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
 async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let p = body::<validate::UpdateProfile>(&b)?.check()?;
     let q = app.store.q();
+    for id in [&p.avatar_id, &p.banner_id].into_iter().flatten().flatten() {
+        if !q.own_image(&me, id) {
+            return Err(bad_request("Imagem inválida"));
+        }
+    }
     let user = q.update_user(
         &me,
         ProfilePatch {
@@ -301,6 +327,10 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             avatar_color: p.avatar_color,
             custom_status: p.custom_status,
             status: p.status,
+            pronouns: p.pronouns,
+            thought: p.thought,
+            avatar_id: p.avatar_id,
+            banner_id: p.banner_id,
         },
     );
     app.to_user(&me, "self:update", &user);
@@ -662,6 +692,11 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
     }
+    if channel.kind == "dm"
+        && q.recipient_ids(&channel.id).iter().any(|u| u != &me && q.is_blocked(&me, u))
+    {
+        return Err(bad_request("Não é possível mandar mensagem para essa pessoa"));
+    }
     let mut input = body::<validate::SendMessage>(&b)?.check()?;
     // Tira repetidos mantendo a ordem em que a pessoa anexou.
     let mut seen = std::collections::HashSet::new();
@@ -989,6 +1024,9 @@ async fn open_dm(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if ids.is_empty() {
         return Err(bad_request("Escolha pelo menos uma outra pessoa"));
     }
+    if ids.len() == 1 && q.is_blocked(&me, &ids[0]) {
+        return Err(bad_request("Não é possível conversar com essa pessoa"));
+    }
     if ids.len() == 1
         && let Some(existing) = q.find_direct_dm(&me, &ids[0])
     {
@@ -1051,6 +1089,9 @@ async fn add_friend(State(app): S, Me(me): Me, b: Bytes) -> Res {
         return Err(bad_request("Você não pode adicionar a si mesmo"));
     }
     let result = q.request_friend(&me, &target.id);
+    if matches!(result, FriendRequest::Blocked) {
+        return Err(bad_request("Não foi possível enviar o pedido para essa pessoa"));
+    }
     if matches!(result, FriendRequest::Exists) {
         return Err(conflict("Vocês já são amigos ou o pedido já foi enviado"));
     }
@@ -1078,6 +1119,35 @@ async fn remove_friend(State(app): S, Me(me): Me, Path(other): Path<String>) -> 
     }
     app.to_user(&me, "friend:remove", &json!({ "userId": other }));
     app.to_user(&other, "friend:remove", &json!({ "userId": me }));
+    no_content()
+}
+
+async fn block_user(State(app): S, Me(me): Me, Path(other): Path<String>) -> Res {
+    let q = app.store.q();
+    if other == me {
+        return Err(bad_request("Você não pode bloquear a si mesmo"));
+    }
+    q.public_user(&other).ok_or_else(|| not_found("Usuário"))?;
+    let was_friend = q.friend(&me, &other).is_some_and(|f| f.state == "friends");
+    q.block_user(&me, &other);
+    // Para a outra pessoa, a amizade ou o pedido simplesmente some.
+    app.to_user(&other, "friend:remove", &json!({ "userId": me }));
+    if let Some(f) = q.friend(&me, &other) {
+        app.to_user(&me, "friend:update", &f);
+    }
+    if was_friend {
+        app.broadcast_presence(&q, &me);
+        app.broadcast_presence(&q, &other);
+    }
+    ok(q.friend(&me, &other))
+}
+
+async fn unblock_user(State(app): S, Me(me): Me, Path(other): Path<String>) -> Res {
+    let q = app.store.q();
+    if !q.unblock_user(&me, &other) {
+        return Err(not_found("Bloqueio"));
+    }
+    app.to_user(&me, "friend:remove", &json!({ "userId": other }));
     no_content()
 }
 

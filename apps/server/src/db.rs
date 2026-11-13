@@ -129,6 +129,13 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (option_id, user_id)
   );
 "#,
+    // 5: perfil completo (foto, banner, pronomes, pensamento)
+    r#"
+  ALTER TABLE users ADD COLUMN avatar_id TEXT;
+  ALTER TABLE users ADD COLUMN banner_id TEXT;
+  ALTER TABLE users ADD COLUMN pronouns TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN thought TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -83,7 +83,7 @@ export function UserPanel() {
         onClick={() => setOpen((v) => !v)}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-hover"
       >
-        <Avatar name={me.displayName} color={me.avatarColor} size={32} presence={shownPresence} ring="rail" />
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={32} presence={shownPresence} ring="rail" />
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold">{me.displayName}</span>
           <span className="block truncate text-xs text-muted">{me.customStatus || `@${me.username}`}</span>
