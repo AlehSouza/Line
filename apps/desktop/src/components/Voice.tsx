@@ -874,11 +874,16 @@ export function VoiceBar() {
     <div className="relative space-y-2.5 border-b border-edge p-2.5">
       <div className="flex items-center gap-1">
         <button onClick={go} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-hover">
-          <span title={connecting ? 'Conectando…' : ping != null ? `Ping: ${ping} ms` : 'Medindo ping…'}>
+          <span className="group/ping relative flex">
             <Icons.Signal
               size={20}
               className={connecting ? 'text-sun' : ping == null || ping < 150 ? 'text-online' : ping < 300 ? 'text-sun' : 'text-danger'}
             />
+            {/* Tooltip do Line: acima do ícone, centralizado, com setinha. */}
+            <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-lg bg-rail px-2.5 py-1.5 text-sm font-bold whitespace-nowrap text-fg opacity-0 shadow-lg shadow-black/40 transition-opacity group-hover/ping:opacity-100">
+              {connecting ? 'Conectando…' : ping != null ? `${ping} ms` : '…'}
+              <span className="absolute top-full left-1/2 -translate-x-1/2 border-x-[6px] border-t-[6px] border-x-transparent border-t-rail" />
+            </span>
           </span>
           <span className="min-w-0">
             <span className={cx('block truncate text-[13px] font-bold', connecting ? 'text-sun' : 'text-online')}>
