@@ -10,6 +10,11 @@ use tauri::{
 };
 use tauri_plugin_opener::OpenerExt;
 
+#[cfg(windows)]
+mod loopback;
+#[cfg(windows)]
+mod screen;
+
 const MAIN: &str = "main";
 
 /// Servidor embutido (se subiu). Fica no estado do app para desligar ao sair.
@@ -193,7 +198,13 @@ pub fn run() {
             window_is_maximized,
             window_close,
             update_check,
-            update_install
+            update_install,
+            #[cfg(windows)]
+            screen::screen_sources,
+            #[cfg(windows)]
+            screen::screen_start,
+            #[cfg(windows)]
+            screen::screen_stop
         ])
         .setup(|app| {
             let window = create_window(app)?;
