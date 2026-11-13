@@ -9,6 +9,7 @@ export function UpdateBanner() {
   const [version, setVersion] = useState<string | null>(null);
   const [state, setState] = useState<'idle' | 'installing' | 'error'>('idle');
   const [hidden, setHidden] = useState(false);
+  const [detail, setDetail] = useState('');
 
   useEffect(() => {
     const updates = window.line?.updates;
@@ -25,7 +26,9 @@ export function UpdateBanner() {
     setState('installing');
     try {
       await window.line?.updates?.install();
-    } catch {
+    } catch (err) {
+      // Mostra o motivo real (download, assinatura, instalador) para dar para corrigir.
+      setDetail(err instanceof Error ? err.message : String(err ?? ''));
       setState('error');
     }
   };
@@ -36,7 +39,7 @@ export function UpdateBanner() {
         {state === 'installing'
           ? 'Baixando e instalando a atualização. O Line vai reiniciar sozinho.'
           : state === 'error'
-            ? 'Não foi possível atualizar agora.'
+            ? `Não foi possível atualizar agora.${detail ? ` (${detail})` : ''}`
             : 'Atualização disponível, mantenha a boa experiência com seu aplicativo atualizado.'}
       </span>
       {state !== 'installing' && (

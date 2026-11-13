@@ -221,7 +221,26 @@ jobs:
             echo "Sem atualizador do macOS nesta build: publicando só o Windows."
           fi
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm --"
+          # Várias runs podem terminar fora de ordem: só troca o latest.json se esta versão for
+          # a mais nova, e a limpeza nunca apaga o instalador para o qual o latest.json aponta.
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" bash -s -- "$version" "$name" <<'REMOTE'
+          set -e
+          cd /opt/line/updates
+          cur=$(grep -o '"version": *"[^"]*"' latest.json 2>/dev/null | grep -o '[0-9][0-9.]*' || echo 0)
+          if [ "$(printf '%s\n' "$cur" "$1" | sort -V | tail -n1)" = "$1" ]; then
+            mv latest.json.tmp latest.json
+          else
+            echo "latest.json já está em $cur (mais nova que $1)."; rm -f latest.json.tmp
+          fi
+          keep=$(grep -o 'Line_[0-9.]*_x64-setup\.exe' latest.json | head -n1)
+          ls -t *.exe | grep -vxF -e "$keep" -e "$2" | tail -n +3 | xargs -r rm --
+          ls -t *.app.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -- || true
+          REMOTE
+          # Se uma run mais nova já publicou, não volta os downloads e o site para esta versão.
+          if [ "$(curl -fsS "https://$HOST/updates/latest.json" | jq -r .version)" != "$version" ]; then
+            echo "Já existe uma versão mais nova publicada: mantendo downloads e site como estão."
+            exit 0
+          fi
           # Links fixos usados pela aba Downloads do site (useline.tech/downloads).
           deb=$(find deb -name '*.deb' | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
