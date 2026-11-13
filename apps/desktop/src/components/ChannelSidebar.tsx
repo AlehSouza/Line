@@ -61,7 +61,14 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               active ? 'bg-hover text-fg' : hasUnread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
             )}
           >
-            <Icon size={18} className="shrink-0 opacity-70" />
+            <span className="relative shrink-0">
+              <Icon size={18} className="opacity-70" />
+              {c.isPrivate && (
+                <span className="absolute -top-1 -right-1 rounded-full bg-side p-px" title="Canal privado">
+                  <Icons.Lock size={9} />
+                </span>
+              )}
+            </span>
             <span className={cx('truncate', hasUnread && 'font-semibold')}>{c.name}</span>
           </button>
           {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
@@ -165,18 +172,36 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 {cat.name}
               </button>
               {isOwner && (
-                <button
-                  title="Criar canal"
-                  onClick={() => actions.openModal({ kind: 'create-channel', serverId, categoryId: cat.id })}
-                  className="text-muted hover:text-fg"
-                >
-                  <Icons.Plus size={16} />
-                </button>
+                <span className="flex items-center gap-1.5">
+                  <button
+                    title="Editar categoria"
+                    onClick={() => actions.openModal({ kind: 'edit-category', categoryId: cat.id })}
+                    className="hidden text-muted group-hover:block hover:text-fg"
+                  >
+                    <Icons.Edit size={13} />
+                  </button>
+                  <button
+                    title="Criar canal"
+                    onClick={() => actions.openModal({ kind: 'create-channel', serverId, categoryId: cat.id })}
+                    className="text-muted hover:text-fg"
+                  >
+                    <Icons.Plus size={16} />
+                  </button>
+                </span>
               )}
             </div>
             {!collapsed[cat.id] && <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>}
           </div>
         ))}
+        {isOwner && loaded && (
+          <button
+            onClick={() => actions.openModal({ kind: 'create-category', serverId })}
+            className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs font-bold tracking-wide text-muted uppercase hover:bg-hover hover:text-soft"
+          >
+            <Icons.Folder size={14} />
+            Criar categoria
+          </button>
+        )}
       </div>
     </div>
   );

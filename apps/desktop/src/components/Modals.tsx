@@ -22,6 +22,8 @@ export function Modals() {
       return <CreateChannelModal modal={modal} onClose={close} />;
     case 'create-category':
       return <CreateCategoryModal serverId={modal.serverId} onClose={close} />;
+    case 'edit-category':
+      return <EditCategoryModal categoryId={modal.categoryId} onClose={close} />;
     case 'server-settings':
       return <ServerSettingsModal serverId={modal.serverId} onClose={close} />;
     case 'invite':
@@ -135,53 +137,186 @@ function CreateChannelModal({
 }) {
   const [type, setType] = useState<'text' | 'voice'>('text');
   const [name, setName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const category = useLine((s) => (modal.categoryId ? s.categories[modal.categoryId] : undefined));
+  const server = useLine((s) => s.servers[modal.serverId]);
+  const memberRefs = useLine((s) => s.members[modal.serverId]);
+  const users = useLine((s) => s.users);
   const { busy, error, run } = useAction();
+
+  // Quem pode ser escolhido para o canal privado (o dono sempre vê, então não aparece).
+  const members = Object.keys(memberRefs ?? {})
+    .filter((id) => id !== server?.ownerId && users[id])
+    .map((id) => users[id])
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const toggleMember = (id: string) =>
+    setMemberIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     run(async () => {
-      const channel = await api.createChannel(modal.serverId, { name, type, categoryId: modal.categoryId });
+      const channel = await api.createChannel(modal.serverId, {
+        name,
+        type,
+        categoryId: modal.categoryId,
+        ...(isPrivate ? { isPrivate: true, memberIds } : {}),
+      });
       actions.upsertChannel(channel);
       if (channel.type === 'text') actions.goServer(modal.serverId, channel.id);
       onClose();
     });
   };
 
+  const types = [
+    { id: 'text' as const, icon: <Icons.Hash size={18} />, label: 'Texto', hint: 'Envie mensagens, imagens, GIFs, emojis, opiniões e piadas' },
+    { id: 'voice' as const, icon: <Icons.Speaker size={18} />, label: 'Voz', hint: 'Passe tempo com a turma com voz, vídeo e compartilhamento de tela' },
+  ];
+
   return (
-    <Modal title="Criar canal" onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
-        <div className="space-y-2">
-          {(['text', 'voice'] as const).map((t) => (
+    <Modal title="Criar canal" subtitle={category ? `em ${category.name}` : undefined} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-5">
+        <div>
+          <p className="mb-2 text-sm font-semibold text-soft">Tipo de canal</p>
+          <div className="space-y-1">
+            {types.map((t) => (
+              <label
+                key={t.id}
+                className={cx(
+                  'flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5',
+                  type === t.id ? 'bg-raise' : 'hover:bg-hover',
+                )}
+              >
+                <input type="radio" name="channel-type" className="sr-only" checked={type === t.id} onChange={() => setType(t.id)} />
+                <span
+                  className={cx(
+                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
+                    type === t.id ? 'border-accent' : 'border-muted',
+                  )}
+                >
+                  {type === t.id && <span className="h-2.5 w-2.5 rounded-full bg-accent" />}
+                </span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    {t.icon}
+                    {t.label}
+                  </span>
+                  <span className="block text-sm text-muted">{t.hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-sm font-semibold text-soft">Nome do canal</p>
+          <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 focus-within:border-accent">
+            {type === 'text' ? <Icons.Hash size={18} className="text-muted" /> : <Icons.Speaker size={18} className="text-muted" />}
+            <input
+              autoFocus
+              required
+              value={name}
+              maxLength={100}
+              onChange={(e) => setName(type === 'text' ? e.target.value.replace(/\s/g, '-').toLowerCase() : e.target.value)}
+              placeholder="novo-canal"
+              className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
+            />
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 font-semibold">
+              <Icons.Lock size={16} />
+              Canal privado
+            </span>
             <button
               type="button"
-              key={t}
-              onClick={() => setType(t)}
-              className={cx(
-                'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left',
-                type === t ? 'border-accent bg-raise' : 'border-edge hover:bg-hover',
-              )}
+              role="switch"
+              aria-checked={isPrivate}
+              onClick={() => setIsPrivate((v) => !v)}
+              className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', isPrivate ? 'bg-accent' : 'bg-edge')}
             >
-              {t === 'text' ? <Icons.Hash /> : <Icons.Speaker />}
-              <span>
-                <span className="block font-semibold">{t === 'text' ? 'Texto' : 'Voz'}</span>
-                <span className="block text-xs text-muted">
-                  {t === 'text' ? 'Mensagens, links e conversas' : 'Áudio, vídeo e tela (chega na fase 2)'}
-                </span>
-              </span>
+              <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', isPrivate ? 'left-[22px]' : 'left-0.5')} />
             </button>
-          ))}
+          </div>
+          <p className="mt-1 text-sm text-muted">Somente os membros selecionados poderão visualizar esse canal.</p>
+          {isPrivate && (
+            <div className="mt-3 max-h-48 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+              {members.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">Ainda não há outros membros no servidor.</p>}
+              {members.map((u) => (
+                <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
+                  <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={28} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{u.displayName}</span>
+                    <span className="block truncate text-xs text-muted">@{u.username}</span>
+                  </span>
+                  <Checkbox checked={memberIds.includes(u.id)} onChange={() => toggleMember(u.id)} />
+                </label>
+              ))}
+            </div>
+          )}
         </div>
-        <Field label="Nome do canal">
-          <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="novo-canal" />
-        </Field>
+
         <ErrorText>{error}</ErrorText>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
+        <div className="grid grid-cols-2 gap-2">
+          <Button type="button" variant="subtle" onClick={onClose}>
             Cancelar
           </Button>
           <Button type="submit" disabled={busy || !name.trim()}>
             Criar canal
           </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClose: () => void }) {
+  const category = useLine((s) => s.categories[categoryId]);
+  const [name, setName] = useState(category?.name ?? '');
+  const { busy, error, run } = useAction();
+  if (!category) return null;
+  return (
+    <Modal title="Editar categoria" onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            actions.upsertCategory(await api.renameCategory(categoryId, name));
+            onClose();
+          });
+        }}
+        className="space-y-4"
+      >
+        <Field label="Nome da categoria">
+          <Input autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="danger"
+            disabled={busy}
+            onClick={() => {
+              if (!confirm(`Excluir a categoria ${category.name}? Os canais dela continuam, só ficam sem categoria.`)) return;
+              run(async () => {
+                await api.deleteCategory(categoryId);
+                actions.removeCategory(categoryId);
+                onClose();
+              });
+            }}
+          >
+            Excluir
+          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={busy || !name.trim() || name.trim() === category.name}>
+              Salvar
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

@@ -396,7 +396,12 @@ async fn search(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, Stri
             )),
         }
     };
+    let hidden = match &scope {
+        SearchScope::Server(id) => q.hidden_channel_ids(id, &me),
+        SearchScope::Channel(_) => Vec::new(),
+    };
     let filter = SearchFilter {
+        hidden,
         text: get("q").unwrap_or_default(),
         author_id: user(get("author"))?,
         channel_id: get("in"),
@@ -476,7 +481,11 @@ async fn get_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let server = require_member(&q, &id, &me)?;
     ok(ServerDetail {
         categories: q.categories(&server.id),
-        channels: q.channels(&server.id),
+        channels: q
+            .channels(&server.id)
+            .into_iter()
+            .filter(|c| !c.is_private && c.parent_id.is_none() || q.can_access(&me, &c.id))
+            .collect(),
         members: q.members(&server.id),
         server,
     })
@@ -619,14 +628,26 @@ async fn create_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     {
         return Err(not_found("Categoria"));
     }
-    let channel = q.create_channel(
+    let private_members: Option<Vec<String>> = input.is_private.unwrap_or(false).then(|| {
+        let mut ids: Vec<String> = input
+            .member_ids
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|u| q.is_member(&id, u))
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    });
+    let channel = q.create_channel_ex(
         &id,
         &input.name,
         input.kind.as_deref().unwrap_or("text"),
         category_id.as_deref(),
         input.topic.as_deref().unwrap_or(""),
+        private_members.as_deref(),
     );
-    app.to_server(&id, "channel:create", &channel);
+    app.to_channel(&q, &channel.id, "channel:create", &channel);
     created(channel)
 }
 
@@ -668,7 +689,7 @@ async fn delete_category(State(app): S, Me(me): Me, Path(id): Path<String>) -> R
     );
     for id in affected {
         if let Some(c) = q.channel(&id) {
-            app.to_server(&category.server_id, "channel:update", &c);
+            app.to_channel(&q, &c.id, "channel:update", &c);
         }
     }
     no_content()
@@ -716,7 +737,7 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
             position: p.position.map(i64::from),
         },
     );
-    app.to_server(&server_id, "channel:update", &updated);
+    app.to_channel(&q, &updated.id, "channel:update", &updated);
     ok(updated)
 }
 
@@ -731,9 +752,14 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         },
     );
     let threads = q.threads_of(&channel.id);
+    let audience = q.private_audience(&channel.id);
     q.delete_channel(&channel.id);
     for c in threads.iter().map(|t| &t.id).chain([&channel.id]) {
-        app.to_server(&server_id, "channel:delete", &json!({ "id": c, "serverId": server_id }));
+        let payload = json!({ "id": c, "serverId": server_id });
+        match &audience {
+            Some(ids) => app.to_users(ids, "channel:delete", &payload),
+            None => app.to_server(&server_id, "channel:delete", &payload),
+        }
     }
     if let Some(Some(mid)) = &channel.thread_message_id
         && let Some(starter) = q.message(mid)
@@ -832,8 +858,8 @@ fn refresh_thread_starter(app: &App, q: &Q, thread: &Channel) {
     if let Some(starter) = q.message(mid) {
         app.to_channel(q, &starter.channel_id, "message:update", &starter);
     }
-    if let (Some(server_id), Some(t)) = (&thread.server_id, q.channel(&thread.id)) {
-        app.to_server(server_id, "channel:update", &t);
+    if let (Some(_), Some(t)) = (&thread.server_id, q.channel(&thread.id)) {
+        app.to_channel(q, &t.id, "channel:update", &t);
     }
 }
 
@@ -861,8 +887,8 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
         }
     }
     let thread = q.create_thread(&parent, &me, &input.name, input.message_id.as_deref());
-    if let Some(server_id) = &thread.server_id {
-        app.to_server(server_id, "channel:create", &thread);
+    if thread.server_id.is_some() {
+        app.to_channel(&q, &thread.id, "channel:create", &thread);
     }
     if let Some(mid) = &input.message_id
         && let Some(starter) = q.message(mid)
