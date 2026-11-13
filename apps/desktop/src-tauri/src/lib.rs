@@ -39,6 +39,37 @@ fn window_close(window: WebviewWindow) {
     let _ = window.close();
 }
 
+/// Procura versão nova no servidor de atualizações. Devolve a versão, ou nada se já está em dia.
+#[tauri::command]
+async fn update_check(app: tauri::AppHandle) -> Option<String> {
+    use tauri_plugin_updater::UpdaterExt;
+    match app.updater().ok()?.check().await {
+        Ok(update) => update.map(|u| u.version),
+        Err(err) => {
+            tracing::warn!("falha ao procurar atualização: {err}");
+            None
+        }
+    }
+}
+
+/// Baixa, confere a assinatura, instala e reinicia o app.
+#[tauri::command]
+async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Nenhuma atualização disponível.".to_string())?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
+}
+
 #[tauri::command]
 fn request_attention(window: WebviewWindow) {
     if !window.is_focused().unwrap_or(true) {
@@ -219,13 +250,16 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             request_attention,
             set_badge,
             window_minimize,
             window_toggle_maximize,
             window_is_maximized,
-            window_close
+            window_close,
+            update_check,
+            update_install
         ])
         .setup(|app| {
             let server = start_embedded_server(app);

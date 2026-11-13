@@ -38,11 +38,21 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run dist:win
+      - name: Versão do build e assinatura do atualizador
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: echo "{\"version\":\"0.1.${{ github.run_number }}\",\"bundle\":{\"createUpdaterArtifacts\":$HAS_KEY}}" > apps/desktop/src-tauri/ci.conf.json
+      - run: npm run dist:win -w @line/desktop -- --config src-tauri/ci.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: Line-instalador-windows
-          path: target/release/bundle/nsis/*.exe
+          path: |
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.exe.sig
           if-no-files-found: error
 
   linux:
@@ -95,3 +105,37 @@ jobs:
 
           - **Windows**: baixe o \`.exe\` e execute (instala só para o seu usuário).
           - **Linux (Debian/Ubuntu)**: baixe o \`.deb\` e rode \`sudo apt install ./Line_*_amd64.deb\`."
+
+  updates:
+    name: Publicar atualização do app (VPS)
+    if: github.event_name != 'pull_request'
+    needs: [server, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Line-instalador-windows
+          path: win
+      - name: Enviar instalador e latest.json para useline.tech/updates
+        env:
+          DEPLOY_KEY: ${{ secrets.VPS_DEPLOY_KEY }}
+          HOST: useline.tech
+        run: |
+          if [ -z "$DEPLOY_KEY" ] || ! ls win/*.exe.sig >/dev/null 2>&1; then
+            echo "Sem VPS_DEPLOY_KEY ou sem assinatura: pulando a publicação da atualização."
+            exit 0
+          fi
+          exe=$(ls win/*.exe | grep -v '\.sig$' | head -n1)
+          name=$(basename "$exe")
+          version="0.1.${{ github.run_number }}"
+          jq -n --arg v "$version" --arg sig "$(cat "$exe.sig")" --arg url "https://$HOST/updates/$name" \
+            --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version: $v, notes: "Build \($v)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' > latest.json
+          cat latest.json
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Instalador primeiro; o latest.json por último, para nunca apontar para um arquivo que ainda não chegou.
+          scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/$name"
+          scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm --"

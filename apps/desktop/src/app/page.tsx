@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import { AuthScreen } from '@/components/AuthScreen';
 import { TitleBar } from '@/components/TitleBar';
+import { UpdateBanner } from '@/components/UpdateBanner';
 import { Logo } from '@/components/ui';
 import { restoreSession } from '@/lib/session';
 import { useLine } from '@/lib/store';
@@ -19,6 +20,7 @@ export default function Home() {
   return (
     <div className="flex h-screen flex-col">
       <TitleBar />
+      <UpdateBanner />
       <div className="min-h-0 flex-1">{booting ? <Booting /> : token ? <AppShell /> : <AuthScreen />}</div>
     </div>
   );
