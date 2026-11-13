@@ -114,14 +114,22 @@ impl App {
     // ---------- voz ----------
 
     pub fn leave_voice(&self, q: &Q, user_id: &str) {
-        let state = lock(&self.voice).leave(user_id);
-        if let Some(state) = state {
+        let left = lock(&self.voice).leave(user_id);
+        if let Some((state, cleared)) = left {
             self.to_channel(
                 q,
                 &state.channel_id,
                 "voice:update",
                 &json!({ "userId": user_id, "channelId": state.channel_id, "state": null }),
             );
+            if cleared {
+                self.to_channel(
+                    q,
+                    &state.channel_id,
+                    "voice:status",
+                    &json!({ "channelId": state.channel_id, "status": null }),
+                );
+            }
         }
     }
 
@@ -204,6 +212,13 @@ async fn on_connect(
             .filter(|v| q.can_access(&user_id, &v.channel_id))
             .collect();
         let _ = s.emit("voice:snapshot", &visible);
+        let statuses: serde_json::Map<String, Value> = lock(&app.voice)
+            .statuses()
+            .into_iter()
+            .filter(|(c, _)| q.can_access(&user_id, c))
+            .map(|(c, st)| (c, Value::String(st)))
+            .collect();
+        let _ = s.emit("voice:statuses", &statuses);
     }
 
     s.on("typing:start", typing_start);
@@ -212,6 +227,8 @@ async fn on_connect(
     s.on("voice:leave", voice_leave);
     s.on("voice:state", voice_state);
     s.on("voice:signal", voice_signal);
+    s.on("voice:status", voice_status);
+    s.on("voice:moderate", voice_moderate);
     s.on_disconnect(on_disconnect);
 }
 
@@ -379,6 +396,90 @@ async fn voice_state(
             "voice:update",
             &json!({ "userId": me, "channelId": state.channel_id, "state": state }),
         );
+    }
+}
+
+async fn voice_status(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
+    let Ok(d) = d else { return };
+    let (Some(channel_id), Some(status)) = (
+        d.get("channelId").and_then(|c| c.as_str()),
+        d.get("status").and_then(|c| c.as_str()),
+    ) else {
+        return;
+    };
+    let q = app.store.q();
+    let set = lock(&app.voice).set_status(&me, channel_id, status);
+    if let Some(status) = set {
+        app.to_channel(
+            &q,
+            channel_id,
+            "voice:status",
+            &json!({ "channelId": channel_id, "status": status }),
+        );
+    }
+}
+
+/// Quem pode silenciar, mover e desconectar os outros na voz deste servidor.
+/// Por enquanto só o dono; quando existirem cargos, a permissão entra aqui.
+fn can_moderate_voice(q: &Q, user_id: &str, server_id: &str) -> bool {
+    q.server(server_id).is_some_and(|s| s.owner_id == user_id)
+}
+
+async fn voice_moderate(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
+    let Ok(d) = d else { return };
+    let (Some(target), Some(action)) = (
+        d.get("userId").and_then(|c| c.as_str()),
+        d.get("action").and_then(|c| c.as_str()),
+    ) else {
+        return;
+    };
+    let q = app.store.q();
+    let Some(entry) = lock(&app.voice).get(target).cloned() else {
+        return;
+    };
+    let Some(server_id) = entry.state.server_id.clone() else {
+        return;
+    };
+    if !can_moderate_voice(&q, &me, &server_id) {
+        return;
+    }
+    let value = d.get("value").and_then(|v| v.as_bool());
+    match action {
+        "mute" | "deafen" => {
+            let flags = if action == "mute" { (value, None) } else { (None, value) };
+            let state = lock(&app.voice).set_server_flags(target, flags.0, flags.1);
+            if let Some(state) = state {
+                app.to_channel(
+                    &q,
+                    &state.channel_id,
+                    "voice:update",
+                    &json!({ "userId": target, "channelId": state.channel_id, "state": state }),
+                );
+            }
+        }
+        "disconnect" => {
+            app.to_socket(entry.sid, "voice:kicked", &json!({ "channelId": entry.state.channel_id }));
+            app.leave_voice(&q, target);
+        }
+        "move" => {
+            let to = d
+                .get("channelId")
+                .and_then(|c| c.as_str())
+                .and_then(|id| q.channel(id))
+                .filter(|c| c.kind == "voice" && c.server_id.as_deref() == Some(server_id.as_str()));
+            if let Some(to) = to.filter(|c| c.id != entry.state.channel_id && q.can_access(target, &c.id)) {
+                app.to_socket(entry.sid, "voice:move", &json!({ "channelId": to.id }));
+            }
+        }
+        _ => {}
     }
 }
 

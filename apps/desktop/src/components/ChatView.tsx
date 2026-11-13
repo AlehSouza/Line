@@ -6,6 +6,7 @@ import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffe
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
+import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
 import { loadMessages, sendTyping } from '@/lib/session';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
@@ -455,7 +456,9 @@ function MessageRow({
           </div>
         ) : (
           message.content &&
-          (gifFromContent(message.content) ? (
+          (voiceInviteFromContent(message.content) ? (
+            <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
+          ) : gifFromContent(message.content) ? (
             <GifEmbed url={gifFromContent(message.content)!} />
           ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
@@ -650,6 +653,18 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   }
 
   useImperativeHandle(handle, () => ({ addFiles }));
+
+  // "Mencionar" do menu de usuário da voz: só o campo do canal principal (não o da thread).
+  useEffect(() => {
+    if (channel.type === 'thread') return;
+    const onMention = (e: Event) => {
+      const tag = (e as CustomEvent<string>).detail;
+      setText((t) => (t && !t.endsWith(' ') ? `${t} ${tag}` : t + tag));
+      ref.current?.focus();
+    };
+    window.addEventListener('line:mention', onMention);
+    return () => window.removeEventListener('line:mention', onMention);
+  }, [channel.type]);
 
   /** GIF escolhido vira anexo pendente, para mandar junto com texto (ou sozinho). */
   async function addGif(url: string, title: string) {

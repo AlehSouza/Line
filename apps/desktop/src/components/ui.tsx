@@ -270,6 +270,7 @@ export const Icons = {
   ZoomOut: icon(L.ZoomOut),
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
+  EyeOff: icon(L.EyeOff),
 };
 
 /** Bloco de carregamento com brilho animado. */

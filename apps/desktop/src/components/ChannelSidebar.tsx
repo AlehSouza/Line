@@ -6,6 +6,7 @@ import { actions, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
+import { CallTimer } from './VoiceInvite';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
@@ -72,6 +73,12 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             <span className={cx('truncate', hasUnread && 'font-semibold')}>{c.name}</span>
           </button>
           {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
+          {c.type === 'voice' && (
+            <CallTimer
+              channelId={c.id}
+              className={cx('pointer-events-none absolute top-1/2 right-2 -translate-y-1/2', isOwner && 'group-hover:hidden')}
+            />
+          )}
           {isOwner && (
             <button
               title="Excluir canal"
@@ -87,7 +94,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             </button>
           )}
         </div>
-        {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} />}
+        {c.type === 'voice' && <VoiceChannelMembers channelId={c.id} serverId={serverId} />}
       </div>
     );
   };

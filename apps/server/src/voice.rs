@@ -14,6 +14,9 @@ pub struct VoiceState {
     pub deafened: bool,
     pub camera_stream_id: Option<String>,
     pub screen_stream_id: Option<String>,
+    /// Silenciado / com áudio desativado por um moderador do servidor.
+    pub server_muted: bool,
+    pub server_deafened: bool,
     pub joined_at: String,
 }
 
@@ -53,6 +56,8 @@ impl VoicePatch {
 #[derive(Default)]
 pub struct VoiceRegistry {
     by_user: HashMap<String, VoiceEntry>,
+    /// Status temporário de cada canal de voz; some quando o canal esvazia.
+    statuses: HashMap<String, String>,
 }
 
 impl VoiceRegistry {
@@ -77,6 +82,8 @@ impl VoiceRegistry {
             deafened,
             camera_stream_id: None,
             screen_stream_id: None,
+            server_muted: false,
+            server_deafened: false,
             joined_at: now_iso(),
         };
         self.by_user.insert(
@@ -107,8 +114,54 @@ impl VoiceRegistry {
         Some(s.clone())
     }
 
-    pub fn leave(&mut self, user_id: &str) -> Option<VoiceState> {
-        self.by_user.remove(user_id).map(|e| e.state)
+    /// Tira o usuário da voz. O bool diz se o canal ficou vazio e perdeu o status.
+    /// Silenciar / desativar áudio no servidor (moderação).
+    pub fn set_server_flags(&mut self, user_id: &str, muted: Option<bool>, deafened: Option<bool>) -> Option<VoiceState> {
+        let s = &mut self.by_user.get_mut(user_id)?.state;
+        if let Some(m) = muted {
+            s.server_muted = m;
+        }
+        if let Some(d) = deafened {
+            s.server_deafened = d;
+        }
+        Some(s.clone())
+    }
+
+    pub fn leave(&mut self, user_id: &str) -> Option<(VoiceState, bool)> {
+        let state = self.by_user.remove(user_id)?.state;
+        let empty = !self
+            .by_user
+            .values()
+            .any(|e| e.state.channel_id == state.channel_id);
+        let cleared = empty && self.statuses.remove(&state.channel_id).is_some();
+        Some((state, cleared))
+    }
+
+    /// Define (ou limpa, com texto vazio) o status do canal. Só quem está no canal pode mexer.
+    pub fn set_status(
+        &mut self,
+        user_id: &str,
+        channel_id: &str,
+        status: &str,
+    ) -> Option<Option<String>> {
+        if self.by_user.get(user_id)?.state.channel_id != channel_id {
+            return None;
+        }
+        let status: String = status.trim().chars().take(100).collect();
+        if status.is_empty() {
+            self.statuses.remove(channel_id);
+            Some(None)
+        } else {
+            self.statuses.insert(channel_id.to_string(), status.clone());
+            Some(Some(status))
+        }
+    }
+
+    pub fn statuses(&self) -> Vec<(String, String)> {
+        self.statuses
+            .iter()
+            .map(|(c, s)| (c.clone(), s.clone()))
+            .collect()
     }
 
     pub fn in_channel(&self, channel_id: &str) -> Vec<VoiceState> {

@@ -22,6 +22,8 @@ export type Modal =
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean } }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
   | { kind: 'image'; url: string; filename: string }
+  | { kind: 'voice-invite'; serverId: string; channelId: string }
+  | { kind: 'voice-status'; channelId: string }
   | null;
 
 interface MessageBucket {

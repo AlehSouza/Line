@@ -24,6 +24,8 @@ import {
   useVoice,
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select } from './ui';
+import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
+import { VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
 import { fileUrl } from '@/lib/api';
 
@@ -87,6 +89,7 @@ function useTiles(channelId: string) {
   const screen = useVoice((v) => v.screen);
   const users = useLine((s) => s.users);
   const meId = useLine((s) => s.me?.id);
+  const hiddenVideo = useVoice((v) => v.hiddenVideo);
 
   return useMemo(() => {
     const list = participants(states, channelId);
@@ -100,11 +103,11 @@ function useTiles(channelId: string) {
     }
     for (const p of list) {
       const isMe = p.userId === meId;
-      const cam = isMe ? camera : p.cameraStreamId ? (streams[p.cameraStreamId] ?? null) : null;
+      const cam = isMe ? camera : p.cameraStreamId && !hiddenVideo[p.userId] ? (streams[p.cameraStreamId] ?? null) : null;
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo]);
 }
 
 function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?: () => void }) {
@@ -823,32 +826,65 @@ export function VoiceBar() {
 
 // ---------- participantes embaixo do canal de voz ----------
 
-export function VoiceChannelMembers({ channelId }: { channelId: string }) {
+export function VoiceChannelMembers({ channelId, serverId }: { channelId: string; serverId?: string }) {
   const states = useVoice((v) => v.states);
   const speaking = useVoice((v) => v.speaking);
+  const myChannel = useVoice((v) => v.channelId);
   const users = useLine((s) => s.users);
   const list = participants(states, channelId);
-  if (!list.length) return null;
+  const canInvite = !!serverId && myChannel === channelId;
+  const [menu, setMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
+  if (!list.length && !canInvite) return null;
   return (
-    <div className="ml-7 space-y-0.5 pb-1">
+    <div className="ml-6 space-y-1 pt-0.5 pb-2">
+      <VoiceStatusLine channelId={channelId} />
       {list.map((p) => {
         const u = users[p.userId];
         return (
-          <div key={p.userId} className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-soft">
-            <span className={cx('rounded-full', speaking[p.userId] && 'ring-2 ring-accent')}>
-              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={22} />
+          <button
+            key={p.userId}
+            onClick={(e) => setMenu({ userId: p.userId, x: e.clientX, y: e.clientY })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ userId: p.userId, x: e.clientX, y: e.clientY });
+            }}
+            className={cx(
+              'flex w-full items-center gap-2.5 rounded-md px-1.5 py-1 text-left text-[15px] text-soft hover:bg-hover',
+              menu?.userId === p.userId && 'bg-hover',
+            )}
+          >
+            {/* Caixa fixa 24x24; o anel de "falando" fica 2px em volta, sempre redondo e centralizado. */}
+            <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
+              {speaking[p.userId] && (
+                <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-accent" />
+              )}
             </span>
             <span className="flex-1 truncate">{u?.displayName ?? 'Alguém'}</span>
-            {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
-            {p.cameraStreamId && <Icons.Video size={14} className="text-muted" />}
-            {p.deafened ? (
-              <Icons.HeadphonesOff size={14} className="text-muted" />
-            ) : p.muted ? (
-              <Icons.MicOff size={14} className="text-muted" />
-            ) : null}
-          </div>
+            <span className="flex shrink-0 items-center gap-1.5 text-muted">
+              {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
+              {p.cameraStreamId && <Icons.Video size={15} />}
+              {(p.muted || p.deafened || p.serverMuted || p.serverDeafened) && (
+                <span
+                  title={
+                    p.serverDeafened || p.serverMuted
+                      ? 'Silenciado pelo servidor'
+                      : p.deafened
+                        ? 'Microfone e áudio desativados'
+                        : 'Microfone desativado'
+                  }
+                  className="flex items-center gap-1.5"
+                >
+                  <Icons.MicOff size={15} className={cx((p.serverMuted || p.serverDeafened) && 'text-danger')} />
+                  {(p.deafened || p.serverDeafened) && <Icons.HeadphonesOff size={15} className={cx(p.serverDeafened && 'text-danger')} />}
+                </span>
+              )}
+            </span>
+          </button>
         );
       })}
+      {canInvite && <InviteToVoiceItem serverId={serverId} channelId={channelId} />}
+      {menu && <VoiceUserMenu {...menu} channelId={channelId} onClose={() => setMenu(null)} />}
     </div>
   );
 }

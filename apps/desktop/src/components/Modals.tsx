@@ -2,6 +2,7 @@
 
 import { ProfileEditor } from './ProfileEditor';
 import { UserCard } from './UserCard';
+import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
@@ -42,6 +43,10 @@ export function Modals() {
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
       return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
+    case 'voice-invite':
+      return <VoiceInviteModal serverId={modal.serverId} channelId={modal.channelId} onClose={close} />;
+    case 'voice-status':
+      return <VoiceStatusModal channelId={modal.channelId} onClose={close} />;
   }
 }
 

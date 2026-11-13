@@ -142,6 +142,9 @@ export interface VoiceState {
   cameraStreamId: string | null;
   /** id do MediaStream da tela compartilhada (null = sem compartilhamento). */
   screenStreamId: string | null;
+  /** Silenciado / com áudio desativado por um moderador do servidor. */
+  serverMuted?: boolean;
+  serverDeafened?: boolean;
   joinedAt: string;
 }
 
