@@ -105,7 +105,7 @@ export function UserPanel() {
       >
         {deafened ? <Icons.HeadphonesOff size={18} /> : <Icons.Headphones size={18} />}
       </SplitButton>
-      <button title="Configurações do perfil" onClick={() => actions.openModal({ kind: 'profile' })} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+      <button title="Configurações" onClick={() => actions.openModal({ kind: 'settings' })} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
         <Icons.Settings size={18} />
       </button>
     </div>

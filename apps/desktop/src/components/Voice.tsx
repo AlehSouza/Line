@@ -380,6 +380,15 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
 // ---------- configurações de voz ----------
 
 export function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Voz e áudio" onClose={onClose} width={480}>
+      <VoiceSettingsPanel />
+    </Modal>
+  );
+}
+
+/** Microfone, saída de áudio e supressão de ruído. */
+export function VoiceSettingsPanel() {
   const inputId = useVoice((v) => v.inputId);
   const outputId = useVoice((v) => v.outputId);
   const noise = useVoice((v) => v.noiseSuppression);
@@ -390,8 +399,7 @@ export function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
   const select = 'w-full rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none focus:border-accent';
 
   return (
-    <Modal title="Voz e áudio" onClose={onClose} width={480}>
-      <div className="space-y-4">
+    <div className="space-y-4">
         <label className="block">
           <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Microfone</span>
           <select className={select} value={inputId ?? ''} onChange={(e) => void setInputDevice(e.target.value || null)}>
@@ -415,8 +423,7 @@ export function VoiceSettingsModal({ onClose }: { onClose: () => void }) {
           </select>
         </label>
         <NoiseToggle on={noise} />
-      </div>
-    </Modal>
+    </div>
   );
 }
 

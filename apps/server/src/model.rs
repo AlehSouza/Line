@@ -20,6 +20,7 @@ pub struct SelfUser {
     pub public: PublicUser,
     pub status: String,
     pub created_at: String,
+    pub email: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

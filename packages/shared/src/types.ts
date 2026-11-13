@@ -18,6 +18,7 @@ export interface PublicUser {
 export interface SelfUser extends PublicUser {
   status: UserStatus;
   createdAt: string;
+  email?: string | null;
 }
 
 export interface Server {

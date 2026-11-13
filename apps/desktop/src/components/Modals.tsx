@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
+import { SettingsModal } from './Settings';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
@@ -24,6 +25,8 @@ export function Modals() {
       return <InviteModal serverId={modal.serverId} onClose={close} />;
     case 'profile':
       return <ProfileModal onClose={close} />;
+    case 'settings':
+      return <SettingsModal onClose={close} />;
     case 'new-dm':
       return <NewDmModal onClose={close} />;
     case 'user':
@@ -418,74 +421,81 @@ function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => v
 }
 
 function ProfileModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Meu perfil" onClose={onClose}>
+      <ProfileForm onSaved={onClose} onCancel={onClose} />
+    </Modal>
+  );
+}
+
+/** Nome de exibição, status, bio e cor do avatar. Usado no modal de perfil e nas configurações. */
+export function ProfileForm({ onSaved, onCancel }: { onSaved?: () => void; onCancel?: () => void }) {
   const me = useLine((s) => s.me);
   const [displayName, setDisplayName] = useState(me?.displayName ?? '');
   const [bio, setBio] = useState(me?.bio ?? '');
   const [customStatus, setCustomStatus] = useState(me?.customStatus ?? '');
   const [color, setColor] = useState(me?.avatarColor ?? COLORS[0]!);
+  const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
   if (!me) return null;
 
   return (
-    <Modal
-      title="Meu perfil"
-      onClose={onClose}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
+    <div className="space-y-4">
+      <div className="flex items-center gap-4 rounded-xl bg-rail p-4">
+        <Avatar name={displayName || me.username} color={color} size={64} />
+        <div className="min-w-0">
+          <p className="truncate text-lg font-bold">{displayName || me.username}</p>
+          <p className="text-sm text-muted">@{me.username}</p>
+          {customStatus && <p className="truncate text-sm text-soft">{customStatus}</p>}
+        </div>
+      </div>
+      <Field label="Nome de exibição">
+        <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
+      </Field>
+      <Field label="Status personalizado">
+        <Input
+          value={customStatus}
+          onChange={(e) => setCustomStatus(e.target.value)}
+          maxLength={128}
+          placeholder="Jogando, estudando, no rolê…"
+        />
+      </Field>
+      <Field label="Sobre mim">
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          maxLength={190}
+          rows={3}
+          className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
+        />
+      </Field>
+      <Field label="Cor do avatar">
+        <ColorPicker value={color} onChange={setColor} />
+      </Field>
+      <ErrorText>{error}</ErrorText>
+      <div className="flex items-center justify-end gap-2">
+        {saved && <span className="mr-auto text-sm text-muted">Perfil salvo.</span>}
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
             Cancelar
           </Button>
-          <Button
-            disabled={busy}
-            onClick={() =>
-              run(async () => {
-                actions.setMe(
-                  await api.updateMe({ displayName, bio, avatarColor: color, customStatus: customStatus.trim() || null }),
-                );
-                onClose();
-              })
-            }
-          >
-            Salvar
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <div className="flex items-center gap-4 rounded-xl bg-rail p-4">
-          <Avatar name={displayName || me.username} color={color} size={64} />
-          <div className="min-w-0">
-            <p className="truncate text-lg font-bold">{displayName || me.username}</p>
-            <p className="text-sm text-muted">@{me.username}</p>
-            {customStatus && <p className="truncate text-sm text-soft">{customStatus}</p>}
-          </div>
-        </div>
-        <Field label="Nome de exibição">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
-        </Field>
-        <Field label="Status personalizado">
-          <Input
-            value={customStatus}
-            onChange={(e) => setCustomStatus(e.target.value)}
-            maxLength={128}
-            placeholder="Jogando, estudando, no rolê…"
-          />
-        </Field>
-        <Field label="Sobre mim">
-          <textarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            maxLength={190}
-            rows={3}
-            className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
-          />
-        </Field>
-        <Field label="Cor do avatar">
-          <ColorPicker value={color} onChange={setColor} />
-        </Field>
-        <ErrorText>{error}</ErrorText>
+        )}
+        <Button
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              actions.setMe(
+                await api.updateMe({ displayName, bio, avatarColor: color, customStatus: customStatus.trim() || null }),
+              );
+              setSaved(true);
+              onSaved?.();
+            })
+          }
+        >
+          Salvar
+        </Button>
       </div>
-    </Modal>
+    </div>
   );
 }
 

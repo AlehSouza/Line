@@ -52,6 +52,8 @@ pub struct UserRow {
     pub custom_status: Option<String>,
     pub status: String,
     pub created_at: String,
+    /// Só vem nas consultas da própria tabela users (as junções não trazem).
+    pub email: Option<String>,
 }
 
 impl UserRow {
@@ -66,6 +68,7 @@ impl UserRow {
             custom_status: r.get("custom_status")?,
             status: r.get("status")?,
             created_at: r.get("created_at")?,
+            email: r.get::<_, Option<String>>("email").unwrap_or(None),
         })
     }
 }
@@ -214,7 +217,7 @@ impl Q<'_> {
 
     // ---------- usuários ----------
 
-    fn user_row(&self, id: &str) -> Option<UserRow> {
+    pub fn user_row(&self, id: &str) -> Option<UserRow> {
         ok(self
             .c
             .query_row("SELECT * FROM users WHERE id = ?", [id], UserRow::from_row)
@@ -261,7 +264,20 @@ impl Q<'_> {
             public,
             status: row.status.clone(),
             created_at: row.created_at.clone(),
+            email: row.email.clone(),
         }
+    }
+
+    pub fn set_username(&self, id: &str, username: &str) {
+        ok(self.c.execute("UPDATE users SET username = ? WHERE id = ?", params![username, id]));
+    }
+
+    pub fn set_email(&self, id: &str, email: Option<&str>) {
+        ok(self.c.execute("UPDATE users SET email = ? WHERE id = ?", params![email, id]));
+    }
+
+    pub fn set_password_hash(&self, id: &str, hash: &str) {
+        ok(self.c.execute("UPDATE users SET password_hash = ? WHERE id = ?", params![hash, id]));
     }
 
     pub fn public_user(&self, id: &str) -> Option<PublicUser> {

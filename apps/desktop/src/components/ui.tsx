@@ -245,6 +245,7 @@ export const Icons = {
     </>,
   ),
   Chevron: icon(<path d="m6 9 6 6 6-6" />),
+  User: icon(<path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" />),
   X: icon(<path d="M18 6 6 18M6 6l12 12" />),
   Edit: icon(<path d="M12 20h9M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z" />),
   Trash: icon(<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />),

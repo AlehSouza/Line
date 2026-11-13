@@ -15,6 +15,7 @@ export type Modal =
   | { kind: 'server-settings'; serverId: string }
   | { kind: 'invite'; serverId: string }
   | { kind: 'profile' }
+  | { kind: 'settings' }
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }

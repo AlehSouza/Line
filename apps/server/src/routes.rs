@@ -15,7 +15,7 @@ use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post, put};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::json;
 use socketioxide::layer::SocketIoLayer;
@@ -64,6 +64,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/config", get(auth_config))
         .route("/auth/login", post(login))
         .route("/users/@me", get(get_me).patch(update_me))
+        .route("/users/@me/account", patch(update_account))
+        .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
@@ -235,6 +237,55 @@ async fn login(State(app): S, b: Bytes) -> Res {
 
 async fn get_me(State(app): S, Me(me): Me) -> Res {
     ok(app.store.q().self_user(&me))
+}
+
+/// Confere a senha atual (scrypt fora das threads de rede).
+async fn check_password(app: &App, me: &str, password: String) -> ApiResult<()> {
+    let stored = app.store.q().user_row(me).map(|r| r.password_hash).unwrap_or_default();
+    let valid = tokio::task::spawn_blocking(move || auth::verify_password(&password, &stored))
+        .await
+        .unwrap_or(false);
+    if valid { Ok(()) } else { Err(validation("Senha atual incorreta")) }
+}
+
+async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let input = body::<validate::UpdateAccount>(&b)?.check()?;
+    check_password(&app, &me, input.current_password.clone()).await?;
+    let q = app.store.q();
+    if let Some(name) = &input.username
+        && q.user_by_username(name).is_some_and(|u| u.id != me)
+    {
+        return Err(conflict("Esse nome de usuário já está em uso"));
+    }
+    if let Some(Some(email)) = &input.email
+        && q.user_row(&me).and_then(|u| u.email).as_deref() != Some(email.as_str())
+        && q.email_in_use(email)
+    {
+        return Err(conflict("Esse email já tem uma conta"));
+    }
+    if let Some(name) = &input.username {
+        q.set_username(&me, name);
+    }
+    if let Some(email) = &input.email {
+        q.set_email(&me, email.as_deref());
+    }
+    let user = q.self_user(&me).ok_or_else(|| validation("Conta não encontrada"))?;
+    app.to_user(&me, "self:update", &user);
+    if let Some(public) = q.public_user(&me) {
+        app.to_users(&q.audience_of(&me), "user:update", &public);
+    }
+    ok(user)
+}
+
+async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let input = body::<validate::ChangePassword>(&b)?.check()?;
+    check_password(&app, &me, input.current_password).await?;
+    let password = input.new_password;
+    let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
+        .await
+        .expect("scrypt");
+    app.store.q().set_password_hash(&me, &hash);
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {

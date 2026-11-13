@@ -109,6 +109,10 @@ export const api = {
 
   me: () => request<SelfUser>('GET', '/users/@me'),
   updateMe: (patch: UpdateProfileInput) => request<SelfUser>('PATCH', '/users/@me', patch),
+  updateAccount: (patch: { username?: string; email?: string | null; currentPassword: string }) =>
+    request<SelfUser>('PATCH', '/users/@me/account', patch),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('POST', '/users/@me/password', { currentPassword, newPassword }),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
 
   servers: () => request<Server[]>('GET', '/servers'),
