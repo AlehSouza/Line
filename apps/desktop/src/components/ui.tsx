@@ -255,6 +255,7 @@ export const Icons = {
   Poll: icon(L.ChartBar),
   Ban: icon(L.Ban),
   Camera: icon(L.Camera),
+  AtSign: icon(L.AtSign),
   UserPlus: icon(L.UserPlus),
   UserCheck: icon(L.UserCheck),
   Clock: icon(L.Clock),

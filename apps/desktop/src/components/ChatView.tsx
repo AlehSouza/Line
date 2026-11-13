@@ -212,6 +212,21 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
     loadMessages(channel.id).catch((e) => setError(e.message));
   }, [channel.id]);
 
+  // Pular para uma mensagem (resultado de busca): rola até ela e destaca por um tempo.
+  const highlight = useLine((s) => (s.highlight?.channelId === channel.id ? s.highlight.messageId : null));
+  useEffect(() => {
+    if (!highlight || !items.some((m) => m.id === highlight)) return;
+    stickToBottom.current = false;
+    const t = window.setTimeout(() => {
+      scroller.current?.querySelector(`[data-mid="${highlight}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 60);
+    const clear = window.setTimeout(() => actions.setHighlight(null), 2600);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(clear);
+    };
+  }, [highlight, items]);
+
   // Mantém a rolagem no fim quando chegam mensagens novas, e a posição quando carregamos antigas.
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -219,7 +234,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
     if (loadingOlder.current) {
       el.scrollTop = el.scrollHeight - prevHeight.current;
       loadingOlder.current = false;
-    } else if (stickToBottom.current) {
+    } else if (stickToBottom.current && !useLine.getState().highlight) {
       el.scrollTop = el.scrollHeight;
     }
   }, [items]);
@@ -297,6 +312,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             <Fragment key={m.id}>
               {newDay && <DayDivider date={m.createdAt} />}
               <MessageRow
+                highlighted={highlight === m.id}
                 message={m}
                 authorName={author.displayName}
                 authorColor={author.avatarColor}
@@ -342,6 +358,7 @@ function formatTime(iso: string) {
 }
 
 function MessageRow({
+  highlighted,
   message,
   authorName,
   authorColor,
@@ -355,6 +372,7 @@ function MessageRow({
   canThread,
   tight,
 }: {
+  highlighted?: boolean;
   message: Message;
   authorName: string;
   authorColor: string;
@@ -385,10 +403,12 @@ function MessageRow({
 
   return (
     <div
+      data-mid={message.id}
       className={cx(
-        'group relative flex gap-4 px-4 py-1.5 hover:bg-black/10',
+        'group relative flex gap-4 px-4 py-1.5 transition-colors duration-700 hover:bg-black/10',
         !grouped && (tight ? 'mt-2' : 'mt-4'),
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
+        highlighted && 'bg-accent/15',
       )}
     >
       <div className="w-10 shrink-0">

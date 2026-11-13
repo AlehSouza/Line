@@ -133,6 +133,27 @@ export async function ensureServerLoaded(serverId: string, force = false) {
   actions.loadServerDetail(serverId, detail.categories, detail.channels, detail.members);
 }
 
+/** Abre o canal (ou a thread) da mensagem e rola até ela. */
+export async function jumpToMessage(message: Message) {
+  const s = useLine.getState();
+  const channel = s.channels[message.channelId];
+  if (!channel) return;
+  const bucket = s.messages[channel.id];
+  if (!bucket?.items.some((m) => m.id === message.id)) {
+    const items = await api.messagesAround(channel.id, message.id);
+    actions.setMessages(channel.id, items, true);
+  }
+  if (channel.type === 'thread' && channel.parentId && channel.serverId) {
+    actions.goServer(channel.serverId, channel.parentId);
+    actions.openThread(channel.id);
+  } else if (channel.serverId) {
+    actions.goServer(channel.serverId, channel.id);
+  } else {
+    actions.goHome(channel.id);
+  }
+  actions.setHighlight({ channelId: channel.id, messageId: message.id });
+}
+
 export async function loadMessages(channelId: string, older = false) {
   const bucket = useLine.getState().messages[channelId];
   if (older && (!bucket || !bucket.hasMore)) return;

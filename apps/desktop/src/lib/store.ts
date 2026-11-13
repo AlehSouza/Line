@@ -61,6 +61,8 @@ export interface LineState {
   threadId: string | null;
   /** "Responder" numa mensagem sem thread: painel aberto, thread criada só na primeira resposta. */
   threadDraft: Channel | null;
+  /** Mensagem para rolar até e destacar (busca). */
+  highlight: { channelId: string; messageId: string } | null;
   modal: Modal;
 }
 
@@ -83,6 +85,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   view: { kind: 'home', dmId: null },
   threadId: null,
   threadDraft: null,
+  highlight: null,
   modal: null,
 };
 
@@ -397,6 +400,10 @@ export const actions = {
     }
     set({ threadId });
     actions.markRead(threadId);
+  },
+
+  setHighlight(h: { channelId: string; messageId: string } | null) {
+    set({ highlight: h });
   },
 
   closeThread() {

@@ -8,7 +8,7 @@ import { ChatView, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendsView } from './FriendsView';
-import { MemberList } from './MemberList';
+import { ServerSidePanel } from './MemberList';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
@@ -82,7 +82,7 @@ export function AppShell() {
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
         ) : (
-          view.kind === 'server' && channel?.type === 'text' && <MemberList serverId={view.serverId} />
+          view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />
         )}
       </div>
       <Modals />

@@ -195,6 +195,20 @@ pub struct ChannelPatch {
     pub position: Option<i64>,
 }
 
+pub enum SearchScope {
+    Server(String),
+    Channel(String),
+}
+
+#[derive(Default)]
+pub struct SearchFilter {
+    pub text: String,
+    pub author_id: Option<String>,
+    pub channel_id: Option<String>,
+    pub mentions: Option<String>,
+    pub has: Option<String>,
+}
+
 pub enum FriendRequest {
     Created,
     Accepted,
@@ -866,6 +880,69 @@ impl Q<'_> {
         };
         rows.reverse();
         rows
+    }
+
+    /// Mensagens em volta de uma (para pular até ela): 25 antes e até 500 depois.
+    pub fn messages_around(&self, channel_id: &str, around: &str) -> Vec<Message> {
+        let mut before = self.message_rows(
+            &format!("{} WHERE m.channel_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT 25", message_select()),
+            params![channel_id, around],
+        );
+        before.reverse();
+        let after = self.message_rows(
+            &format!("{} WHERE m.channel_id = ? AND m.id >= ? ORDER BY m.id ASC LIMIT 500", message_select()),
+            params![channel_id, around],
+        );
+        before.extend(after);
+        before
+    }
+
+    /// Busca nas mensagens de um servidor (canais e threads) ou de uma conversa.
+    pub fn search_messages(&self, scope: &SearchScope, f: &SearchFilter, offset: i64) -> Vec<Message> {
+        let mut sql = format!("{} WHERE ", message_select());
+        let mut args: Vec<String> = Vec::new();
+        match scope {
+            SearchScope::Server(id) => {
+                sql.push_str(
+                    "m.channel_id IN (SELECT id FROM channels WHERE type != 'voice' AND (server_id = ? OR parent_id IN (SELECT id FROM channels WHERE server_id = ?)))",
+                );
+                args.push(id.clone());
+                args.push(id.clone());
+            }
+            SearchScope::Channel(id) => {
+                sql.push_str("m.channel_id = ?");
+                args.push(id.clone());
+            }
+        }
+        let like = |t: &str| format!("%{}%", t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        for word in f.text.split_whitespace().take(8) {
+            sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
+            args.push(like(word));
+        }
+        if let Some(a) = &f.author_id {
+            sql.push_str(" AND m.author_id = ?");
+            args.push(a.clone());
+        }
+        if let Some(c) = &f.channel_id {
+            sql.push_str(" AND (m.channel_id = ? OR m.channel_id IN (SELECT id FROM channels WHERE parent_id = ?))");
+            args.push(c.clone());
+            args.push(c.clone());
+        }
+        if let Some(u) = &f.mentions {
+            sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
+            args.push(like(&format!("@{u}")));
+        }
+        match f.has.as_deref() {
+            Some("link") => sql.push_str(" AND (m.content LIKE '%http://%' OR m.content LIKE '%https://%')"),
+            Some("anexo") => sql.push_str(" AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)"),
+            Some("imagem") => sql.push_str(" AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.content_type LIKE 'image/%')"),
+            Some("arquivo") => sql.push_str(
+                " AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.content_type NOT LIKE 'image/%' AND a.content_type NOT LIKE 'video/%')",
+            ),
+            _ => {}
+        }
+        sql.push_str(&format!(" ORDER BY m.id DESC LIMIT 25 OFFSET {}", offset.max(0)));
+        self.message_rows(&sql, rusqlite::params_from_iter(args))
     }
 
     pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str, attachment_ids: &[String]) -> Message {

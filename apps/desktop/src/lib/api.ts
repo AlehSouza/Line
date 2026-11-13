@@ -149,6 +149,16 @@ export const api = {
 
   messages: (channelId: string, before?: string, limit = 50) =>
     request<Message[]>('GET', `/channels/${enc(channelId)}/messages?limit=${limit}${before ? `&before=${enc(before)}` : ''}`),
+  messagesAround: (channelId: string, messageId: string) =>
+    request<Message[]>('GET', `/channels/${enc(channelId)}/messages?around=${enc(messageId)}`),
+  search: (params: Record<string, string | undefined>) =>
+    request<Message[]>(
+      'GET',
+      `/search?${Object.entries(params)
+        .filter(([, v]) => v)
+        .map(([k, v]) => `${k}=${enc(v!)}`)
+        .join('&')}`,
+    ),
   sendMessage: (channelId: string, content: string, attachmentIds: string[] = []) =>
     request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds }),
   uploadAttachment,

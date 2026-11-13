@@ -2,7 +2,7 @@
 use crate::errors::*;
 use crate::gateway::VoiceFilter;
 use crate::model::*;
-use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, ServerPatch};
+use crate::store::{ChannelPatch, FriendRequest, ProfilePatch, Q, SearchFilter, SearchScope, ServerPatch};
 use crate::validate::{self, body};
 use crate::{App, VERSION, auth};
 use axum::body::{Body, Bytes};
@@ -68,6 +68,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
         .route("/users/{id}/mutual", get(get_mutual))
+        .route("/search", get(search))
         .route("/gifs", get(search_gifs))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
@@ -348,6 +349,41 @@ async fn get_user(State(app): S, Me(_): Me, Path(id): Path<String>) -> Res {
         .q()
         .public_user(&id)
         .ok_or_else(|| not_found("Usuário"))?)
+}
+
+/// Busca de mensagens: `server` ou `channel`, mais `q`, `author`, `in`, `mentions` e `has`.
+async fn search(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let q = app.store.q();
+    let get = |k: &str| qs.get(k).map(|s| s.trim()).filter(|s| !s.is_empty()).map(|s| s.chars().take(100).collect::<String>());
+    let scope = if let Some(server) = get("server") {
+        if !q.is_member(&server, &me) {
+            return Err(not_found("Servidor"));
+        }
+        SearchScope::Server(server)
+    } else if let Some(channel) = get("channel") {
+        SearchScope::Channel(require_access(&q, &channel, &me)?.id)
+    } else {
+        return Err(bad_request("Diga onde buscar"));
+    };
+    let user = |name: Option<String>| -> ApiResult<Option<String>> {
+        match name {
+            None => Ok(None),
+            Some(n) => Ok(Some(
+                q.user_by_username(&n.trim_start_matches('@').to_lowercase())
+                    .ok_or_else(|| not_found(&format!("Usuário \"{n}\"")))?
+                    .id,
+            )),
+        }
+    };
+    let filter = SearchFilter {
+        text: get("q").unwrap_or_default(),
+        author_id: user(get("author"))?,
+        channel_id: get("in"),
+        mentions: get("mentions").map(|m| m.trim_start_matches('@').to_lowercase()),
+        has: get("has"),
+    };
+    let offset = qs.get("offset").and_then(|o| o.parse::<i64>().ok()).unwrap_or(0).min(10_000);
+    ok(q.search_messages(&scope, &filter, offset))
 }
 
 /// Amigos e servidores em comum com outra pessoa (cartão de perfil).
@@ -704,6 +740,9 @@ async fn list_messages(
         .filter(|l| *l != 0.0 && l.is_finite())
         .unwrap_or(50.0);
     let limit = limit.clamp(1.0, 100.0) as i64;
+    if let Some(around) = qs.get("around").filter(|a| !a.is_empty()) {
+        return ok(q.messages_around(&channel.id, around));
+    }
     let before = qs.get("before").filter(|b| !b.is_empty());
     ok(q.messages(&channel.id, before.map(|s| s.as_str()), limit))
 }

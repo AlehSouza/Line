@@ -1,7 +1,8 @@
 'use client';
 
 import type { PublicUser } from '@line/shared';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { SearchBox, SearchResults } from './SearchPanel';
 import { actions, useLine } from '@/lib/store';
 import { Avatar, cx, ListSkeleton } from './ui';
 
@@ -54,7 +55,7 @@ export function MemberList({ serverId }: { serverId: string }) {
     );
 
   return (
-    <aside className="hidden w-60 shrink-0 space-y-5 overflow-y-auto bg-side px-2 py-4 lg:block">
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 py-4">
       {!members ? (
         <ListSkeleton count={8} avatar />
       ) : (
@@ -63,6 +64,21 @@ export function MemberList({ serverId }: { serverId: string }) {
           {section('Offline', offline)}
         </>
       )}
+    </div>
+  );
+}
+
+/** Coluna da direita do servidor: busca no topo e, embaixo, membros ou resultados. */
+export function ServerSidePanel({ serverId }: { serverId: string }) {
+  const [query, setQuery] = useState<string | null>(null);
+  return (
+    <aside className={cx('hidden shrink-0 flex-col bg-side transition-[width] lg:flex', query ? 'w-[420px]' : 'w-60')}>
+      <div className="flex h-12 shrink-0 items-center border-b border-rail px-2 shadow-sm">
+        <div className="flex-1">
+          <SearchBox serverId={serverId} active={!!query} onSearch={setQuery} onClear={() => setQuery(null)} />
+        </div>
+      </div>
+      {query ? <SearchResults key={query} serverId={serverId} query={query} /> : <MemberList serverId={serverId} />}
     </aside>
   );
 }
