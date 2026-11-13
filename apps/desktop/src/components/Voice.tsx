@@ -116,6 +116,43 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
 // ---------- palco da chamada ----------
 
 /** Área principal de um canal de voz (ou o topo de uma DM em chamada). */
+const GAP = 12;
+
+/** Quadros 16:9 centralizados e do maior tamanho que cabe no espaço, sem barra de rolagem. */
+function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBox({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Testa cada número de colunas e fica com o que deixa os quadros maiores.
+  const n = Math.max(1, tiles.length);
+  let width = 0;
+  for (let cols = 1; cols <= n; cols++) {
+    const rows = Math.ceil(n / cols);
+    const byW = (box.w - GAP * (cols - 1)) / cols;
+    const byH = ((box.h - GAP * (rows - 1)) / rows) * (16 / 9);
+    width = Math.max(width, Math.min(byW, byH));
+  }
+  width = Math.floor(Math.min(width, 960));
+
+  return (
+    <div ref={ref} className="flex min-h-0 flex-1 flex-wrap content-center items-center justify-center overflow-hidden" style={{ gap: GAP }}>
+      {width > 0 &&
+        tiles.map((t) => (
+          <div key={t.key} style={{ width }}>
+            <TileView tile={t} onClick={() => onFocus(t.key)} />
+          </div>
+        ))}
+    </div>
+  );
+}
+
 export function VoiceStage({ channel, compact }: { channel: Channel; compact?: boolean }) {
   const inCall = useVoice((v) => v.channelId === channel.id);
   const connecting = useVoice((v) => v.connecting && v.channelId === channel.id);
@@ -133,7 +170,6 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   }, [firstScreen]);
   const focused = tiles.find((t) => t.key === focus);
   const others = focused ? tiles.filter((t) => t !== focused) : tiles;
-  const cols = others.length <= 1 ? 1 : others.length <= 4 ? 2 : 3;
 
   return (
     <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
@@ -169,16 +205,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             )}
           </>
         ) : (
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto">
-            <div
-              className="grid w-full gap-3"
-              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, maxWidth: cols === 1 ? 720 : undefined }}
-            >
-              {others.map((t) => (
-                <TileView key={t.key} tile={t} onClick={() => setFocus(t.key)} />
-              ))}
-            </div>
-          </div>
+          <TileGrid tiles={others} onFocus={setFocus} />
         )}
 
         {error && (

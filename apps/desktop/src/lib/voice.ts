@@ -229,6 +229,7 @@ async function rejoin(channelId: string) {
 
 export async function leaveVoice(notify = true) {
   if (notify) socket?.emit('voice:leave');
+  if (cameraOpening) cameraCancelled = true;
   cleanupPeers();
   stopStream(getV().camera);
   stopStream(getV().screen);
@@ -365,8 +366,16 @@ export function setScreenQuality(q: ScreenQuality) {
   savePrefs();
 }
 
+// Câmera abrindo (getUserMedia pode demorar): um segundo clique cancela em vez de abrir outra.
+let cameraOpening = false;
+let cameraCancelled = false;
+
 export async function toggleCamera() {
   const { camera } = getV();
+  if (cameraOpening) {
+    cameraCancelled = true;
+    return;
+  }
   if (camera) {
     removeStreamFromPeers(camera);
     stopStream(camera);
@@ -374,16 +383,25 @@ export async function toggleCamera() {
     socket?.emit('voice:state', { cameraStreamId: null });
     return;
   }
+  cameraOpening = true;
+  cameraCancelled = false;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
       audio: false,
     });
+    // Desligou (ou saiu da chamada) enquanto a câmera abria: solta o dispositivo na hora.
+    if (cameraCancelled || !getV().channelId) {
+      stopStream(stream);
+      return;
+    }
     setV({ camera: stream });
     addStreamToPeers(stream);
     socket?.emit('voice:state', { cameraStreamId: stream.id });
   } catch (err) {
     setV({ error: (err as Error).name === 'NotAllowedError' ? 'Sem permissão para usar a câmera.' : 'Não foi possível abrir a câmera.' });
+  } finally {
+    cameraOpening = false;
   }
 }
 
