@@ -69,6 +69,8 @@ export interface ClientToServerEvents {
   'voice:status': (payload: { channelId: string; status: string }) => void;
   /** Moderação de voz (dono do servidor, por enquanto). */
   'voice:moderate': (payload: VoiceModeration) => void;
+  /** Pede de novo quem está em cada canal de voz e os status dos canais. */
+  'voice:sync': (ack: (res: { states: VoiceState[]; statuses: Record<string, string> }) => void) => void;
 }
 
 export type VoiceModeration =

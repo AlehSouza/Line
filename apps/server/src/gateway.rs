@@ -113,6 +113,22 @@ impl App {
         now(self.io.to(user_room(user_id)).join(server_room(server_id)));
     }
 
+    /// Quem está em cada canal de voz (com o horário de entrada, usado no cronômetro) e o status
+    /// de cada canal, só do que o usuário enxerga.
+    pub fn voice_snapshot(&self, q: &Q, user_id: &str) -> (Vec<crate::voice::VoiceState>, serde_json::Map<String, Value>) {
+        let (states, statuses) = {
+            let voice = lock(&self.voice);
+            (voice.all().into_iter().map(|v| v.state).collect::<Vec<_>>(), voice.statuses())
+        };
+        let states = states.into_iter().filter(|v| q.can_access(user_id, &v.channel_id)).collect();
+        let statuses = statuses
+            .into_iter()
+            .filter(|(c, _)| q.can_access(user_id, c))
+            .map(|(c, st)| (c, Value::String(st)))
+            .collect();
+        (states, statuses)
+    }
+
     pub fn leave_server(&self, user_id: &str, server_id: &str) {
         now(self.io.to(user_room(user_id)).leave(server_room(server_id)));
     }
@@ -215,22 +231,8 @@ async fn on_connect(
         if came_online {
             app.broadcast_presence(&q, &user_id);
         }
-        let states: Vec<_> = lock(&app.voice)
-            .all()
-            .into_iter()
-            .map(|v| v.state)
-            .collect();
-        let visible: Vec<_> = states
-            .into_iter()
-            .filter(|v| q.can_access(&user_id, &v.channel_id))
-            .collect();
-        let _ = s.emit("voice:snapshot", &visible);
-        let statuses: serde_json::Map<String, Value> = lock(&app.voice)
-            .statuses()
-            .into_iter()
-            .filter(|(c, _)| q.can_access(&user_id, c))
-            .map(|(c, st)| (c, Value::String(st)))
-            .collect();
+        let (states, statuses) = app.voice_snapshot(&q, &user_id);
+        let _ = s.emit("voice:snapshot", &states);
         let _ = s.emit("voice:statuses", &statuses);
     }
 
@@ -242,6 +244,7 @@ async fn on_connect(
     s.on("voice:signal", voice_signal);
     s.on("voice:status", voice_status);
     s.on("voice:moderate", voice_moderate);
+    s.on("voice:sync", voice_sync);
     s.on_disconnect(on_disconnect);
 }
 
@@ -375,6 +378,14 @@ async fn voice_join(
         .filter(|v| v.user_id != me)
         .collect();
     let _ = ack.send(&json!({ "ok": true, "peers": peers }));
+}
+
+/// O app pede de novo o estado da voz (ao conectar, ao entrar num servidor ou abrir outro),
+/// para não depender só do que chegou no momento da conexão.
+async fn voice_sync(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, ack: AckSender) {
+    let q = app.store.q();
+    let (states, statuses) = app.voice_snapshot(&q, &me);
+    let _ = ack.send(&json!({ "states": states, "statuses": statuses }));
 }
 
 async fn voice_leave(
