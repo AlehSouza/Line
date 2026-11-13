@@ -83,6 +83,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const uploading = avatar.uploading || banner.uploading;
 
   return (
+    <div className="space-y-6">
     <div className="flex flex-col gap-8 lg:flex-row">
       <div className="min-w-0 flex-1 space-y-5">
         <Field label="Nome de exibição">
@@ -137,18 +138,6 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           <p className="mt-1.5 text-xs text-muted">Em breve você vai poder conectar suas contas.</p>
         </div>
 
-        <ErrorText>{error}</ErrorText>
-        <div className="flex items-center justify-end gap-2">
-          {saved && <span className="mr-auto text-sm text-muted">Perfil salvo.</span>}
-          {onCancel && (
-            <Button variant="ghost" onClick={onCancel}>
-              Cancelar
-            </Button>
-          )}
-          <Button disabled={busy || uploading} onClick={save}>
-            {uploading ? 'Enviando imagem…' : busy ? 'Salvando…' : 'Salvar'}
-          </Button>
-        </div>
       </div>
 
       {crop && (
@@ -191,6 +180,19 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
             </button>
           )}
         </div>
+      </div>
+    </div>
+      <ErrorText>{error}</ErrorText>
+      <div className="flex items-center justify-end gap-2 border-t border-edge pt-4">
+        {saved && <span className="mr-auto text-sm text-muted">Perfil salvo.</span>}
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancelar
+          </Button>
+        )}
+        <Button disabled={busy || uploading} onClick={save} className="px-6">
+          {uploading ? 'Enviando imagem…' : busy ? 'Salvando…' : 'Salvar'}
+        </Button>
       </div>
     </div>
   );
