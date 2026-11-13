@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { Avatar, Button, cx, ErrorText, Icons, PresenceDot, presenceLabel } from './ui';
+import { confirmDialog } from './Dialogs';
 
 export const statusOptions: { value: UserStatus; label: string; hint?: string; presence: 'online' | 'idle' | 'dnd' | 'offline' }[] = [
   { value: 'online', label: 'Disponível', presence: 'online' },
@@ -146,7 +147,7 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
                     <MenuItem
                       danger
                       icon={<Icons.UserMinus size={16} />}
-                      onClick={() => confirm(`Desfazer amizade com ${user.displayName}?`) && run(() => api.removeFriend(userId))}
+                      onClick={async () => (await confirmDialog({ title: 'Desfazer amizade', message: `Tirar ${user.displayName} dos seus amigos?`, confirmLabel: 'Desfazer amizade', danger: true })) && run(() => api.removeFriend(userId))}
                     >
                       Desfazer amizade
                     </MenuItem>
@@ -155,7 +156,7 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
                     <MenuItem
                       danger
                       icon={<Icons.Ban size={16} />}
-                      onClick={() => confirm(`Bloquear ${user.displayName}?`) && run(async () => actions.upsertFriend(await api.blockUser(userId)))}
+                      onClick={async () => (await confirmDialog({ title: `Bloquear ${user.displayName}`, message: 'A pessoa não vai poder te mandar pedidos nem mensagens diretas.', confirmLabel: 'Bloquear', danger: true })) && run(async () => actions.upsertFriend(await api.blockUser(userId)))}
                     >
                       Bloquear
                     </MenuItem>

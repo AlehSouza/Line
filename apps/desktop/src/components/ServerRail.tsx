@@ -9,6 +9,7 @@ import { actions, permsOf, useLine } from '@/lib/store';
 import { useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { Avatar, cx, Icons, initials, Logo } from './ui';
+import { confirmDialog } from './Dialogs';
 
 export function ServerRail() {
   const view = useLine((s) => s.view);
@@ -239,7 +240,7 @@ function serverMenu(serverId: string): MenuEntry[] {
       icon: <Icons.Logout size={15} />,
       danger: true,
       onClick: async () => {
-        if (confirm(`Sair de ${server.name}?`)) await api.leaveServer(serverId);
+        if (await confirmDialog({ title: `Sair de ${server.name}`, message: 'Você pode voltar depois com um convite.', confirmLabel: 'Sair', danger: true })) await api.leaveServer(serverId);
       },
     },
   ];

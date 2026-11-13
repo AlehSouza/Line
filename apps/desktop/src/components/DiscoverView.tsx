@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
 import { Button, Icons, initials, Input, Skeleton } from './ui';
+import { showError } from './Dialogs';
 
 export function DiscoverView() {
   const [query, setQuery] = useState('');
@@ -27,7 +28,7 @@ export function DiscoverView() {
       actions.upsertServer(joined);
       actions.goServer(joined.id);
     } catch (e) {
-      alert((e as Error).message);
+      showError(e);
     }
   }
 

@@ -5,6 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { Avatar, Button, cx, Icons, Input, presenceLabel } from './ui';
+import { confirmDialog, showError } from './Dialogs';
 
 type Tab = 'online' | 'all' | 'pending' | 'blocked' | 'add';
 
@@ -98,7 +99,7 @@ export function FriendsView() {
 
 function FriendRow({ friend }: { friend: Friend }) {
   const { user, state } = friend;
-  const run = (fn: () => Promise<unknown>) => fn().catch((e) => alert(e.message));
+  const run = (fn: () => Promise<unknown>) => fn().catch(showError);
 
   return (
     <div className="group flex items-center gap-3 rounded-lg border-t border-edge px-2 py-2.5 hover:bg-hover">
@@ -145,8 +146,8 @@ function FriendRow({ friend }: { friend: Friend }) {
           <IconButton
             title="Bloquear"
             className="hover:text-danger"
-            onClick={() => {
-              if (confirm(`Bloquear ${user.displayName}? A pessoa não vai poder te mandar pedidos nem mensagens diretas.`))
+            onClick={async () => {
+              if (await confirmDialog({ title: `Bloquear ${user.displayName}`, message: 'A pessoa não vai poder te mandar pedidos nem mensagens diretas.', confirmLabel: 'Bloquear', danger: true }))
                 run(() => api.blockUser(user.id));
             }}
           >
@@ -155,8 +156,8 @@ function FriendRow({ friend }: { friend: Friend }) {
           <IconButton
             title={state === 'friends' ? 'Desfazer amizade' : state === 'incoming' ? 'Recusar' : 'Cancelar pedido'}
             className="hover:text-danger"
-            onClick={() => {
-              if (state !== 'friends' || confirm(`Desfazer amizade com ${user.displayName}?`)) run(() => api.removeFriend(user.id));
+            onClick={async () => {
+              if (state !== 'friends' || (await confirmDialog({ title: 'Desfazer amizade', message: `Tirar ${user.displayName} dos seus amigos?`, confirmLabel: 'Desfazer amizade', danger: true }))) run(() => api.removeFriend(user.id));
             }}
           >
             {state === 'friends' ? <Icons.UserMinus size={18} /> : <Icons.X size={18} />}

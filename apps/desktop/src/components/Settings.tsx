@@ -7,6 +7,7 @@ import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
+import { showError, toast } from './Dialogs';
 
 type Section = 'account' | 'profile' | 'voice';
 
@@ -107,7 +108,17 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
           </div>
           {typeof window !== 'undefined' && window.line?.updates?.run && (
             <button
-              onClick={() => void window.line?.updates?.run?.().catch((e) => alert(String(e)))}
+              onClick={async () => {
+                const updates = window.line?.updates;
+                if (!updates) return;
+                try {
+                  // Só abre a janelinha de download se houver versão nova; senão, só avisa no topo.
+                  if (!(await updates.check())) return toast('Você já está na versão mais nova.');
+                  await updates.run?.();
+                } catch (e) {
+                  showError(e);
+                }
+              }}
               className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-soft hover:bg-hover/60 hover:text-fg"
             >
               Procurar atualizações
@@ -231,9 +242,9 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
           e.preventDefault();
           void save();
         }}
-        className="w-full max-w-sm space-y-4 rounded-xl border border-edge bg-side p-6 shadow-2xl"
+        className="w-full max-w-sm space-y-4 rounded-2xl border border-edge bg-side p-6 shadow-2xl"
       >
-        <h3 className="text-lg font-bold">{title}</h3>
+        <h3 className="text-xl font-bold">{title}</h3>
         {done ? (
           <>
             <p className="text-sm text-soft">Senha alterada.</p>

@@ -9,6 +9,7 @@ import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { cx, Icons, ListSkeleton } from './ui';
 import { VoiceChannelMembers } from './Voice';
 import { CallTimer } from './VoiceInvite';
+import { confirmDialog, showError } from './Dialogs';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
@@ -90,9 +91,9 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             <button
               title="Excluir canal"
               onClick={async () => {
-                if (confirm(`Excluir o canal #${c.name}? As mensagens dele serão apagadas.`)) {
+                if (await confirmDialog({ title: `Excluir #${c.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true })) {
                   const { api } = await import('@/lib/api');
-                  await api.deleteChannel(c.id).catch((e) => alert(e.message));
+                  await api.deleteChannel(c.id).catch(showError);
                 }
               }}
               className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
@@ -196,9 +197,9 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 icon={<Icons.Logout size={16} />}
                 danger
                 onClick={async () => {
-                  if (!confirm(`Sair de ${server.name}?`)) return;
+                  if (!(await confirmDialog({ title: `Sair de ${server.name}`, message: 'Você pode voltar depois com um convite.', confirmLabel: 'Sair', danger: true }))) return;
                   const { api } = await import('@/lib/api');
-                  await api.leaveServer(serverId).catch((e) => alert(e.message));
+                  await api.leaveServer(serverId).catch(showError);
                 }}
                 close={() => setMenuOpen(false)}
               >
@@ -293,7 +294,7 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
       icon: <Icons.Trash size={15} />,
       danger: true,
       onClick: async () => {
-        if (confirm(`Excluir o canal #${c.name}? As mensagens dele serão apagadas.`)) {
+        if (await confirmDialog({ title: `Excluir #${c.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true })) {
           const { api } = await import('@/lib/api');
           await api.deleteChannel(c.id);
         }

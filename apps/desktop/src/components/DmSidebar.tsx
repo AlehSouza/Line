@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { Avatar, cx, Icons } from './ui';
+import { confirmDialog, showError } from './Dialogs';
 
 export function DmSidebar() {
   const view = useLine((s) => s.view);
@@ -94,7 +95,7 @@ export function DmSidebar() {
                 <button
                   title="Sair do grupo"
                   onClick={async () => {
-                    if (confirm('Sair deste grupo?')) await api.leaveGroup(dm.id).catch((e) => alert(e.message));
+                    if (await confirmDialog({ title: 'Sair do grupo', message: 'Você deixa de receber as mensagens deste grupo.', confirmLabel: 'Sair', danger: true })) await api.leaveGroup(dm.id).catch(showError);
                   }}
                   className="absolute top-1/2 right-2 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
                 >
