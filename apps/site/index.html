@@ -193,7 +193,7 @@
       <a href="#downloads" data-tab="downloads">Downloads</a>
     </nav>
     <div class="spacer"></div>
-    <a class="btn btn-ghost btn-sm" href="/app/">Abrir no navegador</a>
+    <a class="btn btn-ghost btn-sm" href="/app/">Abrir On Line</a>
   </div>
 </header>
 
@@ -207,7 +207,7 @@
         <p class="lead">Line junta servidores, canais de texto, chamadas de voz e vídeo e compartilhamento de tela num app leve, feito em Rust, que abre na hora e quase não pesa no PC.</p>
         <div class="cta">
           <a class="btn btn-primary js-main-dl" href="#downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
-          <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Usar no navegador</a>
+          <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
         </div>
         <p class="cta-note js-note">Windows 10 e 11 · Linux (Debian/Ubuntu) · qualquer navegador</p>
 
@@ -273,7 +273,7 @@
           <p>Instale no Windows ou no Linux, ou entre direto pelo navegador. Sua conta funciona em todos.</p>
           <div class="cta">
             <a class="btn btn-primary" href="#downloads"><svg><use href="#i-down"/></svg>Ver downloads</a>
-            <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir no navegador</a>
+            <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
           </div>
         </div>
       </div>
@@ -318,7 +318,7 @@
       <div class="web">
         <div class="os"><svg style="color:#9d8fff"><use href="#i-globe"/></svg></div>
         <div><h4>Sem instalar nada</h4><p>Use o Line completo, com chamadas, no Chrome, Edge, Firefox ou em qualquer sistema.</p></div>
-        <a class="btn btn-ghost" href="/app/">Abrir no navegador</a>
+        <a class="btn btn-ghost" href="/app/">Abrir On Line</a>
       </div>
       <p class="fine">Ao abrir o instalador do Windows pela primeira vez, o SmartScreen pode avisar que o app é novo. Clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.</p>
     </div>
@@ -346,6 +346,11 @@
   }
   addEventListener('hashchange', route);
   route();
+
+  // Prévia local (localhost): manda para o app do servidor de verdade.
+  if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    document.querySelectorAll('a[href^="/app/"]').forEach(a => a.href = 'https://useline.tech/app/');
+  }
 
   // Destaca a versão do sistema de quem está visitando.
   const ua = navigator.userAgent;
