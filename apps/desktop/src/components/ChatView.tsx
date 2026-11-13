@@ -54,15 +54,6 @@ export function ChatView({ channel }: { channel: Channel }) {
             <p className="truncate text-sm text-muted">{channel.topic}</p>
           </>
         )}
-        {channel.type === 'text' && (
-          <button
-            title="Criar thread"
-            onClick={() => actions.openModal({ kind: 'create-thread', channelId: channel.id })}
-            className="ml-auto rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
-          >
-            <Icons.Thread size={20} />
-          </button>
-        )}
         {isDm && !inCall && (
           <div className="ml-auto flex gap-1">
             <button title="Iniciar chamada de voz" onClick={() => joinVoice(channel.id)} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
