@@ -749,9 +749,10 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                 <Icons.Refresh size={16} />
               </button>
             </div>
-            <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+            {/* Grade fixa 3x2: cada página tem 6 quadros do mesmo tamanho; mais que isso rola para o lado. */}
+            <div className="-mx-1 shrink-0 px-1">
             {!sources ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="grid grid-cols-3 grid-rows-2 gap-3">
                 {Array.from({ length: 6 }, (_, i) => (
                   <div key={i} className="aspect-video animate-pulse rounded-lg bg-raise" />
                 ))}
@@ -763,8 +764,10 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                 {tab === 'apps' ? 'Nenhuma janela aberta para transmitir.' : 'Nenhuma tela encontrada.'}
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {visible.map((s) => (
+              <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+                {Array.from({ length: Math.ceil(visible.length / 6) }, (_, page) => visible.slice(page * 6, page * 6 + 6)).map((items, page) => (
+                <div key={page} className="grid w-full shrink-0 snap-start grid-cols-3 grid-rows-2 gap-3">
+                {items.map((s) => (
                   <button
                     key={s.id}
                     onClick={() => setSelected(s.id)}
@@ -794,6 +797,8 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                       {s.name}
                     </p>
                   </button>
+                ))}
+                </div>
                 ))}
               </div>
             )}
