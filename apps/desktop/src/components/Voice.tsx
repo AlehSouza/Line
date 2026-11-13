@@ -87,10 +87,13 @@ function TileView({ tile, big, onClick }: { tile: Tile; big?: boolean; onClick?:
       onClick={onClick}
       className={cx(
         'group relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-xl bg-raise transition-shadow',
-        tile.kind === 'person' && speaking && 'ring-[3px] ring-accent',
         big && 'aspect-auto h-full',
       )}
     >
+      {/* Borda de "falando" desenhada por dentro do tile, para a grade (overflow-hidden) não cortar. */}
+      {tile.kind === 'person' && speaking && (
+        <span className="pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-accent" />
+      )}
       {tile.stream ? (
         <Video stream={tile.stream} mirror={tile.isMe && tile.kind === 'person'} contain={tile.kind === 'screen'} />
       ) : (
