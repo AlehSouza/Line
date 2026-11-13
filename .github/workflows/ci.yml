@@ -88,7 +88,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run dist:linux
+      - name: Versão do build
+        run: echo '{"version":"0.1.${{ github.run_number }}"}' > apps/desktop/src-tauri/ci.conf.json
+      - run: npm run dist:linux -w @line/desktop -- --config src-tauri/ci.conf.json
       - uses: actions/upload-artifact@v4
         with:
           name: Line-linux-deb
@@ -142,9 +144,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          ls -la dist
+          # O artefato do macOS vem com subpastas (dmg/, macos/): junta tudo numa pasta só,
+          # porque o gh não sobe diretórios.
+          mkdir -p files
+          find dist -type f -exec cp {} files/ \;
+          ls -la files
           tag="build-${{ github.run_number }}"
-          gh release create "$tag" dist/* \
+          # Se a run for reexecutada, a release desta build já existe: troca os arquivos.
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$tag" files/* --repo "${{ github.repository }}" --clobber
+            exit 0
+          fi
+          gh release create "$tag" files/* \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "Line (build ${{ github.run_number }})" \
@@ -190,9 +201,10 @@ jobs:
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{version: $v, notes: "Build \($v)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' > latest.json
           # macOS: o mesmo app universal atende Apple Silicon e Intel.
-          macgz=$(ls mac/*.app.tar.gz | head -n1)
+          # O artefato do macOS guarda os arquivos em subpastas (macos/, dmg/).
+          macgz=$(find mac -name '*.app.tar.gz' | head -n1)
           macname="Line_${version}_universal.app.tar.gz"
-          if [ -f "$macgz.sig" ]; then
+          if [ -n "$macgz" ] && [ -f "$macgz.sig" ]; then
             jq --arg sig "$(cat "$macgz.sig")" --arg url "https://$HOST/updates/$macname" \
               '.platforms["darwin-aarch64"] = {signature: $sig, url: $url} | .platforms["darwin-x86_64"] = {signature: $sig, url: $url}' \
               latest.json > latest.tmp && mv latest.tmp latest.json
@@ -203,14 +215,18 @@ jobs:
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           # Instalador primeiro; o latest.json por último, para nunca apontar para um arquivo que ainda não chegou.
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/$name"
-          scp -i ~/.ssh/deploy "$macgz" "line-deploy@$HOST:/opt/line/updates/$macname"
+          if [ -n "$macgz" ] && [ -f "$macgz.sig" ]; then
+            scp -i ~/.ssh/deploy "$macgz" "line-deploy@$HOST:/opt/line/updates/$macname"
+          else
+            echo "Sem atualizador do macOS nesta build: publicando só o Windows."
+          fi
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz | tail -n +4 | xargs -r rm --"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mv /opt/line/updates/latest.json.tmp /opt/line/updates/latest.json && ls -t /opt/line/updates/*.exe | tail -n +4 | xargs -r rm -- && ls -t /opt/line/updates/*.app.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm --"
           # Links fixos usados pela aba Downloads do site (useline.tech/downloads).
-          deb=$(ls deb/*.deb | head -n1)
+          deb=$(find deb -name '*.deb' | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
-          dmg=$(ls mac/*.dmg | head -n1)
+          dmg=$(find mac -name '*.dmg' | head -n1)
           scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.tmp"
           scp -i ~/.ssh/deploy "$dmg" "line-deploy@$HOST:/opt/line/updates/latest/Line-macos.dmg.tmp"
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb && mv Line-macos.dmg.tmp Line-macos.dmg"
