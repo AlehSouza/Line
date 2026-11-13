@@ -15,7 +15,11 @@
     /** Controles da janela para a barra de título desenhada pela interface. */
     updates: {
       check: () => invoke('update_check').then((v) => v || null),
-      install: () => (internals ? internals.invoke('update_install') : Promise.reject(new Error('indisponível'))),
+      // Sem o catch do invoke(): o erro precisa chegar na interface para mostrar o motivo.
+      install: () => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('update_install') : Promise.reject(new Error('indisponível'));
+      },
     },
     window: {
       minimize: () => void invoke('window_minimize'),
