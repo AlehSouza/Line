@@ -370,6 +370,17 @@ export function setScreenQuality(q: ScreenQuality) {
 let cameraOpening = false;
 let cameraCancelled = false;
 
+/** Liga a câmera com um stream já aberto (o da prévia), sem abrir o dispositivo de novo. */
+export function startCamera(stream: MediaStream) {
+  if (!getV().channelId || getV().camera) {
+    stopStream(stream);
+    return;
+  }
+  setV({ camera: stream });
+  addStreamToPeers(stream);
+  socket?.emit('voice:state', { cameraStreamId: stream.id });
+}
+
 export async function toggleCamera() {
   const { camera } = getV();
   if (cameraOpening) {

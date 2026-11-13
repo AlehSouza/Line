@@ -16,6 +16,7 @@ import {
   setNoiseSuppression,
   setOutputDevice,
   setScreenQuality,
+  startCamera,
   toggleCamera,
   toggleDeafen,
   toggleMute,
@@ -279,6 +280,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
   const camera = useVoice((v) => !!v.camera);
   const screen = useVoice((v) => !!v.screen);
   const [picker, setPicker] = useState(false);
+  const [camPicker, setCamPicker] = useState(false);
 
   const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
 
@@ -298,7 +300,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title={deafened ? 'Voltar a ouvir' : 'Ensurdecer'} onClick={toggleDeafen} className={btn(false, deafened && large)}>
         {deafened ? <Icons.HeadphonesOff size={size} className={large ? '' : 'text-danger'} /> : <Icons.Headphones size={size} />}
       </button>
-      <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={toggleCamera} className={btn(camera)}>
+      <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => (camera ? void toggleCamera() : setCamPicker(true))} className={btn(camera)}>
         {camera ? <Icons.Video size={size} /> : <Icons.VideoOff size={size} />}
       </button>
       <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={btn(screen)}>
@@ -307,6 +309,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title="Sair da chamada" onClick={() => leaveVoice()} className={btn(false, true)}>
         <Icons.PhoneOff size={size} />
       </button>
+      {camPicker && <CameraModal onClose={() => setCamPicker(false)} />}
       {picker && <ScreenShareModal onClose={() => setPicker(false)} />}
     </div>
   );
@@ -315,6 +318,111 @@ export function VoiceControls({ large }: { large?: boolean }) {
 // ---------- transmitir tela: qualidade ----------
 
 /** Escolhe resolução e fps antes de abrir o seletor de tela do sistema. */
+const CAMERA_KEY = 'line.cameraId';
+
+/** Escolher a câmera com prévia ao vivo antes de entrar na chamada. Fechar sem confirmar solta a câmera. */
+export function CameraModal({ onClose }: { onClose: () => void }) {
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState<string>(() => {
+    try {
+      return localStorage.getItem(CAMERA_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  });
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [error, setError] = useState('');
+  const handed = useRef(false);
+  const current = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    setError('');
+    navigator.mediaDevices
+      .getUserMedia({
+        video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+        audio: false,
+      })
+      .then(async (s) => {
+        if (!alive) return s.getTracks().forEach((t) => t.stop());
+        current.current?.getTracks().forEach((t) => t.stop());
+        current.current = s;
+        setStream(s);
+        // Os nomes das câmeras só aparecem depois da permissão.
+        const all = await navigator.mediaDevices.enumerateDevices();
+        if (alive) setCameras(all.filter((d) => d.kind === 'videoinput'));
+      })
+      .catch((err) => {
+        if (!alive) return;
+        if (deviceId) setDeviceId('');
+        else setError((err as Error).name === 'NotAllowedError' ? 'Sem permissão para usar a câmera.' : 'Nenhuma câmera encontrada.');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [deviceId]);
+
+  // Fechou sem confirmar: solta a câmera.
+  useEffect(
+    () => () => {
+      if (!handed.current) current.current?.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
+
+  const activeId = stream?.getVideoTracks()[0]?.getSettings().deviceId ?? deviceId;
+  const confirm = () => {
+    if (!stream) return;
+    handed.current = true;
+    try {
+      localStorage.setItem(CAMERA_KEY, activeId);
+    } catch {}
+    startCamera(stream);
+    onClose();
+  };
+
+  return (
+    <Modal
+      title="Transmitir câmera"
+      subtitle="Confira como você vai aparecer antes de entrar."
+      onClose={onClose}
+      width={520}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={confirm} disabled={!stream}>
+            <Icons.Video size={16} /> Ligar câmera
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-black">
+          {stream ? <Video stream={stream} mirror /> : <p className="text-sm text-muted">{error || 'Abrindo a câmera…'}</p>}
+        </div>
+        {cameras.length > 0 && (
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Câmera</span>
+            <select
+              value={activeId}
+              onChange={(e) => setDeviceId(e.target.value)}
+              className="w-full rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+            >
+              {cameras.map((c, i) => (
+                <option key={c.deviceId || i} value={c.deviceId}>
+                  {c.label || `Câmera ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 export function ScreenShareModal({ onClose }: { onClose: () => void }) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
@@ -559,7 +667,7 @@ export function VoiceBar() {
   const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
   const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
-  const [modal, setModal] = useState<'screen' | 'settings' | null>(null);
+  const [modal, setModal] = useState<'screen' | 'settings' | 'camera' | null>(null);
   const [noiseOpen, setNoiseOpen] = useState(false);
   if (!channelId) return null;
 
@@ -602,7 +710,7 @@ export function VoiceBar() {
         </button>
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={toggleCamera} className={tile(camera)}>
+        <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => (camera ? void toggleCamera() : setModal('camera'))} className={tile(camera)}>
           {camera ? <Icons.Video size={16} /> : <Icons.VideoOff size={16} />}
         </button>
         <button
@@ -619,6 +727,7 @@ export function VoiceBar() {
       </div>
       {modal === 'screen' && <ScreenShareModal onClose={() => setModal(null)} />}
       {modal === 'settings' && <VoiceSettingsModal onClose={() => setModal(null)} />}
+      {modal === 'camera' && <CameraModal onClose={() => setModal(null)} />}
     </div>
   );
 }
