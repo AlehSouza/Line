@@ -375,6 +375,7 @@ declare global {
       updates?: {
         check: () => Promise<string | null>;
         install: () => Promise<void>;
+        run?: () => Promise<void>;
       };
     };
   }

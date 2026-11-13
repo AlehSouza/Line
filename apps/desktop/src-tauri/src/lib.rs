@@ -100,19 +100,28 @@ fn splash_status(splash: &WebviewWindow, text: &str, pct: Option<f64>) {
 /// Procura, baixa e instala a atualização mostrando o andamento na janelinha.
 /// No Windows o instalador fecha o app e abre a versão nova sozinho; aqui só voltamos se
 /// não houver atualização ou se algo falhar (aí o app abre normalmente).
-async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) {
+async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool {
     use std::time::Duration;
     use tauri_plugin_updater::UpdaterExt;
     let updater = match app.updater_builder().timeout(Duration::from_secs(20)).build() {
         Ok(u) => u,
-        Err(err) => return tracing::warn!("atualizador indisponível: {err}"),
+        Err(err) => {
+            tracing::warn!("atualizador indisponível: {err}");
+            return false;
+        }
     };
     let check = tokio::time::timeout(Duration::from_secs(8), updater.check()).await;
     let update = match check {
         Ok(Ok(Some(update))) => update,
-        Ok(Ok(None)) => return,
-        Ok(Err(err)) => return tracing::warn!("falha ao procurar atualização: {err}"),
-        Err(_) => return tracing::warn!("procura de atualização demorou demais"),
+        Ok(Ok(None)) => return false,
+        Ok(Err(err)) => {
+            tracing::warn!("falha ao procurar atualização: {err}");
+            return false;
+        }
+        Err(_) => {
+            tracing::warn!("procura de atualização demorou demais");
+            return false;
+        }
     };
     splash_status(splash, &format!("Baixando a versão {}...", update.version), Some(0.0));
     let mut got = 0usize;
@@ -142,6 +151,22 @@ async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) {
             tokio::time::sleep(Duration::from_millis(1500)).await;
         }
     }
+    true
+}
+
+/// Botão "Procurar atualizações" das Configurações: mesma janelinha da abertura.
+#[tauri::command]
+async fn update_run(app: tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview_window(SPLASH).is_some() {
+        return Ok(());
+    }
+    let splash = create_splash(&app).map_err(|e| e.to_string())?;
+    if !startup_update(&app, &splash).await {
+        splash_status(&splash, "Você já está na versão mais nova.", Some(-1.0));
+        tokio::time::sleep(std::time::Duration::from_millis(1800)).await;
+    }
+    let _ = splash.close();
+    Ok(())
 }
 
 fn open_main(app: &tauri::AppHandle) {
@@ -284,6 +309,7 @@ pub fn run() {
             window_close,
             update_check,
             update_install,
+            update_run,
             #[cfg(any(windows, target_os = "macos"))]
             screen::screen_sources,
             #[cfg(any(windows, target_os = "macos"))]

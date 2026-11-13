@@ -105,6 +105,14 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               {appVersion()}
             </span>
           </div>
+          {typeof window !== 'undefined' && window.line?.updates?.run && (
+            <button
+              onClick={() => void window.line?.updates?.run?.().catch((e) => alert(String(e)))}
+              className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-soft hover:bg-hover/60 hover:text-fg"
+            >
+              Procurar atualizações
+            </button>
+          )}
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
