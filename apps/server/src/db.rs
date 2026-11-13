@@ -140,6 +140,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE channels ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
 "#,
+    // 7: ícone e banner do servidor
+    r#"
+  ALTER TABLE servers ADD COLUMN icon_id TEXT;
+  ALTER TABLE servers ADD COLUMN banner_id TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

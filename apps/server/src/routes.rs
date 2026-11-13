@@ -495,6 +495,11 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let q = app.store.q();
     require_owner(&q, &id, &me)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
+    for img in [&p.icon_id, &p.banner_id].into_iter().flatten().flatten() {
+        if !q.own_image(&me, img) {
+            return Err(bad_request("Imagem inválida"));
+        }
+    }
     let server = q.update_server(
         &id,
         ServerPatch {
@@ -502,6 +507,8 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             description: p.description,
             is_public: p.is_public,
             icon_color: p.icon_color,
+            icon_id: p.icon_id,
+            banner_id: p.banner_id,
         },
     );
     app.to_server(&server.id, "server:update", &server);

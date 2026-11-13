@@ -1,6 +1,7 @@
 'use client';
 
 import { useShallow } from 'zustand/react/shallow';
+import { fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { cx, Icons, initials, Logo } from './ui';
 
@@ -34,10 +35,15 @@ export function ServerRail() {
           label={server.name}
           active={view.kind === 'server' && view.serverId === server.id}
           dot={serverHasUnread(server.id)}
-          color={server.iconColor}
+          color={server.iconUrl ? undefined : server.iconColor}
           onClick={() => actions.goServer(server.id)}
         >
-          <span className="text-sm font-bold text-rail">{initials(server.name)}</span>
+          {server.iconUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full rounded-[inherit] object-cover" />
+          ) : (
+            <span className="text-sm font-bold text-rail">{initials(server.name)}</span>
+          )}
         </RailItem>
       ))}
 

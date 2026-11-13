@@ -30,6 +30,10 @@ export interface Server {
   name: string;
   description: string;
   iconColor: string;
+  /** Imagem do ícone (squircle da barra lateral); sem ela mostra as iniciais. */
+  iconUrl?: string | null;
+  /** Banner fixo no topo da lista de canais. */
+  bannerUrl?: string | null;
   ownerId: string;
   isPublic: boolean;
   inviteCode: string;

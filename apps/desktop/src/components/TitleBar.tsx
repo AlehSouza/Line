@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { fileUrl } from '@/lib/api';
 import { dmTitle, useLine } from '@/lib/store';
 import { cx, Logo } from './ui';
 
@@ -20,6 +21,7 @@ export function TitleBar() {
     return 'Amigos';
   });
   const iconColor = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconColor : undefined));
+  const iconUrl = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconUrl : undefined));
 
   useEffect(() => {
     const w = window.line?.window;
@@ -42,7 +44,12 @@ export function TitleBar() {
         </span>
       </div>
       <div data-tauri-drag-region className="pointer-events-none absolute inset-x-40 flex items-center justify-center gap-2 font-semibold text-soft">
-        {iconColor && <span className="h-3 w-3 shrink-0 rounded" style={{ background: iconColor }} />}
+        {iconUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={fileUrl(iconUrl)} alt="" className="h-4 w-4 shrink-0 rounded object-cover" />
+        ) : (
+          iconColor && <span className="h-3 w-3 shrink-0 rounded" style={{ background: iconColor }} />
+        )}
         <span className="truncate">{title}</span>
       </div>
       <div className="ml-auto flex h-full">

@@ -7,9 +7,14 @@ import { Button, Icons } from './ui';
 const BOX_W = 520;
 const BOX_H = 380;
 const FRAMES = {
-  avatar: { w: 300, h: 300, outW: 512, outH: 512, round: true },
-  banner: { w: 480, h: 160, outW: 1200, outH: 400, round: false },
+  avatar: { w: 300, h: 300, outW: 512, outH: 512, radius: 9999 },
+  banner: { w: 480, h: 160, outW: 1200, outH: 400, radius: 12 },
+  /** Ícone do servidor: quadrado com cantos arredondados (squircle da barra lateral). */
+  icon: { w: 300, h: 300, outW: 512, outH: 512, radius: 84 },
+  /** Banner do servidor, no topo da lista de canais. */
+  serverBanner: { w: 480, h: 270, outW: 960, outH: 540, radius: 12 },
 };
+export type CropKind = keyof typeof FRAMES;
 
 /** "Editar mídia": arrasta para enquadrar e usa o zoom; devolve a imagem já recortada. */
 export function ImageCropper({
@@ -19,7 +24,7 @@ export function ImageCropper({
   onCancel,
 }: {
   file: File;
-  kind: 'avatar' | 'banner';
+  kind: CropKind;
   onApply: (file: File) => void;
   onCancel: () => void;
 }) {
@@ -132,7 +137,7 @@ export function ImageCropper({
               style={{
                 width: frame.w,
                 height: frame.h,
-                borderRadius: frame.round ? '9999px' : 12,
+                borderRadius: frame.radius,
                 boxShadow: '0 0 0 9999px rgba(10, 8, 20, 0.65)',
               }}
             />

@@ -6,6 +6,7 @@ import { UserCard } from './UserCard';
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { actions, useLine, type Modal as ModalState } from '@/lib/store';
+import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 
@@ -494,8 +495,12 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
   const [color, setColor] = useState(server?.iconColor ?? COLORS[0]!);
+  const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
+  const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
+  const [imageError, setImageError] = useState('');
   const { busy, error, run } = useAction();
   if (!server) return null;
+  const uploading = icon.uploading || banner.uploading;
 
   return (
     <Modal
@@ -523,20 +528,31 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
             Cancelar
           </Button>
           <Button
-            disabled={busy}
+            disabled={busy || uploading}
             onClick={() =>
               run(async () => {
-                actions.upsertServer(await api.updateServer(server.id, { name, description, isPublic, iconColor: color }));
+                actions.upsertServer(
+                  await api.updateServer(server.id, {
+                    name,
+                    description,
+                    isPublic,
+                    iconColor: color,
+                    ...(icon.changed ? { iconId: icon.id } : {}),
+                    ...(banner.changed ? { bannerId: banner.id } : {}),
+                  }),
+                );
                 onClose();
               })
             }
           >
-            Salvar
+            {uploading ? 'Enviando imagem…' : 'Salvar'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
+        <ServerImages name={name} color={color} icon={icon} banner={banner} setIcon={setIcon} setBanner={setBanner} onError={setImageError} />
+        <ErrorText>{imageError}</ErrorText>
         <Field label="Nome">
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
         </Field>
@@ -549,7 +565,7 @@ function ServerSettingsModal({ serverId, onClose }: { serverId: string; onClose:
             className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
-        <Field label="Cor do ícone">
+        <Field label="Cor do ícone" hint="Usada quando o servidor não tem imagem.">
           <ColorPicker value={color} onChange={setColor} />
         </Field>
         <label className="flex items-center gap-3 text-sm">

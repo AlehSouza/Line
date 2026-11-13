@@ -82,7 +82,17 @@ impl UserRow {
 }
 
 const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought";
-const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count FROM servers s";
+const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
+  (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
+  (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
+  FROM servers s";
+
+/// URL pública de uma imagem do servidor (ícone/banner), se ainda existir.
+fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
+    let id: Option<String> = r.get(id_col).ok().flatten();
+    let name: Option<String> = r.get(name_col).ok().flatten();
+    Some(format!("/api/attachments/{}/{}", id?, url_segment(&name?)))
+}
 
 fn message_select() -> String {
     format!(
@@ -97,6 +107,8 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         name: r.get("name")?,
         description: r.get("description")?,
         icon_color: r.get("icon_color")?,
+        icon_url: image_url(r, "icon_id", "icon_filename"),
+        banner_url: image_url(r, "banner_id", "banner_filename"),
         owner_id: r.get("owner_id")?,
         is_public: r.get::<_, i64>("is_public")? != 0,
         invite_code: r.get("invite_code")?,
@@ -187,6 +199,8 @@ pub struct ServerPatch {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
+    pub icon_id: Option<Option<String>>,
+    pub banner_id: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -514,6 +528,12 @@ impl Q<'_> {
                 id
             ],
         ));
+        if let Some(v) = patch.icon_id {
+            ok(self.c.execute("UPDATE servers SET icon_id = ? WHERE id = ?", params![v, id]));
+        }
+        if let Some(v) = patch.banner_id {
+            ok(self.c.execute("UPDATE servers SET banner_id = ? WHERE id = ?", params![v, id]));
+        }
         self.server(id).unwrap()
     }
 
@@ -1090,7 +1110,9 @@ impl Q<'_> {
         ok(self.c.execute(
             "DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?
              AND id NOT IN (SELECT avatar_id FROM users WHERE avatar_id IS NOT NULL)
-             AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)",
+             AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)
+             AND id NOT IN (SELECT icon_id FROM servers WHERE icon_id IS NOT NULL)
+             AND id NOT IN (SELECT banner_id FROM servers WHERE banner_id IS NOT NULL)",
             [cutoff],
         ));
     }

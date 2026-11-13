@@ -287,6 +287,10 @@ pub struct UpdateServer {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub icon_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub banner_id: Option<Option<String>>,
 }
 
 impl UpdateServer {

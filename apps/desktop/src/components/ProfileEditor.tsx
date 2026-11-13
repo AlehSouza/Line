@@ -200,7 +200,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
 }
 
 /** Área clicável que abre o seletor de imagem, com um véu e ícone ao passar o mouse. */
-function ImagePick({ onFile, className, round, children }: { onFile?: (f: File) => void; className?: string; round?: boolean; children: ReactNode }) {
+export function ImagePick({ onFile, className, round, children }: { onFile?: (f: File) => void; className?: string; round?: boolean; children: ReactNode }) {
   const ref = useRef<HTMLInputElement>(null);
   if (!onFile) return <div className={className}>{children}</div>;
   return (
