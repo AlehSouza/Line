@@ -116,7 +116,15 @@ export function AuthScreen() {
         )}
 
 
-        {mode === 'register' && siteKey && <Turnstile key={captchaRun} siteKey={siteKey} onToken={setCaptcha} />}
+        {mode === 'register' && siteKey && (
+          // No app desktop a origem é tauri.localhost, que a Cloudflare recusa ("Não foi possível
+          // conectar ao site"): o widget roda numa página do próprio servidor, dentro de um iframe.
+          sameOrigin(serverUrl) ? (
+            <Turnstile key={captchaRun} siteKey={siteKey} onToken={setCaptcha} />
+          ) : (
+            <CaptchaFrame key={captchaRun} serverUrl={serverUrl} onToken={setCaptcha} />
+          )
+        )}
 
         <ErrorText>{error}</ErrorText>
 
@@ -191,6 +199,34 @@ function loadTurnstile() {
     document.head.appendChild(s);
   });
   return turnstileScript;
+}
+
+function sameOrigin(url: string) {
+  try {
+    return new URL(url, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+/** Captcha carregado de {servidor}/api/auth/captcha; o token chega por postMessage. */
+function CaptchaFrame({ serverUrl, onToken }: { serverUrl: string; onToken: (t: string) => void }) {
+  const origin = new URL(serverUrl, window.location.href).origin;
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== origin || e.data?.type !== 'line-captcha') return;
+      onToken(typeof e.data.token === 'string' ? e.data.token : '');
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [origin, onToken]);
+  return (
+    <iframe
+      src={`${serverUrl.replace(/\/+$/, '')}/api/auth/captcha`}
+      title="Captcha"
+      className="mx-auto block h-[70px] w-[310px] border-0"
+    />
+  );
 }
 
 /** Captcha da Cloudflare (Turnstile): na maioria das vezes passa sozinho, sem clicar em nada. */
