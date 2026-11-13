@@ -268,7 +268,14 @@ pub struct Started {
 /// Começa a transmitir a fonte escolhida. A memória compartilhada chega na página pelo
 /// evento `sharedbufferreceived` e os quadros pelo evento `message` do `chrome.webview`.
 #[tauri::command]
-pub async fn screen_start(window: WebviewWindow, id: String, fps: u32, audio: bool) -> Result<Started, String> {
+pub async fn screen_start(
+    window: WebviewWindow,
+    id: String,
+    fps: u32,
+    audio: bool,
+    // Só o macOS usa (lá o sistema reduz a imagem); aqui a redução é feita no envio do WebRTC.
+    #[allow(unused_variables)] height: Option<u32>,
+) -> Result<Started, String> {
     stop_session(&window);
     let item = parse(&id)?;
     let session = NEXT.fetch_add(1, Ordering::Relaxed);

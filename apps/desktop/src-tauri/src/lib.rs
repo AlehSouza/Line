@@ -14,6 +14,10 @@ use tauri_plugin_opener::OpenerExt;
 mod loopback;
 #[cfg(windows)]
 mod screen;
+#[cfg(target_os = "macos")]
+mod screen_mac;
+#[cfg(target_os = "macos")]
+use screen_mac as screen;
 
 const MAIN: &str = "main";
 
@@ -199,11 +203,11 @@ pub fn run() {
             window_close,
             update_check,
             update_install,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             screen::screen_sources,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             screen::screen_start,
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "macos"))]
             screen::screen_stop
         ])
         .setup(|app| {

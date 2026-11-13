@@ -42,19 +42,17 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return internals.invoke(cmd, args);
 }
 
-/** Seletor próprio só existe no app do Windows (precisa do WebView2 e da captura do Rust). */
+/** Seletor próprio: app do Windows (WebView2) e do macOS (WKWebView). Web e Linux usam o do navegador. */
 export function hasNativeScreen() {
-  return (
-    typeof window !== 'undefined' &&
-    window.line?.platform === 'win32' &&
-    !!webview() &&
-    'MediaStreamTrackGenerator' in window &&
-    'VideoFrame' in window
-  );
+  if (typeof window === 'undefined' || !window.line?.isDesktop) return false;
+  if (window.line.platform === 'win32') return !!webview() && 'MediaStreamTrackGenerator' in window && 'VideoFrame' in window;
+  if (window.line.platform === 'darwin') return 'VideoFrame' in window && 'captureStream' in HTMLCanvasElement.prototype;
+  return false;
 }
 
+/** Lista janelas e telas. Rejeita com a mensagem do sistema (ex.: falta permissão no macOS). */
 export function listScreenSources(): Promise<ScreenSource[]> {
-  return invoke<ScreenSource[]>('screen_sources').catch(() => []);
+  return invoke<ScreenSource[]>('screen_sources').then((list) => list ?? []);
 }
 
 export interface NativeScreen {
@@ -68,8 +66,9 @@ export interface NativeScreen {
 /** Começa a capturar a fonte e só resolve quando chega o primeiro quadro. */
 export async function startNativeScreen(
   id: string,
-  opts: { fps: number; audio: boolean; onEnded: () => void },
+  opts: { fps: number; audio: boolean; height: number; onEnded: () => void },
 ): Promise<NativeScreen> {
+  if (window.line?.platform === 'darwin') return startMacScreen(id, opts);
   const wv = webview()!;
   const Gen = (window as unknown as { MediaStreamTrackGenerator: GeneratorCtor }).MediaStreamTrackGenerator;
   const video = new Gen({ kind: 'video' });
@@ -178,6 +177,128 @@ export async function startNativeScreen(
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('sem quadros')), 8000)),
     ]);
     const stream = new MediaStream(audio ? [video, audio] : [video]);
+    return { stream, width: size.w, height: size.h, stop: cleanup };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+}
+
+/**
+ * macOS: o Rust manda os quadros (NV12, já na resolução escolhida) e o áudio por um WebSocket
+ * só do 127.0.0.1. Cada quadro é desenhado num canvas, que vira a trilha de vídeo; o áudio
+ * passa por um AudioContext até uma trilha de áudio.
+ */
+async function startMacScreen(
+  id: string,
+  opts: { fps: number; audio: boolean; height: number; onEnded: () => void },
+): Promise<NativeScreen> {
+  const res = await invoke<{ session: number; url: string }>('screen_start', {
+    id,
+    fps: opts.fps,
+    audio: opts.audio,
+    height: opts.height,
+  });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: false })!;
+  const video = canvas.captureStream(opts.fps).getVideoTracks()[0];
+
+  let audioCtx: AudioContext | null = null;
+  let audioTrack: MediaStreamTrack | null = null;
+  const queue: Float32Array[] = [];
+  let queued = 0;
+  let channels = 2;
+  if (opts.audio) {
+    audioCtx = new AudioContext({ sampleRate: 48000 });
+    const dest = audioCtx.createMediaStreamDestination();
+    const node = audioCtx.createScriptProcessor(2048, 0, 2);
+    let head: Float32Array | null = null;
+    let pos = 0;
+    node.onaudioprocess = (e) => {
+      const outs = [e.outputBuffer.getChannelData(0), e.outputBuffer.getChannelData(1)];
+      for (let i = 0; i < outs[0].length; i++) {
+        if (!head || pos >= head.length) {
+          head = queue.shift() ?? null;
+          if (head) queued -= head.length;
+          pos = 0;
+        }
+        if (!head) {
+          outs[0][i] = 0;
+          outs[1][i] = 0;
+          continue;
+        }
+        const l = head[pos];
+        const r = channels > 1 ? head[pos + 1] : l;
+        outs[0][i] = l;
+        outs[1][i] = r;
+        pos += channels;
+      }
+    };
+    node.connect(dest);
+    void audioCtx.resume();
+    audioTrack = dest.stream.getAudioTracks()[0] ?? null;
+  }
+
+  let first: ((size: { w: number; h: number }) => void) | null = null;
+  const firstFrame = new Promise<{ w: number; h: number }>((resolve) => (first = resolve));
+  let stopped = false;
+  const ws = new WebSocket(res.url);
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = (e) => {
+    if (stopped || !(e.data instanceof ArrayBuffer)) return;
+    const buf = e.data;
+    const kind = new Uint8Array(buf, 0, 1)[0];
+    if (kind === 3) {
+      opts.onEnded();
+      return;
+    }
+    if (buf.byteLength < 17) return;
+    const dv = new DataView(buf);
+    const a = dv.getUint32(1, true);
+    const b = dv.getUint32(5, true);
+    const ts = Number(dv.getBigUint64(9, true));
+    if (kind === 1) {
+      const [w, h] = [a, b];
+      try {
+        const frame = new VideoFrame(new Uint8Array(buf, 17), { format: 'NV12', codedWidth: w, codedHeight: h, timestamp: ts });
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        ctx.drawImage(frame, 0, 0);
+        frame.close();
+        first?.({ w, h });
+        first = null;
+      } catch (err) {
+        console.warn('quadro da tela inválido', err);
+      }
+    } else if (kind === 2 && audioCtx) {
+      channels = Math.max(1, b);
+      // Copia: o início dos dados (byte 17) não é alinhado para Float32Array.
+      const samples = new Float32Array(buf.slice(17));
+      queue.push(samples);
+      queued += samples.length;
+      // Mais de ~250ms acumulado: descarta o mais velho para não ficar atrasado.
+      while (queued > 48000 * channels * 0.25 && queue.length > 1) queued -= queue.shift()!.length;
+    }
+  };
+
+  const cleanup = () => {
+    if (stopped) return;
+    stopped = true;
+    ws.close();
+    void invoke('screen_stop').catch(() => {});
+    video.stop();
+    audioTrack?.stop();
+    void audioCtx?.close().catch(() => {});
+  };
+
+  try {
+    const size = await Promise.race([
+      firstFrame,
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('sem quadros')), 8000)),
+    ]);
+    const stream = new MediaStream(audioTrack ? [video, audioTrack] : [video]);
     return { stream, width: size.w, height: size.h, stop: cleanup };
   } catch (err) {
     cleanup();
