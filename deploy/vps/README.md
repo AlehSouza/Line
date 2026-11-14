@@ -17,7 +17,7 @@ curl -fsSLO https://raw.githubusercontent.com/AlehSouza/Line/claude/project-thre
 sudo bash install.sh line-xande.duckdns.org
 ```
 
-Rodar de novo atualiza para a versão mais nova. Os dados (banco e anexos) ficam em `/var/lib/line`; para backup, copie essa pasta.
+Rodar de novo atualiza para a versão mais nova. Os dados (banco e anexos) ficam em `/var/lib/line`. Todo dia às 4h o timer `line-backup` grava uma cópia do banco (e dos segredos) em `/var/backups/line`, guardando 14 dias; para fazer na hora: `sudo line-backup`. Restaurar: pare o serviço (`systemctl stop line`), descompacte o arquivo para `/var/lib/line/line.db` (dono `line`) e suba de novo. Os anexos não entram nesse backup; o backup da Hostinger cobre a VPS inteira.
 
 ## Usar
 

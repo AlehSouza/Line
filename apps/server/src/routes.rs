@@ -51,10 +51,7 @@ impl FromRequestParts<Arc<App>> for Me {
             .and_then(|h| h.to_str().ok())
             .and_then(|h| h.strip_prefix("Bearer "))
             .ok_or_else(unauthorized)?;
-        let user_id = app.tokens.verify(token).ok_or_else(unauthorized)?;
-        if app.store.q().self_user(&user_id).is_none() {
-            return Err(unauthorized());
-        }
+        let user_id = app.user_from_token(token).ok_or_else(unauthorized)?;
         Ok(Me(user_id))
     }
 }
@@ -298,7 +295,7 @@ async fn register(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     })
 }
 
-async fn login(State(app): S, b: Bytes) -> Res {
+async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let input = body::<validate::Login>(&b)?.check()?;
     let invalid = || {
         ApiError::new(
@@ -307,17 +304,33 @@ async fn login(State(app): S, b: Bytes) -> Res {
             "Usuário ou senha incorretos",
         )
     };
-    let row = app
-        .store
-        .q()
-        .user_by_username(&input.username)
-        .ok_or_else(invalid)?;
+    // Contra força bruta: muitas senhas erradas seguidas bloqueiam por 15 minutos
+    // (por IP e por conta).
+    let ip = client_ip(&headers);
+    let user_key = input.username.trim().to_lowercase();
+    if ip.as_deref().is_some_and(|ip| app.login_fails_ip.blocked(ip)) || app.login_fails_user.blocked(&user_key) {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "RATE_LIMITED",
+            "Muitas tentativas de login. Espere 15 minutos e tente de novo.",
+        ));
+    }
+    let fail = || {
+        if let Some(ip) = ip.as_deref() {
+            app.login_fails_ip.hit(ip);
+        }
+        app.login_fails_user.hit(&user_key);
+        invalid()
+    };
+    let Some(row) = app.store.q().user_by_username(&input.username) else {
+        return Err(fail());
+    };
     let (password, stored) = (input.password, row.password_hash.clone());
     let valid = tokio::task::spawn_blocking(move || auth::verify_password(&password, &stored))
         .await
         .unwrap_or(false);
     if !valid {
-        return Err(invalid());
+        return Err(fail());
     }
     let user = app.store.q().to_self_user(&row);
     ok(AuthResponse {
@@ -371,7 +384,16 @@ async fn google_callback(State(app): S, Query(qs): Query<HashMap<String, String>
         if let Some(u) = q.user_by_google(&profile.sub) {
             u.id
         } else if let Some(u) = email.as_deref().and_then(|e| q.user_by_email(e)) {
+            // O cadastro com senha não confirma o email. Se ele não foi confirmado, quem criou a
+            // conta pode não ser o dono do email: o Google prova que é, então a senha antiga
+            // deixa de valer e todas as sessões abertas caem.
+            if !q.email_verified(&u.id) {
+                q.set_password_hash(&u.id, "google");
+                q.revoke_sessions(&u.id);
+                app.disconnect_user(&u.id);
+            }
             q.set_google_id(&u.id, &profile.sub);
+            q.set_email_verified(&u.id);
             u.id
         } else {
             let Some(email) = email else {
@@ -393,6 +415,7 @@ async fn google_callback(State(app): S, Query(qs): Query<HashMap<String, String>
             // Sem senha: o hash "google" nunca confere. Dá para criar uma pelo "Esqueci minha senha".
             let user = q.create_user(&username, Some(&email), &display, "google");
             q.set_google_id(&user.public.id, &profile.sub);
+            q.set_email_verified(&user.public.id);
             user.public.id
         }
     };
@@ -476,6 +499,10 @@ async fn reset_password(State(app): S, b: Bytes) -> Res {
         return Err(expired());
     }
     q.set_password_hash(&user_id, &hash);
+    // O link chegou no email: ele está confirmado. Quem estava logado com a senha antiga cai.
+    q.set_email_verified(&user_id);
+    q.revoke_sessions(&user_id);
+    app.disconnect_user(&user_id);
     let username = q.user_row(&user_id).map(|u| u.username).unwrap_or_default();
     ok(json!({ "username": username }))
 }

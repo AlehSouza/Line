@@ -100,11 +100,16 @@ impl Tokens {
     }
 
     pub fn verify(&self, token: &str) -> Option<String> {
+        self.verify_claims(token).map(|(sub, _)| sub)
+    }
+
+    /// Usuário e momento de emissão (iat) do token.
+    pub fn verify_claims(&self, token: &str) -> Option<(String, u64)> {
         let mut validation = Validation::new(Algorithm::HS256);
         validation.leeway = 0;
         jsonwebtoken::decode::<Claims>(token, &self.decoding, &validation)
             .ok()
-            .map(|d| d.claims.sub)
+            .map(|d| (d.claims.sub, d.claims.iat))
     }
 }
 
