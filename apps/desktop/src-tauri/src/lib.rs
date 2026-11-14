@@ -82,6 +82,14 @@ async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
 
 const SPLASH: &str = "splash";
 
+/// Opções do WebView2 (as mesmas em todas as janelas, senão o segundo ambiente falha).
+/// As três primeiras são as padrão do Tauri. O resto impede o Chromium de frear a página quando
+/// o Line fica atrás de um jogo em tela cheia: sem isso os timers, a cópia dos quadros da tela
+/// e o encoder do WebRTC rodam em prioridade baixa e a transmissão perde fps e qualidade.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
+    --disable-background-timer-throttling --disable-renderer-backgrounding \
+    --disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
+
 fn create_splash(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
         .title("Line")
@@ -92,6 +100,7 @@ fn create_splash(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .center()
         .skip_taskbar(false)
         .background_color(tauri::webview::Color(0x1a, 0x1a, 0x1f, 0xff))
+        .additional_browser_args(BROWSER_ARGS)
         .build()
 }
 
@@ -304,6 +313,7 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .visible(false)
         // Arrastar arquivos para o chat usa o drop do HTML (o do Tauri esconderia os arquivos da página).
         .disable_drag_drop_handler()
+        .additional_browser_args(BROWSER_ARGS)
         .initialization_script(
             include_str!("bridge.js").replace("__LINE_VERSION__", &app.package_info().version.to_string()),
         )
