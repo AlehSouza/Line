@@ -1161,7 +1161,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
               <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
               {speaking[p.userId] && (
-                <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-accent" />
+                <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-online" />
               )}
             </span>
             <span className="flex-1 truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
