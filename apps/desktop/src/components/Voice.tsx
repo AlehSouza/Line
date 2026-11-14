@@ -209,7 +209,7 @@ function TileView({
       {tile.kind === 'person' && (
         <span
           className={cx(
-            'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-accent transition-opacity ease-out',
+            'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-online transition-opacity ease-out',
             speaking ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
           )}
         />
