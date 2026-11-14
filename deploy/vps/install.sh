@@ -96,6 +96,8 @@ EnvironmentFile=-/etc/line/captcha.env
 EnvironmentFile=-/etc/line/giphy.env
 # SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM: email do "Esqueci minha senha".
 EnvironmentFile=-/etc/line/smtp.env
+# GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET: "Entrar com Google".
+EnvironmentFile=-/etc/line/google.env
 ExecStart=/opt/line/line-server
 Restart=always
 RestartSec=2

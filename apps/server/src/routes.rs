@@ -67,6 +67,9 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/forgot", post(forgot_password))
         .route("/auth/reset", post(reset_password))
+        .route("/auth/google/start", get(google_start))
+        .route("/auth/google/callback", get(google_callback))
+        .route("/auth/google/finish", post(google_finish))
         .route("/users/@me", get(get_me).patch(update_me))
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
@@ -181,6 +184,7 @@ async fn auth_config(State(app): S) -> Res {
     Ok(Json(json!({
         "turnstileSiteKey": app.turnstile.as_ref().map(|t| t.site_key.clone()),
         "passwordReset": app.mailer.is_some(),
+        "google": app.google.is_some(),
     }))
     .into_response())
 }
@@ -316,6 +320,99 @@ async fn login(State(app): S, b: Bytes) -> Res {
     let user = app.store.q().to_self_user(&row);
     ok(AuthResponse {
         token: app.tokens.sign(&row.id),
+        user,
+    })
+}
+
+fn google_disabled() -> ApiError {
+    ApiError::new(StatusCode::NOT_FOUND, "GOOGLE_DISABLED", "Login com Google indisponível.")
+}
+
+fn redirect(url: &str) -> Response {
+    (StatusCode::FOUND, [(axum::http::header::LOCATION, url.to_string())]).into_response()
+}
+
+/// Começo do "Entrar com Google": `?port=N` quando é o app desktop (que escuta em 127.0.0.1:N).
+async fn google_start(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let google = app.google.as_ref().ok_or_else(google_disabled)?;
+    let target = match qs.get("port").and_then(|p| p.parse::<u16>().ok()) {
+        Some(port) if port >= 1024 => crate::google::Target::Desktop(port),
+        _ => crate::google::Target::Web,
+    };
+    Ok(redirect(&google.authorize_url(target)))
+}
+
+/// Volta do Google: acha a conta (pelo Google ou pelo email verificado) ou cria uma nova.
+async fn google_callback(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let google = app.google.as_ref().ok_or_else(google_disabled)?;
+    let Some(target) = qs.get("state").and_then(|s| google.take_state(s)) else {
+        return Err(validation("Esse login expirou. Tente entrar com o Google de novo."));
+    };
+    let fail = |msg: &str| Ok(redirect(&google.return_url(target, Err(msg))));
+    let Some(code) = qs.get("code") else {
+        return fail("Login com Google cancelado.");
+    };
+    let profile = match google.profile(code).await {
+        Ok(p) => p,
+        Err(err) => {
+            tracing::warn!("Google OAuth falhou: {err}");
+            return fail("Não deu para falar com o Google agora. Tente de novo.");
+        }
+    };
+    let email = profile
+        .email
+        .as_deref()
+        .filter(|_| profile.email_verified)
+        .map(|e| e.trim().to_lowercase());
+    let user_id = {
+        let q = app.store.q();
+        if let Some(u) = q.user_by_google(&profile.sub) {
+            u.id
+        } else if let Some(u) = email.as_deref().and_then(|e| q.user_by_email(e)) {
+            q.set_google_id(&u.id, &profile.sub);
+            u.id
+        } else {
+            let Some(email) = email else {
+                return fail("Sua conta do Google não tem um email verificado.");
+            };
+            let base = crate::google::username_base(&profile);
+            let mut username = base.clone();
+            let mut n = 1;
+            while q.user_by_username(&username).is_some() {
+                n += 1;
+                username = format!("{base}{n}");
+            }
+            let display = profile
+                .name
+                .as_deref()
+                .map(|n| n.trim().chars().take(32).collect::<String>())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| username.clone());
+            // Sem senha: o hash "google" nunca confere. Dá para criar uma pelo "Esqueci minha senha".
+            let user = q.create_user(&username, Some(&email), &display, "google");
+            q.set_google_id(&user.public.id, &profile.sub);
+            user.public.id
+        }
+    };
+    let code = google.issue_code(user_id);
+    Ok(redirect(&google.return_url(target, Ok(&code))))
+}
+
+#[derive(serde::Deserialize)]
+struct GoogleFinish {
+    code: String,
+}
+
+/// Troca o código de uso único do callback pelo token do Line.
+async fn google_finish(State(app): S, b: Bytes) -> Res {
+    let google = app.google.as_ref().ok_or_else(google_disabled)?;
+    let input: GoogleFinish = serde_json::from_slice(&b).map_err(|_| validation("Código inválido"))?;
+    let user_id = google
+        .take_code(input.code.trim())
+        .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?;
+    let user = app.store.q().self_user(&user_id).ok_or_else(|| validation("Conta não encontrada"))?;
+    ok(AuthResponse {
+        token: app.tokens.sign(&user_id),
         user,
     })
 }
