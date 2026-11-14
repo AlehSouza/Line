@@ -127,54 +127,91 @@ fn public_ip(ip: IpAddr) -> bool {
 }
 
 /// Baixa a página seguindo até 4 redirecionamentos, conferindo o IP de cada destino.
-async fn get_html(mut url: reqwest::Url) -> Option<(reqwest::Url, String)> {
+async fn get_html(url: reqwest::Url) -> Option<(reqwest::Url, String)> {
+    let (url, ctype, buf) = get_public(url, "text/html,application/xhtml+xml", MAX_BYTES, true).await.ok()?;
+    if !ctype.contains("html") {
+        return None;
+    }
+    Some((url, String::from_utf8_lossy(&buf).into_owned()))
+}
+
+/// Tamanho máximo de uma imagem/vídeo arrastado de um site.
+pub const MAX_MEDIA: usize = 50 * 1024 * 1024;
+
+/// Baixa uma imagem ou vídeo de um site público (arrastado para o chat), para o app anexar.
+/// O navegador não consegue baixar direto por causa do CORS.
+pub async fn fetch_media(raw: &str) -> Result<(String, Vec<u8>), &'static str> {
+    let url = reqwest::Url::parse(raw).map_err(|_| "Link inválido.")?;
+    let (_, ctype, buf) = get_public(url, "image/*,video/*;q=0.9,*/*;q=0.5", MAX_MEDIA + 1, false)
+        .await
+        .map_err(|e| e.unwrap_or("Não deu para baixar esse arquivo."))?;
+    if buf.len() > MAX_MEDIA {
+        return Err("Arquivo grande demais (máximo 50 MB).");
+    }
+    let ctype = ctype.split(';').next().unwrap_or("").trim().to_string();
+    if !(ctype.starts_with("image/") || ctype.starts_with("video/")) {
+        return Err("Esse link não é uma imagem nem um vídeo.");
+    }
+    Ok((ctype, buf))
+}
+
+/// GET seguindo até 4 redirecionamentos, só para IPs públicos. Devolve URL final, content-type
+/// (minúsculo) e até `max` bytes do corpo (`truncate`: corta em `max`; senão para ao passar).
+async fn get_public(
+    mut url: reqwest::Url,
+    accept: &str,
+    max: usize,
+    truncate: bool,
+) -> Result<(reqwest::Url, String, Vec<u8>), Option<&'static str>> {
     for _ in 0..5 {
         if !matches!(url.scheme(), "http" | "https") {
-            return None;
+            return Err(None);
         }
-        let host = url.host_str()?.to_string();
-        let port = url.port_or_known_default()?;
+        let host = url.host_str().ok_or(None)?.to_string();
+        let port = url.port_or_known_default().ok_or(None)?;
         let addr: SocketAddr = tokio::time::timeout(Duration::from_secs(3), tokio::net::lookup_host((host.as_str(), port)))
             .await
-            .ok()?
-            .ok()?
-            .find(|a| public_ip(a.ip()))?;
+            .map_err(|_| None)?
+            .map_err(|_| None)?
+            .find(|a| public_ip(a.ip()))
+            .ok_or(None)?;
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .resolve(&host, addr)
-            .timeout(Duration::from_secs(6))
+            .connect_timeout(Duration::from_secs(6))
+            .timeout(Duration::from_secs(if truncate { 6 } else { 60 }))
             .user_agent("Mozilla/5.0 (compatible; LineBot/1.0; +https://useline.tech)")
             .build()
-            .ok()?;
+            .map_err(|_| None)?;
         let mut res = client
             .get(url.clone())
-            .header("accept", "text/html,application/xhtml+xml")
+            .header("accept", accept)
             .header("accept-language", "pt-BR,pt;q=0.9,en;q=0.8")
             .send()
             .await
-            .ok()?;
+            .map_err(|_| None)?;
         if res.status().is_redirection() {
-            let loc = res.headers().get("location")?.to_str().ok()?;
-            url = url.join(loc).ok()?;
+            let loc = res.headers().get("location").and_then(|v| v.to_str().ok()).ok_or(None)?;
+            url = url.join(loc).map_err(|_| None)?;
             continue;
         }
         if !res.status().is_success() {
-            return None;
+            return Err(None);
         }
         let ctype = res.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_ascii_lowercase();
-        if !ctype.contains("html") {
-            return None;
+        if !truncate && res.content_length().is_some_and(|n| n as usize > max) {
+            return Err(Some("Arquivo grande demais (máximo 50 MB)."));
         }
         let mut buf = Vec::new();
         while let Ok(Some(chunk)) = res.chunk().await {
             buf.extend_from_slice(&chunk);
-            if buf.len() >= MAX_BYTES {
+            if buf.len() >= max {
                 break;
             }
         }
-        return Some((url, String::from_utf8_lossy(&buf).into_owned()));
+        return Ok((url, ctype, buf));
     }
-    None
+    Err(None)
 }
 
 static META: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<meta\s[^>]*>").unwrap());
