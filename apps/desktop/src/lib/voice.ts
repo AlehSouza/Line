@@ -136,6 +136,8 @@ export interface VoiceStore {
   watching: Record<string, boolean>;
   /** Miniatura estática da tela de cada pessoa que transmite (para o quadro de quem ainda não assiste). */
   screenThumbs: Record<string, string>;
+  /** Quem está assistindo à tela de cada pessoa que transmite (quem transmite avisa a todos do canal). */
+  screenViewers: Record<string, string[]>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
   channelStatus: Record<string, string>;
   /** Canal em que eu estou (ou entrando). */
@@ -166,6 +168,7 @@ export const useVoice = create<VoiceStore>(() => ({
   ...loadScreenAudio(),
   watching: {},
   screenThumbs: {},
+  screenViewers: {},
   channelId: null,
   connecting: false,
   muted: false,
@@ -198,11 +201,21 @@ let mic: MediaStream | null = null;
 const peers = new Map<string, Peer>();
 const audioEls = new Map<string, HTMLAudioElement>();
 
-// ---------- sons de entrar/sair da chamada ----------
+// ---------- sons da chamada ----------
 
-const callSounds: Partial<Record<'enter' | 'left', HTMLAudioElement>> = {};
+type CallSound =
+  | 'enter'
+  | 'left'
+  | 'mute_microphone'
+  | 'mute_headphone'
+  | 'start_transmission'
+  | 'close_transmission'
+  | 'enter_in_transmission'
+  | 'left_transmission';
 
-function playCallSound(kind: 'enter' | 'left') {
+const callSounds: Partial<Record<CallSound, HTMLAudioElement>> = {};
+
+function playCallSound(kind: CallSound) {
   try {
     // Caminho relativo: funciona no app (raiz) e na web (/app/).
     const el = (callSounds[kind] ??= new Audio(new URL(`sounds/${kind}.mp3`, document.baseURI).href));
@@ -248,11 +261,15 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     });
     if (uid === myId) return applyMute();
     // Parou de transmitir (ou saiu): na próxima vez, assistir de novo é escolha minha.
-    if (!state?.screenStreamId && (getV().watching[uid] || getV().screenThumbs[uid])) {
+    if (!state?.screenStreamId && (getV().watching[uid] || getV().screenThumbs[uid] || getV().screenViewers[uid])) {
+      // Só quem assistia ouve o fim da transmissão.
+      if (getV().watching[uid]) playCallSound('close_transmission');
       setV((v) => {
         const screenThumbs = { ...v.screenThumbs };
         delete screenThumbs[uid];
-        return { watching: { ...v.watching, [uid]: false }, screenThumbs };
+        const screenViewers = { ...v.screenViewers };
+        delete screenViewers[uid];
+        return { watching: { ...v.watching, [uid]: false }, screenThumbs, screenViewers };
       });
     }
     // A tela dessa pessoa pode ter começado/parado: reaplica o volume da voz ou da tela em cada áudio dela.
@@ -398,6 +415,7 @@ export function toggleMute() {
     next.muted = true;
   }
   setV(next);
+  playCallSound(next.deafened === false ? 'mute_headphone' : 'mute_microphone');
   applyMute();
   socket?.emit('voice:state', next);
 }
@@ -406,6 +424,7 @@ export function toggleDeafen() {
   const deafened = !getV().deafened;
   const next = { deafened, muted: deafened ? true : !voiceCan(Perm.Speak) };
   setV(next);
+  playCallSound('mute_headphone');
   applyMute();
   socket?.emit('voice:state', next);
 }
@@ -495,6 +514,7 @@ export function toggleScreenMute(userId: string) {
 
 /** Assistir / sair da transmissão de alguém. Avisa quem transmite, que passa a mandar (ou para de mandar) a tela só para mim. */
 export function setWatching(userId: string, on: boolean) {
+  if (!!getV().watching[userId] !== on) playCallSound(on ? 'enter_in_transmission' : 'left_transmission');
   setV((v) => ({ watching: { ...v.watching, [userId]: on } }));
   send(userId, { type: 'watch', on });
   applyMute();
@@ -742,6 +762,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
     addStreamToPeers(stream);
     startThumbs(stream);
     socket?.emit('voice:state', { screenStreamId: stream.id });
+    playCallSound('start_transmission');
   } catch (err) {
     if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível compartilhar a tela.' });
   }
@@ -752,6 +773,7 @@ function stopScreen() {
   if (!screen) return;
   removeStreamFromPeers(screen);
   watchers.clear();
+  playCallSound('close_transmission');
   stopThumbs();
   stopStream(screen);
   nativeStop?.();
@@ -823,6 +845,12 @@ function send(to: string, signal: VoiceSignal) {
   socket?.emit('voice:signal', { to, signal });
 }
 
+/** Conta para todos do canal quem assiste à minha tela (o som de entrar/sair só toca para quem está nela). */
+function sendViewers(to?: string) {
+  const ids = [...watchers];
+  for (const id of to ? [to] : peers.keys()) send(id, { type: 'viewers', ids });
+}
+
 function createPeer(peerId: string): Peer {
   const pc = new RTCPeerConnection({ iceServers });
   const peer: Peer = { pc, polite: (myId ?? '') > peerId, makingOffer: false, ignoreOffer: false, streamIds: new Set() };
@@ -869,6 +897,7 @@ function createPeer(peerId: string): Peer {
     const thumb = lastThumb;
     setTimeout(() => send(peerId, { type: 'thumb', data: thumb }), 500);
   }
+  if (screen && watchers.size) setTimeout(() => sendViewers(peerId), 500);
   // Conexão nova com quem eu já assistia: avisa de novo para a tela voltar.
   if (getV().watching[peerId]) queueMicrotask(() => send(peerId, { type: 'watch', on: true }));
   return peer;
@@ -886,15 +915,36 @@ async function onSignal(from: string, signal: VoiceSignal) {
     }
     return;
   }
+  if (signal.type === 'viewers') {
+    if (!Array.isArray(signal.ids)) return;
+    const ids = signal.ids.filter((id): id is string => typeof id === 'string');
+    const before = getV().screenViewers[from] ?? [];
+    // Eu assisto a essa tela: ouço quando outra pessoa entra ou sai dela (a minha própria toca no setWatching).
+    if (getV().watching[from]) {
+      const others = (list: string[]) => list.filter((id) => id !== myId);
+      if (others(ids).some((id) => !before.includes(id))) playCallSound('enter_in_transmission');
+      else if (others(before).some((id) => !ids.includes(id))) playCallSound('left_transmission');
+    }
+    setV((v) => ({ screenViewers: { ...v.screenViewers, [from]: ids } }));
+    return;
+  }
   if (signal.type === 'watch') {
     const { screen } = getV();
     if (signal.on) {
       if (watchers.has(from)) return;
       watchers.add(from);
-      if (screen) addStream(pc, screen);
+      if (screen) {
+        addStream(pc, screen);
+        playCallSound('enter_in_transmission');
+        sendViewers();
+      }
     } else {
-      watchers.delete(from);
-      if (screen) removeStreamFrom(pc, screen);
+      if (!watchers.delete(from)) return;
+      if (screen) {
+        removeStreamFrom(pc, screen);
+        playCallSound('left_transmission');
+        sendViewers();
+      }
     }
     return;
   }
@@ -922,7 +972,8 @@ async function onSignal(from: string, signal: VoiceSignal) {
 }
 
 function closePeer(peerId: string) {
-  watchers.delete(peerId);
+  // Quem assistia saiu da chamada: os outros que assistem ficam sabendo.
+  if (watchers.delete(peerId) && getV().screen) queueMicrotask(() => sendViewers());
   const peer = peers.get(peerId);
   if (!peer) return;
   peer.pc.close();
