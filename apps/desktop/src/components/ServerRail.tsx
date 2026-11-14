@@ -34,7 +34,15 @@ export function ServerRail() {
         badge={dmUnread + pendingFriends}
         onClick={() => actions.goHome(view.kind === 'home' ? view.dmId : null)}
       >
-        <Logo size={30} />
+        {/* Acinzentado em repouso; ganha a cor ao passar o mouse (ou na tela inicial). */}
+        <span
+          className={cx(
+            'flex transition-[filter,opacity] duration-300',
+            view.kind === 'home' ? 'grayscale-0' : 'opacity-80 grayscale group-hover:opacity-100 group-hover:grayscale-0',
+          )}
+        >
+          <Logo size={30} />
+        </span>
       </RailItem>
 
       <div className="mx-auto h-0.5 w-8 rounded bg-edge" />
