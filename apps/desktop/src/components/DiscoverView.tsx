@@ -1,7 +1,7 @@
 'use client';
 
 import type { Server } from '@line/shared';
-import { useEffect, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
 import { Button, Icons, initials, Input, Skeleton } from './ui';
@@ -11,6 +11,9 @@ export function DiscoverView() {
   const [query, setQuery] = useState('');
   const [servers, setServers] = useState<Server[] | null>(null);
   const [error, setError] = useState('');
+  const [invite, setInvite] = useState('');
+  const [inviteError, setInviteError] = useState('');
+  const [joining, setJoining] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -32,6 +35,25 @@ export function DiscoverView() {
     }
   }
 
+  /** Aceita o código puro ou um link de convite (pega o último pedaço do link). */
+  async function joinByInvite(e: FormEvent) {
+    e.preventDefault();
+    const code = invite.trim().replace(/[/?#]+$/, '').split(/[/?#]/).pop() ?? '';
+    if (!code) return;
+    setJoining(true);
+    setInviteError('');
+    try {
+      const joined = await api.acceptInvite(code);
+      actions.upsertServer(joined);
+      actions.goServer(joined.id);
+      setInvite('');
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Convite inválido ou expirado.');
+    } finally {
+      setJoining(false);
+    }
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="bg-gradient-to-br from-accent/30 via-main to-sun/10 px-10 py-12">
@@ -41,6 +63,24 @@ export function DiscoverView() {
           <Icons.Search size={18} className="absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar servidores" className="py-3 pl-10" />
         </div>
+        <form onSubmit={joinByInvite} className="mt-4 max-w-xl">
+          <p className="mb-2 text-sm font-semibold text-soft">Tem um convite? Cole o código ou o link</p>
+          <div className="flex gap-2">
+            <Input
+              value={invite}
+              onChange={(e) => {
+                setInvite(e.target.value);
+                setInviteError('');
+              }}
+              placeholder="Exemplo: hTKzmak2"
+              className="flex-1 py-3 font-mono"
+            />
+            <Button type="submit" disabled={joining || !invite.trim()} className="px-5">
+              {joining ? 'Entrando…' : 'Entrar'}
+            </Button>
+          </div>
+          {inviteError && <p className="mt-2 text-sm text-danger">{inviteError}</p>}
+        </form>
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-8">
         {error && <p className="text-danger">{error}</p>}
