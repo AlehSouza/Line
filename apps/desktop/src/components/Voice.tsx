@@ -403,6 +403,47 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
   );
 }
 
+/** Fileira embaixo do destaque: mostra só os quadros que cabem; o resto vira um quadrado "+N" que volta para a grade. */
+function TileStrip({ tiles, onFocus, onShowAll }: { tiles: Tile[]; onFocus: (key: string) => void; onShowAll: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setW(e.contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 112; // h-28
+  const tileW = (H * 16) / 9;
+  const fit = Math.max(1, Math.floor((w + GAP) / (tileW + GAP)));
+  const overflow = tiles.length > fit;
+  const shown = overflow ? tiles.slice(0, fit - 1) : tiles;
+  const rest = tiles.length - shown.length;
+
+  return (
+    <div ref={ref} className="flex h-28 shrink-0 justify-center" style={{ gap: GAP }}>
+      {w > 0 &&
+        shown.map((t) => (
+          <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
+            <TileView tile={t} onClick={() => onFocus(t.key)} />
+          </div>
+        ))}
+      {w > 0 && overflow && (
+        <button
+          onClick={onShowAll}
+          title="Ver todos"
+          className="flex h-full shrink-0 items-center justify-center rounded-xl bg-raise text-2xl font-bold text-soft transition-colors hover:bg-hover hover:text-fg"
+          style={{ aspectRatio: shown.length ? '1 / 1' : '16 / 9' }}
+        >
+          +{rest}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Quadro em destaque: com a proporção do vídeo conhecida, encolhe até o tamanho do vídeo (sem faixas pretas). */
 function FitBox({ aspect, children, className }: { aspect: number | null; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -521,18 +562,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             <FitBox aspect={focused.kind === 'screen' ? aspect : null} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
             </FitBox>
-            {others.length > 0 && (
-              <div className="flex h-28 shrink-0 overflow-x-auto">
-                {/* mx-auto centraliza; se não couber, a margem zera e a fileira rola sem cortar o começo. */}
-                <div className="mx-auto flex h-full gap-3">
-                  {others.map((t) => (
-                    <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
-                      <TileView tile={t} onClick={() => setFocus(t.key)} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
           </>
         ) : (
           <TileGrid tiles={others} onFocus={setFocus} />
