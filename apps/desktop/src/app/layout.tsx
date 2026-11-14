@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import './globals.css';
 import { DialogHost } from '@/components/Dialogs';
+import { TooltipHost } from '@/components/Tooltip';
 
 export const metadata: Metadata = {
   title: 'Line',
@@ -14,6 +15,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         {children}
         <DialogHost />
+        <TooltipHost />
       </body>
     </html>
   );

@@ -163,3 +163,16 @@ body {
   to { opacity: 1; transform: none; }
 }
 .line-toast { animation: line-toast-in 160ms ease-out; }
+
+/* Tooltip do Line (components/Tooltip.tsx): aparece com um leve fade. */
+@keyframes line-tip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.line-tip {
+  animation: line-tip-in 0.12s ease-out;
+}
