@@ -230,6 +230,8 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
   const s = useLine.getState();
   const user = s.users[userId];
   const isMe = s.me?.id === userId;
+  // Bot (ex.: música): sem DM, chamada, amizade nem ID.
+  const isBot = !!user?.bot;
   const friend = s.friends[userId];
   const openDm = async () => {
     const dm = await api.openDm([userId]);
@@ -244,13 +246,13 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
       icon: <Icons.AtSign size={15} />,
       onClick: () => window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${user.username} ` })),
     },
-    !isMe && { label: 'Mensagem', icon: <Icons.Message size={15} />, onClick: openDm },
-    !isMe && {
+    !isMe && !isBot && { label: 'Mensagem', icon: <Icons.Message size={15} />, onClick: openDm },
+    !isMe && !isBot && {
       label: 'Iniciar chamada',
       icon: <Icons.Phone size={15} />,
       onClick: async () => joinVoice((await openDm()).id),
     },
-    !isMe && user && friend?.state !== 'friends' && friend?.state !== 'blocked' && friend?.state !== 'outgoing' && {
+    !isMe && !isBot && user && friend?.state !== 'friends' && friend?.state !== 'blocked' && friend?.state !== 'outgoing' && {
       label: friend?.state === 'incoming' ? 'Aceitar amizade' : 'Adicionar amigo',
       icon: <Icons.UserPlus size={15} />,
       onClick: () => (friend?.state === 'incoming' ? api.acceptFriend(userId) : api.addFriend(user.username)),
@@ -262,7 +264,7 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
       icon: <Icons.Edit size={15} />,
       onClick: () => actions.openModal({ kind: 'nickname', serverId, userId }),
     },
-    'sep',
-    id('Copiar ID do usuário', userId),
+    !isBot && 'sep',
+    !isBot && id('Copiar ID do usuário', userId),
   ];
 }

@@ -4,13 +4,14 @@ import type { PublicUser } from '@line/shared';
 import * as L from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { formatDuration, musicControl, positionOf, setMusicVolume, thumbOf, useMusic, type LiveMusic } from '@/lib/music';
+import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, useMusic, type LiveMusic } from '@/lib/music';
 import { actions, displayNameIn, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { hasPerm, Perm } from '@line/shared';
 import { showError, toast } from './Dialogs';
 import { ImageCropper } from './ImageCropper';
 import { ProfileCard } from './ProfileEditor';
+import { VoiceUserMenu } from './VoiceUserMenu';
 import { Avatar, Button, cx, ErrorText, Field, Input } from './ui';
 import { permsOf } from '@/lib/store';
 
@@ -20,6 +21,56 @@ function useIsDj(m: LiveMusic | null | undefined) {
   const meId = useLine((s) => s.me?.id);
   const manage = useLine((s) => (m ? hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageServer) : false));
   return !!m && (m.djId === meId || manage);
+}
+
+function isDj(m: LiveMusic) {
+  const s = useLine.getState();
+  return m.djId === s.me?.id || hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageServer);
+}
+
+/** `/stop` no chat: para a música do canal de voz em que estou. Devolve true se parou. */
+export function stopCommand(serverId: string) {
+  const voice = useVoice.getState().channelId;
+  const m = voice ? useMusic.getState().states[voice] : undefined;
+  if (!m || m.serverId !== serverId) {
+    toast('Não tem música tocando no seu canal de voz.');
+    return false;
+  }
+  if (!isDj(m)) {
+    toast(`Só ${displayNameIn(useLine.getState(), serverId, m.djId)} pode parar a música.`);
+    return false;
+  }
+  stopMusic(m.channelId);
+  return true;
+}
+
+/** Botão de parar a música (player e anúncio no chat). */
+function StopButton({ m, compact }: { m: LiveMusic; compact?: boolean }) {
+  const dj = useIsDj(m);
+  const djName = useLine((s) => displayNameIn(s, m.serverId, m.djId));
+  const title = dj ? 'Parar a música e tirar o bot do canal' : `Só ${djName} pode parar a música`;
+  if (compact)
+    return (
+      <button
+        title={title}
+        disabled={!dj}
+        onClick={() => stopMusic(m.channelId)}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-soft transition hover:bg-danger/20 hover:text-danger disabled:pointer-events-none disabled:opacity-40"
+      >
+        <L.Square size={14} fill="currentColor" />
+      </button>
+    );
+  return (
+    <button
+      title={title}
+      disabled={!dj}
+      onClick={() => stopMusic(m.channelId)}
+      className="flex items-center gap-1.5 rounded-md border border-edge bg-raise px-2.5 py-1 text-xs font-medium text-soft transition hover:border-danger/60 hover:text-danger disabled:opacity-50 disabled:hover:border-edge disabled:hover:text-soft"
+    >
+      <L.Square size={11} fill="currentColor" />
+      Parar
+    </button>
+  );
 }
 
 /** Sessão para mostrar no servidor: a do canal em que estou, senão a primeira que houver. */
@@ -104,11 +155,6 @@ export function MusicPlayer({ serverId }: { serverId: string }) {
               <p className="min-w-0 flex-1 truncate text-sm leading-tight font-semibold" title={track.title}>
                 {track.title}
               </p>
-              {dj && (
-                <button title="Parar e tirar o bot do canal" onClick={() => musicControl({ channelId: m.channelId, action: 'stop' })} className="-mt-0.5 text-muted hover:text-danger">
-                  <L.X size={14} />
-                </button>
-              )}
             </div>
             <p className="truncate text-xs text-soft">
               {track.author}
@@ -127,6 +173,7 @@ export function MusicPlayer({ serverId }: { serverId: string }) {
           {btn('prev', <L.SkipBack size={16} fill="currentColor" />, 'Voltar')}
           {btn('pause', m.paused ? <L.Play size={18} fill="currentColor" /> : <L.Pause size={18} fill="currentColor" />, m.paused ? 'Continuar' : 'Pausar')}
           {btn('skip', <L.SkipForward size={16} fill="currentColor" />, 'Pular')}
+          <StopButton m={m} compact />
         </div>
         {listening ? (
           <label className="relative mt-1 flex items-center gap-2 text-muted" title="Volume da música (só para você)">
@@ -317,6 +364,7 @@ export function MusicAnnounceCard({ data, serverId }: { data: MusicAnnounceData;
             {vote('prev', <L.SkipBack size={12} />, 'Voltar')}
             {vote('pause', live.paused ? <L.Play size={12} /> : <L.Pause size={12} />, live.paused ? 'Continuar' : 'Pausar')}
             {vote('skip', <L.SkipForward size={12} />, 'Pular')}
+            <StopButton m={live} />
           </div>
           <p className="mt-1.5 text-[11px] text-muted">
             {dj
@@ -334,13 +382,21 @@ export function MusicAnnounceCard({ data, serverId }: { data: MusicAnnounceData;
 export function MusicBotInVoice({ channelId, serverId }: { channelId: string; serverId?: string }) {
   const live = useMusic((s) => s.states[channelId]);
   useLine((s) => s.users);
+  // Clique direito: o mesmo menu de uma pessoa na voz (volume da música só para mim).
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   if (!live || !serverId) return null;
   const bot = botOf(serverId);
   if (!bot) return null;
   const track = live.tracks[live.index];
   return (
+    <>
     <button
       onClick={(e) => actions.openModal({ kind: 'user', userId: bot.id, at: { x: e.clientX, y: e.clientY } })}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
       className="flex w-full items-center gap-2.5 rounded-md px-1.5 py-1 text-left text-[15px] text-soft hover:bg-hover"
       title={track ? `Tocando: ${track.title}` : undefined}
     >
@@ -351,6 +407,8 @@ export function MusicBotInVoice({ channelId, serverId }: { channelId: string; se
       <span className="flex-1 truncate">{displayNameIn(useLine.getState(), serverId, bot.id)}</span>
       <BotTag />
     </button>
+    {menu && <VoiceUserMenu userId={bot.id} channelId={channelId} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
+    </>
   );
 }
 
