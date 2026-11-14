@@ -10,7 +10,7 @@
     "build:web": "node scripts/copy-noise.mjs && next build",
     "build": "tauri build --no-bundle",
     "dist:win": "tauri build --bundles nsis",
-    "dist:linux": "tauri build --bundles deb",
+    "dist:linux": "cd linux && npm ci && npm run dist",
     "dist:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json"
