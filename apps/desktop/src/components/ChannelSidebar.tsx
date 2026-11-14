@@ -7,7 +7,7 @@ import { actions, permsOf, useLine } from '@/lib/store';
 import { joinVoice, leaveVoice, useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { cx, Icons, ListSkeleton } from './ui';
-import { VoiceChannelMembers } from './Voice';
+import { CollapsedVoiceChannel, VoiceChannelMembers } from './Voice';
 import { CallTimer } from './VoiceInvite';
 import { confirmDialog, showError } from './Dialogs';
 
@@ -251,7 +251,26 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 </span>
               )}
             </div>
-            {!collapsed[cat.id] && <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>}
+            {collapsed[cat.id] ? (
+              // Recolhida: só os canais de voz com gente, em uma linha de avatares.
+              <div className="space-y-0.5">
+                {(byCategory[cat.id] ?? [])
+                  .filter((c) => c.type === 'voice')
+                  .map((c) => (
+                    <CollapsedVoiceChannel
+                      key={c.id}
+                      channel={c}
+                      active={c.id === activeId}
+                      onOpen={() => {
+                        actions.goServer(serverId, c.id);
+                        if (useVoice.getState().channelId !== c.id) void joinVoice(c.id);
+                      }}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>
+            )}
           </div>
         ))}
       </div>
