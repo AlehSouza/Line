@@ -215,6 +215,13 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE users ADD COLUMN status_until TEXT;
 "#,
+    // Segurança: email confirmado (pelo Google ou pelo link de recuperação) e
+    // corte de sessões (tokens emitidos antes de sessions_after deixam de valer).
+    r#"
+  ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN sessions_after INTEGER NOT NULL DEFAULT 0;
+  UPDATE users SET email_verified = 1 WHERE google_id IS NOT NULL;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

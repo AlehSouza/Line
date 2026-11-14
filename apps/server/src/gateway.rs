@@ -53,6 +53,11 @@ impl App {
         self.emit_rooms(user_ids.iter().map(|u| user_room(u)).collect(), event, data);
     }
 
+    /// Fecha as conexões em tempo real da conta (depois de derrubar as sessões).
+    pub fn disconnect_user(&self, user_id: &str) {
+        now(self.io.to(user_room(user_id)).disconnect());
+    }
+
     pub fn to_user<T: Serialize + ?Sized>(&self, user_id: &str, event: &str, data: &T) {
         self.emit_rooms(vec![user_room(user_id)], event, data);
     }
@@ -201,11 +206,8 @@ async fn authenticate(
         .ok()
         .and_then(|a| a.get("token").and_then(|t| t.as_str()).map(String::from));
     let user_id = token
-        .and_then(|t| app.tokens.verify(&t))
+        .and_then(|t| app.user_from_token(&t))
         .ok_or(Unauthorized)?;
-    if app.store.q().self_user(&user_id).is_none() {
-        return Err(Unauthorized);
-    }
     s.extensions.insert(UserId(user_id));
     Ok(())
 }

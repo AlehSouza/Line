@@ -78,6 +78,22 @@ impl SignupLimiter {
     }
 }
 
+impl SignupLimiter {
+    /// true se `key` já chegou no limite (sem registrar nada).
+    pub fn blocked(&self, key: &str) -> bool {
+        let (max, window) = (self.1, self.2);
+        let map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        map.get(key)
+            .is_some_and(|times| times.iter().filter(|t| now.duration_since(**t) < window).count() >= max)
+    }
+
+    /// Registra uma tentativa (ex.: senha errada) para `key`.
+    pub fn hit(&self, key: &str) {
+        let _ = self.allow(key);
+    }
+}
+
 impl Default for SignupLimiter {
     fn default() -> Self {
         Self::new()

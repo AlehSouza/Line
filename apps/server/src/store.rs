@@ -362,7 +362,31 @@ impl Q<'_> {
     }
 
     pub fn set_email(&self, id: &str, email: Option<&str>) {
-        ok(self.c.execute("UPDATE users SET email = ? WHERE id = ?", params![email, id]));
+        ok(self.c.execute(
+            "UPDATE users SET email = ?, email_verified = 0 WHERE id = ? AND email IS NOT ?",
+            params![email, id, email],
+        ));
+    }
+
+    pub fn email_verified(&self, id: &str) -> bool {
+        ok(self.c.query_row("SELECT email_verified FROM users WHERE id = ?", [id], |r| r.get::<_, i64>(0)).optional())
+            .is_some_and(|v| v != 0)
+    }
+
+    pub fn set_email_verified(&self, id: &str) {
+        ok(self.c.execute("UPDATE users SET email_verified = 1 WHERE id = ?", [id]));
+    }
+
+    /// Momento (unix, segundos) a partir do qual os tokens valem. None = conta não existe.
+    pub fn sessions_after(&self, id: &str) -> Option<u64> {
+        ok(self.c.query_row("SELECT sessions_after FROM users WHERE id = ?", [id], |r| r.get::<_, i64>(0)).optional())
+            .map(|v| v.max(0) as u64)
+    }
+
+    /// Derruba todas as sessões abertas da conta (tokens emitidos até agora).
+    pub fn revoke_sessions(&self, id: &str) {
+        let now = jsonwebtoken::get_current_timestamp() as i64;
+        ok(self.c.execute("UPDATE users SET sessions_after = ? WHERE id = ?", params![now, id]));
     }
 
     pub fn set_password_hash(&self, id: &str, hash: &str) {

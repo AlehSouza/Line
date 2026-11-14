@@ -21,7 +21,7 @@ export DEBIAN_FRONTEND=noninteractive
 echo "==> Pacotes do sistema"
 apt-get update -q
 apt-get install -y -q git curl ca-certificates gnupg build-essential pkg-config coturn \
-  debian-keyring debian-archive-keyring apt-transport-https iptables-persistent openssl
+  debian-keyring debian-archive-keyring apt-transport-https iptables-persistent openssl sqlite3
 
 if ! command -v caddy >/dev/null; then
   echo "==> Caddy"
@@ -188,7 +188,45 @@ open_port udp 3478
 open_port udp "$TURN_MIN:$TURN_MAX"
 netfilter-persistent save >/dev/null
 
+echo "==> Backup diário do banco (/var/backups/line, guarda 14 dias)"
+cat > /usr/local/bin/line-backup <<'BACKUP'
+#!/bin/sh
+# Cópia consistente do banco do Line (funciona com o servidor rodando) + segredos.
+set -eu
+DIR=/var/backups/line
+STAMP=$(date +%Y%m%d-%H%M)
+install -d -m 700 "$DIR"
+sqlite3 /var/lib/line/line.db ".backup '$DIR/line-$STAMP.db'"
+gzip -f "$DIR/line-$STAMP.db"
+tar -czf "$DIR/segredos-$STAMP.tar.gz" -C / var/lib/line/jwt-secret etc/line 2>/dev/null || true
+chmod 600 "$DIR"/*
+find "$DIR" -name 'line-*.db.gz' -mtime +14 -delete
+find "$DIR" -name 'segredos-*.tar.gz' -mtime +14 -delete
+BACKUP
+chmod 755 /usr/local/bin/line-backup
+cat > /etc/systemd/system/line-backup.service <<'UNIT'
+[Unit]
+Description=Backup do banco do Line
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/line-backup
+UNIT
+cat > /etc/systemd/system/line-backup.timer <<'UNIT'
+[Unit]
+Description=Backup diário do banco do Line
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
+systemctl enable --now line-backup.timer >/dev/null
 systemctl enable --now line.service
 systemctl restart line.service coturn caddy
 systemctl enable coturn caddy >/dev/null

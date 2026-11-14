@@ -53,6 +53,9 @@ pub struct App {
     pub mailer: Option<mail::Mailer>,
     /// Pedidos de recuperação de senha por IP.
     pub resets: captcha::SignupLimiter,
+    /// Senhas erradas no login, por IP e por nome de usuário (contra força bruta).
+    pub login_fails_ip: captcha::SignupLimiter,
+    pub login_fails_user: captcha::SignupLimiter,
     /// "Entrar com Google" (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET). Sem elas, o botão não aparece.
     pub google: Option<google::Google>,
 }
@@ -238,6 +241,8 @@ pub fn build(
         embeds: embeds::EmbedCache::default(),
         mailer: mail::Mailer::from_env(),
         resets: captcha::SignupLimiter::with(5, std::time::Duration::from_secs(60 * 60)),
+        login_fails_ip: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(15 * 60)),
+        login_fails_user: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(15 * 60)),
         google: google::Google::from_env(),
     });
     let _ = cell.set(app.clone());
@@ -264,6 +269,14 @@ impl std::ops::Deref for AppRef {
 }
 
 impl App {
+    /// Usuário do token, se ele for válido, a conta existir e a sessão não tiver sido derrubada
+    /// (troca de senha pelo email, login com Google que tomou a conta de volta).
+    pub fn user_from_token(&self, token: &str) -> Option<String> {
+        let (user_id, iat) = self.tokens.verify_claims(token)?;
+        let after = self.store.q().sessions_after(&user_id)?;
+        (iat >= after).then_some(user_id)
+    }
+
     /// Apaga do disco os arquivos que não pertencem mais a nenhum anexo
     /// (mensagem, canal ou servidor apagados) e anexos nunca usados há mais de um dia.
     pub fn expire_statuses(&self) {
