@@ -576,14 +576,22 @@ async fn create_server(State(app): S, Me(me): Me, b: Bytes) -> Res {
 async fn get_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let server = require_member(&q, &id, &me)?;
+    let channels: Vec<_> = q
+        .channels(&server.id)
+        .into_iter()
+        .filter(|c| q.can_access(&me, &c.id))
+        .collect();
+    // Categoria sem nenhum canal visível some (menos para quem gerencia canais).
+    let manage = has(q.permissions(&server.id, &me), perms::MANAGE_CHANNELS);
+    let categories = q
+        .categories(&server.id)
+        .into_iter()
+        .filter(|cat| manage || channels.iter().any(|c| c.category_id.as_deref() == Some(cat.id.as_str())))
+        .collect();
     ok(ServerDetail {
         roles: q.roles(&server.id),
-        categories: q.categories(&server.id),
-        channels: q
-            .channels(&server.id)
-            .into_iter()
-            .filter(|c| q.can_access(&me, &c.id))
-            .collect(),
+        categories,
+        channels,
         members: q.members(&server.id),
         server: q.for_viewer(server, &me),
     })

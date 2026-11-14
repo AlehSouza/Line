@@ -213,7 +213,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
         {!loaded && <ListSkeleton count={8} />}
         {loose.length > 0 && <div className="space-y-0.5">{loose.map(renderChannel)}</div>}
-        {categories.map((cat) => (
+        {categories.filter((cat) => canChannels || byCategory[cat.id]?.length).map((cat) => (
           <div key={cat.id}>
             <div className="group flex items-center justify-between px-1 pb-1">
               <button
