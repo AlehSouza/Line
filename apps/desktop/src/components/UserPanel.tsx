@@ -29,7 +29,7 @@ export function UserPanel() {
           const r = e.currentTarget.getBoundingClientRect();
           actions.openModal({ kind: 'user', userId: me.id, at: { x: r.left - 4, y: r.top - 4, above: true } });
         }}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left hover:bg-hover"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors duration-150 hover:bg-white/[0.06]"
       >
         <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={32} presence={shownPresence} ring="rail" />
         <span className="min-w-0">
@@ -53,7 +53,7 @@ export function UserPanel() {
       >
         {deafened ? <Icons.HeadphonesOff size={18} /> : <Icons.Headphones size={18} />}
       </SplitButton>
-      <button title="Configurações" onClick={() => actions.openModal({ kind: 'settings' })} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+      <button title="Configurações" onClick={() => actions.openModal({ kind: 'settings' })} className="rounded-md p-1.5 text-soft transition-colors duration-150 hover:bg-white/[0.06] hover:text-fg">
         <Icons.Settings size={18} />
       </button>
     </div>
@@ -76,10 +76,10 @@ function SplitButton({
 }) {
   return (
     <span className={cx('flex items-center rounded-md', active ? 'bg-danger/15 text-danger' : 'text-soft')}>
-      <button title={title} onClick={onClick} className="rounded-l-md py-1.5 pr-0.5 pl-1.5 hover:bg-hover hover:text-fg">
+      <button title={title} onClick={onClick} className="rounded-l-md py-1.5 pr-0.5 pl-1.5 transition-colors duration-150 hover:bg-white/[0.06] hover:text-fg">
         {children}
       </button>
-      <button title="Dispositivos" onClick={onMenu} className="rounded-r-md px-0.5 py-1.5 hover:bg-hover hover:text-fg">
+      <button title="Dispositivos" onClick={onMenu} className="rounded-r-md px-0.5 py-1.5 transition-colors duration-150 hover:bg-white/[0.06] hover:text-fg">
         <Icons.Chevron size={12} />
       </button>
     </span>
