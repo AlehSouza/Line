@@ -1,0 +1,39 @@
+{
+  "name": "line",
+  "productName": "Line",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Line: chat, voz e comunidades para a sua galera.",
+  "homepage": "https://useline.tech",
+  "author": "Line <contato@useline.tech>",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux deb --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.10.0",
+    "electron-builder": "26.18.1"
+  },
+  "build": {
+    "appId": "app.line.desktop",
+    "productName": "Line",
+    "executableName": "line",
+    "copyright": "© 2026 Line",
+    "files": ["main.cjs", "preload.cjs", "icon.png"],
+    "directories": { "output": "release" },
+    "linux": {
+      "target": ["deb"],
+      "icon": "icon.png",
+      "category": "Network",
+      "synopsis": "Line: chat e comunidades",
+      "maintainer": "Line <contato@useline.tech>",
+      "vendor": "Line",
+      "artifactName": "Line_${version}_amd64.${ext}"
+    },
+    "deb": {
+      "packageName": "line",
+      "priority": "optional"
+    }
+  }
+}

@@ -59,14 +59,15 @@ export function AuthScreen() {
     const base = serverUrl.replace(/\/+$/, '');
     const tauri = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (c: string, a?: unknown) => Promise<string> } })
       .__TAURI_INTERNALS__;
-    if (!tauri) {
+    const viaBrowser = window.line?.googleLogin ?? (tauri ? (url: string) => tauri.invoke('google_login', { serverUrl: url }) : null);
+    if (!viaBrowser) {
       window.location.href = `${base}/api/auth/google/start`;
       return;
     }
     // Desktop: o Google não deixa logar dentro do app, então abre o navegador e espera voltar.
     setBusy(true);
     try {
-      const code = await tauri.invoke('google_login', { serverUrl: base });
+      const code = await viaBrowser(base);
       await authenticateWithGoogle(serverUrl, code);
     } catch (err) {
       setError(typeof err === 'string' ? err : (err as Error).message);

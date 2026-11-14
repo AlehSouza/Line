@@ -42,9 +42,11 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return internals.invoke(cmd, args);
 }
 
-/** Seletor próprio: app do Windows (WebView2) e do macOS (WKWebView). Web e Linux usam o do navegador. */
+/** Seletor próprio: apps do Windows (WebView2), macOS (WKWebView) e Linux (Electron, fora do Wayland). Web usa o do navegador. */
 export function hasNativeScreen() {
   if (typeof window === 'undefined' || !window.line?.isDesktop) return false;
+  // Linux (Electron): seletor do Line com as fontes do desktopCapturer; a captura é o getDisplayMedia normal.
+  if (window.line.screen) return window.line.screen.picker;
   if (window.line.platform === 'win32') return !!webview() && 'MediaStreamTrackGenerator' in window && 'VideoFrame' in window;
   if (window.line.platform === 'darwin') return 'VideoFrame' in window && 'captureStream' in HTMLCanvasElement.prototype;
   return false;
@@ -52,6 +54,7 @@ export function hasNativeScreen() {
 
 /** Lista janelas e telas. Rejeita com a mensagem do sistema (ex.: falta permissão no macOS). */
 export function listScreenSources(): Promise<ScreenSource[]> {
+  if (window.line?.screen) return window.line.screen.sources();
   return invoke<ScreenSource[]>('screen_sources').then((list) => list ?? []);
 }
 

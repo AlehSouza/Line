@@ -700,7 +700,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
   const { resolution, fps } = getV().screenQuality;
   try {
     let stream: MediaStream;
-    if (source && hasNativeScreen()) {
+    if (source && hasNativeScreen() && !window.line?.screen) {
       const native = await startNativeScreen(source.id, {
         fps,
         audio: source.audio,
@@ -717,6 +717,8 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
       screenSize = { width: native.width, height: native.height };
     } else {
       const r = RESOLUTIONS[resolution];
+      // Linux (Electron): avisa qual fonte foi escolhida no seletor do Line antes de pedir a tela.
+      if (source && window.line?.screen) await window.line.screen.select(source.id);
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           width: { ideal: r.width, max: r.width },
