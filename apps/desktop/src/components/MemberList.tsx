@@ -83,7 +83,7 @@ export function MemberList({ serverId }: { serverId: string }) {
 export function ServerSidePanel({ serverId }: { serverId: string }) {
   const [query, setQuery] = useState<string | null>(null);
   return (
-    <aside className={cx('hidden shrink-0 flex-col bg-side transition-[width] lg:flex', query ? 'w-[420px]' : 'w-60')}>
+    <aside className={cx('hidden shrink-0 flex-col bg-side transition-[width] lg:flex', query ? 'w-[420px]' : 'w-72')}>
       <div className="flex h-12 shrink-0 items-center border-b border-rail px-2 shadow-sm">
         <div className="flex-1">
           <SearchBox serverId={serverId} active={!!query} onSearch={setQuery} onClear={() => setQuery(null)} />
