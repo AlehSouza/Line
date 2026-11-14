@@ -329,6 +329,8 @@ export const Icons = {
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
   Play: icon(L.Play),
+  Pause: icon(L.Pause),
+  Send: icon(L.SendHorizontal),
   Smile: icon(L.Smile),
   SmilePlus: icon(L.SmilePlus),
   EyeOff: icon(L.EyeOff),
