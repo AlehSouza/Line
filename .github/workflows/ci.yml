@@ -72,30 +72,46 @@ jobs:
           if-no-files-found: error
 
   linux:
-    name: App Linux .deb (Electron)
-    # No Linux o casco é Electron: o WebKitGTK das distros vem sem WebRTC (sem chamadas).
-    # A interface vem de useline.tech/app, então aqui só se monta o casco e o build web.
+    name: App Linux (Tauri) .deb, .rpm e AppImage
+    # 22.04 (glibc 2.35): o .deb roda no Debian 12 e Ubuntu 22.04+, o .rpm no Fedora, e o AppImage
+    # (com WebKitGTK e GStreamer dentro) em qualquer distro. As chamadas usam o motor WebRTC em
+    # Rust (crates/line-rtc), porque o WebKitGTK das distros vem sem RTCPeerConnection.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Dependências do Tauri e do GStreamer (vai dentro do AppImage)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev patchelf \
+            libayatana-appindicator3-dev cmake libfuse2 \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-pulseaudio gstreamer1.0-pipewire
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            apps/desktop/linux/package-lock.json
       - run: npm ci
-      - run: npm run build:web -w @line/desktop
-      - name: Casco Electron (.deb)
-        working-directory: apps/desktop/linux
-        run: |
-          npm ci
-          npx electron-builder --linux deb --publish never -c.extraMetadata.version=0.1.${{ github.run_number }}
+      - name: Motor WebRTC (chamada de verdade entre duas instâncias, áudio e vídeo)
+        run: cargo test -p line-rtc
+      - name: Versão do build e assinatura do atualizador
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: echo "{\"version\":\"0.1.${{ github.run_number }}\",\"bundle\":{\"createUpdaterArtifacts\":$HAS_KEY}}" > apps/desktop/src-tauri/ci.conf.json
+      - run: npm run dist:linux -w @line/desktop -- --config src-tauri/ci.conf.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
-          name: Line-linux-deb
-          path: apps/desktop/linux/release/*.deb
+          name: Line-linux
+          path: |
+            target/release/bundle/deb/*.deb
+            target/release/bundle/deb/*.deb.sig
+            target/release/bundle/rpm/*.rpm
+            target/release/bundle/rpm/*.rpm.sig
+            target/release/bundle/appimage/*.AppImage
+            target/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: error
       # A interface web (useline.tech/app) é o mesmo build que vai dentro do app desktop.
       - uses: actions/upload-artifact@v4
@@ -170,7 +186,7 @@ jobs:
             --notes "Instaladores gerados automaticamente a partir de ${{ github.sha }}.
 
           - **Windows**: baixe o \`.exe\` e execute (instala só para o seu usuário).
-          - **Linux (Debian/Ubuntu)**: baixe o \`.deb\` e rode \`sudo apt install ./Line_*_amd64.deb\`.
+          - **Linux**: \`.deb\` (Debian/Ubuntu: \`sudo apt install ./Line_*_amd64.deb\`), \`.rpm\` (Fedora: \`sudo dnf install ./Line-*.rpm\`) ou \`.AppImage\` (qualquer distro: \`chmod +x\` e abrir).
           - **macOS**: baixe o \`.dmg\`, arraste o Line para Aplicativos e, na primeira vez, clique com o botão direito em Abrir (o app ainda não é assinado pela Apple)."
 
   updates:
@@ -186,8 +202,8 @@ jobs:
           path: win
       - uses: actions/download-artifact@v4
         with:
-          name: Line-linux-deb
-          path: deb
+          name: Line-linux
+          path: linux
       - uses: actions/download-artifact@v4
         with:
           name: Line-macos
@@ -220,6 +236,17 @@ jobs:
               '.platforms["darwin-aarch64"] = {signature: $sig, url: $url} | .platforms["darwin-x86_64"] = {signature: $sig, url: $url}' \
               latest.json > latest.tmp && mv latest.tmp latest.json
           fi
+          # Linux: o atualizador procura linux-x86_64-{deb,rpm,appimage}, conforme o pacote instalado.
+          linux_files=()
+          for kind in deb rpm AppImage; do
+            f=$(find linux -name "*.$kind" | head -n1)
+            if [ -n "$f" ] && [ -f "$f.sig" ]; then
+              key="linux-x86_64-$(echo "$kind" | tr '[:upper:]' '[:lower:]')"
+              jq --arg k "$key" --arg sig "$(cat "$f.sig")" --arg url "https://$HOST/updates/$(basename "$f")" \
+                '.platforms[$k] = {signature: $sig, url: $url}' latest.json > latest.tmp && mv latest.tmp latest.json
+              linux_files+=("$f")
+            fi
+          done
           cat latest.json
           mkdir -p ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
@@ -231,6 +258,9 @@ jobs:
           else
             echo "Sem atualizador do macOS nesta build: publicando só o Windows."
           fi
+          for f in "${linux_files[@]}"; do
+            scp -i ~/.ssh/deploy "$f" "line-deploy@$HOST:/opt/line/updates/$(basename "$f")"
+          done
           scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
           # Várias runs podem terminar fora de ordem: só troca o latest.json se esta versão for
           # a mais nova, e a limpeza nunca apaga o instalador para o qual o latest.json aponta.
@@ -246,6 +276,7 @@ jobs:
           keep=$(grep -o 'Line_[0-9.]*_x64-setup\.exe' latest.json | head -n1)
           ls -t *.exe | grep -vxF -e "$keep" -e "$2" | tail -n +3 | xargs -r rm --
           ls -t *.app.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -- || true
+          for ext in deb rpm AppImage; do ls -t *.$ext 2>/dev/null | tail -n +4 | xargs -r rm -- || true; done
           REMOTE
           # Se uma run mais nova já publicou, não volta os downloads e o site para esta versão.
           if [ "$(curl -fsS "https://$HOST/updates/latest.json" | jq -r .version)" != "$version" ]; then
@@ -253,13 +284,17 @@ jobs:
             exit 0
           fi
           # Links fixos usados pela aba Downloads do site (useline.tech/downloads).
-          deb=$(find deb -name '*.deb' | head -n1)
+          deb=$(find linux -name '*.deb' | head -n1)
+          rpm=$(find linux -name '*.rpm' | head -n1)
+          appimage=$(find linux -name '*.AppImage' | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
           scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
           dmg=$(find mac -name '*.dmg' | head -n1)
           scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.tmp"
+          scp -i ~/.ssh/deploy "$rpm" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.rpm.tmp"
+          scp -i ~/.ssh/deploy "$appimage" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.AppImage.tmp"
           scp -i ~/.ssh/deploy "$dmg" "line-deploy@$HOST:/opt/line/updates/latest/Line-macos.dmg.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb && mv Line-macos.dmg.tmp Line-macos.dmg"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb && mv Line-linux.rpm.tmp Line-linux.rpm && mv Line-linux.AppImage.tmp Line-linux.AppImage && mv Line-macos.dmg.tmp Line-macos.dmg"
           # Site de apresentação (raiz do useline.tech).
           # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
           scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \

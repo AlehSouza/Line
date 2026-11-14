@@ -24,8 +24,23 @@ tokio = { version = "1", features = ["time"] }
 
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Ligar WebRTC/microfone no WebKitGTK (vem desligado por padrão).
+# Ligar microfone, câmera e tela no WebKitGTK (vem desligado por padrão).
 webkit2gtk = { version = "2.0", features = ["v2_38"] }
+# Chamadas: o WebKitGTK das distros não tem RTCPeerConnection, então o WebRTC roda em Rust.
+line-rtc = { path = "../../../crates/line-rtc" }
+bytes = "1"
+tokio = { version = "1", features = ["time", "sync", "rt", "net", "macros"] }
+# Compartilhar tela no X11 (o portal do WebKitGTK só existe no Wayland): X puro em Rust, sem libs do sistema.
+x11rb = { version = "0.13", features = ["randr", "xfixes", "shm"] }
+libc = "0.2"
+# Redução e conversão dos quadros da tela com SIMD (AVX2/SSE/NEON), no estilo do libyuv.
+fast_image_resize = "6"
+yuvutils-rs = "0.8"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+base64 = "0.22"
+tokio-tungstenite = "0.28"
+futures-util = "0.3"
+rand = "0.9"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 # Ícone na bandeja: fechar no X só esconde a janela (no Linux precisaria do appindicator).

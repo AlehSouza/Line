@@ -344,7 +344,7 @@ export async function joinVoice(channelId: string) {
   if (typeof RTCPeerConnection === 'undefined') {
     setV({
       error:
-        'Chamadas não funcionam neste app no Linux (o WebKit da sua distro veio sem WebRTC). Abra o Line pelo Chrome ou Firefox no endereço do servidor.',
+        'Este navegador não tem WebRTC, então as chamadas não funcionam aqui. Use o app do Line ou abra pelo Chrome ou Firefox.',
     });
     return;
   }
@@ -720,7 +720,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
   const { resolution, fps } = getV().screenQuality;
   try {
     let stream: MediaStream;
-    if (source && hasNativeScreen() && !window.line?.screen) {
+    if (source && hasNativeScreen()) {
       const native = await startNativeScreen(source.id, {
         fps,
         audio: source.audio,
@@ -737,8 +737,6 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
       screenSize = { width: native.width, height: native.height };
     } else {
       const r = RESOLUTIONS[resolution];
-      // Linux (Electron): avisa qual fonte foi escolhida no seletor do Line antes de pedir a tela.
-      if (source && window.line?.screen) await window.line.screen.select(source.id);
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           width: { ideal: r.width, max: r.width },

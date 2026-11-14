@@ -12,12 +12,18 @@ use tauri_plugin_opener::OpenerExt;
 
 #[cfg(windows)]
 mod loopback;
+#[cfg(target_os = "linux")]
+mod rtc;
 #[cfg(windows)]
 mod screen;
 #[cfg(target_os = "macos")]
 mod screen_mac;
 #[cfg(target_os = "macos")]
 use screen_mac as screen;
+#[cfg(target_os = "linux")]
+mod screen_linux;
+#[cfg(target_os = "linux")]
+use screen_linux as screen;
 
 const MAIN: &str = "main";
 
@@ -390,6 +396,15 @@ fn badge_dot() -> tauri::image::Image<'static> {
     tauri::image::Image::new_owned(rgba, SIZE, SIZE)
 }
 
+/// Seletor de tela do Line (com captura em Rust). No Linux só no X11: no Wayland o portal do
+/// sistema funciona e o `getDisplayMedia` do WebKitGTK mostra o seletor dele.
+fn native_screen_picker() -> bool {
+    #[cfg(target_os = "linux")]
+    return screen_linux::is_x11();
+    #[cfg(not(target_os = "linux"))]
+    true
+}
+
 /// URLs que pertencem ao app (o resto abre no navegador padrão).
 fn is_app_url(url: &tauri::Url) -> bool {
     match url.scheme() {
@@ -404,7 +419,8 @@ fn is_app_url(url: &tauri::Url) -> bool {
 fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     let opener = app.clone();
     let opener2 = app.clone();
-    let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("Line")
         // Sem a barra do Windows: a interface desenha a própria (com arrastar, minimizar etc).
         .decorations(false)
@@ -417,7 +433,9 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .disable_drag_drop_handler()
         .additional_browser_args(BROWSER_ARGS)
         .initialization_script(
-            include_str!("bridge.js").replace("__LINE_VERSION__", &app.package_info().version.to_string()),
+            include_str!("bridge.js")
+                .replace("__LINE_VERSION__", &app.package_info().version.to_string())
+                .replace("__LINE_NATIVE_SCREEN__", if native_screen_picker() { "true" } else { "false" }),
         )
         // Microfone, câmera e notificações sem perguntar de novo: o app inteiro é nosso.
         .on_permission_request(|_, kind| match kind {
@@ -440,8 +458,20 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
             }
             let _ = opener2.opener().open_url(url.as_str(), None::<&str>);
             false
-        })
-        .build()?;
+        });
+
+    // Linux: o WebKitGTK das distros não tem RTCPeerConnection; o adaptador põe o motor em Rust
+    // no lugar (rtc.rs + rtc_shim.js). LINE_RTC=native usa o do WebKit, para quem compilou com WebRTC.
+    #[cfg(target_os = "linux")]
+    {
+        // Sons do próprio app (tauri://) não tocam no player do WebKitGTK; o script passa por blob:.
+        builder = builder.initialization_script(include_str!("linux_media.js"));
+        if std::env::var("LINE_RTC").as_deref() != Ok("native") {
+            builder = builder.initialization_script(include_str!("rtc_shim.js"));
+        }
+    }
+
+    let window = builder.build()?;
 
     #[cfg(target_os = "linux")]
     enable_linux_media(&window);
@@ -470,7 +500,11 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
 pub fn run() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+            // O webrtc-rs avisa de coisas normais do começo da chamada (SRTP antes do DTLS etc.).
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "info,webrtc=error,rtc=error,rtc_ice=error,rtc_dtls=error,rtc_srtp=error,rtc_sctp=error,rtc_interceptor=error,rtc_mdns=error"
+                    .into()
+            }),
         )
         .try_init();
 
@@ -492,14 +526,45 @@ pub fn run() {
             update_install,
             update_run,
             google_login,
-            #[cfg(any(windows, target_os = "macos"))]
+            #[cfg(target_os = "linux")]
+            rtc::rtc_attach,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_create,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_close,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_add_track,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_remove_track,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_bind,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_create_offer,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_create_answer,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_set_local,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_set_remote,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_add_ice,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_restart_ice,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_request_keyframe,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_add_source,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_remove_source,
+            #[cfg(target_os = "linux")]
+            rtc::rtc_push,
             screen::screen_sources,
-            #[cfg(any(windows, target_os = "macos"))]
             screen::screen_start,
-            #[cfg(any(windows, target_os = "macos"))]
             screen::screen_stop
         ])
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            app.manage(rtc::Rtc::new());
             let handle = app.handle().clone();
             #[cfg(any(windows, target_os = "macos"))]
             create_tray(&handle)?;
@@ -523,8 +588,9 @@ pub fn run() {
     app.run(|_, _| {});
 }
 
-/// No Linux o WebKitGTK vem com WebRTC e captura de mídia desligados:
-/// sem isso não existe `RTCPeerConnection` e as chamadas não funcionam.
+/// No Linux o WebKitGTK vem com captura de mídia desligada: sem isso não há microfone, câmera nem
+/// tela. O WebRTC em si fica com o adaptador (rtc.rs); ligar o do WebKit só vale com LINE_RTC=native,
+/// num WebKitGTK compilado com ele (as distros não compilam).
 #[cfg(target_os = "linux")]
 fn enable_linux_media(window: &WebviewWindow) {
     use webkit2gtk::{PermissionRequestExt, SettingsExt, WebViewExt};
@@ -536,6 +602,8 @@ fn enable_linux_media(window: &WebviewWindow) {
             settings.set_enable_mediasource(true);
             settings.set_enable_media_capabilities(true);
             settings.set_media_playback_requires_user_gesture(false);
+            // LINE_DEBUG=1: o console da página sai no terminal (para diagnosticar chamadas).
+            settings.set_enable_write_console_messages_to_stdout(std::env::var_os("LINE_DEBUG").is_some());
         }
         // Microfone, câmera, tela e notificações: o app inteiro é nosso, então libera.
         view.connect_permission_request(|_, req| {
