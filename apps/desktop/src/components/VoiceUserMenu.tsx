@@ -90,6 +90,15 @@ export function VoiceUserMenu({
   );
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
+  // Próprio apelido: "Alterar apelido"; de outra pessoa: "Gerenciar apelidos".
+  const canNick = useLine((s) => {
+    if (!serverId) return false;
+    const p = permsOf(s, serverId, s.me?.id);
+    return (
+      hasPerm(p, Perm.ManageNicknames) ||
+      (userId === s.me?.id && hasPerm(p, Perm.ChangeNickname))
+    );
+  });
   const [moveOpen, setMoveOpen] = useState(false);
   const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -173,6 +182,15 @@ export function VoiceUserMenu({
       <Item onClick={run(() => mention(user.username, serverId))}>
         Mencionar
       </Item>
+      {serverId && canNick && (
+        <Item
+          onClick={run(() =>
+            actions.openModal({ kind: "nickname", serverId, userId }),
+          )}
+        >
+          Alterar apelido
+        </Item>
+      )}
       {!isMe && (
         <>
           <Item onClick={run(openDm)}>Mensagem</Item>
