@@ -951,7 +951,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     try {
       const attachment = await api.uploadAttachment(file, file.name);
       const target = await resolveTarget();
-      actions.addMessage(await api.sendMessage(target, '', [attachment.id]));
+      actions.addMessage(await api.sendMessage(target, '', [attachment.id], ['audio']));
       if (target !== channel.id) actions.openThread(target);
     } catch (e) {
       showError(e);
@@ -978,7 +978,9 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     setSending(true);
     try {
       const target = await resolveTarget();
-      const message = await api.sendMessage(target, content, gif ? [] : ready);
+      // Áudio usa o player novo: apps antigos mostram o aviso de atualizar.
+      const hasAudio = !gif && pending.some((x) => x.attachment && attachmentKind(x.type, x.name) === 'audio');
+      const message = await api.sendMessage(target, content, gif ? [] : ready, hasAudio ? ['audio'] : []);
       actions.addMessage(message);
       if (target !== channel.id) actions.openThread(target);
       if (gif) return;
