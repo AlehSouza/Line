@@ -222,7 +222,17 @@ function TileView({
           {/* Miniatura estática e borrada da tela por trás do botão. */}
           {thumb && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={thumb} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl" />
+            <img
+              src={thumb}
+              alt=""
+              draggable={false}
+              // A miniatura tem a proporção do vídeo: o quadro borrado fica do mesmo tamanho da transmissão.
+              onLoad={(e) => {
+                const i = e.currentTarget;
+                if (i.naturalWidth && i.naturalHeight) onAspect?.(i.naturalWidth / i.naturalHeight);
+              }}
+              className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl"
+            />
           )}
           <span className="pointer-events-none absolute inset-0 bg-black/30" />
           <button
@@ -433,7 +443,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </div>
         ) : focused ? (
           <>
-            <FitBox aspect={focused.kind === 'screen' && focused.stream ? aspect : null}>
+            <FitBox aspect={focused.kind === 'screen' ? aspect : null}>
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
             </FitBox>
             {others.length > 0 && (
