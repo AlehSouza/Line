@@ -235,7 +235,7 @@ export function UserCard({
             </div>
           )}
 
-          {user.bio && <p className="mt-3 line-clamp-4 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
+          {user.bio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
 
           {!isMe && <InVoice userId={userId} onClose={onClose} />}
           <MemberRoles userId={userId} />
