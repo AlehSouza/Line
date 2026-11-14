@@ -254,6 +254,11 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       } else if (here && after === here && state?.screenStreamId && !getV().states[uid]?.screenStreamId) {
         // Alguém do meu canal começou a transmitir: todos do canal ouvem.
         playCallSound('start_transmission');
+      } else if (here && after === here && before === here && state) {
+        // Alguém do meu canal mutou/desmutou o microfone ou o fone: todos do canal ouvem.
+        const prev = getV().states[uid];
+        if (!!prev?.deafened !== !!state.deafened) playCallSound('mute_headphone');
+        else if (!!prev?.muted !== !!state.muted) playCallSound('mute_microphone');
       }
     }
     setV((v) => {
