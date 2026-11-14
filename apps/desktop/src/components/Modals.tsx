@@ -44,7 +44,7 @@ export function Modals() {
     case 'new-dm':
       return <NewDmModal onClose={close} />;
     case 'user':
-      return <UserCard userId={modal.userId} at={modal.at} onClose={close} />;
+      return <UserCard userId={modal.userId} at={modal.at} hover={modal.hover} onClose={close} />;
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':

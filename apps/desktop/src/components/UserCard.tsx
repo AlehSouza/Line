@@ -18,7 +18,18 @@ export const statusOptions: { value: UserStatus; label: string; hint?: string; p
 const W = 340;
 
 /** Mini cartão de perfil que abre ao clicar em alguém (ou na sua própria caixa de usuário). */
-export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: number; y: number; above?: boolean }; onClose: () => void }) {
+export function UserCard({
+  userId,
+  at,
+  hover,
+  onClose,
+}: {
+  userId: string;
+  at?: { x: number; y: number; above?: boolean };
+  /** Aberto ao passar o mouse numa menção: sem fundo bloqueando a tela, fecha ao tirar o mouse. */
+  hover?: boolean;
+  onClose: () => void;
+}) {
   const me = useLine((s) => s.me);
   const other = useLine((s) => s.users[userId]);
   const friend = useLine((s) => s.friends[userId]);
@@ -94,13 +105,19 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
   const current = statusOptions.find((o) => o.value === me.status) ?? statusOptions[0]!;
 
   return (
-    <div className="fixed inset-0 z-50" onMouseDown={onClose}>
+    <div className={cx('fixed inset-0 z-50', hover && 'pointer-events-none')} onMouseDown={onClose}>
       <div
         ref={box}
         role="dialog"
         aria-label={user.displayName}
-        onMouseDown={(e) => e.stopPropagation()}
-        className="fixed overflow-hidden rounded-2xl border border-edge shadow-2xl"
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          // Clicou dentro do cartão: ele passa a ficar aberto como um clique normal.
+          if (hover) hoverCard.pin();
+        }}
+        onMouseEnter={hover ? hoverCard.cancel : undefined}
+        onMouseLeave={hover ? hoverCard.leave : undefined}
+        className="pointer-events-auto fixed overflow-hidden rounded-2xl border border-edge shadow-2xl"
         style={{
           width: W,
           left: pos?.left ?? -9999,
@@ -300,6 +317,66 @@ export function UserCard({ userId, at, onClose }: { userId: string; at?: { x: nu
 }
 
 const DEFAULT_ROLE_COLOR = '#99aab5';
+
+/** Abre/fecha o cartão de perfil ao passar o mouse sobre uma @menção. */
+const hoverCard = (() => {
+  let openTimer: number | undefined;
+  let closeTimer: number | undefined;
+  const isHoverOpen = () => {
+    const m = useLine.getState().modal;
+    return m?.kind === 'user' && !!m.hover;
+  };
+  return {
+    enter(userId: string, el: HTMLElement) {
+      window.clearTimeout(closeTimer);
+      window.clearTimeout(openTimer);
+      const m = useLine.getState().modal;
+      if (m && !(m.kind === 'user' && m.hover)) return; // outro modal aberto
+      if (m?.kind === 'user' && m.userId === userId) return;
+      openTimer = window.setTimeout(() => {
+        const r = el.getBoundingClientRect();
+        actions.openModal({ kind: 'user', userId, at: { x: r.right, y: r.top + 40 }, hover: true });
+      }, 350);
+    },
+    leave() {
+      window.clearTimeout(openTimer);
+      window.clearTimeout(closeTimer);
+      closeTimer = window.setTimeout(() => isHoverOpen() && actions.closeModal(), 250);
+    },
+    cancel() {
+      window.clearTimeout(closeTimer);
+    },
+    pin() {
+      window.clearTimeout(closeTimer);
+      const m = useLine.getState().modal;
+      if (m?.kind === 'user' && m.hover) actions.openModal({ ...m, hover: false });
+    },
+  };
+})();
+
+/** @menção a um usuário no chat: mostra o cartão dele ao passar o mouse (ou ao clicar). */
+export function UserMention({ username, className, children }: { username: string; className: string; children: ReactNode }) {
+  const userId = useLine((s) => {
+    const name = username.toLowerCase();
+    if (s.me?.username.toLowerCase() === name) return s.me.id;
+    return Object.values(s.users).find((u) => u.username.toLowerCase() === name)?.id;
+  });
+  if (!userId) return <span className={className}>{children}</span>;
+  return (
+    <span
+      className={cx(className, 'cursor-pointer hover:underline')}
+      onMouseEnter={(e) => hoverCard.enter(userId, e.currentTarget)}
+      onMouseLeave={hoverCard.leave}
+      onClick={(e) => {
+        hoverCard.cancel();
+        const r = e.currentTarget.getBoundingClientRect();
+        actions.openModal({ kind: 'user', userId, at: { x: r.right, y: r.top + 40 } });
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
 /** Servidor que está aberto agora (os cargos do cartão são dele). */
 function useViewServer(): string | null {

@@ -20,7 +20,7 @@ export type Modal =
   | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' }
   | { kind: 'create-poll'; channelId: string }
   | { kind: 'new-dm' }
-  | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean } }
+  | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
   | { kind: 'image'; url: string; filename: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }
