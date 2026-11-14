@@ -881,25 +881,30 @@ impl Q<'_> {
     /// escolhido (pessoa ou cargo); canal aberto para quem tem "Ver canais". Dono e
     /// administradores veem tudo. Threads seguem o canal pai.
     pub fn can_access(&self, user_id: &str, channel_id: &str) -> bool {
-        let row: Option<(Option<String>, String, bool)> = ok(self
+        let row: Option<(Option<String>, String, bool, String)> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.is_private FROM channels r
+                "SELECT r.server_id, r.id, r.is_private, r.type FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
             )
             .optional());
         match row {
             None => false,
-            Some((None, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
-            Some((Some(server_id), root, is_private)) => {
+            Some((None, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((Some(server_id), root, is_private, kind)) => {
                 if !self.is_member(&server_id, user_id) {
                     return false;
                 }
                 let p = self.permissions(&server_id, user_id);
                 if perms::has(p, perms::ADMINISTRATOR) {
                     return true;
+                }
+                // Quem não pode interagir (mandar mensagem / entrar na voz) nem vê o canal.
+                // Quem gerencia canais continua vendo para poder editar.
+                if !perms::has(p, perms::MANAGE_CHANNELS) && !perms::has(p, interact_perm(&kind)) {
+                    return false;
                 }
                 if !is_private {
                     return perms::has(p, perms::VIEW_CHANNELS);
@@ -920,19 +925,20 @@ impl Q<'_> {
     }
 
     /// Quem enxerga um canal de servidor, quando não é o servidor inteiro (canal privado ou
-    /// @everyone sem "Ver canais"). None = todos os membros veem (pode usar a sala do servidor).
+    /// @everyone sem "Ver canais" / sem poder interagir). None = todos os membros veem (pode usar a sala do servidor).
     pub fn private_audience(&self, channel_id: &str) -> Option<Vec<String>> {
-        let (server_id, is_private): (String, bool) = ok(self
+        let (server_id, is_private, kind): (String, bool, String) = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.is_private FROM channels r
+                "SELECT r.server_id, r.is_private, r.type FROM channels r
                  WHERE r.server_id IS NOT NULL
                    AND r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0)),
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?)),
             )
             .optional())?;
-        if !is_private && perms::has(self.everyone_permissions(&server_id), perms::VIEW_CHANNELS) {
+        let everyone = self.everyone_permissions(&server_id);
+        if !is_private && perms::has(everyone, perms::VIEW_CHANNELS) && perms::has(everyone, interact_perm(&kind)) {
             return None;
         }
         Some(
@@ -1763,5 +1769,14 @@ impl Q<'_> {
             "DELETE FROM friendships WHERE ((requester_id = ?1 AND addressee_id = ?2) OR (requester_id = ?2 AND addressee_id = ?1)) AND status != 'blocked'",
             [a, b],
         )) > 0
+    }
+}
+
+/// Permissão para interagir com um canal: mandar mensagens (texto) ou conectar (voz).
+fn interact_perm(kind: &str) -> i64 {
+    if kind == "voice" {
+        perms::CONNECT
+    } else {
+        perms::SEND_MESSAGES
     }
 }
