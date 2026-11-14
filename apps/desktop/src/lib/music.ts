@@ -12,6 +12,7 @@ type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export type LiveMusic = MusicState & { receivedAt: number };
 
 const VOLUME_KEY = 'line.musicVolume';
+const MUTED_KEY = 'line.musicMuted';
 
 function loadVolume() {
   try {
@@ -22,9 +23,18 @@ function loadVolume() {
   }
 }
 
-export const useMusic = create<{ states: Record<string, LiveMusic>; volume: number }>(() => ({
+function loadMuted() {
+  try {
+    return localStorage.getItem(MUTED_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export const useMusic = create<{ states: Record<string, LiveMusic>; volume: number; muted: boolean }>(() => ({
   states: {},
   volume: typeof window === 'undefined' ? 60 : loadVolume(),
+  muted: typeof window === 'undefined' ? false : loadMuted(),
 }));
 
 let socket: LineSocket | null = null;
@@ -60,13 +70,31 @@ export function musicControl(c: MusicControl) {
 }
 
 export function setMusicVolume(v: number) {
-  useMusic.setState({ volume: v });
+  useMusic.setState({ volume: v, muted: false });
   try {
     localStorage.setItem(VOLUME_KEY, String(v));
+    localStorage.setItem(MUTED_KEY, '0');
   } catch {
     /* ignora */
   }
   reconcile();
+}
+
+/** Silencia a música só para mim (clique direito no bot). */
+export function toggleMusicMute() {
+  const muted = !useMusic.getState().muted;
+  useMusic.setState({ muted });
+  try {
+    localStorage.setItem(MUTED_KEY, muted ? '1' : '0');
+  } catch {
+    /* ignora */
+  }
+  reconcile();
+}
+
+/** Para a música do canal de voz em que estou (só quem deu o /play ou quem gerencia o servidor). */
+export function stopMusic(channelId: string) {
+  musicControl({ channelId, action: 'stop' });
 }
 
 /** Posição atual da faixa em ms. */
@@ -194,7 +222,7 @@ function reconcile() {
   const pos = positionOf(st) / 1000;
   const { deafened } = useVoice.getState();
   try {
-    if (deafened) player.mute();
+    if (deafened || useMusic.getState().muted) player.mute();
     else {
       player.unMute();
       player.setVolume(useMusic.getState().volume);

@@ -10,7 +10,7 @@ import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
-import { BotTag, MusicAnnounceCard, musicFromContent } from './Music';
+import { BotTag, MusicAnnounceCard, musicFromContent, stopCommand } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
@@ -1105,10 +1105,15 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     const content = gif ?? textToMentions(text.trim(), channel.serverId);
     if (!gif && ((!content && !ready.length) || uploading)) return;
     if (sending) return;
+    // /stop: para a música do canal de voz em que estou (só quem deu o /play).
+    if (!gif && channel.serverId && /^\/stop\s*$/i.test(text.trim())) {
+      if (stopCommand(channel.serverId)) setText('');
+      return;
+    }
     // /play [link]: o bot de música põe o vídeo na fila (não vira mensagem).
-    const play = !gif && channel.serverId ? /^\/play(?:\s+(\S+))?\s*$/i.exec(text.trim()) : null;
+    const play = !gif && channel.serverId ? /^\/play(?:\s+(.+))?$/i.exec(text.trim()) : null;
     if (play) {
-      if (!play[1]) return toast('Use /play [link do YouTube]');
+      if (!play[1]) return toast('Use /play [link do YouTube ou nome da música]');
       setSending(true);
       try {
         await api.musicPlay(channel.id, play[1]);

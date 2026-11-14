@@ -1278,10 +1278,10 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
 async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let url: serde_json::Value = serde_json::from_slice(&b).map_err(|_| bad_request("Corpo inválido"))?;
     let raw = url.get("url").and_then(|u| u.as_str()).unwrap_or("").trim().to_string();
-    let video = reqwest::Url::parse(&raw)
-        .ok()
-        .and_then(|u| crate::embeds::youtube_id(&u))
-        .ok_or_else(|| bad_request("Use /play com um link do YouTube"))?;
+    if raw.is_empty() || raw.chars().count() > 300 {
+        return Err(bad_request("Use /play [link ou nome da música]"));
+    }
+    let link = reqwest::Url::parse(&raw).ok().filter(|u| matches!(u.scheme(), "http" | "https"));
     {
         let q = app.store.q();
         let channel = require_access(&q, &id, &me)?;
@@ -1295,6 +1295,13 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
             return Err(forbidden("Você não tem permissão para enviar mensagens aqui"));
         }
     }
+    // Link do YouTube toca direto; qualquer outro texto vira busca no YouTube (primeiro resultado).
+    let video = match link {
+        Some(u) => crate::embeds::youtube_id(&u).ok_or_else(|| bad_request("Esse link não é do YouTube"))?,
+        None => crate::music::search(&raw)
+            .await
+            .ok_or_else(|| bad_request("Não achei nenhum vídeo no YouTube com esse nome"))?,
+    };
     crate::music::play(&app, &me, &id, video).await.map_err(|e| bad_request(&e))?;
     no_content()
 }

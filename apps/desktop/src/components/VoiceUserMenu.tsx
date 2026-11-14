@@ -22,6 +22,7 @@ import {
   toggleScreenMute,
   useVoice,
 } from "@/lib/voice";
+import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/music";
 import { cx, Icons } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
 import { confirmDialog } from './Dialogs';
@@ -99,6 +100,16 @@ export function VoiceUserMenu({
       (userId === s.me?.id && hasPerm(p, Perm.ChangeNickname))
     );
   });
+  // Bot de música: volume/silenciar mexem só no player daqui; parar só para quem deu o /play.
+  const musicVolume = useMusic((m) => m.volume);
+  const musicMuted = useMusic((m) => m.muted);
+  const music = useMusic((m) => m.states[channelId]);
+  const canStopMusic = useLine(
+    (s) =>
+      !!music &&
+      (music.djId === s.me?.id ||
+        hasPerm(permsOf(s, music.serverId, s.me?.id), Perm.ManageServer)),
+  );
   const [moveOpen, setMoveOpen] = useState(false);
   const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -128,6 +139,7 @@ export function VoiceUserMenu({
 
   if (!user || !me) return null;
   const isMe = userId === me.id;
+  const isBot = !!user.bot;
   const otherVoice = Object.values(allChannels)
     .filter(
       (c) =>
@@ -191,7 +203,7 @@ export function VoiceUserMenu({
           Alterar apelido
         </Item>
       )}
-      {!isMe && (
+      {!isMe && !isBot && (
         <>
           <Item onClick={run(openDm)}>Mensagem</Item>
           <Item
@@ -206,7 +218,33 @@ export function VoiceUserMenu({
       )}
       <Sep />
 
-      {isMe ? (
+      {isBot ? (
+        <>
+          <div className="px-2.5 py-1.5">
+            <p className="mb-1.5 flex justify-between font-medium text-soft">
+              Volume do usuário
+              <span className="text-muted">{musicMuted ? 0 : musicVolume}%</span>
+            </p>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={musicMuted ? 0 : musicVolume}
+              onChange={(e) => setMusicVolume(Number(e.target.value))}
+              className="w-full accent-accent"
+            />
+          </div>
+          <Sep />
+          <Item onClick={run(toggleMusicMute, true)} check={musicMuted}>
+            Silenciar
+          </Item>
+          {music && canStopMusic && (
+            <Item danger onClick={run(() => stopMusic(channelId))}>
+              Parar música
+            </Item>
+          )}
+        </>
+      ) : isMe ? (
         <>
           <Item onClick={run(toggleMute, true)} check={muted}>
             Silenciar
@@ -310,7 +348,7 @@ export function VoiceUserMenu({
         </>
       )}
 
-      {(isMe || canModerate) && otherVoice.length > 0 && (
+      {!isBot && (isMe || canModerate) && otherVoice.length > 0 && (
         <div
           className="relative"
           onMouseEnter={() => setMoveOpen(true)}
@@ -380,12 +418,16 @@ export function VoiceUserMenu({
         </>
       )}
 
-      <Sep />
-      <Item onClick={run(() => navigator.clipboard.writeText(userId))}>
-        <span className="flex items-center gap-2">
-          <Icons.Copy size={14} /> Copiar ID do usuário
-        </span>
-      </Item>
+      {!isBot && (
+        <>
+          <Sep />
+          <Item onClick={run(() => navigator.clipboard.writeText(userId))}>
+            <span className="flex items-center gap-2">
+              <Icons.Copy size={14} /> Copiar ID do usuário
+            </span>
+          </Item>
+        </>
+      )}
       {error && <p className="px-2.5 py-1 text-xs text-danger">{error}</p>}
     </div>
   );
