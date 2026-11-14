@@ -1111,9 +1111,9 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
       return;
     }
     // /play [link]: o bot de música põe o vídeo na fila (não vira mensagem).
-    const play = !gif && channel.serverId ? /^\/play(?:\s+(\S+))?\s*$/i.exec(text.trim()) : null;
+    const play = !gif && channel.serverId ? /^\/play(?:\s+(.+))?$/i.exec(text.trim()) : null;
     if (play) {
-      if (!play[1]) return toast('Use /play [link do YouTube]');
+      if (!play[1]) return toast('Use /play [link do YouTube ou nome da música]');
       setSending(true);
       try {
         await api.musicPlay(channel.id, play[1]);

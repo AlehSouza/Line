@@ -277,7 +277,7 @@ function Playlist({ m, dj }: { m: LiveMusic; dj: boolean }) {
           </div>
         );
       })}
-      {m.tracks.length - m.index <= 1 && <p className="px-2 py-2 text-xs text-muted">Nada na fila. Use /play [link] no chat.</p>}
+      {m.tracks.length - m.index <= 1 && <p className="px-2 py-2 text-xs text-muted">Nada na fila. Use /play [link ou nome] no chat.</p>}
     </div>
   );
 }
@@ -499,7 +499,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
     <div className="max-w-4xl">
       <h2 className="text-xl font-bold">Música</h2>
       <p className="mt-1 mb-6 text-sm text-soft">
-        O bot entra no canal de voz quando alguém digita <code className="rounded bg-raise px-1">/play [link do YouTube]</code> num canal de texto. Quem
+        O bot entra no canal de voz quando alguém digita <code className="rounded bg-raise px-1">/play [link ou nome da música]</code> num canal de texto. Quem
         começou a tocar controla tudo; os outros votam para pular, voltar ou pausar.
       </p>
       {!bot ? (

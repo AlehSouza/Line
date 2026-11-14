@@ -486,6 +486,30 @@ pub async fn fetch_meta(video_id: &str) -> Option<(String, String, Option<u64>)>
     Some((title, author, duration))
 }
 
+/// `/play <nome>`: primeiro vídeo da busca do YouTube (página pública de resultados, sem chave de API).
+pub async fn search(query: &str) -> Option<String> {
+    static FIRST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""videoRenderer":\{"videoId":"([\w-]{11})""#).unwrap());
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36")
+        .timeout(Duration::from_secs(8))
+        .build()
+        .ok()?;
+    let html = client
+        .get("https://www.youtube.com/results")
+        // sp=EgIQAQ%3D%3D: só vídeos (sem canais, playlists ou shorts misturados).
+        .query(&[("search_query", query), ("sp", "EgIQAQ==")])
+        .header("Accept-Language", "pt-BR,pt;q=0.9")
+        .header("Cookie", "CONSENT=YES+1; SOCS=CAI")
+        .send()
+        .await
+        .ok()?
+        .text()
+        .await
+        .ok()?;
+    static ANY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"/watch\?v=([\w-]{11})"#).unwrap());
+    FIRST.captures(&html).or_else(|| ANY.captures(&html)).map(|c| c[1].to_string())
+}
+
 /// `/play <link>`: põe na fila do canal de voz em que a pessoa está (cria a sessão se preciso).
 pub async fn play(app: &Arc<App>, me: &str, text_channel_id: &str, video_id: String) -> Result<(), String> {
     let (title, author, duration) = fetch_meta(&video_id)
