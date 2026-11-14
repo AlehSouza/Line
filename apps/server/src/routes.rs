@@ -550,6 +550,11 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             bio: p.bio,
             avatar_color: p.avatar_color,
             custom_status: p.custom_status,
+            status_until: p.status.as_ref().and(p.status_minutes).map(|m| {
+                (chrono::Utc::now() + chrono::Duration::minutes(m))
+                    .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                    .to_string()
+            }),
             status: p.status,
             pronouns: p.pronouns,
             thought: p.thought,
@@ -1293,6 +1298,7 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             avatar_color: p.avatar_color,
             custom_status: None,
             status: None,
+            status_until: None,
             pronouns: p.pronouns,
             thought: p.thought,
             avatar_id: p.avatar_id,

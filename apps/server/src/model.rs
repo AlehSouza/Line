@@ -26,6 +26,7 @@ pub struct SelfUser {
     #[serde(flatten)]
     pub public: PublicUser,
     pub status: String,
+    pub status_until: Option<String>,
     pub created_at: String,
     pub email: Option<String>,
 }

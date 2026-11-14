@@ -51,6 +51,8 @@ export interface MusicState {
 
 export interface SelfUser extends PublicUser {
   status: UserStatus;
+  /** Até quando o status vale (ISO); null = para sempre. */
+  statusUntil?: string | null;
   createdAt: string;
   email?: string | null;
 }

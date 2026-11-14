@@ -43,7 +43,7 @@ const presenceColor: Record<Presence, string> = {
 export const presenceLabel: Record<Presence, string> = {
   online: 'Disponível',
   idle: 'Ausente',
-  dnd: 'Não perturbe',
+  dnd: 'Não perturbar',
   offline: 'Offline',
 };
 
@@ -278,6 +278,7 @@ export const Icons = {
   Users: icon(L.Users),
   Settings: icon(L.Settings),
   Chevron: icon(L.ChevronDown),
+  ChevronRight: icon(L.ChevronRight),
   User: icon(L.User),
   Reply: icon(L.Reply),
   X: icon(L.X),

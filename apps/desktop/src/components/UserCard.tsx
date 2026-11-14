@@ -5,15 +5,11 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, fileUrl } from '@/lib/api';
 import { actions, permsOf, topPosition, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { Avatar, Button, cx, ErrorText, Icons, PresenceDot, presenceLabel } from './ui';
+import { Avatar, Button, cx, ErrorText, Icons, presenceLabel } from './ui';
+import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 
-export const statusOptions: { value: UserStatus; label: string; hint?: string; presence: 'online' | 'idle' | 'dnd' | 'offline' }[] = [
-  { value: 'online', label: 'Disponível', presence: 'online' },
-  { value: 'idle', label: 'Ausente', presence: 'idle' },
-  { value: 'dnd', label: 'Não perturbe', hint: 'Você não vai receber notificações', presence: 'dnd' },
-  { value: 'invisible', label: 'Invisível', hint: 'Você aparece offline, mas usa tudo normalmente', presence: 'offline' },
-];
+export { statusOptions } from './StatusPicker';
 
 const W = 340;
 
@@ -38,7 +34,6 @@ export function UserCard({
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const [menu, setMenu] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
   const [mutual, setMutual] = useState<{ friends: PublicUser[]; servers: Server[] } | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -70,7 +65,7 @@ export function UserCard({
     const left = at.x + 16 + W < vw ? at.x + 16 : Math.max(12, at.x - 16 - W);
     const top = Math.min(Math.max(12, at.y - 40), vh - h - 12);
     setPos({ left, top: Math.max(12, top) });
-  }, [at, statusOpen, mutual, menu]);
+  }, [at, mutual, menu]);
 
   if (!user || !me) return null;
   const state = friend?.state;
@@ -97,12 +92,9 @@ export function UserCard({
     onClose();
   }
 
-  async function setStatus(status: UserStatus) {
-    setStatusOpen(false);
-    await run(async () => actions.setMe(await api.updateMe({ status })));
+  async function setStatus(status: UserStatus, minutes?: number) {
+    await run(async () => actions.setMe(await api.updateMe({ status, statusMinutes: minutes })));
   }
-
-  const current = statusOptions.find((o) => o.value === me.status) ?? statusOptions[0]!;
 
   return (
     <div className={cx('fixed inset-0 z-50', hover && 'pointer-events-none')} onMouseDown={onClose}>
@@ -252,33 +244,7 @@ export function UserCard({
 
           {isMe ? (
             <div className="mt-4 space-y-2">
-              <div className="rounded-lg border border-edge bg-side/70">
-                <button
-                  onClick={() => setStatusOpen((v) => !v)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm hover:bg-hover"
-                >
-                  <PresenceDot presence={current.presence} ring="side" />
-                  <span className="flex-1 font-medium">{current.label}</span>
-                  <Icons.Chevron size={16} className={cx('text-muted transition-transform', statusOpen && 'rotate-180')} />
-                </button>
-                {statusOpen && (
-                  <div className="border-t border-edge p-1">
-                    {statusOptions.map((o) => (
-                      <button
-                        key={o.value}
-                        onClick={() => void setStatus(o.value)}
-                        className={cx('flex w-full items-start gap-2.5 rounded-md px-2.5 py-1.5 text-left hover:bg-accent/10', me.status === o.value && 'bg-accent/15')}
-                      >
-                        <PresenceDot presence={o.presence} ring="side" className="mt-1.5 shrink-0" />
-                        <span>
-                          <span className="block text-sm">{o.label}</span>
-                          {o.hint && <span className="block text-xs text-muted">{o.hint}</span>}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <StatusPicker status={me.status} until={me.statusUntil ?? null} onPick={(st, m) => void setStatus(st, m)} />
               <Button
                 variant="subtle"
                 className="w-full"

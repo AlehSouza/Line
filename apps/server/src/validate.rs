@@ -266,6 +266,8 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "nullable")]
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    /// Duração do status em minutos (sem = para sempre).
+    pub status_minutes: Option<i64>,
     pub pronouns: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub thought: Option<Option<String>>,
@@ -289,6 +291,11 @@ impl UpdateProfile {
             && !["online", "idle", "dnd", "invisible"].contains(&s.as_str())
         {
             return Err(validation("Status inválido"));
+        }
+        if let Some(m) = self.status_minutes
+            && !(1..=60 * 24 * 30).contains(&m)
+        {
+            return Err(validation("Duração do status inválida"));
         }
         if let Some(p) = &mut self.pronouns {
             *p = p.trim().to_string();

@@ -52,6 +52,8 @@ pub struct UserRow {
     pub bio: String,
     pub custom_status: Option<String>,
     pub status: String,
+    /// Até quando o status escolhido vale (ISO); None = para sempre.
+    pub status_until: Option<String>,
     pub created_at: String,
     /// Só vem nas consultas da própria tabela users (as junções não trazem).
     pub email: Option<String>,
@@ -74,6 +76,7 @@ impl UserRow {
             bio: r.get("bio")?,
             custom_status: r.get("custom_status")?,
             status: r.get("status")?,
+            status_until: r.get("status_until").unwrap_or(None),
             created_at: r.get("created_at")?,
             email: r.get::<_, Option<String>>("email").unwrap_or(None),
             avatar_id: r.get("avatar_id").unwrap_or(None),
@@ -192,6 +195,8 @@ pub struct ProfilePatch {
     pub avatar_color: Option<String>,
     pub custom_status: Option<Option<String>>,
     pub status: Option<String>,
+    /// Junto com `status`: até quando ele vale (None = para sempre).
+    pub status_until: Option<String>,
     pub pronouns: Option<String>,
     pub thought: Option<Option<String>>,
     pub avatar_id: Option<Option<String>>,
@@ -346,6 +351,7 @@ impl Q<'_> {
         SelfUser {
             public,
             status: row.status.clone(),
+            status_until: row.status_until.clone(),
             created_at: row.created_at.clone(),
             email: row.email.clone(),
         }
@@ -439,6 +445,22 @@ impl Q<'_> {
         self.user_row(id).map(|r| self.to_public_user(&r))
     }
 
+    /// Volta para Disponível quem tinha um status com duração que já venceu. Devolve os ids.
+    pub fn expire_statuses(&self) -> Vec<String> {
+        let now = now_iso();
+        let ids = self.ids(
+            "SELECT id FROM users WHERE status_until IS NOT NULL AND status_until <= ?",
+            [&now],
+        );
+        if !ids.is_empty() {
+            ok(self.c.execute(
+                "UPDATE users SET status = 'online', status_until = NULL WHERE status_until IS NOT NULL AND status_until <= ?",
+                [&now],
+            ));
+        }
+        ids
+    }
+
     pub fn self_user(&self, id: &str) -> Option<SelfUser> {
         self.user_row(id).map(|r| self.to_self_user(&r))
     }
@@ -515,6 +537,7 @@ impl Q<'_> {
         }
         if let Some(v) = patch.status {
             set("status", v.into());
+            set("status_until", patch.status_until.map(Value::from).unwrap_or(Value::Null));
         }
         if let Some(v) = patch.pronouns {
             set("pronouns", v.into());
