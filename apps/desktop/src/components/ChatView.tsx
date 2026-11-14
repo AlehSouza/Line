@@ -1,6 +1,6 @@
 'use client';
 
-import { hasPerm, Perm, type Attachment, type Channel, type Message } from '@line/shared';
+import { hasPerm, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
@@ -17,6 +17,7 @@ import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
 import { confirmDialog, showError } from './Dialogs';
+import { UpdateRequired } from './UpdateBanner';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -488,7 +489,9 @@ function MessageRow({
             <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
           </div>
         )}
-        {editing ? (
+        {missingFeatures(message.requires).length ? (
+          <UpdateRequired />
+        ) : editing ? (
           <div className="py-1">
             <textarea
               autoFocus
@@ -519,11 +522,15 @@ function MessageRow({
             </div>
           ))
         )}
+        {!missingFeatures(message.requires).length && (
+          <>
         {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
         <AttachmentList attachments={message.attachments} />
         {message.poll && <PollView message={message} poll={message.poll} />}
+          </>
+        )}
         {message.thread && <ThreadChip thread={message.thread} />}
         {!!message.reactions?.length && (
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />

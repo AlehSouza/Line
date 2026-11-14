@@ -185,8 +185,8 @@ export const api = {
         .map(([k, v]) => `${k}=${enc(v!)}`)
         .join('&')}`,
     ),
-  sendMessage: (channelId: string, content: string, attachmentIds: string[] = []) =>
-    request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds }),
+  sendMessage: (channelId: string, content: string, attachmentIds: string[] = [], requires: string[] = []) =>
+    request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds, requires }),
   uploadAttachment,
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),
   createThread: (channelId: string, name: string, messageId?: string) =>

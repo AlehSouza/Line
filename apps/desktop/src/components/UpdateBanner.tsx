@@ -55,3 +55,44 @@ export function UpdateBanner() {
     </div>
   );
 }
+
+/**
+ * Atualiza o app: no desktop abre a janelinha de atualização; no navegador recarrega a página
+ * (o app web novo já está publicado no servidor).
+ */
+export async function updateApp() {
+  const updates = typeof window !== 'undefined' ? window.line?.updates : undefined;
+  if (!updates) return window.location.reload();
+  try {
+    if (!(await updates.check())) return window.location.reload();
+    if (updates.run) await updates.run();
+    else await updates.install();
+  } catch {
+    window.location.reload();
+  }
+}
+
+/** Mostrado no lugar de um conteúdo que esta versão do app não sabe exibir. */
+export function UpdateRequired() {
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="my-1 flex max-w-md items-center gap-3 rounded-lg border border-edge bg-raise px-3 py-2.5">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-accent">
+        <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+        <path d="M21 3v5h-5" />
+      </svg>
+      <span className="flex-1 text-sm text-soft">Você precisa atualizar o seu aplicativo para interagir com isso.</span>
+      <button
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          await updateApp();
+          setBusy(false);
+        }}
+        className="shrink-0 rounded-md bg-accent px-3 py-1 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+      >
+        {busy ? 'Atualizando…' : 'Atualizar'}
+      </button>
+    </div>
+  );
+}
