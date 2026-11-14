@@ -1,5 +1,7 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+
 import { hasPerm, Perm } from '@line/shared';
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -71,7 +73,10 @@ export function ServerRail() {
       <RailItem label="Criar um servidor" onClick={() => actions.openModal({ kind: 'create-server' })} action>
         <Icons.Plus />
       </RailItem>
-      <RailItem label="Explorar servidores públicos" active={view.kind === 'discover'} onClick={actions.goDiscover} action>
+      <RailItem label="Explorar servidores públicos" active={view.kind === 'discover'} onClick={() => {
+          actions.goDiscover();
+          mobile.showMain();
+        }} action>
         <Icons.Compass />
       </RailItem>
     </nav>
