@@ -1047,25 +1047,46 @@ function level(entry: { analyser: AnalyserNode; buf: Uint8Array<ArrayBuffer> }) 
   return Math.sqrt(sum / entry.buf.length);
 }
 
+/** Última vez (ms) que cada pessoa passou do limiar. A fala tem pausas curtas entre sílabas: segura o estado por um tempo. */
+const lastLoud = new Map<string, number>();
+const SPEAK_ON = 0.04;
+const SPEAK_KEEP = 0.025;
+const SPEAK_HOLD_MS = 700;
+
+function isSpeaking(userId: string, lvl: number, now: number) {
+  const was = now - (lastLoud.get(userId) ?? -Infinity) < SPEAK_HOLD_MS;
+  // Histerese: começa a falar acima de SPEAK_ON; enquanto fala, um nível menor já mantém.
+  if (lvl > (was ? SPEAK_KEEP : SPEAK_ON)) {
+    lastLoud.set(userId, now);
+    return true;
+  }
+  return was;
+}
+
 function startSpeakingLoop() {
   if (loop) return;
   void audioCtx?.resume();
   loop = setInterval(() => {
     const v = getV();
+    const now = performance.now();
     const next: Record<string, boolean> = {};
     if (mic && myId && !v.muted && !v.deafened) {
       const e = analyserFor('local', myId, mic);
-      if (e) next[myId] = level(e) > 0.04;
-    }
+      if (e && isSpeaking(myId, level(e), now)) next[myId] = true;
+    } else if (myId) lastLoud.delete(myId);
     for (const [peerId, peer] of peers) {
       const screenId = v.states[peerId]?.screenStreamId;
+      let lvl = 0;
       for (const sid of peer.streamIds) {
         if (sid === screenId) continue; // áudio da tela não conta como fala
         const stream = v.streams[sid];
         if (!stream) continue;
         const e = analyserFor(sid, peerId, stream);
-        if (e && level(e) > 0.04) next[peerId] = true;
+        if (e) lvl = Math.max(lvl, level(e));
       }
+      // Microfone desligado do outro lado: a borda some na hora.
+      if (v.states[peerId]?.muted) lastLoud.delete(peerId);
+      else if (isSpeaking(peerId, lvl, now)) next[peerId] = true;
     }
     const prev = v.speaking;
     const changed =
@@ -1079,6 +1100,7 @@ function stopSpeakingLoop() {
   if (loop) clearInterval(loop);
   loop = null;
   analysers.clear();
+  lastLoud.clear();
 }
 
 /** Participantes de um canal, em ordem de chegada. */
