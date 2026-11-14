@@ -141,7 +141,6 @@ function RailItem({
         )}
         {!!voice?.length && (
           <span
-            title="Gente em canais de voz"
             className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-on-accent ring-4 ring-rail"
           >
             <Icons.Speaker size={11} />
