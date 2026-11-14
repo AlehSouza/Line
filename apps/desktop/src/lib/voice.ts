@@ -251,6 +251,9 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       if (here && before !== after) {
         if (after === here) playCallSound('enter');
         else if (before === here) playCallSound('left');
+      } else if (here && after === here && state?.screenStreamId && !getV().states[uid]?.screenStreamId) {
+        // Alguém do meu canal começou a transmitir: todos do canal ouvem.
+        playCallSound('start_transmission');
       }
     }
     setV((v) => {
