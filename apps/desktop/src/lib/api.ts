@@ -169,9 +169,9 @@ export const api = {
   kick: (serverId: string, userId: string) => request<void>('DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}`),
   setNickname: (serverId: string, userId: string, nickname: string | null) =>
     request<Member>('PATCH', `/servers/${enc(serverId)}/members/${enc(userId)}`, { nickname }),
-  createRole: (serverId: string, input: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean }) =>
+  createRole: (serverId: string, input: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean; hoist?: boolean }) =>
     request<Role>('POST', `/servers/${enc(serverId)}/roles`, input),
-  updateRole: (id: string, patch: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean }) =>
+  updateRole: (id: string, patch: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean; hoist?: boolean }) =>
     request<Role>('PATCH', `/roles/${enc(id)}`, patch),
   deleteRole: (id: string) => request<void>('DELETE', `/roles/${enc(id)}`),
   reorderRoles: (serverId: string, roleIds: string[]) => request<Role[]>('PUT', `/servers/${enc(serverId)}/roles/order`, { roleIds }),

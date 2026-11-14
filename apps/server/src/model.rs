@@ -109,6 +109,8 @@ pub struct Role {
     /// Maior = mais alto na lista. O @everyone fica sempre em 0.
     pub position: i64,
     pub mentionable: bool,
+    /// Aparece numa seção própria na lista de membros.
+    pub hoist: bool,
     pub member_count: i64,
 }
 

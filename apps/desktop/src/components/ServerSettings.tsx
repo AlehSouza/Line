@@ -329,6 +329,7 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
     color: role?.color ?? null,
     permissions: role?.permissions ?? 0,
     mentionable: role?.mentionable ?? false,
+    hoist: role?.hoist ?? false,
   }));
   const [saving, setSaving] = useState(false);
   const { error, run } = useErr();
@@ -336,7 +337,7 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
   // Trocou de cargo na coluna da esquerda: recomeça o rascunho.
   useEffect(() => {
     const r = useLine.getState().roles[serverId]?.find((x) => x.id === roleId);
-    setDraft({ name: r?.name ?? '', color: r?.color ?? null, permissions: r?.permissions ?? 0, mentionable: r?.mentionable ?? false });
+    setDraft({ name: r?.name ?? '', color: r?.color ?? null, permissions: r?.permissions ?? 0, mentionable: r?.mentionable ?? false, hoist: r?.hoist ?? false });
     setTab(roleId === serverId ? 'perms' : (t) => (t === 'perms' || t === 'members' ? t : 'display'));
   }, [roleId, serverId]);
 
@@ -352,7 +353,7 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
   }
 
   const dirty =
-    draft.name !== role.name || draft.color !== role.color || draft.permissions !== role.permissions || draft.mentionable !== role.mentionable;
+    draft.name !== role.name || draft.color !== role.color || draft.permissions !== role.permissions || draft.mentionable !== role.mentionable || draft.hoist !== (role.hoist ?? false);
 
   const save = () =>
     run(async () => {
@@ -362,14 +363,14 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
           role.id,
           isEveryone
             ? { permissions: draft.permissions }
-            : { name: draft.name.trim(), color: draft.color, permissions: draft.permissions, mentionable: draft.mentionable },
+            : { name: draft.name.trim(), color: draft.color, permissions: draft.permissions, mentionable: draft.mentionable, hoist: draft.hoist },
         );
       } finally {
         setSaving(false);
       }
     });
 
-  const reset = () => setDraft({ name: role.name, color: role.color, permissions: role.permissions, mentionable: role.mentionable });
+  const reset = () => setDraft({ name: role.name, color: role.color, permissions: role.permissions, mentionable: role.mentionable, hoist: role.hoist ?? false });
 
   const tabs: { id: Tab; label: string }[] = isEveryone
     ? [{ id: 'perms', label: 'Permissões' }]
@@ -489,10 +490,19 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
                 <div>
                   <p className="font-semibold">Permitir que qualquer um @mencione este cargo</p>
                   <p className="mt-1 text-sm text-muted">
-                    Quem tem a permissão “Mencionar @everyone, @here e todos os cargos” sempre consegue mencionar este cargo.
+                    Quem tem a permissão “Mencionar @todos, @aqui e todos os cargos” sempre consegue mencionar este cargo.
                   </p>
                 </div>
                 <Toggle on={draft.mentionable} onChange={(v) => setDraft({ ...draft, mentionable: v })} />
+              </div>
+              <div className="flex items-start justify-between gap-6 border-t border-edge pt-6">
+                <div>
+                  <p className="font-semibold">Exibir membros do cargo separadamente dos membros online</p>
+                  <p className="mt-1 text-sm text-muted">
+                    Quem tem este cargo aparece numa seção própria na lista de membros, na ordem dos cargos do servidor.
+                  </p>
+                </div>
+                <Toggle on={draft.hoist} onChange={(v) => setDraft({ ...draft, hoist: v })} />
               </div>
               <div className="rounded-xl border border-edge bg-side p-4">
                 <p className="mb-2 text-xs font-bold text-muted uppercase">Prévia</p>

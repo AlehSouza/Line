@@ -506,7 +506,8 @@ impl FriendRequest {
 fn role_name(raw: &str) -> ApiResult<String> {
     let s = raw.trim().to_string();
     text(&s, 1, 100, "O nome do cargo")?;
-    if s == "@everyone" || s == "@here" {
+    let lower = s.to_lowercase();
+    if matches!(lower.trim_start_matches('@'), "everyone" | "here" | "todos" | "aqui") {
         return Err(validation("Esse nome é reservado"));
     }
     Ok(s)
@@ -520,6 +521,7 @@ pub struct CreateRole {
     pub color: Option<Option<String>>,
     pub permissions: Option<i64>,
     pub mentionable: Option<bool>,
+    pub hoist: Option<bool>,
 }
 
 impl CreateRole {
@@ -543,6 +545,7 @@ pub struct UpdateRole {
     pub color: Option<Option<String>>,
     pub permissions: Option<i64>,
     pub mentionable: Option<bool>,
+    pub hoist: Option<bool>,
 }
 
 impl UpdateRole {

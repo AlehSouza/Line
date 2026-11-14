@@ -25,6 +25,14 @@ export const ALL_PERMS = (1 << 19) - 1;
 
 export const hasPerm = (perms: number, flag: number) => (perms & flag) === flag;
 
+/** Qual menção geral a mensagem tem: 'todos' (@todos/@everyone) vale mais que 'aqui' (@aqui/@here). */
+export function massMention(content: string): 'todos' | 'aqui' | null {
+  const words = content.split(/[^\p{L}\p{N}@]+/u);
+  if (words.some((w) => w === '@todos' || w === '@everyone')) return 'todos';
+  if (words.some((w) => w === '@aqui' || w === '@here')) return 'aqui';
+  return null;
+}
+
 /** Textos da tela de cargos, agrupados como aparecem. */
 export const PERMISSION_GROUPS: { title: string; items: { flag: number; name: string; hint: string }[] }[] = [
   {
@@ -57,8 +65,8 @@ export const PERMISSION_GROUPS: { title: string; items: { flag: number; name: st
       { flag: Perm.CreateThreads, name: 'Criar threads', hint: 'Permite abrir threads a partir de mensagens.' },
       {
         flag: Perm.MentionEveryone,
-        name: 'Mencionar @everyone, @here e todos os cargos',
-        hint: 'Permite usar @everyone e @here para avisar todo mundo, e mencionar cargos que não estão marcados como mencionáveis.',
+        name: 'Mencionar @todos, @aqui e todos os cargos',
+        hint: 'Permite usar @aqui para notificar todos deste chat e @todos para notificar todos do servidor, além de mencionar cargos que não estão marcados como mencionáveis.',
       },
       { flag: Perm.ManageMessages, name: 'Gerenciar mensagens', hint: 'Permite apagar mensagens de outros membros.' },
     ],
