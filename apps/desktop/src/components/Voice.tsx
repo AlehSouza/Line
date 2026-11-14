@@ -1339,3 +1339,54 @@ export function IncomingCall() {
     </div>
   );
 }
+
+/**
+ * Linha compacta de um canal de voz quando a categoria está recolhida:
+ * ícone de alto-falante e só os avatares de quem está conectado, sobrepostos.
+ * Com 5 ou mais pessoas mostra os 4 primeiros e um "+N" com o restante.
+ */
+export function CollapsedVoiceChannel({ channel, active, onOpen }: { channel: Channel; active: boolean; onOpen: () => void }) {
+  const states = useVoice((v) => v.states);
+  const speaking = useVoice((v) => v.speaking);
+  const users = useLine((s) => s.users);
+  const list = participants(states, channel.id);
+  if (!list.length) return null;
+  const MAX = 4;
+  const shown = list.length > MAX ? list.slice(0, MAX) : list;
+  const rest = list.length - shown.length;
+  return (
+    <button
+      onClick={onOpen}
+      title={channel.name}
+      className={cx(
+        'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left',
+        active ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+      )}
+    >
+      <Icons.Speaker size={18} className="shrink-0 opacity-70" />
+      <span className="flex items-center">
+        {shown.map((p, i) => {
+          const u = users[p.userId];
+          return (
+            <span
+              key={p.userId}
+              className={cx(
+                'relative flex shrink-0 rounded-full ring-2 ring-side',
+                i > 0 && '-ml-1.5',
+                speaking[p.userId] && 'ring-online',
+              )}
+              style={{ zIndex: shown.length - i }}
+            >
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={22} />
+            </span>
+          );
+        })}
+        {rest > 0 && (
+          <span className="-ml-1.5 flex h-[22px] min-w-[22px] shrink-0 items-center justify-center rounded-full bg-hover px-1 text-[11px] font-semibold text-soft ring-2 ring-side">
+            +{rest}
+          </span>
+        )}
+      </span>
+    </button>
+  );
+}
