@@ -4,6 +4,7 @@ import { hasPerm, Perm, type Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { actions, permsOf, useLine } from '@/lib/store';
+import { mobile } from '@/lib/mobile';
 import { joinVoice, leaveVoice, useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { cx, Icons, ListSkeleton } from './ui';
@@ -63,6 +64,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           <button
             onClick={() => {
               actions.goServer(serverId, c.id);
+              mobile.showMain();
               if (c.type === 'voice' && useVoice.getState().channelId !== c.id) void joinVoice(c.id);
             }}
             className={cx(
@@ -263,6 +265,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                       active={c.id === activeId}
                       onOpen={() => {
                         actions.goServer(serverId, c.id);
+                        mobile.showMain();
                         if (useVoice.getState().channelId !== c.id) void joinVoice(c.id);
                       }}
                     />
@@ -297,6 +300,7 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
             icon: <Icons.Phone size={15} />,
             onClick: () => {
               actions.goServer(c.serverId!, c.id);
+              mobile.showMain();
               return joinVoice(c.id);
             },
           }),

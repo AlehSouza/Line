@@ -1,5 +1,7 @@
 "use client";
 
+import { mobile } from "@/lib/mobile";
+
 import {
   useEffect,
   useLayoutEffect,
@@ -48,7 +50,10 @@ function mention(username: string, serverId: string | null) {
     const text = Object.values(s.channels)
       .filter((c) => c.serverId === serverId && c.type === "text")
       .sort((a, b) => a.position - b.position)[0];
-    if (text) actions.goServer(serverId, text.id);
+    if (text) {
+      actions.goServer(serverId, text.id);
+      mobile.showMain();
+    }
   }
   setTimeout(
     () =>

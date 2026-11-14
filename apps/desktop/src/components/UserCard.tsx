@@ -1,5 +1,7 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+
 import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
@@ -382,6 +384,7 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
           setBusy(true);
           try {
             actions.goServer(server.id, channel.id);
+            mobile.showMain();
             await joinVoice(channel.id);
             onClose();
           } finally {

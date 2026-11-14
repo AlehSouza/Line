@@ -1,5 +1,7 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+
 import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
 import { actions, dmTitle, useLine } from '@/lib/store';
@@ -27,7 +29,10 @@ export function DmSidebar() {
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
         <button
-          onClick={() => actions.goHome(null)}
+          onClick={() => {
+            actions.goHome(null);
+            mobile.showMain();
+          }}
           className={cx(
             'flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium',
             view.kind === 'home' && !activeDm ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
@@ -58,7 +63,10 @@ export function DmSidebar() {
           return (
             <div key={dm.id} className="group relative">
               <button
-                onClick={() => actions.goHome(dm.id)}
+                onClick={() => {
+                  actions.goHome(dm.id);
+                  mobile.showMain();
+                }}
                 className={cx(
                   'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left',
                   active ? 'bg-hover text-fg' : count ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',

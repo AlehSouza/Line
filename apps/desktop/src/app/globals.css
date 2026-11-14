@@ -176,3 +176,22 @@ body {
 .line-tip {
   animation: line-tip-in 0.12s ease-out;
 }
+
+@keyframes line-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Celular: campos com menos de 16px fazem o navegador dar zoom ao tocar. */
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px !important;
+  }
+}
