@@ -13,6 +13,7 @@ pub mod gateway;
 pub mod ids;
 pub mod mail;
 pub mod model;
+pub mod music;
 pub mod perms;
 pub mod presence;
 pub mod routes;
@@ -34,6 +35,8 @@ pub struct App {
     pub tokens: auth::Tokens,
     pub io: SocketIo,
     pub voice: Mutex<voice::VoiceRegistry>,
+    /// Bot de música: fila e estado de cada canal de voz.
+    pub music: Mutex<music::MusicRegistry>,
     /// Onde ficam os arquivos enviados no chat.
     pub uploads_dir: PathBuf,
     /// Interface web servida na raiz (para usar o Line pelo navegador).
@@ -215,6 +218,7 @@ pub fn build(
         tokens: auth::Tokens::new(secret),
         io: io.clone(),
         voice: Mutex::new(voice::VoiceRegistry::default()),
+        music: Mutex::new(music::MusicRegistry::default()),
         uploads_dir,
         web,
         turn,

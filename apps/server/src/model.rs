@@ -16,6 +16,8 @@ pub struct PublicUser {
     pub pronouns: String,
     /// O "pensamento": balãozinho ao lado da foto no cartão de perfil.
     pub thought: Option<String>,
+    /// Bot (ex.: o de música do servidor).
+    pub bot: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

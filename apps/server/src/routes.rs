@@ -122,6 +122,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         )
         .route("/channels/{id}/threads", get(list_threads).post(create_thread))
         .route("/channels/{id}/polls", post(create_poll))
+        .route("/channels/{id}/music/play", post(music_play))
+        .route("/servers/{id}/music/bot", get(get_music_bot).patch(update_music_bot))
         .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
             "/messages/{id}/reactions/{emoji}",
@@ -1238,6 +1240,68 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         refresh_thread_starter(&app, &q, &channel);
     }
     created(message)
+}
+
+/// `/play <link>` digitado no chat de um servidor.
+async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let url: serde_json::Value = serde_json::from_slice(&b).map_err(|_| bad_request("Corpo inválido"))?;
+    let raw = url.get("url").and_then(|u| u.as_str()).unwrap_or("").trim().to_string();
+    let video = reqwest::Url::parse(&raw)
+        .ok()
+        .and_then(|u| crate::embeds::youtube_id(&u))
+        .ok_or_else(|| bad_request("Use /play com um link do YouTube"))?;
+    {
+        let q = app.store.q();
+        let channel = require_access(&q, &id, &me)?;
+        let Some(server_id) = channel.server_id.clone() else {
+            return Err(bad_request("O bot de música só funciona em servidores"));
+        };
+        if !matches!(channel.kind.as_str(), "text" | "thread") {
+            return Err(bad_request("Use o /play num canal de texto"));
+        }
+        if !has(q.permissions(&server_id, &me), perms::SEND_MESSAGES) {
+            return Err(forbidden("Você não tem permissão para enviar mensagens aqui"));
+        }
+    }
+    crate::music::play(&app, &me, &id, video).await.map_err(|e| bad_request(&e))?;
+    no_content()
+}
+
+async fn get_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    let bot = app.music_bot(&q, &id).ok_or_else(|| not_found("Bot"))?;
+    ok(bot)
+}
+
+/// Perfil do bot de música (Configurações do servidor → Integrações → Música).
+async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let p = body::<validate::UpdateProfile>(&b)?.check()?;
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    for img in [&p.avatar_id, &p.banner_id].into_iter().flatten().flatten() {
+        if !q.own_image(&me, img) {
+            return Err(bad_request("Imagem inválida"));
+        }
+    }
+    let bot = app.music_bot(&q, &id).ok_or_else(|| not_found("Bot"))?;
+    q.update_user(
+        &bot.id,
+        ProfilePatch {
+            display_name: p.display_name,
+            bio: p.bio,
+            avatar_color: p.avatar_color,
+            custom_status: None,
+            status: None,
+            pronouns: p.pronouns,
+            thought: p.thought,
+            avatar_id: p.avatar_id,
+            banner_id: p.banner_id,
+        },
+    );
+    let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;
+    app.to_server(&id, "user:update", &bot);
+    ok(bot)
 }
 
 async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {

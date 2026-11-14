@@ -10,6 +10,7 @@ import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
+import { BotTag, MusicAnnounceCard, musicFromContent } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
@@ -558,6 +559,7 @@ function MessageRow({
             >
               {authorName}
             </button>
+            {message.author.bot && <BotTag />}
             <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
           </div>
         )}
@@ -601,6 +603,8 @@ function MessageRow({
           message.content &&
           (voiceInviteFromContent(message.content) ? (
             <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
+          ) : musicFromContent(message.content) ? (
+            <MusicAnnounceCard data={musicFromContent(message.content)!} serverId={serverId} />
           ) : gifFromContent(message.content) ? (
             <GifEmbed url={gifFromContent(message.content)!} />
           ) : (
@@ -612,7 +616,7 @@ function MessageRow({
         )}
         {!missingFeatures(message.requires).length && (
           <>
-        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && (
+        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
         <AttachmentList attachments={message.attachments} />
@@ -1101,6 +1105,22 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     const content = gif ?? textToMentions(text.trim(), channel.serverId);
     if (!gif && ((!content && !ready.length) || uploading)) return;
     if (sending) return;
+    // /play [link]: o bot de música põe o vídeo na fila (não vira mensagem).
+    const play = !gif && channel.serverId ? /^\/play(?:\s+(\S+))?\s*$/i.exec(text.trim()) : null;
+    if (play) {
+      if (!play[1]) return toast('Use /play [link do YouTube]');
+      setSending(true);
+      try {
+        await api.musicPlay(channel.id, play[1]);
+        setText('');
+      } catch (e) {
+        showError(e);
+      } finally {
+        setSending(false);
+        ref.current?.focus();
+      }
+      return;
+    }
     const mass = !gif && channel.serverId ? massMention(content) : null;
     if (mass && !hasPerm(myPerms, Perm.MentionEveryone)) {
       toast(`Seu cargo não permite usar @${mass}: a mensagem vai sem notificar ninguém.`);

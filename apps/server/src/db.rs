@@ -206,6 +206,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE roles ADD COLUMN hoist INTEGER NOT NULL DEFAULT 0;
 "#,
+    // Bot de música de cada servidor: um usuário de verdade (sem senha) ligado ao servidor.
+    r#"
+  ALTER TABLE users ADD COLUMN bot_server_id TEXT;
+  CREATE UNIQUE INDEX users_bot_server ON users(bot_server_id) WHERE bot_server_id IS NOT NULL;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

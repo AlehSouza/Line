@@ -162,6 +162,10 @@ export const api = {
   createServer: (input: CreateServerInput) => request<Server>('POST', '/servers', input),
   server: (id: string) => request<ServerDetail>('GET', `/servers/${enc(id)}`),
   updateServer: (id: string, patch: UpdateServerInput) => request<Server>('PATCH', `/servers/${enc(id)}`, patch),
+  /** `/play <link>` no chat: põe o vídeo na fila do canal de voz em que você está. */
+  musicPlay: (channelId: string, url: string) => request<void>('POST', `/channels/${enc(channelId)}/music/play`, { url }),
+  musicBot: (serverId: string) => request<PublicUser>('GET', `/servers/${enc(serverId)}/music/bot`),
+  updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),
   joinPublic: (id: string) => request<Server>('POST', `/servers/${enc(id)}/join`),

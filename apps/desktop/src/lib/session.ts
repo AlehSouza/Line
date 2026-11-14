@@ -5,9 +5,13 @@ import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
 import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
 import { bindVoiceSocket, syncVoice, unbindVoice } from './voice';
+import { bindMusicSocket, syncMusic } from './music';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
-const previewContent = (c: string) => c.replace(/^\[\[voz:[\w-]+:[\w-]+:[\w-]+\]\]\s?(.*)$/, '🔊 Convite para a chamada de voz $1');
+const previewContent = (c: string) =>
+  c
+    .replace(/^\[\[voz:[\w-]+:[\w-]+:[\w-]+\]\]\s?(.*)$/, '🔊 Convite para a chamada de voz $1')
+    .replace(/^\[\[musica:[^\]]*\]\]\s?([^\n]*)[\s\S]*$/, '🎵 Tocando agora: $1');
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -200,10 +204,12 @@ function connectSocket() {
   const s: LineSocket = io(serverUrl, { auth: { token }, transports: ['websocket'] });
   socket = s;
   bindVoiceSocket(s, useLine.getState().me!.id);
+  bindMusicSocket(s);
 
   s.on('connect', () => {
     useLine.setState({ connection: 'connected' });
     void syncVoice();
+    void syncMusic();
   });
   s.on('disconnect', () => useLine.setState({ connection: 'disconnected' }));
   s.on('connect_error', (err) => {

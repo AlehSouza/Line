@@ -11,6 +11,7 @@ import type {
   Server,
   VoiceSignal,
   VoiceState,
+  MusicState,
 } from './types';
 
 /** Eventos que o servidor envia para o cliente via WebSocket (Socket.IO). */
@@ -53,6 +54,10 @@ export interface ServerToClientEvents {
   'voice:status': (payload: { channelId: string; status: string | null }) => void;
   /** Um moderador te moveu para outro canal de voz. */
   'voice:move': (payload: { channelId: string }) => void;
+  /** Bot de música: estado de cada canal de voz que você vê (ao conectar). */
+  'music:snapshot': (states: MusicState[]) => void;
+  /** Estado do bot de música de um canal mudou (null = parou). */
+  'music:state': (payload: { channelId: string; state: MusicState | null }) => void;
 }
 
 export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; error: string };
@@ -71,7 +76,18 @@ export interface ClientToServerEvents {
   'voice:moderate': (payload: VoiceModeration) => void;
   /** Pede de novo quem está em cada canal de voz e os status dos canais. */
   'voice:sync': (ack: (res: { states: VoiceState[]; statuses: Record<string, string> }) => void) => void;
+  /** Controles do bot de música: quem deu o /play manda direto, os outros votam. */
+  'music:control': (payload: MusicControl) => void;
+  /** O player de quem está ouvindo avisa que a faixa acabou, deu erro ou qual a duração. */
+  'music:report': (payload: { channelId: string; uid: string; kind: 'ended' | 'error' | 'duration'; duration?: number }) => void;
+  'music:sync': (ack: (states: MusicState[]) => void) => void;
 }
+
+export type MusicControl =
+  | { channelId: string; action: 'skip' | 'prev' | 'pause' | 'stop' }
+  | { channelId: string; action: 'jump'; index: number }
+  | { channelId: string; action: 'remove'; uid: string }
+  | { channelId: string; action: 'move'; uid: string; to: number };
 
 export type VoiceModeration =
   | { userId: string; action: 'mute' | 'deafen'; value: boolean }
