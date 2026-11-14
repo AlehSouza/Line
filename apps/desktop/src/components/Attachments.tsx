@@ -6,6 +6,7 @@ import { fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
 import { cx, Icons, Skeleton } from './ui';
 import { VideoPlayer } from './VideoPlayer';
+import { AudioPlayer, isVoiceMessage, VoicePlayer } from './AudioPlayer';
 
 export function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -57,10 +58,11 @@ function AttachmentView({ attachment: a, compact }: { attachment: Attachment; co
       );
     case 'audio':
       return (
-        <div className="w-full max-w-[420px] rounded-lg border border-edge bg-raise p-3">
-          <FileHeader attachment={a} url={url} />
-          <audio src={url} controls preload="metadata" className="mt-2 w-full" />
-        </div>
+        isVoiceMessage(a.filename) ? (
+          <VoicePlayer src={url} />
+        ) : (
+          <AudioPlayer src={url} filename={a.filename} size={formatSize(a.size)} />
+        )
       );
     case 'text':
       return <TextPreview attachment={a} url={url} />;

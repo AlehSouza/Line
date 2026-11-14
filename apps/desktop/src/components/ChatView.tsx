@@ -809,6 +809,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const [menu, setMenu] = useState(false);
   const [notice, setNotice] = useState('');
   const [recording, setRecording] = useState(false);
+  const [voiceSending, setVoiceSending] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -937,19 +938,39 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const uploading = pending.some((x) => !x.attachment && !x.error);
   const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
 
+  /** Mensagem de voz vai direto, sem passar pelos anexos pendentes. */
+  async function sendVoice(file: File) {
+    setVoiceSending(true);
+    try {
+      const attachment = await api.uploadAttachment(file, file.name);
+      const target = await resolveTarget();
+      actions.addMessage(await api.sendMessage(target, '', [attachment.id]));
+      if (target !== channel.id) actions.openThread(target);
+    } catch (e) {
+      showError(e);
+    } finally {
+      setVoiceSending(false);
+      ref.current?.focus();
+    }
+  }
+
+  /** Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela. */
+  async function resolveTarget() {
+    if (channel.id.startsWith('draft:') && channel.parentId) {
+      const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined);
+      actions.upsertChannel(thread);
+      return thread.id;
+    }
+    return channel.id;
+  }
+
   async function send(gif?: string) {
     const content = gif ?? textToMentions(text.trim(), channel.serverId);
     if (!gif && ((!content && !ready.length) || uploading)) return;
     if (sending) return;
     setSending(true);
     try {
-      // Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela.
-      let target = channel.id;
-      if (channel.id.startsWith('draft:') && channel.parentId) {
-        const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined);
-        actions.upsertChannel(thread);
-        target = thread.id;
-      }
+      const target = await resolveTarget();
       const message = await api.sendMessage(target, content, gif ? [] : ready);
       actions.addMessage(message);
       if (target !== channel.id) actions.openThread(target);
@@ -1044,7 +1065,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             onCancel={() => setRecording(false)}
             onDone={(file) => {
               setRecording(false);
-              addFiles([file]);
+              void sendVoice(file);
             }}
           />
         ) : !canSend ? (
@@ -1069,7 +1090,8 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         />
         )}
         {uploading && <span className="shrink-0 self-center text-xs text-muted">Enviando arquivos…</span>}
-        {canSend && (
+        {voiceSending && <span className="shrink-0 self-center text-xs text-muted">Enviando mensagem de voz…</span>}
+        {canSend && !recording && (
         <span className="relative shrink-0">
           <button
             title="Emojis"
@@ -1093,7 +1115,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           )}
         </span>
         )}
-        {canSend && canAttach && (
+        {canSend && canAttach && !recording && (
         <span className="relative shrink-0">
           <button
             title="GIFs"
@@ -1112,6 +1134,16 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             />
           )}
         </span>
+        )}
+        {canSend && canAttach && !recording && (
+          <button
+            title="Gravar mensagem de voz"
+            onClick={() => setRecording(true)}
+            disabled={voiceSending}
+            className="flex h-6 shrink-0 items-center text-soft hover:text-fg disabled:opacity-40"
+          >
+            <Icons.Mic size={22} />
+          </button>
         )}
         </div>
       </div>
@@ -1161,73 +1193,136 @@ function ComposerMenu({ items, onClose }: { items: { icon: ReactNode; label: str
   );
 }
 
-/** Grava um áudio com o microfone e devolve como arquivo para anexar. */
+/** Grava uma mensagem de voz: lixeira, tempo, forma de onda ao vivo, pausar e enviar. */
 function VoiceRecorder({ onDone, onCancel }: { onDone: (file: File) => void; onCancel: () => void }) {
-  const [seconds, setSeconds] = useState(0);
+  const [ms, setMs] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [levels, setLevels] = useState<number[]>([]);
   const [error, setError] = useState('');
   const rec = useRef<MediaRecorder | null>(null);
-  const cancelled = useRef(false);
+  const finish = useRef<'send' | 'cancel'>('cancel');
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    let ctx: AudioContext | null = null;
     const chunks: Blob[] = [];
     let timer = 0;
+    let alive = true;
     navigator.mediaDevices
       .getUserMedia({ audio: { noiseSuppression: true, echoCancellation: true } })
       .then((s) => {
+        if (!alive) return s.getTracks().forEach((t) => t.stop());
         stream = s;
-        const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
+        const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4'].find((t) => MediaRecorder.isTypeSupported(t)) ?? '';
         const r = new MediaRecorder(s, type ? { mimeType: type } : undefined);
         rec.current = r;
         r.ondataavailable = (e) => e.data.size && chunks.push(e.data);
         r.onstop = () => {
           stream?.getTracks().forEach((t) => t.stop());
-          if (cancelled.current || !chunks.length) return;
+          if (finish.current !== 'send' || !chunks.length) return;
           const mime = r.mimeType.split(';')[0] || 'audio/webm';
-          const ext = mime.includes('ogg') ? 'ogg' : 'webm';
+          const ext = mime.includes('ogg') ? 'ogg' : mime.includes('mp4') ? 'm4a' : 'webm';
           const stamp = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
           onDone(new File(chunks, `mensagem-de-voz-${stamp}.${ext}`, { type: mime }));
         };
-        r.start();
-        timer = window.setInterval(() => setSeconds((n) => n + 1), 1000);
+        r.start(250);
+        // Nível do microfone para desenhar a forma de onda enquanto grava.
+        ctx = new AudioContext();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        ctx.createMediaStreamSource(s).connect(analyser);
+        const buf = new Uint8Array(analyser.fftSize);
+        let last = performance.now();
+        timer = window.setInterval(() => {
+          const now = performance.now();
+          const dt = now - last;
+          last = now;
+          if (pausedRef.current) return;
+          setMs((n) => n + dt);
+          analyser.getByteTimeDomainData(buf);
+          let peak = 0;
+          for (const v of buf) peak = Math.max(peak, Math.abs(v - 128) / 128);
+          setLevels((l) => [...l.slice(-59), Math.min(1, peak * 2.5)]);
+        }, 100);
       })
       .catch(() => setError('Sem acesso ao microfone.'));
     return () => {
+      alive = false;
       window.clearInterval(timer);
-      cancelled.current = true;
-      if (rec.current?.state === 'recording') rec.current.stop();
+      if (rec.current && rec.current.state !== 'inactive') rec.current.stop();
       stream?.getTracks().forEach((t) => t.stop());
+      void ctx?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const stop = () => {
-    cancelled.current = false;
-    if (rec.current?.state === 'recording') rec.current.stop();
+  const togglePause = () => {
+    const r = rec.current;
+    if (!r) return;
+    if (r.state === 'recording') {
+      r.pause();
+      setPaused(true);
+    } else if (r.state === 'paused') {
+      r.resume();
+      setPaused(false);
+    }
   };
-  const mm = String(Math.floor(seconds / 60)).padStart(1, '0');
-  const ss = String(seconds % 60).padStart(2, '0');
+  const send = () => {
+    finish.current = 'send';
+    if (rec.current && rec.current.state !== 'inactive') rec.current.stop();
+  };
+  const cancel = () => {
+    finish.current = 'cancel';
+    onCancel();
+  };
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') cancel();
+      else if (e.key === 'Enter') send();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const secs = Math.floor(ms / 1000);
+  const bars = [...Array.from({ length: Math.max(0, 60 - levels.length) }, () => 0), ...levels];
 
   return (
     <div className="flex min-h-6 flex-1 items-center gap-3 text-sm">
+      <button onClick={cancel} title="Descartar" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-hover hover:text-danger">
+        <Icons.Trash size={18} />
+      </button>
       {error ? (
         <span className="flex-1 text-danger">{error}</span>
       ) : (
         <>
-          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-danger" />
-          <span className="font-mono text-soft">
-            {mm}:{ss}
+          <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full bg-danger', !paused && 'animate-pulse', paused && 'opacity-40')} />
+          <span className="w-10 shrink-0 font-mono text-[15px] font-semibold text-fg">
+            {Math.floor(secs / 60)}:{String(secs % 60).padStart(2, '0')}
           </span>
-          <span className="flex-1 text-muted">Gravando mensagem de voz…</span>
+          <div className="flex h-7 min-w-0 flex-1 items-center justify-end gap-[2px] overflow-hidden">
+            {bars.map((v, i) => (
+              <span key={i} className={cx('w-[3px] shrink-0 rounded-full', v ? 'bg-soft' : 'bg-muted/40')} style={{ height: `${Math.max(8, v * 100)}%` }} />
+            ))}
+          </div>
+          <button
+            onClick={togglePause}
+            title={paused ? 'Continuar gravando' : 'Pausar'}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-danger hover:bg-hover"
+          >
+            {paused ? <Icons.Mic size={18} /> : <Icons.Pause size={18} />}
+          </button>
+          <button
+            onClick={send}
+            title="Enviar mensagem de voz"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent hover:brightness-110"
+          >
+            <Icons.Send size={17} />
+          </button>
         </>
-      )}
-      <button onClick={onCancel} className="rounded-md px-2 py-0.5 text-muted hover:bg-hover hover:text-fg">
-        Cancelar
-      </button>
-      {!error && (
-        <button onClick={stop} className="flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-0.5 font-semibold text-white hover:brightness-110">
-          <Icons.Check size={14} /> Pronto
-        </button>
       )}
     </div>
   );
