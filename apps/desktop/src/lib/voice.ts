@@ -3,7 +3,7 @@
 import type { ClientToServerEvents, ServerToClientEvents, VoiceModeration, VoiceSignal, VoiceState } from '@line/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import { disposeNoiseSuppressor, suppressNoise } from './noise';
+import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './noise';
 import { api } from './api';
 import { hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
@@ -574,6 +574,7 @@ async function openMic() {
     rawMic = await navigator.mediaDevices.getUserMedia({ audio: { ...audio, deviceId: undefined }, video: false });
   }
   mic = rawMic;
+  watchMicEnded(rawMic);
   if (noiseSuppression) {
     try {
       mic = await suppressNoise(rawMic);
@@ -1220,4 +1221,102 @@ export function participants(states: Record<string, VoiceState>, channelId: stri
   return Object.values(states)
     .filter((s) => s.channelId === channelId)
     .sort((a, b) => a.joinedAt.localeCompare(b.joinedAt));
+}
+
+// ---------- celular: aba em segundo plano ----------
+//
+// No navegador do celular a aba em segundo plano é congelada/suspensa: o áudio para, o microfone pode ser
+// encerrado pelo sistema e a conexão cai. Não dá para impedir isso numa página web, mas dá para:
+// manter a tela acesa durante a chamada (Wake Lock), mostrar a chamada nos controles de mídia do sistema
+// (Media Session, que ajuda o Android a manter a aba viva) e, ao voltar, religar tudo sozinho.
+
+let micLostInBackground = false;
+
+function watchMicEnded(stream: MediaStream) {
+  const track = stream.getAudioTracks()[0];
+  if (!track) return;
+  track.addEventListener('ended', () => {
+    // O sistema tirou o microfone (aba em segundo plano, ligação telefônica…). Reabre assim que der.
+    if (rawMic !== stream || !getV().channelId) return;
+    if (document.visibilityState === 'visible') void reopenMic();
+    else micLostInBackground = true;
+  });
+}
+
+function onForeground() {
+  if (document.visibilityState !== 'visible') return;
+  void playCtx?.resume().catch(() => {});
+  void audioCtx?.resume().catch(() => {});
+  resumeNoiseSuppressor();
+  if (!getV().channelId) return;
+  for (const el of audioEls.values()) if (el.paused) void el.play().catch(() => {});
+  const track = rawMic?.getAudioTracks()[0];
+  if (micLostInBackground || !track || track.readyState === 'ended') {
+    micLostInBackground = false;
+    void reopenMic();
+  }
+  // A conexão pode ter caído enquanto a aba dormia: reconecta já (o voice:snapshot nos põe de volta no canal).
+  if (socket && !socket.connected) socket.connect();
+  else void syncVoice();
+  void keepScreenOn(true);
+}
+
+type WakeLock = { release: () => Promise<void>; released: boolean };
+let wakeLock: WakeLock | null = null;
+
+async function keepScreenOn(on: boolean) {
+  const nav = navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLock> } };
+  if (!on) {
+    const lock = wakeLock;
+    wakeLock = null;
+    await lock?.release().catch(() => {});
+    return;
+  }
+  if (!nav.wakeLock || document.visibilityState !== 'visible' || (wakeLock && !wakeLock.released)) return;
+  wakeLock = await nav.wakeLock.request('screen').catch(() => null);
+}
+
+function updateMediaSession(channelId: string | null) {
+  const ms = typeof navigator !== 'undefined' ? navigator.mediaSession : undefined;
+  if (!ms) return;
+  const set = (action: string, handler: (() => void) | null) => {
+    try {
+      ms.setActionHandler(action as MediaSessionAction, handler);
+    } catch {
+      // Ação não suportada neste navegador.
+    }
+  };
+  if (!channelId) {
+    ms.metadata = null;
+    ms.playbackState = 'none';
+    set('hangup', null);
+    set('togglemicrophone', null);
+    return;
+  }
+  const st = useLine.getState();
+  const channel = st.channels[channelId];
+  const server = channel?.serverId ? st.servers[channel.serverId] : undefined;
+  try {
+    ms.metadata = new MediaMetadata({
+      title: channel?.name ? `Em chamada: ${channel.name}` : 'Em chamada',
+      artist: server?.name ?? 'Line',
+      album: 'Line',
+    });
+  } catch {
+    // MediaMetadata indisponível.
+  }
+  ms.playbackState = 'playing';
+  set('hangup', () => void leaveVoice());
+  set('togglemicrophone', () => toggleMute());
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', onForeground);
+  window.addEventListener('pageshow', onForeground);
+  useVoice.subscribe((v, prev) => {
+    if (v.channelId === prev.channelId) return;
+    updateMediaSession(v.channelId);
+    void keepScreenOn(!!v.channelId);
+    if (!v.channelId) micLostInBackground = false;
+  });
 }

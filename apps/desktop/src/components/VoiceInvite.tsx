@@ -1,5 +1,7 @@
 "use client";
 
+import { mobile } from "@/lib/mobile";
+
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { ensureServerLoaded } from "@/lib/session";
@@ -302,6 +304,7 @@ export function VoiceInviteCard({ invite }: { invite: VoiceInviteData }) {
       if (!useLine.getState().channels[invite.channelId])
         throw new Error("Esse canal de voz não existe mais.");
       actions.goServer(invite.serverId, invite.channelId);
+      mobile.showMain();
       await joinVoice(invite.channelId);
     } catch (e) {
       setError((e as Error).message);

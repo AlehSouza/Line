@@ -50,3 +50,8 @@ export function disposeNoiseSuppressor() {
   chain.node.disconnect();
   chain = null;
 }
+
+/** O celular suspende o áudio quando a aba vai para segundo plano; ao voltar, religa o supressor. */
+export function resumeNoiseSuppressor() {
+  if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => {});
+}

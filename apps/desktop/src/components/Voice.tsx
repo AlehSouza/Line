@@ -1,5 +1,8 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+import { MobileBack } from './Mobile';
+
 import { MusicBotInVoice } from './Music';
 import { useMusic } from '@/lib/music';
 
@@ -458,12 +461,13 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
       >
         {!compact && (
           <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+            <MobileBack />
             <Icons.Speaker size={20} className="text-soft" />
             <h1 className="font-bold">{title}</h1>
             {channel.topic && (
               <>
-                <span className="mx-2 h-6 w-px bg-edge" />
-                <p className="truncate text-sm text-muted">{channel.topic}</p>
+                <span className="mx-2 h-6 w-px bg-edge max-md:hidden" />
+                <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
               </>
             )}
           </header>
@@ -495,18 +499,19 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
     <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
       {!compact && (
         <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+          <MobileBack />
           <Icons.Speaker size={20} className="text-muted" />
           <h1 className="font-bold">{title}</h1>
           {channel.topic && (
             <>
-              <span className="mx-2 h-6 w-px bg-edge" />
-              <p className="truncate text-sm text-muted">{channel.topic}</p>
+              <span className="mx-2 h-6 w-px bg-edge max-md:hidden" />
+              <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
             </>
           )}
         </header>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 max-md:p-2">
         {count === 0 && !inCall ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-raise text-accent">
@@ -547,7 +552,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </p>
         )}
 
-        <div className={'flex shrink-0 justify-center pb-6'}>
+        <div className="flex shrink-0 justify-center pb-6 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {inCall ? (
             <VoiceControls large />
           ) : (
@@ -591,20 +596,21 @@ export function VoiceControls({ large }: { large?: boolean }) {
   if (large) {
     // Dentro da chamada: grupos separados (mic + fone, câmera + tela) e o desligar sozinho à direita.
     const group = 'relative flex items-center gap-0.5 rounded-xl border border-edge bg-rail/90 p-1 shadow-lg';
+    // No celular: sem as setinhas de dispositivo (o sistema escolhe) e botões um pouco menores para caber.
     const key = (state: 'off' | 'on' | 'danger') =>
       cx(
-        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors',
+        'flex h-11 w-11 items-center justify-center rounded-lg transition-colors max-md:h-10 max-md:w-10',
         state === 'danger' ? 'bg-danger/15 text-danger hover:bg-danger/25' : state === 'on' ? 'bg-fg text-rail' : 'text-fg hover:bg-hover',
       );
     const arrow = (danger: boolean, open: boolean) =>
       cx(
-        'flex h-11 w-6 items-center justify-center rounded-lg transition-colors',
+        'flex h-11 w-6 items-center justify-center rounded-lg transition-colors max-md:hidden',
         danger ? 'bg-danger/15 text-danger hover:bg-danger/25' : 'text-muted hover:bg-hover hover:text-fg',
         open && 'bg-hover',
       );
     const toggleMenu = (k: 'input' | 'output') => setDevMenu((m) => (m === k ? null : k));
     return (
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 max-md:gap-2">
         <div className={group}>
           <button title={muted ? 'Ativar microfone' : 'Silenciar microfone'} onClick={toggleMute} className={key(muted ? 'danger' : 'off')}>
             {muted ? <Icons.MicOff size={size} /> : <Icons.Mic size={size} />}
@@ -612,7 +618,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
           <button title="Escolher microfone" onClick={() => toggleMenu('input')} className={arrow(muted, devMenu === 'input')}>
             <Icons.Chevron size={14} />
           </button>
-          <span className="mx-1 h-6 w-px bg-edge" />
+          <span className="mx-1 h-6 w-px bg-edge max-md:mx-0.5" />
           <button title={deafened ? 'Voltar a ouvir' : 'Ensurdecer'} onClick={toggleDeafen} className={key(deafened ? 'danger' : 'off')}>
             {deafened ? <Icons.HeadphonesOff size={size} /> : <Icons.Headphones size={size} />}
           </button>
@@ -632,7 +638,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
         <button
           title="Sair da chamada"
           onClick={() => leaveVoice()}
-          className="flex h-[54px] items-center justify-center rounded-xl bg-danger px-7 text-white shadow-lg transition hover:brightness-110"
+          className="flex h-[54px] items-center justify-center rounded-xl bg-danger px-7 text-white shadow-lg transition hover:brightness-110 max-md:h-[50px] max-md:px-5"
         >
           <Icons.PhoneOff size={size} />
         </button>
@@ -1143,6 +1149,7 @@ export function VoiceBar() {
     if (!channel) return;
     if (channel.serverId) actions.goServer(channel.serverId, channel.id);
     else actions.goHome(channel.id);
+    mobile.showMain();
   };
   const tile = (active: boolean) =>
     cx(
@@ -1329,6 +1336,7 @@ export function IncomingCall() {
           title="Atender"
           onClick={() => {
             actions.goHome(channel.id);
+            mobile.showMain();
             void joinVoice(channel.id);
           }}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-accent text-on-accent hover:bg-accent-strong"

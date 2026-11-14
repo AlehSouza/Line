@@ -19,7 +19,7 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="flex h-screen flex-col supports-[height:100dvh]:h-dvh">
       <TitleBar />
       <UpdateBanner />
       <div className="min-h-0 flex-1">{booting ? <Booting /> : token ? <AppShell /> : <AuthScreen />}</div>

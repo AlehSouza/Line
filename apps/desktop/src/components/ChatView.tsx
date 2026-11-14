@@ -19,6 +19,7 @@ import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
 import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
+import { MobileBack, MobileMembersButton } from './Mobile';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -46,6 +47,7 @@ export function ChatView({ channel }: { channel: Channel }) {
     <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
       {drop.over && <DropOverlay target={isDm ? title : `#${channel.name}`} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        <MobileBack />
         {isDm ? (
           other ? (
             <Avatar name={title} color={(users[other.id] ?? other).avatarColor} src={(users[other.id] ?? other).avatarUrl} size={24} presence={(users[other.id] ?? other).presence} ring="main" />
@@ -55,13 +57,14 @@ export function ChatView({ channel }: { channel: Channel }) {
         ) : (
           <Icons.Hash size={20} className="text-muted" />
         )}
-        <h1 className="font-bold">{title}</h1>
+        <h1 className="truncate font-bold">{title}</h1>
         {channel.topic && (
           <>
-            <span className="mx-2 h-6 w-px bg-edge" />
-            <p className="truncate text-sm text-muted">{channel.topic}</p>
+            <span className="mx-2 h-6 w-px bg-edge max-md:hidden" />
+            <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
           </>
         )}
+        {!isDm && <MobileMembersButton />}
         {isDm && !inCall && (
           <div className="ml-auto flex gap-1">
             <button title="Iniciar chamada de voz" onClick={() => joinVoice(channel.id)} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
@@ -100,7 +103,10 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
   }, [thread.id]);
 
   return (
-    <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main" {...drop.handlers}>
+    <aside
+      className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:border-0"
+      {...drop.handlers}
+    >
       {drop.over && <DropOverlay target={thread.name} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         <h2 className="font-bold">Conversa</h2>

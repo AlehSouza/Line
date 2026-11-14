@@ -1,5 +1,8 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+import { MobileBack } from './Mobile';
+
 import type { Server } from '@line/shared';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
@@ -30,6 +33,7 @@ export function DiscoverView() {
       const joined = await api.joinPublic(server.id);
       actions.upsertServer(joined);
       actions.goServer(joined.id);
+      mobile.showNav();
     } catch (e) {
       showError(e);
     }
@@ -46,6 +50,7 @@ export function DiscoverView() {
       const joined = await api.acceptInvite(code);
       actions.upsertServer(joined);
       actions.goServer(joined.id);
+      mobile.showNav();
       setInvite('');
     } catch (err) {
       setInviteError(err instanceof Error ? err.message : 'Convite inválido ou expirado.');
@@ -56,7 +61,10 @@ export function DiscoverView() {
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="bg-gradient-to-br from-accent/30 via-main to-sun/10 px-10 py-12">
+      <div className="flex h-12 items-center px-4 md:hidden">
+        <MobileBack />
+      </div>
+      <div className="bg-gradient-to-br from-accent/30 via-main to-sun/10 px-10 py-12 max-md:px-4 max-md:py-6">
         <h1 className="text-3xl font-extrabold">Encontre sua galera no Line</h1>
         <p className="mt-2 text-soft">Servidores públicos criados pela comunidade deste servidor.</p>
         <div className="relative mt-6 max-w-xl">
@@ -82,7 +90,7 @@ export function DiscoverView() {
           {inviteError && <p className="mt-2 text-sm text-danger">{inviteError}</p>}
         </form>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-8">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4 p-8 max-md:grid-cols-1 max-md:p-4">
         {error && <p className="text-danger">{error}</p>}
         {!servers && !error && Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
         {servers?.length === 0 && <p className="text-muted">Nenhum servidor público encontrado.</p>}
