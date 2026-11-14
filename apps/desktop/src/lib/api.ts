@@ -102,6 +102,21 @@ function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fra
   });
 }
 
+/** Baixa uma imagem/vídeo de outro site pelo servidor (o navegador esbarra no CORS). */
+async function fetchMedia(url: string): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/api/media?url=${enc(url)}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError(0, `Não foi possível conectar ao servidor (${baseUrl})`);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new ApiError(res.status, data?.message ?? 'Não deu para baixar esse arquivo.');
+  }
+  return res.blob();
+}
+
 /** GIF do GIPHY, buscado pelo servidor. */
 export interface Gif {
   id: string;
@@ -188,6 +203,7 @@ export const api = {
   sendMessage: (channelId: string, content: string, attachmentIds: string[] = [], requires: string[] = []) =>
     request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds, requires }),
   uploadAttachment,
+  fetchMedia,
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),
   createThread: (channelId: string, name: string, messageId?: string) =>
     request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),

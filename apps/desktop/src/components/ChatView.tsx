@@ -4,7 +4,7 @@ import { hasPerm, missingFeatures, Perm, type Attachment, type Channel, type Mes
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
-import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref } from 'react';
+import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
@@ -32,7 +32,7 @@ export function ChatView({ channel }: { channel: Channel }) {
   const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
   const inCall = useVoice((v) => v.channelId === channel.id);
   const composer = useRef<ComposerHandle>(null);
-  const drop = useFileDrop((files) => composer.current?.addFiles(files));
+  const drop = useFileDrop(composer);
 
   useEffect(() => {
     actions.markRead(channel.id);
@@ -89,7 +89,7 @@ export function ChatView({ channel }: { channel: Channel }) {
 /** Painel lateral com a conversa de uma thread. */
 export function ThreadPanel({ thread }: { thread: Channel }) {
   const composer = useRef<ComposerHandle>(null);
-  const drop = useFileDrop((files) => composer.current?.addFiles(files));
+  const drop = useFileDrop(composer);
   const meId = useLine((s) => s.me?.id);
   const canManage = useCan(thread.serverId, Perm.ManageChannels);
   const canDelete = !thread.id.startsWith("draft:") && (canManage || thread.ownerId === meId);
@@ -144,34 +144,80 @@ function DropOverlay({ target }: { target: string }) {
   );
 }
 
-/** Arrastar e soltar arquivos em cima do chat. */
-function useFileDrop(onFiles: (files: File[]) => void) {
+// Arrastos que começam dentro do próprio app (texto selecionado, imagens do chat) não viram anexo.
+let internalDrag = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('dragstart', () => (internalDrag = true));
+  document.addEventListener('dragend', () => (internalDrag = false));
+  document.addEventListener('drop', (e) => {
+    internalDrag = false;
+    // Arquivo solto fora do chat: não deixa o navegador/app abrir o arquivo no lugar do Line.
+    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+  });
+  document.addEventListener('dragover', (e) => {
+    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+  });
+}
+
+/** O que veio no arrasto: arquivos do computador ou algo de uma página (imagem/vídeo). */
+const dragKinds = (e: DragEvent) => {
+  const types = Array.from(e.dataTransfer.types);
+  if (types.includes('Files')) return true;
+  return !internalDrag && (types.includes('text/uri-list') || types.includes('text/html'));
+};
+
+const MEDIA_LINK = /^(data:(image|video)\/|https?:\/\/\S+\.(png|jpe?g|gif|webp|avif|bmp|svg|mp4|webm|mov|m4v)(\?\S*)?$)/i;
+
+/** Link da imagem/vídeo arrastado de uma página: o `src` do elemento, ou um link direto de mídia. */
+function droppedUrl(data: DataTransfer): string | null {
+  const html = data.getData('text/html');
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const src = doc.querySelector('img[src], video[src], video source[src]')?.getAttribute('src')?.trim();
+    if (src && /^(https?:|data:(image|video)\/)/i.test(src)) return src;
+  }
+  const uri = data.getData('text/uri-list').split(/\r?\n/).find((l) => l && !l.startsWith('#'))?.trim();
+  return uri && MEDIA_LINK.test(uri) ? uri : null;
+}
+
+/** Arrastar e soltar em cima do chat: arquivos do computador ou imagens/vídeos de sites. */
+function useFileDrop(composer: RefObject<ComposerHandle | null>) {
   const [over, setOver] = useState(false);
   const depth = useRef(0);
-  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files');
   return {
     over,
     handlers: {
       onDragEnter: (e: DragEvent) => {
-        if (!hasFiles(e)) return;
+        if (!dragKinds(e)) return;
         e.preventDefault();
         depth.current++;
         setOver(true);
       },
       onDragOver: (e: DragEvent) => {
-        if (hasFiles(e)) e.preventDefault();
+        if (!dragKinds(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
       },
       onDragLeave: (e: DragEvent) => {
-        if (!hasFiles(e)) return;
+        if (!dragKinds(e)) return;
         depth.current = Math.max(0, depth.current - 1);
         if (!depth.current) setOver(false);
       },
       onDrop: (e: DragEvent) => {
-        if (!hasFiles(e)) return;
-        e.preventDefault();
+        if (!dragKinds(e)) return;
         depth.current = 0;
         setOver(false);
-        onFiles(Array.from(e.dataTransfer.files));
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length) {
+          e.preventDefault();
+          composer.current?.addFiles(files);
+          return;
+        }
+        // Sem imagem/vídeo (um link comum, texto): segue o normal, ex. escrever no campo de mensagem.
+        const url = droppedUrl(e.dataTransfer);
+        if (!url) return;
+        e.preventDefault();
+        composer.current?.addUrl(url);
       },
     },
   };
@@ -791,7 +837,24 @@ function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
   );
 }
 
-type ComposerHandle = { addFiles: (files: File[]) => void };
+type ComposerHandle = { addFiles: (files: File[]) => void; addUrl: (url: string) => void };
+
+const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/svg+xml': 'svg', 'video/quicktime': 'mov', 'image/x-icon': 'ico' };
+
+/** Nome de arquivo para mídia baixada de um link. */
+function nameFromUrl(url: string, type: string) {
+  const ext = EXT[type] ?? (type.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '').slice(0, 5);
+  let base = '';
+  if (!url.startsWith('data:')) {
+    try {
+      base = decodeURIComponent(new URL(url).pathname.split('/').pop() || '');
+    } catch {
+      /* link estranho: usa o nome padrão */
+    }
+  }
+  base = base.replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^\w\- ]+/g, '').trim().slice(0, 60);
+  return `${base || (type.startsWith('video/') ? 'video' : 'imagem')}.${ext}`;
+}
 
 interface Pending {
   key: string;
@@ -865,7 +928,28 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     ref.current?.focus();
   }
 
-  useImperativeHandle(handle, () => ({ addFiles }));
+  /** Imagem/vídeo arrastado de um site: baixa direto (se o site deixar) ou pelo servidor. */
+  async function addUrl(url: string) {
+    if (!canAttach) return addFiles([]);
+    setNotice('Baixando arquivo…');
+    let blob: Blob | null = null;
+    try {
+      const res = await fetch(url);
+      if (res.ok) blob = await res.blob();
+    } catch {
+      /* CORS ou rede: tenta pelo servidor */
+    }
+    try {
+      if (!blob || !/^(image|video)\//.test(blob.type)) blob = await api.fetchMedia(url);
+      setNotice('');
+      addFiles([new File([blob], nameFromUrl(url, blob.type), { type: blob.type })]);
+    } catch (e) {
+      setNotice((e as Error).message || 'Não deu para baixar esse arquivo.');
+      window.setTimeout(() => setNotice(''), 4000);
+    }
+  }
+
+  useImperativeHandle(handle, () => ({ addFiles, addUrl }));
 
   // "Mencionar" do menu de usuário da voz: só o campo do canal principal (não o da thread).
   useEffect(() => {

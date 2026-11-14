@@ -302,6 +302,8 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .min_inner_size(940.0, 560.0)
         .background_color(tauri::webview::Color(0x0a, 0x0a, 0x0c, 0xff))
         .visible(false)
+        // Arrastar arquivos para o chat usa o drop do HTML (o do Tauri esconderia os arquivos da página).
+        .disable_drag_drop_handler()
         .initialization_script(
             include_str!("bridge.js").replace("__LINE_VERSION__", &app.package_info().version.to_string()),
         )

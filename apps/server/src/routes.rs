@@ -75,6 +75,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/search", get(search))
         .route("/gifs", get(search_gifs))
         .route("/embeds", get(get_embed))
+        .route("/media", get(get_media))
         .route("/servers", get(list_servers).post(create_server))
         .route("/servers/discover", get(discover))
         .route(
@@ -227,6 +228,18 @@ async fn get_embed(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String, 
         return Err(ApiError::new(StatusCode::BAD_REQUEST, "INVALID_URL", "Link inválido."));
     }
     Ok(Json(app.embeds.get(url).await).into_response())
+}
+
+/// Imagem/vídeo de outro site, arrastado para o chat: o servidor baixa e devolve os bytes.
+async fn get_media(Me(_me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let url = qs.get("url").map(|s| s.trim()).unwrap_or_default();
+    if url.len() > 4096 || !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "INVALID_URL", "Link inválido."));
+    }
+    match crate::embeds::fetch_media(url).await {
+        Ok((ctype, bytes)) => Ok(([(axum::http::header::CONTENT_TYPE, ctype)], bytes).into_response()),
+        Err(msg) => Err(ApiError::new(StatusCode::BAD_GATEWAY, "MEDIA_UNAVAILABLE", msg)),
+    }
 }
 
 /// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
