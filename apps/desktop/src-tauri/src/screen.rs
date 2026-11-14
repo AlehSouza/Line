@@ -145,7 +145,9 @@ struct Flags {
 
 struct Capture {
     flags: Flags,
-    last: Option<Instant>,
+    /// Quando o próximo quadro pode sair. Avança de `frame_gap` em `frame_gap` (não a partir do
+    /// último aceito), senão num monitor de 144Hz os 60fps viravam ~48fps.
+    next: Option<Instant>,
 }
 
 /// `PostWebMessageAsJson` na thread principal (o WebView2 só aceita chamadas de lá).
@@ -162,14 +164,14 @@ impl GraphicsCaptureApiHandler for Capture {
     type Error = String;
 
     fn new(ctx: Context<Flags>) -> Result<Self, String> {
-        Ok(Self { flags: ctx.flags, last: None })
+        Ok(Self { flags: ctx.flags, next: None })
     }
 
     fn on_frame_arrived(&mut self, frame: &mut Frame, _: InternalCaptureControl) -> Result<(), String> {
         let now = Instant::now();
         // Respeita o fps escolhido (o Windows manda quadros na taxa do monitor).
-        if let Some(last) = self.last {
-            if now.duration_since(last) + Duration::from_millis(2) < self.flags.frame_gap {
+        if let Some(next) = self.next {
+            if now + Duration::from_millis(2) < next {
                 return Ok(());
             }
         }
@@ -193,7 +195,10 @@ impl GraphicsCaptureApiHandler for Capture {
             }
             header.add(slot).write_volatile(1);
         }
-        self.last = Some(now);
+        let gap = self.flags.frame_gap;
+        // Depois de uma pausa longa, recomeça do agora em vez de soltar uma rajada de quadros.
+        let base = self.next.map_or(now, |n| n.max(now - gap));
+        self.next = Some(base + gap);
         let ts = now.duration_since(self.flags.started).as_micros() as u64;
         post(
             &self.flags.window,

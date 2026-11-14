@@ -924,9 +924,18 @@ function addStream(pc: RTCPeerConnection, stream: MediaStream) {
     const transceiver = pc.addTransceiver(track, {
       direction: 'sendonly',
       streams: [stream],
-      sendEncodings: [{ maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000, maxFramerate: fps, scaleResolutionDownBy: downscale(resolution) }],
+      sendEncodings: [
+        {
+          maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000,
+          maxFramerate: fps,
+          scaleResolutionDownBy: downscale(resolution),
+          // A tela passa na frente do resto da conexão quando a banda aperta.
+          priority: 'high',
+          networkPriority: 'high',
+        } as RTCRtpEncodingParameters,
+      ],
     });
-    preferHardwareCodec(transceiver, resolution);
+    preferHardwareCodec(transceiver, resolution, fps);
     void tuneScreenSender(transceiver.sender, fps);
   }
 }
@@ -938,9 +947,13 @@ function downscale(resolution: Resolution) {
   return Math.max(1, screenSize.width / r.width, screenSize.height / r.height);
 }
 
-/** Acima de 1080p, prefere H.264 (codificado pela placa de vídeo) para aguentar 1440p/4K a 60fps. */
-function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolution) {
-  if (resolution === '720' || resolution === '1080' || !transceiver.setCodecPreferences) return;
+/**
+ * Em 60fps (jogos) e acima de 1080p, prefere H.264, que a placa de vídeo codifica: o VP8 em
+ * software disputa a CPU com o jogo e acaba derrubando fps e qualidade. Se o outro lado não
+ * aceitar H.264, a negociação cai para o próximo da lista.
+ */
+function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolution, fps: Fps) {
+  if ((fps < 60 && (resolution === '720' || resolution === '1080')) || !transceiver.setCodecPreferences) return;
   const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
   if (!codecs) return;
   const rank = (c: { mimeType: string }) => {
@@ -954,13 +967,14 @@ function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolut
   }
 }
 
-async function tuneScreenSender(sender: RTCRtpSender, fps: Fps) {
+async function tuneScreenSender(sender: RTCRtpSender, fps: Fps, retry = true) {
   try {
     const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
     params.degradationPreference = fps >= 60 ? 'maintain-framerate' : 'maintain-resolution';
     await sender.setParameters(params);
   } catch {
-    // alguns navegadores não aceitam antes da negociação; os limites de sendEncodings já valem
+    // Alguns navegadores só aceitam depois da negociação: tenta de novo quando a conexão já subiu.
+    if (retry) setTimeout(() => void tuneScreenSender(sender, fps, false), 3000);
   }
 }
 
