@@ -26,6 +26,8 @@ export const updateProfileSchema = z.object({
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   customStatus: z.string().max(128).nullable().optional(),
   status: z.enum(['online', 'idle', 'dnd', 'invisible']).optional(),
+  /** Duração do status em minutos; sem = para sempre. */
+  statusMinutes: z.number().int().min(1).max(43200).optional(),
   pronouns: z.string().max(40).optional(),
   thought: z.string().max(80).nullable().optional(),
   avatarId: z.string().nullable().optional(),

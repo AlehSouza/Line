@@ -211,6 +211,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE users ADD COLUMN bot_server_id TEXT;
   CREATE UNIQUE INDEX users_bot_server ON users(bot_server_id) WHERE bot_server_id IS NOT NULL;
 "#,
+    // Status com duração ("Ausente por 1 hora"): quando expira volta para Disponível.
+    r#"
+  ALTER TABLE users ADD COLUMN status_until TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

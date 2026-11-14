@@ -175,6 +175,16 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
 
     let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"), config.web.clone(), config.turn.clone());
     app.sweep_uploads();
+    // Status com duração: a cada 30 s volta para Disponível quem já venceu.
+    let weak = Arc::downgrade(&app);
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            tick.tick().await;
+            let Some(app) = weak.upgrade() else { break };
+            app.expire_statuses();
+        }
+    });
     drop(app);
 
     let (tx, rx) = oneshot::channel::<()>();
@@ -256,6 +266,16 @@ impl std::ops::Deref for AppRef {
 impl App {
     /// Apaga do disco os arquivos que não pertencem mais a nenhum anexo
     /// (mensagem, canal ou servidor apagados) e anexos nunca usados há mais de um dia.
+    pub fn expire_statuses(&self) {
+        let q = self.store.q();
+        for id in q.expire_statuses() {
+            if let Some(user) = q.self_user(&id) {
+                self.to_user(&id, "self:update", &user);
+            }
+            self.broadcast_presence(&q, &id);
+        }
+    }
+
     pub fn sweep_uploads(&self) {
         let keep: std::collections::HashSet<String> = {
             let q = self.store.q();
