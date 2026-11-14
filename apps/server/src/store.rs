@@ -357,6 +357,17 @@ impl Q<'_> {
         ok(self.c.execute("UPDATE users SET password_hash = ? WHERE id = ?", params![hash, id]));
     }
 
+    pub fn user_by_google(&self, google_id: &str) -> Option<UserRow> {
+        ok(self
+            .c
+            .query_row("SELECT * FROM users WHERE google_id = ?", [google_id], UserRow::from_row)
+            .optional())
+    }
+
+    pub fn set_google_id(&self, id: &str, google_id: &str) {
+        ok(self.c.execute("UPDATE users SET google_id = ? WHERE id = ?", params![google_id, id]));
+    }
+
     pub fn user_by_email(&self, email: &str) -> Option<UserRow> {
         ok(self
             .c

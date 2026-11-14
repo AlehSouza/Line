@@ -167,6 +167,108 @@ async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool 
     true
 }
 
+/// "Entrar com Google": o Google não deixa logar dentro do WebView, então abre o navegador do
+/// sistema em {servidor}/api/auth/google/start?port=N e espera o servidor mandar o navegador de
+/// volta para http://127.0.0.1:N/?code=... (ou ?googleError=...). Devolve o código, que a
+/// interface troca pelo token em /api/auth/google/finish.
+#[tauri::command]
+async fn google_login(app: tauri::AppHandle, server_url: String) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::time::Duration;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let url = format!("{}/api/auth/google/start?port={port}", server_url.trim_end_matches('/'));
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(5 * 60);
+        loop {
+            if std::time::Instant::now() > deadline {
+                return Err("O login com Google demorou demais. Tente de novo.".to_string());
+            }
+            let mut stream = match listener.accept() {
+                Ok((s, _)) => s,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(200));
+                    continue;
+                }
+                Err(e) => return Err(e.to_string()),
+            };
+            let _ = stream.set_nonblocking(false);
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]);
+            // "GET /?code=... HTTP/1.1"
+            let path = req.split_whitespace().nth(1).unwrap_or("");
+            let query = path.split_once('?').map(|(_, q)| q).unwrap_or("");
+            let mut code = None;
+            let mut error = None;
+            for pair in query.split('&') {
+                let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+                let v = percent_decode(v);
+                match k {
+                    "code" => code = Some(v),
+                    "googleError" => error = Some(v),
+                    _ => {}
+                }
+            }
+            if code.is_none() && error.is_none() {
+                // favicon e afins: ignora e continua esperando.
+                let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                continue;
+            }
+            let msg = if code.is_some() { "Pronto! Pode fechar esta aba e voltar para o Line." } else { "Não deu para entrar. Volte para o Line e tente de novo." };
+            let html = format!(
+                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Line</title></head>\
+                 <body style=\"font-family:system-ui,sans-serif;background:#0f0f12;color:#e6e6ea;display:flex;\
+                 align-items:center;justify-content:center;height:100vh;margin:0\"><h2>{msg}</h2></body></html>"
+            );
+            let _ = stream.write_all(
+                format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes(),
+            );
+            return match (code, error) {
+                (Some(c), _) => Ok(c),
+                (_, Some(e)) => Err(e),
+                _ => unreachable!(),
+            };
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .inspect(|_| {
+        // Traz a janela do Line de volta para a frente.
+        if let Some(w) = app.get_webview_window(MAIN) {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    })
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < bytes.len() => {
+                match std::str::from_utf8(&bytes[i + 1..i + 3]).ok().and_then(|h| u8::from_str_radix(h, 16).ok()).ok_or(()) {
+                    Ok(b) => {
+                        out.push(b);
+                        i += 2;
+                    }
+                    Err(_) => out.push(b'%'),
+                }
+            }
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Botão "Procurar atualizações" das Configurações: mesma janelinha da abertura.
 #[tauri::command]
 async fn update_run(app: tauri::AppHandle) -> Result<(), String> {
@@ -389,6 +491,7 @@ pub fn run() {
             update_check,
             update_install,
             update_run,
+            google_login,
             #[cfg(any(windows, target_os = "macos"))]
             screen::screen_sources,
             #[cfg(any(windows, target_os = "macos"))]

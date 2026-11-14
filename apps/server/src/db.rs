@@ -197,6 +197,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE messages ADD COLUMN requires TEXT NOT NULL DEFAULT '';
 "#,
+    // Conta do Google vinculada ("Entrar com Google"): o `sub` do Google.
+    r#"
+  ALTER TABLE users ADD COLUMN google_id TEXT;
+  CREATE UNIQUE INDEX users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

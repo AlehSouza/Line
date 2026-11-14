@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod captcha;
 pub mod gifs;
+pub mod google;
 pub mod embeds;
 pub mod db;
 pub mod errors;
@@ -49,6 +50,8 @@ pub struct App {
     pub mailer: Option<mail::Mailer>,
     /// Pedidos de recuperação de senha por IP.
     pub resets: captcha::SignupLimiter,
+    /// "Entrar com Google" (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET). Sem elas, o botão não aparece.
+    pub google: Option<google::Google>,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -221,6 +224,7 @@ pub fn build(
         embeds: embeds::EmbedCache::default(),
         mailer: mail::Mailer::from_env(),
         resets: captcha::SignupLimiter::with(5, std::time::Duration::from_secs(60 * 60)),
+        google: google::Google::from_env(),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

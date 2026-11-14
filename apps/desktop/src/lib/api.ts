@@ -141,7 +141,8 @@ export const api = {
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
     request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),
-  authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean }>('GET', '/auth/config'),
+  authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean; google?: boolean }>('GET', '/auth/config'),
+  googleFinish: (code: string) => request<AuthResponse>('POST', '/auth/google/finish', { code }),
   forgotPassword: (email: string) => request<void>('POST', '/auth/forgot', { email }),
   resetPassword: (token: string, newPassword: string) =>
     request<{ username: string }>('POST', '/auth/reset', { token, newPassword }),

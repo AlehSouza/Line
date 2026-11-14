@@ -87,6 +87,19 @@ export async function authenticate(
   await bootstrap();
 }
 
+/** "Entrar com Google": troca o código de uso único (que voltou do Google) pelo token. */
+export async function authenticateWithGoogle(serverUrl: string, code: string) {
+  const url = serverUrl.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
+  configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
+  const res = await api.googleFinish(code);
+  storage.set(STORAGE_URL, url);
+  storage.set(STORAGE_TOKEN, res.token);
+  configureApi({ token: res.token });
+  useLine.setState({ serverUrl: url, token: res.token });
+  actions.setMe(res.user);
+  await bootstrap();
+}
+
 export function logout() {
   unbindVoice();
   socket?.disconnect();
