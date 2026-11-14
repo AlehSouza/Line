@@ -201,6 +201,22 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
 
+  // Seta para cima com o campo vazio: edita a minha última mensagem deste canal.
+  useEffect(() => {
+    const onEditLast = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== channel.id) return;
+      const list = useLine.getState().messages[channel.id]?.items ?? [];
+      const last = [...list].reverse().find((m) => m.author.id === meId);
+      if (!last) return;
+      setEditing(last.id);
+      window.setTimeout(() => {
+        scroller.current?.querySelector(`[data-mid="${last.id}"]`)?.scrollIntoView({ block: 'nearest' });
+      }, 30);
+    };
+    window.addEventListener('line:edit-last', onEditLast);
+    return () => window.removeEventListener('line:edit-last', onEditLast);
+  }, [channel.id, meId]);
+
   const items = bucket?.items ?? EMPTY;
   const content = useRef<HTMLDivElement>(null);
   const isThread = channel.type === 'thread';
@@ -400,12 +416,22 @@ function MessageRow({
   const showThreadAction = canThread && !message.thread;
   const mentionsMe = !mine && messageMentionsMe(message);
 
+  // Ao entrar em edição (botão, menu ou seta para cima), começa do texto atual.
+  useEffect(() => {
+    if (editing) setDraft(mentionsToText(message.content, serverId));
+  }, [editing]);
+
+  function stopEditing() {
+    onDoneEditing();
+    window.setTimeout(() => document.querySelector<HTMLTextAreaElement>('textarea[data-composer]')?.focus(), 0);
+  }
+
   async function saveEdit() {
     const content = textToMentions(draft.trim(), serverId);
-    if ((!content && !message.attachments.length) || content === message.content) return onDoneEditing();
+    if ((!content && !message.attachments.length) || content === message.content) return stopEditing();
     try {
       await api.editMessage(message.id, content);
-      onDoneEditing();
+      stopEditing();
     } catch (e) {
       showError(e);
     }
@@ -502,12 +528,28 @@ function MessageRow({
                   e.preventDefault();
                   void saveEdit();
                 }
-                if (e.key === 'Escape') onDoneEditing();
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  stopEditing();
+                }
+              }}
+              onFocus={(e) => {
+                const end = e.currentTarget.value.length;
+                e.currentTarget.setSelectionRange(end, end);
               }}
               rows={Math.min(8, draft.split('\n').length)}
               className="w-full resize-none rounded-lg bg-raise px-3 py-2 text-[15px] outline-none"
             />
-            <p className="text-xs text-muted">Esc para cancelar · Enter para salvar</p>
+            <p className="mt-1 text-xs text-muted">
+              esc para{' '}
+              <button type="button" onClick={stopEditing} className="text-accent hover:underline">
+                cancelar
+              </button>{' '}
+              • enter para{' '}
+              <button type="button" onClick={() => void saveEdit()} className="text-accent hover:underline">
+                salvar
+              </button>
+            </p>
           </div>
         ) : (
           message.content &&
@@ -999,6 +1041,11 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (mentions.current?.onKeyDown(e)) return;
+    if (e.key === 'ArrowUp' && !text && !pending.length && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('line:edit-last', { detail: channel.id }));
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send();
@@ -1082,6 +1129,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         ) : (
         <textarea
           ref={ref}
+          data-composer
           value={text}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onChange={(e) => {

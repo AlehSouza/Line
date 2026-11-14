@@ -427,7 +427,13 @@ pub struct SendMessage {
 }
 
 impl SendMessage {
-    pub fn check(mut self) -> ApiResult<Self> {
+    pub fn check(self) -> ApiResult<Self> {
+        let has_attachments = !self.attachment_ids.is_empty();
+        self.check_with(has_attachments)
+    }
+
+    /// Valida permitindo texto vazio quando a mensagem tem (ou já tinha) anexos.
+    pub fn check_with(mut self, has_attachments: bool) -> ApiResult<Self> {
         self.content = self.content.trim().to_string();
         self.requires.retain(|f| {
             !f.is_empty() && f.len() <= 32 && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
@@ -438,7 +444,7 @@ impl SendMessage {
         if self.attachment_ids.len() > 10 {
             return Err(validation("No máximo 10 anexos por mensagem"));
         }
-        if self.content.is_empty() && self.attachment_ids.is_empty() {
+        if self.content.is_empty() && !has_attachments {
             return Err(validation("Mensagem vazia"));
         }
         if len(&self.content) > 4000 {

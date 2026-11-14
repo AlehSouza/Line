@@ -1407,10 +1407,7 @@ async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if message.author.id != me {
         return Err(forbidden("Você só pode editar suas próprias mensagens"));
     }
-    let input = body::<validate::SendMessage>(&b)?.check()?;
-    if input.content.is_empty() && message.attachments.is_empty() {
-        return Err(validation("Mensagem vazia"));
-    }
+    let input = body::<validate::SendMessage>(&b)?.check_with(!message.attachments.is_empty())?;
     let updated = q.edit_message(&message.id, &input.content);
     app.to_channel(&q, &message.channel_id, "message:update", &updated);
     ok(updated)
