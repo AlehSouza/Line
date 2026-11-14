@@ -13,6 +13,7 @@ export type Modal =
   | { kind: 'create-channel'; serverId: string; categoryId: string | null }
   | { kind: 'create-category'; serverId: string }
   | { kind: 'edit-category'; categoryId: string }
+  | { kind: 'edit-channel'; channelId: string }
   | { kind: 'server-settings'; serverId: string; section?: 'overview' | 'roles' }
   | { kind: 'nickname'; serverId: string; userId: string }
   | { kind: 'invite'; serverId: string }
