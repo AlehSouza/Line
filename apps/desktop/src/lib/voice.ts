@@ -198,6 +198,21 @@ let mic: MediaStream | null = null;
 const peers = new Map<string, Peer>();
 const audioEls = new Map<string, HTMLAudioElement>();
 
+// ---------- sons de entrar/sair da chamada ----------
+
+const callSounds: Partial<Record<'enter' | 'left', HTMLAudioElement>> = {};
+
+function playCallSound(kind: 'enter' | 'left') {
+  try {
+    // Caminho relativo: funciona no app (raiz) e na web (/app/).
+    const el = (callSounds[kind] ??= new Audio(new URL(`sounds/${kind}.mp3`, document.baseURI).href));
+    el.currentTime = 0;
+    void el.play().catch(() => {});
+  } catch {
+    /* sem áudio */
+  }
+}
+
 // ---------- ligação com o socket ----------
 
 export function bindVoiceSocket(s: LineSocket, userId: string) {
@@ -215,6 +230,16 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
   });
 
   s.on('voice:update', ({ userId: uid, channelId, state }) => {
+    // Som de entrada/saída para quem está no mesmo canal (o meu próprio toca no joinVoice/leaveVoice).
+    if (uid !== myId) {
+      const here = getV().channelId;
+      const before = getV().states[uid]?.channelId ?? null;
+      const after = state?.channelId ?? null;
+      if (here && before !== after) {
+        if (after === here) playCallSound('enter');
+        else if (before === here) playCallSound('left');
+      }
+    }
     setV((v) => {
       const states = { ...v.states };
       if (state) states[uid] = state;
@@ -318,6 +343,7 @@ export async function joinVoice(channelId: string) {
     if (!mic) await openMic();
     applyMute();
     await rejoin(channelId);
+    playCallSound('enter');
   } catch (err) {
     const name = (err as Error).name;
     const message =
@@ -345,6 +371,7 @@ async function rejoin(channelId: string) {
 }
 
 export async function leaveVoice(notify = true) {
+  if (getV().channelId && !getV().connecting) playCallSound('left');
   if (notify) socket?.emit('voice:leave');
   if (cameraOpening) cameraCancelled = true;
   cleanupPeers();
