@@ -29,6 +29,8 @@ export function Modals() {
       return <CreateCategoryModal serverId={modal.serverId} onClose={close} />;
     case 'edit-category':
       return <EditCategoryModal categoryId={modal.categoryId} onClose={close} />;
+    case 'edit-channel':
+      return <EditChannelModal channelId={modal.channelId} onClose={close} />;
     case 'nickname':
       return <NicknameDialog serverId={modal.serverId} userId={modal.userId} onClose={close} />;
     case 'server-settings':
@@ -292,6 +294,73 @@ function CreateChannelModal({
           <Button type="submit" disabled={busy || !name.trim()}>
             Criar canal
           </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: () => void }) {
+  const channel = useLine((s) => s.channels[channelId]);
+  const [name, setName] = useState(channel?.name ?? '');
+  const [topic, setTopic] = useState(channel?.topic ?? '');
+  const { busy, error, run } = useAction();
+  if (!channel) return null;
+  const isText = channel.type !== 'voice';
+  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '');
+  return (
+    <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => {
+            actions.upsertChannel(await api.updateChannel(channelId, { name: name.trim(), topic: topic.trim() }));
+            onClose();
+          });
+        }}
+        className="space-y-5"
+      >
+        <div>
+          <p className="mb-2 text-sm font-semibold text-soft">Nome do canal</p>
+          <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 focus-within:border-accent">
+            {isText ? <Icons.Hash size={18} className="text-muted" /> : <Icons.Speaker size={18} className="text-muted" />}
+            <input
+              autoFocus
+              required
+              value={name}
+              maxLength={100}
+              onChange={(e) => setName(isText ? e.target.value.replace(/\s/g, '-').toLowerCase() : e.target.value)}
+              className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
+            />
+          </div>
+        </div>
+        <Field label="Descrição do canal" hint="Aparece ao lado do nome, no topo do canal.">
+          <Input value={topic} maxLength={1024} placeholder="Diga a todos como usar este canal" onChange={(e) => setTopic(e.target.value)} />
+        </Field>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="danger"
+            disabled={busy}
+            onClick={async () => {
+              if (!(await confirmDialog({ title: `Excluir ${isText ? '#' : ''}${channel.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true }))) return;
+              run(async () => {
+                await api.deleteChannel(channelId);
+                onClose();
+              });
+            }}
+          >
+            Excluir
+          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={busy || !name.trim() || !changed}>
+              Salvar
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>

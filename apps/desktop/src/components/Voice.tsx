@@ -373,6 +373,12 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           <header className="flex h-12 shrink-0 items-center gap-2 px-4">
             <Icons.Speaker size={20} className="text-soft" />
             <h1 className="font-bold">{title}</h1>
+            {channel.topic && (
+              <>
+                <span className="mx-2 h-6 w-px bg-edge" />
+                <p className="truncate text-sm text-muted">{channel.topic}</p>
+              </>
+            )}
           </header>
         )}
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
@@ -404,6 +410,12 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
         <header className="flex h-12 shrink-0 items-center gap-2 px-4">
           <Icons.Speaker size={20} className="text-muted" />
           <h1 className="font-bold">{title}</h1>
+          {channel.topic && (
+            <>
+              <span className="mx-2 h-6 w-px bg-edge" />
+              <p className="truncate text-sm text-muted">{channel.topic}</p>
+            </>
+          )}
         </header>
       )}
 

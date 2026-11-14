@@ -78,7 +78,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 </span>
               )}
             </span>
-            <span className={cx('truncate', hasUnread && 'font-semibold')}>{c.name}</span>
+            <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-9')}>{c.name}</span>
           </button>
           {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
           {c.type === 'voice' && (
@@ -86,6 +86,15 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               channelId={c.id}
               className={cx('pointer-events-none absolute top-1/2 right-2 -translate-y-1/2', canChannels && 'group-hover:hidden')}
             />
+          )}
+          {canChannels && (
+            <button
+              title="Editar canal"
+              onClick={() => actions.openModal({ kind: 'edit-channel', channelId: c.id })}
+              className="absolute top-1/2 right-6 hidden -translate-y-1/2 text-muted group-hover:block hover:text-fg"
+            >
+              <Icons.Settings size={14} />
+            </button>
           )}
           {canChannels && (
             <button
@@ -280,6 +289,11 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
     },
     { label: 'Copiar ID do canal', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(c.id) },
     canChannels && 'sep',
+    canChannels && {
+      label: 'Editar canal',
+      icon: <Icons.Settings size={15} />,
+      onClick: () => actions.openModal({ kind: 'edit-channel', channelId: c.id }),
+    },
     canChannels && {
       label: 'Excluir canal',
       icon: <Icons.Trash size={15} />,
