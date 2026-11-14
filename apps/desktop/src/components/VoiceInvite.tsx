@@ -312,45 +312,53 @@ export function VoiceInviteCard({ invite }: { invite: VoiceInviteData }) {
 
   return (
     <div className="mt-1 max-w-sm">
-      <div className="overflow-hidden rounded-xl border border-edge bg-rail">
-        <div className="flex items-center gap-2 px-4 py-3">
+      <div className="overflow-hidden rounded-xl border border-edge bg-side">
+        <div className="flex items-center gap-2.5 bg-raise px-4 py-3">
           <Icons.Speaker
             size={18}
-            className={list.length ? "text-online" : "text-muted"}
+            className={list.length ? "shrink-0 text-online" : "shrink-0 text-muted"}
           />
-          <span className="flex-1 truncate font-semibold">{name}</span>
-          <CallTimer channelId={invite.channelId} />
+          <span className="min-w-0 flex-1 truncate font-semibold text-fg">
+            {name}
+          </span>
+          <CallTimer channelId={invite.channelId} className="text-sm" />
         </div>
-        <div className="space-y-3 border-t border-edge px-4 py-3">
-          {isMember ? (
-            list.length ? (
-              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+        <div className="space-y-3 px-4 py-3">
+          {isMember &&
+            (list.length ? (
+              <ul className="space-y-2">
                 {list.map((p) => {
                   const u = users[p.userId];
                   return (
-                    <span
+                    <li
                       key={p.userId}
-                      className="flex items-center gap-1.5 text-sm text-soft"
+                      className="flex min-w-0 items-center gap-2 text-sm text-soft"
                     >
                       <Avatar
                         name={u?.displayName ?? "?"}
                         color={u?.avatarColor ?? "#3a3a42"}
                         src={u?.avatarUrl}
-                        size={20}
+                        size={24}
                       />
-                      {u?.displayName ?? "Alguém"}
-                    </span>
+                      <span className="truncate">
+                        {u?.displayName ?? "Alguém"}
+                      </span>
+                      {u?.username && (
+                        <span className="shrink-0 rounded bg-raise px-1.5 py-px text-[11px] font-semibold text-muted">
+                          @{u.username}
+                        </span>
+                      )}
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             ) : (
               <p className="text-sm text-muted">Ninguém na chamada agora.</p>
-            )
-          ) : null}
+            ))}
           <button
             disabled={busy || inCall}
             onClick={() => void join()}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent py-2.5 font-semibold text-on-accent hover:bg-accent-strong disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-online py-2.5 font-semibold text-white transition-[filter] hover:brightness-110 disabled:opacity-60"
           >
             <Icons.Speaker size={18} />
             {inCall
@@ -361,12 +369,10 @@ export function VoiceInviteCard({ invite }: { invite: VoiceInviteData }) {
           </button>
         </div>
       </div>
-      {!isMember && (
-        <p className="mt-1 flex items-center gap-1 text-xs text-muted">
-          <Icons.EyeOff size={12} /> Só membros do servidor veem quem está no
-          canal de voz
-        </p>
-      )}
+      <p className="mt-1 flex items-center gap-1 text-xs text-muted">
+        <Icons.EyeOff size={12} /> Apenas membros do servidor podem ver quem
+        está em um canal de voz
+      </p>
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
