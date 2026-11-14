@@ -1,5 +1,8 @@
 'use client';
 
+import { MusicBotInVoice } from './Music';
+import { useMusic } from '@/lib/music';
+
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
 import { type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
@@ -1128,10 +1131,12 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
   const list = participants(states, channelId);
   const canInvite = !!serverId && myChannel === channelId;
   const [menu, setMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
-  if (!list.length && !canInvite) return null;
+  const hasMusic = useMusic((m) => !!m.states[channelId]);
+  if (!list.length && !canInvite && !hasMusic) return null;
   return (
     <div className="ml-6 space-y-1 pt-0.5 pb-2">
       <VoiceStatusLine channelId={channelId} />
+      <MusicBotInVoice channelId={channelId} serverId={serverId} />
       {list.map((p) => {
         const u = users[p.userId];
         return (

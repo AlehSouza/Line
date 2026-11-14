@@ -17,6 +17,36 @@ export interface PublicUser {
   bannerUrl?: string | null;
   pronouns?: string;
   thought?: string | null;
+  /** Bot (ex.: o bot de música do servidor). */
+  bot?: boolean;
+}
+
+/** Uma faixa na fila do bot de música. */
+export interface MusicTrack {
+  uid: string;
+  videoId: string;
+  title: string;
+  author: string;
+  /** Segundos (null = ainda não se sabe). */
+  duration: number | null;
+  addedBy: string;
+}
+
+/** Estado do bot de música num canal de voz. */
+export interface MusicState {
+  serverId: string;
+  channelId: string;
+  textChannelId: string;
+  /** Quem deu o primeiro /play: controla tudo sem votação. */
+  djId: string;
+  tracks: MusicTrack[];
+  index: number;
+  paused: boolean;
+  /** Posição da faixa atual quando o servidor mandou o estado. */
+  positionMs: number;
+  votes: Partial<Record<'skip' | 'prev' | 'pause', string[]>>;
+  listeners: number;
+  needed: number;
 }
 
 export interface SelfUser extends PublicUser {

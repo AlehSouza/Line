@@ -59,6 +59,8 @@ pub struct UserRow {
     pub banner_id: Option<String>,
     pub pronouns: String,
     pub thought: Option<String>,
+    /// Bot de música: o servidor a que ele pertence.
+    pub bot_server_id: Option<String>,
 }
 
 impl UserRow {
@@ -78,11 +80,12 @@ impl UserRow {
             banner_id: r.get("banner_id").unwrap_or(None),
             pronouns: r.get("pronouns").unwrap_or_default(),
             thought: r.get("thought").unwrap_or(None),
+            bot_server_id: r.get("bot_server_id").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
@@ -297,7 +300,8 @@ impl Q<'_> {
     }
 
     pub fn to_public_user(&self, row: &UserRow) -> PublicUser {
-        let presence = self.presence_of(&row.id, &row.status);
+        // O bot de música está sempre online.
+        let presence = if row.bot_server_id.is_some() { "online" } else { self.presence_of(&row.id, &row.status) };
         PublicUser {
             id: row.id.clone(),
             username: row.username.clone(),
@@ -315,6 +319,7 @@ impl Q<'_> {
             banner_url: row.banner_id.as_deref().map(|id| self.profile_image_url(id)),
             pronouns: row.pronouns.clone(),
             thought: if presence == "offline" { None } else { row.thought.clone() },
+            bot: row.bot_server_id.is_some(),
         }
     }
 
@@ -459,6 +464,29 @@ impl Q<'_> {
             params![id, username, email, display_name, password_hash, random_color(), now_iso()],
         ));
         self.self_user(&id).unwrap()
+    }
+
+    /// Bot de música do servidor (cria na primeira vez). O bool diz se ele acabou de virar membro.
+    pub fn music_bot(&self, server_id: &str) -> (String, bool) {
+        let existing: Option<String> = ok(self
+            .c
+            .query_row("SELECT id FROM users WHERE bot_server_id = ?", [server_id], |r| r.get(0))
+            .optional());
+        let id = existing.unwrap_or_else(|| {
+            let id = new_id();
+            let username = format!("musica-{}", &id[id.len().saturating_sub(8)..]).to_lowercase();
+            ok(self.c.execute(
+                "INSERT INTO users (id, username, display_name, password_hash, avatar_color, bio, created_at, bot_server_id)
+                 VALUES (?, ?, 'Line Música', '!', '#7c6af2', 'Toco músicas do YouTube no canal de voz. Use /play [link] no chat.', ?, ?)",
+                params![id, username, now_iso(), server_id],
+            ));
+            id
+        });
+        let joined = !self.is_member(server_id, &id);
+        if joined {
+            self.add_member(server_id, &id);
+        }
+        (id, joined)
     }
 
     pub fn update_user(&self, id: &str, patch: ProfilePatch) -> SelfUser {
@@ -1263,6 +1291,7 @@ impl Q<'_> {
                         banner_url: None,
                         pronouns: String::new(),
                         thought: None,
+                        bot: false,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,

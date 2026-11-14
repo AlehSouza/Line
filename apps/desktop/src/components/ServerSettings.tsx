@@ -1,14 +1,15 @@
 'use client';
 
 import { hasPerm, Perm, PERMISSION_GROUPS, type Role } from '@line/shared';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { ServerOverview } from './Modals';
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { confirmDialog } from './Dialogs';
+import { MusicSettings } from './Music';
 
-type Section = 'overview' | 'roles' | 'members';
+type Section = 'overview' | 'roles' | 'members' | 'music';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -40,6 +41,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
     { id: 'overview', label: 'Perfil do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
+    { id: 'music', label: 'Música', show: canServer },
   ];
   const visible = nav.filter((n) => n.show);
   const [section, setSection] = useState<Section>(initial && visible.some((n) => n.id === initial) ? initial : (visible[0]?.id ?? 'members'));
@@ -65,8 +67,9 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
           <p className="truncate px-3 pt-2 pb-1 text-xs font-bold tracking-wide text-muted uppercase">{server.name}</p>
           <nav className="flex flex-col gap-0.5">
             {visible.map((n) => (
+              <Fragment key={n.id}>
+              {n.id === 'music' && <p className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Integrações</p>}
               <button
-                key={n.id}
                 onClick={() => {
                   setSection(n.id);
                   setEditing(null);
@@ -78,6 +81,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
               >
                 {n.label}
               </button>
+              </Fragment>
             ))}
           </nav>
           {visible.length === 0 && <p className="px-3 py-2 text-sm text-muted">Você não tem permissão para mudar nada aqui.</p>}
@@ -95,6 +99,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
             <RoleEditor serverId={serverId} roleId={editing} onSelect={setEditing} onBack={() => setEditing(null)} />
           )}
           {section === 'members' && canMembers && <MembersSection serverId={serverId} />}
+          {section === 'music' && canServer && <MusicSettings serverId={serverId} />}
         </main>
 
         <button

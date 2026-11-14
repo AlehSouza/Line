@@ -159,6 +159,7 @@ impl App {
                     &json!({ "channelId": state.channel_id, "status": null }),
                 );
             }
+            self.music_on_voice_left(q, &state.channel_id);
         }
     }
 
@@ -234,6 +235,7 @@ async fn on_connect(
         let (states, statuses) = app.voice_snapshot(&q, &user_id);
         let _ = s.emit("voice:snapshot", &states);
         let _ = s.emit("voice:statuses", &statuses);
+        let _ = s.emit("music:snapshot", &app.music_snapshot(&q, &user_id));
     }
 
     s.on("typing:start", typing_start);
@@ -245,6 +247,9 @@ async fn on_connect(
     s.on("voice:status", voice_status);
     s.on("voice:moderate", voice_moderate);
     s.on("voice:sync", voice_sync);
+    s.on("music:control", music_control);
+    s.on("music:report", music_report);
+    s.on("music:sync", music_sync);
     s.on_disconnect(on_disconnect);
 }
 
@@ -386,6 +391,23 @@ async fn voice_sync(State(app): State<AppRef>, Extension(UserId(me)): Extension<
     let q = app.store.q();
     let (states, statuses) = app.voice_snapshot(&q, &me);
     let _ = ack.send(&json!({ "states": states, "statuses": statuses }));
+}
+
+async fn music_control(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+    if let Ok(d) = d {
+        crate::music::control(app.get(), &me, &d);
+    }
+}
+
+async fn music_report(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+    if let Ok(d) = d {
+        crate::music::report(app.get(), &me, &d);
+    }
+}
+
+async fn music_sync(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, ack: AckSender) {
+    let q = app.store.q();
+    let _ = ack.send(&app.music_snapshot(&q, &me));
 }
 
 async fn voice_leave(

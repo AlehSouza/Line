@@ -6,7 +6,7 @@
  * que não têm o nome aqui, mostram "Você precisa atualizar o seu aplicativo para interagir com isso"
  * no lugar do conteúdo. O servidor marca sozinho as enquetes com "poll".
  */
-export const CLIENT_FEATURES: readonly string[] = ['poll', 'audio'];
+export const CLIENT_FEATURES: readonly string[] = ['poll', 'audio', 'music'];
 
 /** Recursos que a mensagem pede e este app não conhece (vazio = dá para mostrar). */
 export function missingFeatures(requires: readonly string[] | undefined): string[] {

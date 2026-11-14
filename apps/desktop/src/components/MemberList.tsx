@@ -6,6 +6,7 @@ import { SearchBox, SearchResults } from './SearchPanel';
 import { actions, useLine } from '@/lib/store';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { Avatar, cx, ListSkeleton } from './ui';
+import { BotTag, MusicPlayer } from './Music';
 
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
@@ -53,6 +54,7 @@ export function MemberList({ serverId }: { serverId: string }) {
             <span className="min-w-0">
               <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: colorOf(m.roleIds) }}>
                 {m.nickname || m.user.displayName}
+                {m.user.bot && <BotTag />}
                 {m.userId === ownerId && (
                   <span title="Dono do servidor" className="text-sun">
                     ★
@@ -87,6 +89,7 @@ export function ServerSidePanel({ serverId }: { serverId: string }) {
           <SearchBox serverId={serverId} active={!!query} onSearch={setQuery} onClear={() => setQuery(null)} />
         </div>
       </div>
+      {!query && <MusicPlayer serverId={serverId} />}
       {query ? <SearchResults key={query} serverId={serverId} query={query} /> : <MemberList serverId={serverId} />}
     </aside>
   );
