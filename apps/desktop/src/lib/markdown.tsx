@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { MentionContext } from '@/components/Mentions';
+import { UserMention } from '@/components/UserCard';
 
 /**
  * Markdown simples e seguro (sem HTML cru):
@@ -47,10 +48,17 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
       );
     else if (m[7]) {
       const special = tok === '@everyone' || tok === '@here';
+      const cls = tok.slice(1) === me || special ? 'mention' : 'font-semibold text-accent';
       nodes.push(
-        <span key={k} className={tok.slice(1) === me || special ? 'mention' : 'font-semibold text-accent'}>
-          {tok}
-        </span>,
+        special ? (
+          <span key={k} className={cls}>
+            {tok}
+          </span>
+        ) : (
+          <UserMention key={k} username={tok.slice(1)} className={cls}>
+            {tok}
+          </UserMention>
+        ),
       );
     } else if (m[8]) {
       const role = ctx?.roles.find((r) => r.id === tok.slice(3, -1));
