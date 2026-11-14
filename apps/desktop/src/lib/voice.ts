@@ -773,6 +773,14 @@ function stopScreen() {
   if (!screen) return;
   removeStreamFromPeers(screen);
   watchers.clear();
+  if (myId) {
+    const me = myId;
+    setV((v) => {
+      const screenViewers = { ...v.screenViewers };
+      delete screenViewers[me];
+      return { screenViewers };
+    });
+  }
   playCallSound('close_transmission');
   stopThumbs();
   stopStream(screen);
@@ -849,6 +857,8 @@ function send(to: string, signal: VoiceSignal) {
 function sendViewers(to?: string) {
   const ids = [...watchers];
   for (const id of to ? [to] : peers.keys()) send(id, { type: 'viewers', ids });
+  // Eu também vejo quem assiste à minha tela.
+  if (myId) setV((v) => ({ screenViewers: { ...v.screenViewers, [myId as string]: ids } }));
 }
 
 function createPeer(peerId: string): Peer {

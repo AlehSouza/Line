@@ -31,7 +31,7 @@ import {
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select, useAvatarTint } from './ui';
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
-import { VoiceUserMenu } from './VoiceUserMenu';
+import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
 import { fileUrl } from '@/lib/api';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
@@ -135,37 +135,105 @@ function useTiles(channelId: string) {
   }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching]);
 }
 
-/** Som e "parar de assistir" da tela de outra pessoa. Só mudam para mim. */
-function ScreenControls({ userId }: { userId: string }) {
+/** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
+function ScreenMenu({ userId }: { userId: string }) {
   const muted = useVoice((v) => !!v.screenMuted[userId]);
   const volume = useVoice((v) => v.screenVolume[userId] ?? 1);
-  const silent = muted || volume === 0;
+  const [pos, setPos] = useState<{ right: number; bottom: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pos) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!box.current?.contains(t) && !btn.current?.contains(t)) setPos(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPos(null);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [pos]);
   const stop = (e: SyntheticEvent) => e.stopPropagation();
   return (
-    <div
-      onClick={stop}
-      onContextMenu={stop}
-      className="absolute top-2 left-2 z-20 hidden items-center gap-1 rounded-md bg-black/70 p-1 group-hover:flex"
-    >
+    <div onClick={stop} onContextMenu={stop} onKeyDown={stop}>
       <button
-        title={silent ? 'Ativar som da transmissão' : 'Silenciar transmissão'}
-        onClick={() => (volume === 0 ? setScreenVolume(userId, 1) : toggleScreenMute(userId))}
-        className={cx('rounded p-1 hover:bg-white/15', silent && 'text-danger')}
+        ref={btn}
+        title="Mais opções"
+        onClick={() => {
+          const r = btn.current?.getBoundingClientRect();
+          if (!r) return;
+          setPos((p) => (p ? null : { right: window.innerWidth - r.right, bottom: window.innerHeight - r.top + 6 }));
+        }}
+        className={cx(
+          'absolute right-2 bottom-2 z-20 items-center justify-center rounded-full bg-black/70 p-1.5 text-white hover:bg-black/90',
+          pos ? 'flex' : 'hidden group-hover:flex',
+        )}
       >
-        {silent ? <Icons.SpeakerOff size={16} /> : <Icons.Speaker size={16} />}
+        <Icons.More size={18} />
       </button>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        title="Volume da transmissão"
-        value={muted ? 0 : Math.round(volume * 100)}
-        onChange={(e) => setScreenVolume(userId, Number(e.target.value) / 100)}
-        className="w-24 accent-accent"
-      />
-      <button title="Sair da transmissão" onClick={() => setWatching(userId, false)} className="rounded p-1 hover:bg-white/15">
-        <Icons.EyeOff size={16} />
-      </button>
+      {pos && (
+        <div
+          ref={box}
+          style={pos}
+          className="fixed z-50 w-56 cursor-default space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl"
+        >
+          <MenuItem onClick={() => setWatching(userId, false)}>Parar de assistir</MenuItem>
+          <MenuItem onClick={() => toggleScreenMute(userId)} check={muted}>
+            Silenciar
+          </MenuItem>
+          <MenuSep />
+          <div className="px-2.5 py-1.5">
+            <p className="mb-1.5 flex justify-between font-medium text-soft">
+              Volume da transmissão
+              <span className="text-xs text-muted">{muted ? 0 : Math.round(volume * 100)}%</span>
+            </p>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={muted ? 0 : Math.round(volume * 100)}
+              onChange={(e) => setScreenVolume(userId, Number(e.target.value) / 100)}
+              className="w-full accent-accent"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Ícone de pessoas acima da tela (por fora), no hover: quantos e quem está assistindo agora. */
+function ScreenViewers({ userId, serverId }: { userId: string; serverId: string | null }) {
+  const ids = useVoice((v) => v.screenViewers[userId]);
+  const users = useLine((s) => s.users);
+  const members = useLine((s) => (serverId ? s.members[serverId] : undefined));
+  const people = (ids ?? []).map((id) => ({
+    id,
+    name: members?.[id]?.nickname || users[id]?.displayName || 'Alguém',
+    user: users[id],
+  }));
+  return (
+    // pb-1.5 faz a ponte até o quadro: o mouse passa do vídeo para o ícone sem ele sumir.
+    <div className="group/viewers absolute right-0 bottom-full z-30 hidden pb-1.5 group-hover/stream:block">
+      <span className="flex items-center gap-1 rounded-md bg-raise px-2 py-1 text-xs font-semibold text-soft shadow">
+        <Icons.Users size={14} /> {people.length}
+      </span>
+      <div className="absolute top-full right-0 hidden w-52 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl group-hover/viewers:block">
+        <p className="px-1.5 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Assistindo agora</p>
+        {people.length === 0 ? (
+          <p className="px-1.5 py-1 text-muted">Ninguém assistindo ainda.</p>
+        ) : (
+          people.map((p) => (
+            <div key={p.id} className="flex items-center gap-2 rounded-md px-1.5 py-1">
+              <Avatar name={p.name} color={p.user?.avatarColor ?? '#3a3a42'} src={p.user?.avatarUrl} size={22} />
+              <span className="truncate text-soft">{p.name}</span>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -191,7 +259,11 @@ function TileView({
   const tint = useAvatarTint(tile.user?.avatarUrl, tile.user?.avatarColor ?? '#3a3a42');
   // Clique direito no quadro: o mesmo menu da pessoa na lista do canal de voz.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // Tela de alguém da minha chamada: no hover, mostra por fora (acima) quem está assistindo.
+  const showViewers = tile.kind === 'screen' && inSameCall;
   return (
+    <div className={cx('group/stream relative', big && 'h-full')}>
+    {showViewers && <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />}
     <div
       role="button"
       tabIndex={0}
@@ -267,7 +339,7 @@ function TileView({
           <Icons.MicOff size={14} className="text-danger" />
         ) : null}
       </span>
-      {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenControls userId={tile.state.userId} />}
+      {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenMenu userId={tile.state.userId} />}
       {onClick && (
         <span className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 group-hover:block">
           <Icons.Expand size={14} />
@@ -285,6 +357,7 @@ function TileView({
           />
         </div>
       )}
+    </div>
     </div>
   );
 }
@@ -318,7 +391,8 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
   width = Math.floor(Math.min(width, 960));
 
   return (
-    <div ref={ref} className="flex min-h-0 flex-1 flex-wrap content-center items-center justify-center overflow-hidden" style={{ gap: GAP }}>
+    // Sem overflow-hidden: o ícone de quem assiste fica por fora, acima da tela.
+    <div ref={ref} className="flex min-h-0 flex-1 flex-wrap content-center items-center justify-center" style={{ gap: GAP }}>
       {width > 0 &&
         tiles.map((t) => (
           <div key={t.key} style={{ width }}>
@@ -330,7 +404,7 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
 }
 
 /** Quadro em destaque: com a proporção do vídeo conhecida, encolhe até o tamanho do vídeo (sem faixas pretas). */
-function FitBox({ aspect, children }: { aspect: number | null; children: ReactNode }) {
+function FitBox({ aspect, children, className }: { aspect: number | null; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -346,7 +420,7 @@ function FitBox({ aspect, children }: { aspect: number | null; children: ReactNo
     size = { width: Math.floor(width), height: Math.floor(width / aspect) };
   }
   return (
-    <div ref={ref} className="flex min-h-0 flex-1 items-center justify-center">
+    <div ref={ref} className={cx('flex min-h-0 flex-1 items-center justify-center', className)}>
       <div style={size}>{children}</div>
     </div>
   );
@@ -443,7 +517,8 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </div>
         ) : focused ? (
           <>
-            <FitBox aspect={focused.kind === 'screen' ? aspect : null}>
+            {/* Tela em destaque: espaço acima para o ícone de quem está assistindo. */}
+            <FitBox aspect={focused.kind === 'screen' ? aspect : null} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
             </FitBox>
             {others.length > 0 && (
@@ -472,11 +547,15 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </p>
         )}
 
-        <div className="flex shrink-0 justify-center">
+        <div className={'flex shrink-0 justify-center pb-6'}>
           {inCall ? (
             <VoiceControls large />
           ) : (
-            <Button disabled={connecting} onClick={() => joinVoice(channel.id)} className="px-6 py-2.5">
+            <Button
+              disabled={connecting}
+              onClick={() => joinVoice(channel.id)}
+              className="bg-online px-6 py-2.5 text-white hover:bg-online hover:brightness-110"
+            >
               <Icons.Phone size={18} />
               {connecting ? 'Conectando…' : count > 0 ? 'Entrar na chamada' : 'Entrar no canal de voz'}
             </Button>
@@ -1055,7 +1134,7 @@ export function VoiceBar() {
   const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
   const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
-  const [modal, setModal] = useState<'screen' | 'settings' | 'camera' | null>(null);
+  const [modal, setModal] = useState<'screen' | 'camera' | null>(null);
   const [noiseOpen, setNoiseOpen] = useState(false);
   if (!channelId) return null;
 
@@ -1103,7 +1182,7 @@ export function VoiceBar() {
           <Icons.PhoneOff size={18} />
         </button>
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => (camera ? void toggleCamera() : setModal('camera'))} className={tile(camera)}>
           {camera ? <Icons.Video size={16} /> : <Icons.VideoOff size={16} />}
         </button>
@@ -1115,12 +1194,8 @@ export function VoiceBar() {
           <Icons.Screen size={16} />
           {screen && <span>{RESOLUTIONS[quality.resolution].label}</span>}
         </button>
-        <button title="Voz e áudio" onClick={() => setModal('settings')} className={tile(false)}>
-          <Icons.Sliders size={16} />
-        </button>
       </div>
       {modal === 'screen' && <ScreenShareModal onClose={() => setModal(null)} />}
-      {modal === 'settings' && <VoiceSettingsModal onClose={() => setModal(null)} />}
       {modal === 'camera' && <CameraModal onClose={() => setModal(null)} />}
     </div>
   );

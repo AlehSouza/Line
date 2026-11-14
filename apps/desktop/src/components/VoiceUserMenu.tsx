@@ -391,11 +391,11 @@ export function VoiceUserMenu({
   );
 }
 
-function Sep() {
+export function Sep() {
   return <div className="mx-1.5 my-1 border-t border-edge" />;
 }
 
-function Item({
+export function Item({
   children,
   onClick,
   check,
