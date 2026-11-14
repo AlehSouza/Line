@@ -223,7 +223,9 @@ export type VoiceSignal =
   /** Quem assiste avisa quem transmite: só quem pediu recebe o vídeo e o som da tela. */
   | { type: 'watch'; on: boolean }
   /** Miniatura estática (JPEG em data URL, pequena) da tela de quem transmite, para quem ainda não assiste. */
-  | { type: 'thumb'; data: string };
+  | { type: 'thumb'; data: string }
+  /** Quem transmite conta a todos do canal quem está assistindo à tela agora. */
+  | { type: 'viewers'; ids: string[] };
 
 export interface PollOption {
   id: string;
