@@ -1,5 +1,7 @@
 'use client';
 
+import { MobileBack } from './Mobile';
+
 import type { Friend } from '@line/shared';
 import { useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
@@ -39,17 +41,18 @@ export function FriendsView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-4 border-b border-rail px-4 shadow-sm">
-        <span className="flex items-center gap-2 font-bold">
+      <header className="flex h-12 shrink-0 items-center gap-4 overflow-x-auto border-b border-rail px-4 shadow-sm max-md:gap-2">
+        <MobileBack />
+        <span className="flex shrink-0 items-center gap-2 font-bold">
           <Icons.Users className="text-muted" /> Amigos
         </span>
-        <span className="h-6 w-px bg-edge" />
+        <span className="h-6 w-px shrink-0 bg-edge" />
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cx(
-              'flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[15px] font-medium',
+              'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-[15px] font-medium',
               tab === t.id ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
             )}
           >
@@ -60,7 +63,7 @@ export function FriendsView() {
         <button
           onClick={() => setTab('add')}
           className={cx(
-            'rounded-md px-2 py-0.5 text-[15px] font-semibold',
+            'shrink-0 rounded-md px-2 py-0.5 text-[15px] font-semibold',
             tab === 'add' ? 'text-accent' : 'bg-accent text-on-accent hover:bg-accent-strong',
           )}
         >
@@ -68,7 +71,7 @@ export function FriendsView() {
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 max-md:px-3">
         {tab === 'add' ? (
           <AddFriend />
         ) : (

@@ -80,10 +80,15 @@ export function MemberList({ serverId }: { serverId: string }) {
 }
 
 /** Coluna da direita do servidor: busca no topo e, embaixo, membros ou resultados. */
-export function ServerSidePanel({ serverId }: { serverId: string }) {
+export function ServerSidePanel({ serverId, drawer }: { serverId: string; drawer?: boolean }) {
   const [query, setQuery] = useState<string | null>(null);
   return (
-    <aside className={cx('hidden shrink-0 flex-col bg-side transition-[width] lg:flex', query ? 'w-[420px]' : 'w-72')}>
+    <aside
+      className={cx(
+        'shrink-0 flex-col bg-side',
+        drawer ? 'flex h-full w-full' : cx('hidden transition-[width] lg:flex', query ? 'w-[420px]' : 'w-72'),
+      )}
+    >
       <div className="flex h-12 shrink-0 items-center border-b border-rail px-2 shadow-sm">
         <div className="flex-1">
           <SearchBox serverId={serverId} active={!!query} onSearch={setQuery} onClear={() => setQuery(null)} />
@@ -92,5 +97,20 @@ export function ServerSidePanel({ serverId }: { serverId: string }) {
       {!query && <MusicPlayer serverId={serverId} />}
       {query ? <SearchResults key={query} serverId={serverId} query={query} /> : <MemberList serverId={serverId} />}
     </aside>
+  );
+}
+
+/** Telas estreitas: membros e busca numa gaveta que desliza da direita por cima do chat. */
+export function MembersDrawer({ serverId, onClose }: { serverId: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/50 lg:hidden" onClick={onClose}>
+      <div
+        className="h-full w-[85%] max-w-[360px] shadow-2xl"
+        style={{ animation: 'line-drawer-in 0.18s ease-out' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <ServerSidePanel serverId={serverId} drawer />
+      </div>
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { mobile, useMobile } from '@/lib/mobile';
 import { ensureServerLoaded } from '@/lib/session';
 import { actions, firstTextChannel, useLine } from '@/lib/store';
 import { ChannelSidebar } from './ChannelSidebar';
@@ -8,10 +9,11 @@ import { ChatView, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendsView } from './FriendsView';
-import { ServerSidePanel } from './MemberList';
+import { MembersDrawer, ServerSidePanel } from './MemberList';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
+import { cx } from './ui';
 import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
 
 export function AppShell() {
@@ -40,6 +42,14 @@ export function AppShell() {
       .catch(() => {});
   }, [view]);
 
+  // No celular, abrir uma conversa (de onde for) mostra o chat em tela cheia.
+  const dmId = view.kind === 'home' ? view.dmId : null;
+  useEffect(() => {
+    if (dmId) mobile.showMain();
+  }, [dmId]);
+  const pane = useMobile((m) => m.pane);
+  const membersOpen = useMobile((m) => m.members);
+
   useEffect(() => {
     window.line?.setBadge(unreadTotal);
     document.title = unreadTotal ? `(${unreadTotal}) Line` : 'Line';
@@ -61,13 +71,14 @@ export function AppShell() {
       )}
       <div className="flex min-h-0 flex-1">
         {/* Coluna da esquerda: servidores + canais, com a caixa do usuário embaixo ocupando as duas. */}
+        {/* No celular só uma coluna aparece por vez: a lista (pane "nav") ou o conteúdo (pane "main"). */}
         <div
-          className="flex w-[312px] shrink-0 flex-col"
+          className={cx('flex w-full shrink-0 flex-col md:w-[312px]', pane === 'main' && 'max-md:hidden')}
           style={{ background: 'linear-gradient(to right, var(--color-rail) 72px, var(--color-side) 72px)' }}
         >
           <div className="flex min-h-0 flex-1">
             <ServerRail />
-            <aside className="flex w-60 shrink-0 flex-col bg-side">
+            <aside className="flex min-w-0 flex-1 flex-col bg-side md:w-60 md:flex-none">
               <div className="min-h-0 flex-1">
                 {view.kind === 'server' ? <ChannelSidebar serverId={view.serverId} /> : <DmSidebar />}
               </div>
@@ -78,13 +89,14 @@ export function AppShell() {
             <UserPanel />
           </div>
         </div>
-        <main className="glow flex min-w-0 flex-1 flex-col bg-main">{main}</main>
+        <main className={cx('glow flex min-w-0 flex-1 flex-col bg-main', pane === 'nav' && 'max-md:hidden')}>{main}</main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
         ) : (
           view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />
         )}
       </div>
+      {membersOpen && view.kind === 'server' && channel?.type === 'text' && <MembersDrawer serverId={view.serverId} onClose={mobile.closeMembers} />}
       <Modals />
       <IncomingCall />
     </div>

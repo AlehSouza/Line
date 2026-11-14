@@ -1,5 +1,7 @@
 'use client';
 
+import { mobile } from '@/lib/mobile';
+
 import { ProfileEditor } from './ProfileEditor';
 import { NicknameDialog, ServerSettings } from './ServerSettings';
 import { UserCard } from './UserCard';
@@ -93,6 +95,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
           : await api.acceptInvite(invite.trim().split('/').pop() ?? '');
       actions.upsertServer(server);
       actions.goServer(server.id);
+      mobile.showNav();
       onClose();
     });
   };
@@ -180,7 +183,10 @@ function CreateChannelModal({
         ...(isPrivate ? { isPrivate: true, memberIds, roleIds } : {}),
       });
       actions.upsertChannel(channel);
-      if (channel.type === 'text') actions.goServer(modal.serverId, channel.id);
+      if (channel.type === 'text') {
+        actions.goServer(modal.serverId, channel.id);
+        mobile.showMain();
+      }
       onClose();
     });
   };
