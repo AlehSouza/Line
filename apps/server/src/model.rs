@@ -131,6 +131,9 @@ pub struct Message {
     pub mention_role_ids: Vec<String>,
     /// Reações agrupadas por emoji, na ordem em que cada emoji apareceu pela primeira vez.
     pub reactions: Vec<Reaction>,
+    /// Recursos que o app precisa conhecer para mostrar esta mensagem (ex.: "poll", "audio").
+    /// Se o app não conhecer algum, mostra o aviso para atualizar no lugar do conteúdo.
+    pub requires: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

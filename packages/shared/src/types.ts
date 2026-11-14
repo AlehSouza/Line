@@ -128,6 +128,8 @@ export interface Message {
   mentionRoleIds?: string[];
   /** Reações agrupadas por emoji, na ordem em que apareceram. */
   reactions?: Reaction[];
+  /** Recursos que o app precisa conhecer para mostrar a mensagem (ver `CLIENT_FEATURES`). */
+  requires?: string[];
 }
 
 export interface Reaction {

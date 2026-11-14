@@ -421,11 +421,20 @@ pub struct SendMessage {
     pub content: String,
     #[serde(default)]
     pub attachment_ids: Vec<String>,
+    /// Recursos que o app de quem lê precisa conhecer (ex.: "audio"). Ver `Message::requires`.
+    #[serde(default)]
+    pub requires: Vec<String>,
 }
 
 impl SendMessage {
     pub fn check(mut self) -> ApiResult<Self> {
         self.content = self.content.trim().to_string();
+        self.requires.retain(|f| {
+            !f.is_empty() && f.len() <= 32 && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        });
+        self.requires.sort();
+        self.requires.dedup();
+        self.requires.truncate(8);
         if self.attachment_ids.len() > 10 {
             return Err(validation("No máximo 10 anexos por mensagem"));
         }

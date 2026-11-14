@@ -192,6 +192,11 @@ const MIGRATIONS: &[&str] = &[
   INSERT INTO roles (id, server_id, name, permissions, position, created_at)
     SELECT id, id, '@everyone', 48913, 0, created_at FROM servers;
 "#,
+    // Recursos que o app precisa conhecer para mostrar a mensagem (ex.: "audio").
+    // Apps mais antigos que não conhecem algum deles mostram "Você precisa atualizar...".
+    r#"
+  ALTER TABLE messages ADD COLUMN requires TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

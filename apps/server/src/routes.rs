@@ -1112,7 +1112,7 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if q.pending_attachments(&me, &input.attachment_ids) != input.attachment_ids.len() {
         return Err(bad_request("Anexo inválido ou já usado"));
     }
-    let message = q.create_message(&channel.id, &me, &input.content, &input.attachment_ids);
+    let message = q.create_message(&channel.id, &me, &input.content, &input.attachment_ids, &input.requires);
     app.to_channel(&q, &channel.id, "message:create", &message);
     if channel.kind == "thread" {
         refresh_thread_starter(&app, &q, &channel);
@@ -1130,7 +1130,7 @@ async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
     if channel.server_id.as_deref().is_some_and(|s| !has(q.permissions(s, &me), perms::SEND_MESSAGES)) {
         return Err(forbidden("Você não tem permissão para enviar mensagens aqui"));
     }
-    let created_msg = q.create_message(&channel.id, &me, "", &[]);
+    let created_msg = q.create_message(&channel.id, &me, "", &[], &[]);
     q.create_poll(&created_msg.id, &input.question, &input.options, input.multi);
     let message = q.message(&created_msg.id).unwrap_or(created_msg);
     app.to_channel(&q, &channel.id, "message:create", &message);

@@ -98,7 +98,7 @@ fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
 fn message_select() -> String {
     format!(
         "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at,
-                m.mention_everyone, m.mention_roles
+                m.mention_everyone, m.mention_roles, m.requires
          FROM messages m JOIN users u ON u.id = m.author_id"
     )
 }
@@ -1258,6 +1258,12 @@ impl Q<'_> {
                         .filter(|s| !s.is_empty())
                         .map(String::from)
                         .collect(),
+                    requires: r
+                        .get::<_, String>("requires")?
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect(),
                 };
                 Ok((user, msg))
             }))
@@ -1269,6 +1275,9 @@ impl Q<'_> {
                 m.attachments = self.attachments_of(&m.id);
                 m.thread = self.thread_of_message(&m.id);
                 m.poll = self.poll_of(&m.id);
+                if m.poll.is_some() && !m.requires.iter().any(|f| f == "poll") {
+                    m.requires.push("poll".into());
+                }
                 m.reactions = self.reactions_of(&m.id);
                 m
             })
@@ -1369,15 +1378,22 @@ impl Q<'_> {
         self.message_rows(&sql, rusqlite::params_from_iter(args))
     }
 
-    pub fn create_message(&self, channel_id: &str, author_id: &str, content: &str, attachment_ids: &[String]) -> Message {
+    pub fn create_message(
+        &self,
+        channel_id: &str,
+        author_id: &str,
+        content: &str,
+        attachment_ids: &[String],
+        requires: &[String],
+    ) -> Message {
         let id = new_id();
         let at = now_iso();
         let (everyone, roles) = self.resolve_mentions(channel_id, author_id, content);
         self.tx(|| {
             ok(self.c.execute(
-                "INSERT INTO messages (id, channel_id, author_id, content, created_at, mention_everyone, mention_roles)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                params![id, channel_id, author_id, content, at, everyone as i64, roles],
+                "INSERT INTO messages (id, channel_id, author_id, content, created_at, mention_everyone, mention_roles, requires)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                params![id, channel_id, author_id, content, at, everyone as i64, roles, requires.join(",")],
             ));
             ok(self.c.execute("UPDATE channels SET last_message_at = ? WHERE id = ?", [&at, channel_id]));
             for (pos, a) in attachment_ids.iter().enumerate() {
