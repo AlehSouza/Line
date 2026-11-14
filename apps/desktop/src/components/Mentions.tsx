@@ -31,7 +31,7 @@ type Option =
   | { kind: 'special'; id: string; label: string; sub: string; insert: string }
   | { kind: 'role'; id: string; label: string; sub: string; insert: string; color: string | null };
 
-/** Lista que aparece ao digitar @ no campo de mensagem: membros, @everyone/@here e cargos. */
+/** Lista que aparece ao digitar @ no campo de mensagem: membros, @aqui/@todos e cargos. */
 export function MentionPicker({
   serverId,
   channelId,
@@ -76,9 +76,9 @@ export function MentionPicker({
     const canAll = hasPerm(perms, Perm.MentionEveryone);
     const specials: Option[] = canAll
       ? [
-          { kind: 'special' as const, id: 'everyone', label: '@everyone', sub: 'Notificar todos que podem ver este canal.', insert: '@everyone ' },
-          { kind: 'special' as const, id: 'here', label: '@here', sub: 'Notificar todos que estão online e podem ver este canal.', insert: '@here ' },
-        ].filter((o) => match(o.label.slice(1)))
+          { kind: 'special' as const, id: 'aqui', label: '@aqui', sub: 'Notificar todos deste chat.', insert: '@aqui ' },
+          { kind: 'special' as const, id: 'todos', label: '@todos', sub: 'Notificar todos do servidor.', insert: '@todos ' },
+        ].filter((o) => match(o.label.slice(1), o.id === 'aqui' ? 'here' : 'everyone'))
       : [];
     const roles: Option[] = (state.roles[serverId] ?? [])
       .filter((r) => r.id !== serverId && (r.mentionable || canAll) && match(r.name))

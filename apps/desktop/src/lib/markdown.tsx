@@ -47,7 +47,7 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
         </a>,
       );
     else if (m[7]) {
-      const special = tok === '@everyone' || tok === '@here';
+      const special = tok === '@everyone' || tok === '@here' || tok === '@todos' || tok === '@aqui';
       const cls = tok.slice(1) === me || special ? 'mention' : 'font-semibold text-accent';
       nodes.push(
         special ? (

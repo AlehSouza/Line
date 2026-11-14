@@ -211,6 +211,7 @@ pub struct RolePatch {
     pub color: Option<Option<String>>,
     pub permissions: Option<i64>,
     pub mentionable: Option<bool>,
+    pub hoist: Option<bool>,
 }
 
 #[derive(Default)]
@@ -981,6 +982,7 @@ impl Q<'_> {
                 permissions: r.get("permissions")?,
                 position: r.get("position")?,
                 mentionable: r.get::<_, i64>("mentionable")? != 0,
+                hoist: r.get::<_, i64>("hoist")? != 0,
                 member_count: r.get("member_count")?,
             })
         }))
@@ -1007,7 +1009,7 @@ impl Q<'_> {
     }
 
     /// Novo cargo entra logo acima do @everyone (posição 1); os outros sobem uma casa.
-    pub fn create_role(&self, server_id: &str, name: &str, color: Option<&str>, permissions: i64, mentionable: bool) -> Role {
+    pub fn create_role(&self, server_id: &str, name: &str, color: Option<&str>, permissions: i64, mentionable: bool, hoist: bool) -> Role {
         let id = new_id();
         self.tx(|| {
             ok(self.c.execute(
@@ -1015,9 +1017,9 @@ impl Q<'_> {
                 [server_id],
             ));
             ok(self.c.execute(
-                "INSERT INTO roles (id, server_id, name, color, permissions, position, mentionable, created_at)
-                 VALUES (?, ?, ?, ?, ?, 1, ?, ?)",
-                params![id, server_id, name, color, permissions, mentionable as i64, now_iso()],
+                "INSERT INTO roles (id, server_id, name, color, permissions, position, mentionable, hoist, created_at)
+                 VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                params![id, server_id, name, color, permissions, mentionable as i64, hoist as i64, now_iso()],
             ));
         });
         self.role(&id).unwrap()
@@ -1026,12 +1028,13 @@ impl Q<'_> {
     pub fn update_role(&self, id: &str, patch: RolePatch) -> Role {
         let r = self.role(id).unwrap();
         ok(self.c.execute(
-            "UPDATE roles SET name = ?, color = ?, permissions = ?, mentionable = ? WHERE id = ?",
+            "UPDATE roles SET name = ?, color = ?, permissions = ?, mentionable = ?, hoist = ? WHERE id = ?",
             params![
                 patch.name.unwrap_or(r.name),
                 patch.color.unwrap_or(r.color),
                 patch.permissions.unwrap_or(r.permissions),
                 patch.mentionable.unwrap_or(r.mentionable) as i64,
+                patch.hoist.unwrap_or(r.hoist) as i64,
                 id
             ],
         ));
@@ -1140,7 +1143,7 @@ impl Q<'_> {
         ))
     }
 
-    /// Quais menções da mensagem valem: @everyone/@here só com permissão; cargo só se for
+    /// Quais menções da mensagem valem: @todos/@aqui (ou @everyone/@here) só com permissão; cargo só se for
     /// mencionável ou se quem mandou puder mencionar todos. Fora de servidor, nenhuma.
     fn resolve_mentions(&self, channel_id: &str, author_id: &str, content: &str) -> (bool, String) {
         let Some(server_id) = self.channel(channel_id).and_then(|c| c.server_id) else {
@@ -1151,7 +1154,7 @@ impl Q<'_> {
         let everyone = can_all
             && content
                 .split(|c: char| !(c.is_alphanumeric() || c == '@'))
-                .any(|w| w == "@everyone" || w == "@here");
+                .any(|w| matches!(w, "@everyone" | "@here" | "@todos" | "@aqui"));
         let mut roles: Vec<String> = Vec::new();
         for part in content.split("<@&").skip(1) {
             let Some((id, _)) = part.split_once('>') else { continue };

@@ -202,6 +202,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE users ADD COLUMN google_id TEXT;
   CREATE UNIQUE INDEX users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
 "#,
+    // Cargo "exibir separadamente" na lista de membros.
+    r#"
+  ALTER TABLE roles ADD COLUMN hoist INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

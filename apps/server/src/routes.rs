@@ -880,6 +880,7 @@ async fn create_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
         input.color.flatten().as_deref(),
         permissions,
         input.mentionable.unwrap_or(false),
+        input.hoist.unwrap_or(false),
     );
     roles_changed(&app, &q, &id);
     created(role)
@@ -905,6 +906,7 @@ async fn update_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
             color: input.color,
             permissions,
             mentionable: input.mentionable,
+            hoist: input.hoist,
         },
     );
     roles_changed(&app, &q, &server_id);

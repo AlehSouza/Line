@@ -1,6 +1,6 @@
 'use client';
 
-import { hasPerm, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
+import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
@@ -16,7 +16,7 @@ import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useL
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
-import { confirmDialog, showError } from './Dialogs';
+import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
@@ -1101,6 +1101,18 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     const content = gif ?? textToMentions(text.trim(), channel.serverId);
     if (!gif && ((!content && !ready.length) || uploading)) return;
     if (sending) return;
+    const mass = !gif && channel.serverId ? massMention(content) : null;
+    if (mass && !hasPerm(myPerms, Perm.MentionEveryone)) {
+      toast(`Seu cargo não permite usar @${mass}: a mensagem vai sem notificar ninguém.`);
+    } else if (mass) {
+      const ok = await confirmDialog({
+        title: `Notificar @${mass}`,
+        message: mass === 'todos' ? 'Você vai notificar todas as pessoas nesse servidor.' : 'Você vai notificar todas as pessoas nesse chat.',
+        confirmLabel: 'Enviar',
+      });
+      ref.current?.focus();
+      if (!ok) return;
+    }
     setSending(true);
     try {
       const target = await resolveTarget();

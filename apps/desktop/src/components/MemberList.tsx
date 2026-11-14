@@ -15,20 +15,27 @@ export function MemberList({ serverId }: { serverId: string }) {
   // Cor do cargo mais alto (com cor) de cada um.
   const colorOf = (roleIds: string[]) => (roles ?? []).find((r) => r.color && roleIds.includes(r.id))?.color ?? undefined;
 
-  const { online, offline } = useMemo(() => {
+  // Online: quem tem cargo "exibir separadamente" vai para a seção do mais alto deles (ordem dos cargos);
+  // o resto fica em "Online". Offline fica tudo junto.
+  const sections = useMemo(() => {
     const list = Object.values(members ?? {})
       .map((m) => ({ ...m, user: users[m.userId] }))
       .filter((m): m is typeof m & { user: PublicUser } => !!m.user)
       .sort((a, b) => (a.nickname ?? a.user.displayName).localeCompare(b.nickname ?? b.user.displayName, 'pt-BR'));
-    return {
-      online: list.filter((m) => m.user.presence !== 'offline'),
-      offline: list.filter((m) => m.user.presence === 'offline'),
-    };
-  }, [members, users]);
+    const hoisted = (roles ?? []).filter((r) => r.hoist && r.id !== serverId);
+    const groups = hoisted.map((r) => ({ key: r.id, label: r.name, list: [] as typeof list }));
+    const online = { key: 'online', label: 'Online', list: [] as typeof list };
+    const offline = { key: 'offline', label: 'Offline', list: [] as typeof list };
+    for (const m of list) {
+      if (m.user.presence === 'offline') offline.list.push(m);
+      else (groups[hoisted.findIndex((r) => m.roleIds.includes(r.id))] ?? online).list.push(m);
+    }
+    return [...groups, online, offline];
+  }, [members, users, roles, serverId]);
 
-  const section = (label: string, list: typeof online) =>
+  const section = (key: string, label: string, list: (typeof sections)[number]['list']) =>
     list.length > 0 && (
-      <div>
+      <div key={key}>
         <h3 className="px-2 pb-1 text-xs font-bold tracking-wide text-muted uppercase">
           {label} — {list.length}
         </h3>
@@ -64,10 +71,7 @@ export function MemberList({ serverId }: { serverId: string }) {
       {!members ? (
         <ListSkeleton count={8} avatar />
       ) : (
-        <>
-          {section('Online', online)}
-          {section('Offline', offline)}
-        </>
+        sections.map((g) => section(g.key, g.label, g.list))
       )}
     </div>
   );

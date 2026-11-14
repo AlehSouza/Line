@@ -108,6 +108,8 @@ export interface Role {
   /** Maior = mais alto. O @everyone fica em 0. */
   position: number;
   mentionable: boolean;
+  /** Aparece numa seção própria na lista de membros. */
+  hoist?: boolean;
   memberCount: number;
 }
 
