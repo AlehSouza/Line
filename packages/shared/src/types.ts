@@ -20,7 +20,9 @@ export interface PublicUser {
   /** Bot (ex.: o bot de música do servidor). */
   bot?: boolean;
   /** Tag de servidor que a pessoa exibe ao lado do nome. */
-  tag?: { serverId: string; text: string } | null;
+  tag?: { serverId: string; text: string; icon?: string | null; iconUrl?: string | null } | null;
+  /** Só para bots: cor do nome, cor da etiqueta e texto dela ("BOT" ou "B"). */
+  botStyle?: { nameColor: string | null; tagColor: string | null; tagText: 'BOT' | 'B' };
 }
 
 /** Uma faixa na fila do bot de música. */
@@ -66,6 +68,8 @@ export interface Server {
   iconColor: string;
   /** Tag de identificação do servidor (até 4 caracteres); vazia = sem tag. */
   tag?: string;
+  /** Ícone da tag: '' = foto do servidor; senão o nome de um ícone do Lucide. */
+  tagIcon?: string;
   /** Imagem do ícone (squircle da barra lateral); sem ela mostra as iniciais. */
   iconUrl?: string | null;
   /** Banner fixo no topo da lista de canais. */

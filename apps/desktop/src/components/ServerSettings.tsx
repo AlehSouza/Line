@@ -9,8 +9,9 @@ import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { MusicSettings } from './Music';
+import { ServerTagSettings } from './ServerTag';
 
-type Section = 'overview' | 'roles' | 'members' | 'music';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'music';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -40,6 +41,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
   const canMembers = canRoles || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
   const nav: { id: Section; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Perfil do servidor', show: canServer },
+    { id: 'tag', label: 'Tag do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
     { id: 'music', label: 'Música', show: canServer },
@@ -95,6 +97,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
               <ServerOverview serverId={serverId} onClose={onClose} />
             </div>
           )}
+          {section === 'tag' && canServer && <ServerTagSettings serverId={serverId} />}
           {section === 'roles' && canRoles && !editing && <RolesList serverId={serverId} onEdit={setEditing} />}
           {section === 'roles' && canRoles && editing && (
             <RoleEditor serverId={serverId} roleId={editing} onSelect={setEditing} onBack={() => setEditing(null)} />
@@ -338,7 +341,22 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
     hoist: role?.hoist ?? false,
   }));
   const [saving, setSaving] = useState(false);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const { error, run } = useErr();
+
+  /** Arrastou um cargo na coluna da esquerda: grava a nova ordem (é a ordem da lista de membros). */
+  const dropOn = (targetId: string) => {
+    if (!drag || drag === targetId) return;
+    const everyone = roles.find((r) => r.id === serverId);
+    const list = roles.filter((r) => r.id !== serverId);
+    const ids = list.map((r) => r.id);
+    ids.splice(ids.indexOf(drag), 1);
+    ids.splice(ids.indexOf(targetId) + (list.findIndex((r) => r.id === targetId) > list.findIndex((r) => r.id === drag) ? 1 : 0), 0, drag);
+    const byId = Object.fromEntries(list.map((r) => [r.id, r]));
+    actions.setRoles(serverId, [...ids.map((id, i) => ({ ...byId[id]!, position: ids.length - i })), ...(everyone ? [everyone] : [])]);
+    void run(() => api.reorderRoles(serverId, ids));
+  };
 
   // Trocou de cargo na coluna da esquerda: recomeça o rascunho.
   useEffect(() => {
@@ -403,21 +421,45 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
           </button>
         </div>
         <div className="space-y-0.5">
-          {roles.map((r) => (
+          {roles.map((r) => {
+            const movable = r.id !== serverId && r.position < myTop;
+            return (
             <button
               key={r.id}
               disabled={r.id !== serverId && r.position >= myTop}
               onClick={() => onSelect(r.id)}
+              draggable={movable}
+              onDragStart={() => setDrag(r.id)}
+              onDragEnd={() => {
+                setDrag(null);
+                setOver(null);
+              }}
+              onDragOver={(e) => {
+                if (!drag || !movable) return;
+                e.preventDefault();
+                setOver(r.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                dropOn(r.id);
+                setDrag(null);
+                setOver(null);
+              }}
               className={cx(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm disabled:opacity-50',
                 r.id === roleId ? 'bg-hover text-fg' : 'text-soft hover:bg-hover/60',
+                movable && 'cursor-grab active:cursor-grabbing',
+                over === r.id && drag !== r.id && 'ring-1 ring-accent',
+                drag === r.id && 'opacity-40',
               )}
             >
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
               <span className="truncate">{r.name}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
+        <p className="mt-3 px-2 text-xs text-muted">Arraste para reordenar. A ordem vale para a lista de membros.</p>
       </div>
 
       <div className="min-w-0 flex-1 py-8 pr-16 pl-8">

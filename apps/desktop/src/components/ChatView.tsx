@@ -243,6 +243,8 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
   const serverRoles = useLine((s) => (channel.serverId ? s.roles[channel.serverId] : undefined));
   const colorOf = (userId: string) => {
+    const botColor = useLine.getState().users[userId]?.botStyle?.nameColor;
+    if (botColor) return botColor;
     const mine = serverMembers?.[userId]?.roleIds;
     return mine?.length ? (serverRoles ?? []).find((r) => r.color && mine.includes(r.id))?.color ?? undefined : undefined;
   };
@@ -578,7 +580,7 @@ function MessageRow({
             >
               {authorName}
             </button>
-            {message.author.bot && <BotTag />}
+            {message.author.bot && <BotTag user={message.author} />}
             <UserTagBadge user={message.author} />
             <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
           </div>
