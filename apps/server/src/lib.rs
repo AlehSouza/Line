@@ -312,6 +312,7 @@ impl App {
     }
 
     /// A conta tem acesso ao painel administrador? (dono ou admin adicionado pelo painel)
+    /// Pega a trava do banco: nunca chamar com um `store.q()` aberto no mesmo handler.
     pub fn is_admin(&self, user_id: &str) -> bool {
         self.is_owner(user_id) || self.store.q().admin_flag(user_id)
     }
