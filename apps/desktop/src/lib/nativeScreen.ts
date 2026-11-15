@@ -42,19 +42,22 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return internals.invoke(cmd, args);
 }
 
-/** Seletor próprio: apps do Windows (WebView2), macOS (WKWebView) e Linux (Electron, fora do Wayland). Web usa o do navegador. */
+/**
+ * Seletor próprio: apps do Windows (WebView2), do macOS (WKWebView) e do Linux no X11 (WebKitGTK).
+ * Web e Linux no Wayland usam o do navegador/sistema.
+ */
 export function hasNativeScreen() {
   if (typeof window === 'undefined' || !window.line?.isDesktop) return false;
-  // Linux (Electron): seletor do Line com as fontes do desktopCapturer; a captura é o getDisplayMedia normal.
-  if (window.line.screen) return window.line.screen.picker;
   if (window.line.platform === 'win32') return !!webview() && 'MediaStreamTrackGenerator' in window && 'VideoFrame' in window;
-  if (window.line.platform === 'darwin') return 'VideoFrame' in window && 'captureStream' in HTMLCanvasElement.prototype;
+  const socket = 'VideoFrame' in window && 'captureStream' in HTMLCanvasElement.prototype;
+  if (window.line.platform === 'darwin') return socket;
+  // Linux: o getDisplayMedia do WebKitGTK depende do portal, que só existe no Wayland.
+  if (window.line.platform === 'linux') return !!window.line.nativeScreen && socket;
   return false;
 }
 
 /** Lista janelas e telas. Rejeita com a mensagem do sistema (ex.: falta permissão no macOS). */
 export function listScreenSources(): Promise<ScreenSource[]> {
-  if (window.line?.screen) return window.line.screen.sources();
   return invoke<ScreenSource[]>('screen_sources').then((list) => list ?? []);
 }
 
@@ -71,7 +74,7 @@ export async function startNativeScreen(
   id: string,
   opts: { fps: number; audio: boolean; height: number; onEnded: () => void },
 ): Promise<NativeScreen> {
-  if (window.line?.platform === 'darwin') return startMacScreen(id, opts);
+  if (window.line?.platform === 'darwin' || window.line?.platform === 'linux') return startSocketScreen(id, opts);
   const wv = webview()!;
   const Gen = (window as unknown as { MediaStreamTrackGenerator: GeneratorCtor }).MediaStreamTrackGenerator;
   const video = new Gen({ kind: 'video' });
@@ -188,11 +191,11 @@ export async function startNativeScreen(
 }
 
 /**
- * macOS: o Rust manda os quadros (NV12, já na resolução escolhida) e o áudio por um WebSocket
- * só do 127.0.0.1. Cada quadro é desenhado num canvas, que vira a trilha de vídeo; o áudio
- * passa por um AudioContext até uma trilha de áudio.
+ * macOS e Linux (X11): o Rust manda os quadros (NV12, já na resolução escolhida) e, no macOS, o
+ * áudio por um WebSocket só do 127.0.0.1. Cada quadro é desenhado num canvas, que vira a trilha
+ * de vídeo; o áudio passa por um AudioContext até uma trilha de áudio.
  */
-async function startMacScreen(
+async function startSocketScreen(
   id: string,
   opts: { fps: number; audio: boolean; height: number; onEnded: () => void },
 ): Promise<NativeScreen> {
@@ -245,6 +248,20 @@ async function startMacScreen(
   let first: ((size: { w: number; h: number }) => void) | null = null;
   const firstFrame = new Promise<{ w: number; h: number }>((resolve) => (first = resolve));
   let stopped = false;
+  // Linux: o adaptador WebRTC (rtc_shim.js) codifica estes quadros direto, sem passar pelo canvas;
+  // o canvas fica só para a prévia (~10 fps). No macOS o WebRTC do WKWebView lê o canvas, então
+  // ele recebe todos os quadros.
+  const subscribers = new Set<(frame: VideoFrame) => void>();
+  const direct = !!(window as unknown as { __lineRtc?: { adapter?: boolean } }).__lineRtc?.adapter;
+  if (direct) {
+    (video as MediaStreamTrack & { __lineFrameSource?: unknown }).__lineFrameSource = {
+      subscribe(cb: (frame: VideoFrame) => void) {
+        subscribers.add(cb);
+        return () => subscribers.delete(cb);
+      },
+    };
+  }
+  let lastPreview = 0;
   const ws = new WebSocket(res.url);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (e) => {
@@ -264,11 +281,16 @@ async function startMacScreen(
       const [w, h] = [a, b];
       try {
         const frame = new VideoFrame(new Uint8Array(buf, 17), { format: 'NV12', codedWidth: w, codedHeight: h, timestamp: ts });
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
+        for (const cb of subscribers) cb(frame.clone());
+        const now = performance.now();
+        if (!direct || now - lastPreview > 100 || canvas.width !== w || canvas.height !== h) {
+          lastPreview = now;
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+          ctx.drawImage(frame, 0, 0);
         }
-        ctx.drawImage(frame, 0, 0);
         frame.close();
         first?.({ w, h });
         first = null;

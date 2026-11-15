@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["apps/server", "apps/desktop/src-tauri"]
+members = ["apps/server", "apps/desktop/src-tauri", "crates/line-rtc"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,18 @@ lto = true
 opt-level = 3
 panic = "unwind"
 strip = true
+
+# Captura e conversão dos quadros da tela (Linux) rodam a cada quadro: sem otimização não passa de ~10 fps.
+[profile.dev.package.line-desktop]
+opt-level = 3
+[profile.dev.package.x11rb]
+opt-level = 3
+[profile.dev.package.x11rb-protocol]
+opt-level = 3
+[profile.dev.package.fast_image_resize]
+opt-level = 3
+[profile.dev.package.yuvutils-rs]
+opt-level = 3
 
 # O scrypt é lento sem otimização; deixa os testes e o modo dev rápidos.
 [profile.dev.package.scrypt]

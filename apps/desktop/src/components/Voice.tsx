@@ -973,8 +973,8 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
-        {/* No Linux o Electron não captura o som do sistema junto com a tela. */}
-        {native && !window.line?.screen && (
+        {/* No Linux a captura pelo X não traz o som do sistema. */}
+        {native && window.line?.platform !== 'linux' && (
           <label className="flex shrink-0 cursor-pointer items-center gap-2 text-sm text-soft">
             <input
               type="checkbox"

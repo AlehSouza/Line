@@ -396,14 +396,8 @@ declare global {
         install: () => Promise<void>;
         run?: () => Promise<void>;
       };
-      /** App do Linux (Electron): login com Google pelo navegador do sistema. */
-      googleLogin?: (serverUrl: string) => Promise<string>;
-      /** App do Linux (Electron): seletor de tela do Line (picker=false no Wayland, que usa o do sistema). */
-      screen?: {
-        picker: boolean;
-        sources: () => Promise<{ id: string; name: string; isScreen: boolean; thumbnail: string }[]>;
-        select: (id: string) => Promise<void>;
-      };
+      /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
+      nativeScreen?: boolean;
     };
   }
 }

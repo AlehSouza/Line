@@ -11,6 +11,8 @@
     /** Versão instalada do app (o Rust troca o marcador ao abrir a janela). */
     version: '__LINE_VERSION__',
     platform: ua.includes('Windows') ? 'win32' : ua.includes('Mac') ? 'darwin' : 'linux',
+    /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
+    nativeScreen: __LINE_NATIVE_SCREEN__,
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),
     setBadge: (count) => void invoke('set_badge', { count: Math.max(0, Number(count) || 0) }),

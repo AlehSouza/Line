@@ -142,6 +142,8 @@
   .dlc li svg { width: 17px; height: 17px; color: var(--online); flex: none; margin-top: 3px; }
   .dlc li.warn svg { color: var(--sun); }
   .dlc .btn { margin-top: auto; justify-content: center; }
+  .dlc .alt { margin: 12px 0 0; font-size: 13px; color: var(--soft); text-align: center; }
+  .dlc .alt a { color: var(--fg); }
   .cmd { margin: -10px 0 20px; background: var(--rail); border-radius: 10px; padding: 10px 12px; font-family: var(--mono); font-size: 12.5px; color: var(--soft); box-shadow: inset 0 0 0 1px var(--edge); overflow-x: auto; white-space: nowrap; }
   .web { max-width: 1100px; margin: 18px auto 0; background: var(--side); border-radius: 18px; padding: 22px 26px; box-shadow: inset 0 0 0 1px var(--edge); display: flex; align-items: center; gap: 18px; }
   .web .os { margin: 0; flex: none; }
@@ -210,7 +212,7 @@
           <a class="btn btn-primary js-main-dl" href="/downloads"><svg><use href="#i-down"/></svg><span>Baixar o Line</span></a>
           <a class="btn btn-ghost" href="/app/"><svg><use href="#i-globe"/></svg>Abrir On Line</a>
         </div>
-        <p class="cta-note js-note">Windows 10 e 11 · macOS · Linux (Debian/Ubuntu) · qualquer navegador</p>
+        <p class="cta-note js-note">Windows 10 e 11 · macOS · Linux · qualquer navegador</p>
 
         <div class="shot" aria-hidden="true">
           <div class="tb"><img src="/site/icon.png" alt=""><div class="t">Resenha</div><div class="w"><span>—</span><span>☐</span><span>✕</span></div></div>
@@ -319,14 +321,15 @@
           <span class="tag">Recomendado para você</span>
           <div class="os"><svg><use href="#i-linux"/></svg></div>
           <h3>Linux</h3>
-          <div class="meta"><span class="js-ver">versão mais recente</span> · 64 bits · .deb</div>
+          <div class="meta"><span class="js-ver">versão mais recente</span> · 64 bits · .deb, .rpm e AppImage</div>
           <ul>
-            <li><svg><use href="#i-check"/></svg>Debian 12, Ubuntu 22.04 e mais novos</li>
+            <li><svg><use href="#i-check"/></svg>Debian 12, Ubuntu 22.04, Fedora e qualquer distro (AppImage)</li>
             <li><svg><use href="#i-check"/></svg>Servidores, canais, DMs, threads e anexos</li>
             <li><svg><use href="#i-check"/></svg>Chamadas de voz, vídeo e compartilhamento de tela</li>
           </ul>
           <div class="cmd">sudo apt install ./Line-linux.deb</div>
           <a class="btn btn-ghost" href="/updates/latest/Line-linux.deb" download><svg><use href="#i-down"/></svg>Baixar para Linux</a>
+          <p class="alt">Outras distros: <a href="/updates/latest/Line-linux.rpm" download>.rpm (Fedora)</a> · <a href="/updates/latest/Line-linux.AppImage" download>AppImage</a></p>
         </div>
       </div>
       <div class="web">

@@ -7,10 +7,22 @@ App de chat e comunidades para desktop (Windows e Linux), feito para uso pessoal
 Os instaladores mais recentes ficam em **[Releases](https://github.com/AlehSouza/Line/releases/latest)**:
 
 - **Windows 10/11**: baixe o `Line_*_x64-setup.exe` e execute (instala só para o seu usuário, sem pedir administrador).
-- **Linux (Debian 12+, Ubuntu 22.04+ e derivados)**: baixe o `Line_*_amd64.deb` e rode `sudo apt install ./Line_*_amd64.deb`. Depois é só abrir "Line" no menu de aplicativos. No Linux o casco é Electron (`apps/desktop/linux`), porque o WebKitGTK das distros vem sem WebRTC; a interface é a de `useline.tech/app`.
+- **Linux**: Debian 12+, Ubuntu 22.04+ e derivados usam o `Line_*_amd64.deb` (`sudo apt install ./Line_*_amd64.deb`); Fedora usa o `Line-*.x86_64.rpm` (`sudo dnf install ./Line-*.rpm`); qualquer outra distro usa o `Line_*_amd64.AppImage` (`chmod +x` e abrir). Depois é só abrir "Line" no menu de aplicativos.
 - **Pelo navegador**: todo servidor Line também entrega o app web na raiz (`http://IP:4000/` ou `https://seu-dominio/`). Microfone e câmera no navegador exigem HTTPS (ou `localhost`).
 
-Feito em **Rust** por baixo: o app é um casco **Tauri** (usa o WebView2 do Windows em vez de carregar um Chromium inteiro) com a interface em **Next.js + TypeScript**, e o servidor é **Rust (axum + Socket.IO + SQLite)**, que roda embutido no próprio app ou sozinho numa máquina sua.
+Feito em **Rust** por baixo: o app é um casco **Tauri** (usa o WebView do próprio sistema: WebView2 no Windows, WKWebView no macOS e WebKitGTK no Linux, em vez de carregar um Chromium inteiro) com a interface em **Next.js + TypeScript**, e o servidor é **Rust (axum + Socket.IO + SQLite)**, que roda embutido no próprio app ou sozinho numa máquina sua.
+
+### Chamadas no Linux
+
+O WebKitGTK que as distros distribuem vem compilado sem WebRTC (não existe `RTCPeerConnection`). No app Linux, quem faz a chamada é um motor em Rust, o crate [`crates/line-rtc`](crates/line-rtc) (webrtc-rs + Opus), e um adaptador injetado antes da interface (`apps/desktop/src-tauri/src/rtc_shim.js`) recria `RTCPeerConnection` com a mesma API do navegador. Assim o `voice.ts` é o mesmo em todo lugar:
+
+- sinalização, ICE (STUN/TURN), DTLS/SRTP e RTP ficam no Rust;
+- o microfone sai da página como PCM (AudioWorklet) e o Rust codifica em Opus; o áudio recebido volta decodificado e vira uma trilha de verdade (`MediaStreamAudioDestinationNode`);
+- câmera e tela são codificadas em VP8 pelo WebCodecs do WebKit e empacotadas no Rust; o vídeo recebido é decodificado pelo `VideoDecoder` num `<canvas>` que vira trilha com `captureStream()`.
+
+Compartilhar tela: no Wayland usa o seletor do sistema (portal + PipeWire); no X11, onde o portal não tem captura de tela, usa o seletor do Line com captura em Rust (`screen_linux.rs`: MIT-SHM, redução e conversão com SIMD) e os quadros vão direto para o codificador.
+
+Para testar o WebRTC do próprio WebKit (num WebKitGTK compilado com ele), abra com `LINE_RTC=native`. Para diagnosticar uma chamada, abra pelo terminal com `LINE_DEBUG=1 line-desktop` (o console da página sai no terminal).
 
 ## O que já funciona (fase 1)
 
@@ -34,7 +46,7 @@ O plano completo, com voz, vídeo, tela, cargos, bots e o resto, está em [docs/
 
 ## Rodando em desenvolvimento
 
-Requisitos: Node.js 22+, [Rust](https://rustup.rs) estável e, no Windows, as "Ferramentas de Build do C++" do Visual Studio (o instalador do Rust oferece). O WebView2 já vem no Windows 10/11.
+Requisitos: Node.js 22+, [Rust](https://rustup.rs) estável e, no Windows, as "Ferramentas de Build do C++" do Visual Studio (o instalador do Rust oferece). O WebView2 já vem no Windows 10/11. No Linux (Debian/Ubuntu): `sudo apt install libwebkit2gtk-4.1-dev build-essential cmake libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev`.
 
 ```bash
 npm install
@@ -52,9 +64,10 @@ Outros comandos úteis:
 | `npm test` | Testes do servidor: unitários em Rust + testes de contrato com `socket.io-client` |
 | `npm run typecheck` | Checagem de tipos da interface |
 | `npm run dist:win` | Gera o instalador do Windows em `target/release/bundle/nsis/` |
-| `npm run dist:linux` | Gera o pacote `.deb` em `target/release/bundle/deb/` (precisa de `libwebkit2gtk-4.1-dev`) |
+| `npm run dist:linux` | Gera `.deb`, `.rpm` e AppImage em `target/release/bundle/` (precisa de `libwebkit2gtk-4.1-dev` e `cmake`) |
+| `cargo test -p line-rtc` | Testes do motor WebRTC do Linux: duas instâncias numa chamada de verdade (áudio, vídeo, renegociação) |
 
-O CI do GitHub gera os dois instaladores a cada PR (artefatos "Line-instalador-windows" e "Line-linux-deb") e, a cada push na branch principal, publica os dois numa release nova.
+O CI do GitHub gera os instaladores a cada PR (artefatos "Line-instalador-windows", "Line-macos" e "Line-linux") e, a cada push na branch principal, publica todos numa release nova.
 
 ## Jogando com os amigos
 
@@ -73,10 +86,12 @@ Os dados ficam num único arquivo SQLite em `DATA_DIR/line.db`. Para backup, bas
 apps/
   desktop/        Interface + app desktop
     src/          Interface React (Next App Router, exportada estática)
-    src-tauri/    Casco Tauri em Rust: janela, ponte com a interface, servidor embutido
+    src-tauri/    Casco Tauri em Rust: janela, ponte com a interface e, no Linux, o adaptador WebRTC
   server/         Servidor Line em Rust (crate line-server)
     src/          axum (REST), socketioxide (tempo real), rusqlite (banco)
     test/         Testes de contrato em TypeScript contra o binário
+crates/
+  line-rtc/       Motor WebRTC do app Linux (webrtc-rs + Opus), usado pelo casco Tauri
 packages/
   shared/         Tipos, validações (zod) e eventos em tempo real usados pela interface
 docs/             Arquitetura e roadmap
