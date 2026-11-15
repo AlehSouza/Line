@@ -305,9 +305,15 @@ impl App {
         (iat >= after && banned.is_none()).then_some(user_id)
     }
 
-    /// A conta tem acesso ao painel administrador? Só pelo id (nome de usuário pode mudar de dono).
-    pub fn is_admin(&self, user_id: &str) -> bool {
+    /// Dono do painel: as contas em ADMIN_USERS (pelo id; nome de usuário pode mudar de dono).
+    /// Só o dono adiciona ou tira outros admins.
+    pub fn is_owner(&self, user_id: &str) -> bool {
         self.admins.iter().any(|a| a == user_id)
+    }
+
+    /// A conta tem acesso ao painel administrador? (dono ou admin adicionado pelo painel)
+    pub fn is_admin(&self, user_id: &str) -> bool {
+        self.is_owner(user_id) || self.store.q().admin_flag(user_id)
     }
 
     /// Apaga do disco os arquivos que não pertencem mais a nenhum anexo

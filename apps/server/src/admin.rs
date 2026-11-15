@@ -1,4 +1,4 @@
-//! Painel administrador (useline.tech/admin): estatísticas, usuários, servidores, denúncias e
+//! Painel administrador (backoffice.useline.tech, projeto apps/admin): estatísticas, usuários, servidores, denúncias e
 //! bug reports. Tudo em /api/admin/*, só para as contas em ADMIN_USERS, com limite de pedidos.
 //! Também fica aqui o envio de denúncias e bug reports pelo app (POST /api/reports).
 use crate::errors::*;
@@ -52,6 +52,11 @@ impl FromRequestParts<Arc<App>> for Admin {
 
 pub fn router() -> Router<Arc<App>> {
     Router::new()
+        .route("/admin/login", post(panel_login))
+        .route("/admin/gate", get(gate))
+        .route("/admin/logout", post(panel_logout))
+        .route("/admin/admins", get(list_admins))
+        .route("/admin/admins/{id}", axum::routing::put(add_admin).delete(remove_admin))
         .route("/admin/me", get(admin_me))
         .route("/admin/stats", get(stats))
         .route("/admin/users", get(users))
@@ -73,7 +78,149 @@ fn qs_offset(qs: &HashMap<String, String>) -> i64 {
 }
 
 async fn admin_me(State(app): S, Admin(me): Admin) -> Res {
-    ok(app.store.q().self_user(&me))
+    let mut user = serde_json::to_value(app.store.q().self_user(&me)).unwrap_or_default();
+    user["owner"] = json!(app.is_owner(&me));
+    ok(user)
+}
+
+// ---------- entrada no painel ----------
+
+/// Cookie que libera as páginas do painel (o Caddy pergunta para /api/admin/gate antes de
+/// entregar qualquer arquivo que não seja a tela de login). Só vale no subdomínio do painel.
+const GATE_COOKIE: &str = "line_admin";
+
+/// Para onde vai quem entrou mas não é admin: o app.
+fn app_url() -> String {
+    std::env::var("APP_URL").unwrap_or_else(|_| "https://useline.tech/app/".into())
+}
+
+fn gate_cookie(token: &str, max_age: i64) -> String {
+    format!("{GATE_COOKIE}={token}; Path=/; Max-Age={max_age}; HttpOnly; Secure; SameSite=Strict")
+}
+
+fn cookie_value(parts: &axum::http::HeaderMap, name: &str) -> Option<String> {
+    parts
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|kv| kv.trim().split_once('='))
+        .find(|(k, _)| *k == name)
+        .map(|(_, v)| v.to_string())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PanelLogin {
+    username: Option<String>,
+    password: Option<String>,
+    /// Código de uso único da volta do "Entrar com Google".
+    google_code: Option<String>,
+}
+
+/// Login do painel: confere a conta e, se for admin, entrega o token e o cookie das páginas.
+/// Quem não é admin recebe 403 com o endereço do app para onde ir.
+async fn panel_login(State(app): S, headers: axum::http::HeaderMap, b: Bytes) -> Res {
+    let ip = client_ip(&headers).unwrap_or_else(|| "direto".into());
+    if !app.admin_requests.allow(&ip) {
+        return Err(too_many());
+    }
+    let input: PanelLogin = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let user_id = if let Some(code) = input.google_code.as_deref().filter(|c| !c.is_empty()) {
+        let google = app.google.as_ref().ok_or_else(|| validation("Login com Google indisponível."))?;
+        google
+            .take_code(code.trim(), None, true)
+            .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?
+    } else {
+        let (Some(username), Some(password)) = (input.username, input.password) else {
+            return Err(validation("Preencha usuário e senha"));
+        };
+        crate::routes::check_login(&app, &headers, &username, password).await?
+    };
+    crate::routes::suspended(&app, &user_id)?;
+    if !app.is_admin(&user_id) {
+        tracing::warn!("painel admin: login de quem não é admin ({user_id}, {ip})");
+        return Ok((
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "not_admin", "message": "Acesso restrito.", "redirect": app_url() })),
+        )
+            .into_response());
+    }
+    let token = app.tokens.sign(&user_id);
+    let mut res = Json(json!({ "token": token })).into_response();
+    if let Ok(v) = gate_cookie(&token, 60 * 60 * 24 * 30).parse() {
+        res.headers_mut().insert(axum::http::header::SET_COOKIE, v);
+    }
+    Ok(res)
+}
+
+/// Porteiro das páginas do painel (forward_auth do Caddy): admin passa; quem entrou e não é
+/// admin vai para o app; quem não entrou vai para a tela de login.
+async fn gate(State(app): S, headers: axum::http::HeaderMap) -> Response {
+    let ip = client_ip(&headers).unwrap_or_else(|| "direto".into());
+    let go = |to: String| (StatusCode::FOUND, [(axum::http::header::LOCATION, to)]).into_response();
+    if !app.admin_requests.allow(&ip) {
+        return too_many().into_response();
+    }
+    match cookie_value(&headers, GATE_COOKIE).and_then(|t| app.user_from_token(&t)) {
+        Some(id) if app.is_admin(&id) => StatusCode::NO_CONTENT.into_response(),
+        Some(id) => {
+            tracing::warn!("painel admin: página pedida por quem não é admin ({id}, {ip})");
+            go(app_url())
+        }
+        None => go("/login.html".into()),
+    }
+}
+
+async fn panel_logout() -> Response {
+    let mut res = StatusCode::NO_CONTENT.into_response();
+    if let Ok(v) = gate_cookie("", 0).parse() {
+        res.headers_mut().insert(axum::http::header::SET_COOKIE, v);
+    }
+    res
+}
+
+// ---------- admins ----------
+
+async fn list_admins(State(app): S, Admin(_): Admin) -> Res {
+    ok(app.store.q().admin_accounts(&app.admins))
+}
+
+fn require_owner(app: &App, me: &str) -> ApiResult<()> {
+    if app.is_owner(me) {
+        Ok(())
+    } else {
+        Err(forbidden("Só o dono do painel pode mudar os administradores"))
+    }
+}
+
+/// Torna admin: `id` pode ser o id ou o @usuário.
+async fn add_admin(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
+    require_owner(&app, &me)?;
+    let q = app.store.q();
+    let name = id.trim().trim_start_matches('@');
+    let row = q.user_row(name).or_else(|| q.user_by_username(name)).ok_or_else(|| not_found("Usuário"))?;
+    if row.bot_server_id.is_some() || q.ban_of(&row.id).is_some() {
+        return Err(bad_request("Essa conta não pode ser admin"));
+    }
+    q.set_admin_flag(&row.id, true);
+    q.log_admin(&me, "add_admin", &row.id, &row.username);
+    ok(json!({ "id": row.id, "username": row.username }))
+}
+
+async fn remove_admin(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
+    require_owner(&app, &me)?;
+    if app.is_owner(&id) {
+        return Err(bad_request("O dono do painel fica em /etc/line/admin.env"));
+    }
+    let q = app.store.q();
+    q.set_admin_flag(&id, false);
+    q.log_admin(&me, "remove_admin", &id, "");
+    drop(q);
+    // Derruba as sessões abertas no painel.
+    app.store.q().revoke_sessions(&id);
+    app.disconnect_user(&id);
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn stats(State(app): S, Admin(_): Admin) -> Res {
@@ -335,6 +482,9 @@ struct ReportInput {
     platform: String,
     #[serde(default)]
     version: String,
+    /// Ids de anexos de imagem já enviados por POST /api/attachments (até 5).
+    #[serde(default)]
+    images: Vec<String>,
 }
 
 fn clip(s: &str, n: usize) -> String {
@@ -346,6 +496,9 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input: ReportInput = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message") {
         return Err(validation("Tipo inválido"));
+    }
+    if input.images.len() > 5 {
+        return Err(validation("Mande no máximo 5 imagens."));
     }
     let details = clip(&input.details, 4000);
     let reason = clip(&input.reason, 100);
@@ -362,6 +515,8 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let q = app.store.q();
     let (mut target, mut channel_id, mut server_id, mut content) = (input.target_user_id.clone(), None, None, None);
     let mut message_id = None;
+    let mut snapshot: Option<Value> = None;
+    let mut evidence: Vec<crate::model::Attachment> = vec![];
     match input.kind.as_str() {
         "message" => {
             // Só dá para denunciar mensagem que a pessoa consegue ver; guarda uma cópia do texto
@@ -380,7 +535,21 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
             content = Some(clip(&text, 4000));
             target = Some(m.author.id.clone());
             channel_id = Some(m.channel_id.clone());
-            server_id = q.channel(&m.channel_id).and_then(|c| c.server_id);
+            let channel = q.channel(&m.channel_id);
+            server_id = channel.as_ref().and_then(|c| c.server_id.clone());
+            let server = server_id.as_deref().and_then(|s| q.server(s));
+            snapshot = Some(json!({
+                "id": m.id,
+                "content": m.content,
+                "createdAt": m.created_at,
+                "editedAt": m.edited_at,
+                "author": { "id": m.author.id, "username": m.author.username, "displayName": m.author.display_name },
+                "channel": channel.as_ref().map(|c| json!({ "id": c.id, "name": c.name, "type": c.kind })),
+                "server": server.as_ref().map(|s| json!({ "id": s.id, "name": s.name })),
+                "attachments": m.attachments.iter().map(|a| json!({ "filename": a.filename, "contentType": a.content_type, "size": a.size })).collect::<Vec<_>>(),
+                "reportedAt": now_iso(),
+            }));
+            evidence = m.attachments.clone();
             message_id = Some(m.id);
         }
         "user" => {
@@ -406,6 +575,25 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         details: &details,
         platform: &clip(&input.platform, 60),
         version: &clip(&input.version, 40),
+        images: if matches!(input.kind.as_str(), "bug" | "idea") { &input.images } else { &[] },
     });
+    // Prova que não some: cópia dos arquivos da mensagem (até 10 e 100 MB), que ficam mesmo se
+    // a mensagem for apagada.
+    if let Some(snap) = snapshot {
+        let mut copies = vec![];
+        let mut total = 0i64;
+        for a in evidence.iter().take(10) {
+            total += a.size;
+            if total > 100 * 1024 * 1024 {
+                break;
+            }
+            let new = crate::ids::new_id();
+            if std::fs::copy(app.uploads_dir.join(&a.id), app.uploads_dir.join(&new)).is_ok() {
+                q.create_attachment(&new, target.as_deref().unwrap_or(&me), &a.filename, &a.content_type, a.size);
+                copies.push(new);
+            }
+        }
+        q.set_report_evidence(&id, &snap.to_string(), &copies);
+    }
     Ok((StatusCode::CREATED, Json(json!({ "id": id, "createdAt": now_iso() }))).into_response())
 }

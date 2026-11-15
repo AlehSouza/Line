@@ -303,6 +303,16 @@ const MIGRATIONS: &[&str] = &[
   CREATE INDEX users_created ON users(created_at);
   CREATE INDEX messages_author ON messages(author_id);
 "#,
+    // Admins do painel adicionados pelo dono (os de ADMIN_USERS valem sempre).
+    r#"
+  ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE reports ADD COLUMN message_snapshot TEXT;
+  CREATE TABLE report_attachments (
+    report_id     TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+    attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    PRIMARY KEY (report_id, attachment_id)
+  );
+"#,
     // Ordem dos servidores na barra lateral, escolhida por cada pessoa (NULL = pela entrada).
     r#"
   ALTER TABLE members ADD COLUMN rail_position INTEGER;

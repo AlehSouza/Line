@@ -24,6 +24,8 @@ pub struct NewReport<'a> {
     pub details: &'a str,
     pub platform: &'a str,
     pub version: &'a str,
+    /// Prints enviados junto (anexos ainda sem mensagem, da própria pessoa).
+    pub images: &'a [String],
 }
 
 fn cell(v: ValueRef) -> Value {
@@ -67,6 +69,17 @@ impl Q<'_> {
             }
             out.push(Value::Object(obj));
         }
+        drop(rows);
+        drop(st);
+        // Foto de perfil / ícone do servidor viram URL (o painel junta com o domínio principal).
+        for row in &mut out {
+            for (id_key, url_key) in [("avatarId", "avatarUrl"), ("iconId", "iconUrl")] {
+                if let Some(id) = row.get(id_key).and_then(|v| v.as_str()).map(String::from) {
+                    let url = self.profile_image_url(&id);
+                    row[url_key] = if url.is_empty() { Value::Null } else { json!(url) };
+                }
+            }
+        }
         out
     }
 
@@ -89,6 +102,36 @@ impl Q<'_> {
                 json!({ "date": d, "count": got.get(&d).copied().unwrap_or(0) })
             })
             .collect()
+    }
+
+    // ---------- admins ----------
+
+    pub fn admin_flag(&self, id: &str) -> bool {
+        ok(self
+            .c
+            .query_row("SELECT is_admin FROM users WHERE id = ? AND bot_server_id IS NULL", [id], |r| r.get::<_, i64>(0))
+            .optional())
+            == Some(1)
+    }
+
+    pub fn set_admin_flag(&self, id: &str, on: bool) -> bool {
+        ok(self.c.execute("UPDATE users SET is_admin = ? WHERE id = ? AND bot_server_id IS NULL", params![on as i64, id])) == 1
+    }
+
+    /// Admins adicionados pelo painel e os donos (ADMIN_USERS).
+    pub fn admin_accounts(&self, owners: &[String]) -> Vec<Value> {
+        let mut p: Vec<Sql> = owners.iter().map(|o| Sql::Text(o.clone())).collect();
+        let marks = vec!["?"; owners.len().max(1)].join(",");
+        if owners.is_empty() {
+            p.push(Sql::Text(String::new()));
+        }
+        self.rows(
+            &format!(
+                "SELECT id, username, display_name, avatar_color, avatar_id, created_at, (id IN ({marks})) AS owner
+                 FROM users WHERE is_admin = 1 OR id IN ({marks}) ORDER BY owner DESC, username"
+            ),
+            [p.clone(), p].concat(),
+        )
     }
 
     // ---------- suspensão ----------
@@ -133,7 +176,38 @@ impl Q<'_> {
                 r.reason, r.details, r.platform, r.version, now_iso()
             ],
         ));
+        for img in r.images {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO report_attachments (report_id, attachment_id)
+                 SELECT ?, id FROM attachments WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND content_type LIKE 'image/%'",
+                params![id, img, r.reporter_id],
+            ));
+        }
         id
+    }
+
+    /// Cópia completa da mensagem denunciada (JSON) e os anexos copiados como prova.
+    pub fn set_report_evidence(&self, report_id: &str, snapshot: &str, attachment_ids: &[String]) {
+        ok(self.c.execute("UPDATE reports SET message_snapshot = ? WHERE id = ?", params![snapshot, report_id]));
+        for a in attachment_ids {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO report_attachments (report_id, attachment_id) VALUES (?, ?)",
+                params![report_id, a],
+            ));
+        }
+    }
+
+    /// Imagens anexadas a uma denúncia/bug report (URL pública do anexo).
+    fn report_images(&self, report_id: &str) -> Vec<Value> {
+        let mut st = ok(self.c.prepare_cached(
+            "SELECT a.id, a.filename, a.content_type FROM report_attachments ra JOIN attachments a ON a.id = ra.attachment_id
+             WHERE ra.report_id = ? ORDER BY a.created_at",
+        ));
+        ok(ok(st.query_map([report_id], |r| {
+            let (id, name, ctype): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            Ok(json!({ "id": id, "filename": name, "contentType": ctype, "url": format!("/api/attachments/{id}/{}", super::url_segment(&name)) }))
+        }))
+        .collect())
     }
 
     pub fn admin_reports(&self, kind: Option<&str>, status: Option<&str>, offset: i64) -> Vec<Value> {
@@ -165,7 +239,12 @@ impl Q<'_> {
         }
         sql.push_str(" ORDER BY r.created_at DESC LIMIT 50 OFFSET ?");
         p.push(Sql::Integer(offset.max(0)));
-        self.rows(&sql, p)
+        let mut list = self.rows(&sql, p);
+        for r in &mut list {
+            let id = r["id"].as_str().unwrap_or_default().to_string();
+            r["images"] = json!(self.report_images(&id));
+        }
+        list
     }
 
     pub fn update_report(&self, id: &str, status: &str, note: Option<&str>, admin_id: &str) -> bool {
@@ -269,14 +348,14 @@ impl Q<'_> {
                 "reports": self.per_day("SELECT created_at FROM reports", 30),
             },
             "topServers": self.rows(
-                "SELECT s.id, s.name, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
+                "SELECT s.id, s.name, s.icon_id, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
                         (SELECT COUNT(*) FROM messages m JOIN channels c ON c.id = m.channel_id
                           WHERE c.server_id = s.id AND m.created_at > ?) AS messages_week
                  FROM servers s ORDER BY messages_week DESC, member_count DESC LIMIT 5",
                 vec![Sql::Text(ago(24 * 7))],
             ),
             "recentUsers": self.rows(
-                "SELECT id, username, display_name, avatar_color, created_at FROM users
+                "SELECT id, username, display_name, avatar_color, avatar_id, created_at FROM users
                  WHERE bot_server_id IS NULL ORDER BY created_at DESC LIMIT 8",
                 vec![],
             ),
@@ -390,7 +469,7 @@ impl Q<'_> {
 
     pub fn admin_servers(&self, query: &str, offset: i64) -> Vec<Value> {
         let mut sql = String::from(
-            "SELECT s.id, s.name, s.description, s.icon_color, s.is_public, s.created_at, s.owner_id, s.tag,
+            "SELECT s.id, s.name, s.description, s.icon_color, s.icon_id, s.is_public, s.created_at, s.owner_id, s.tag,
                     u.username AS owner_username, u.display_name AS owner_name,
                     (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
                     (SELECT COUNT(*) FROM channels c WHERE c.server_id = s.id AND c.type <> 'thread') AS channel_count,
@@ -412,7 +491,7 @@ impl Q<'_> {
     pub fn admin_server(&self, id: &str) -> Option<Value> {
         let mut server = self.admin_servers(id, 0).into_iter().find(|s| s["id"] == id)?;
         let members = self.rows(
-            "SELECT u.id, u.username, u.display_name, u.avatar_color, u.banned_until, m.joined_at
+            "SELECT u.id, u.username, u.display_name, u.avatar_color, u.avatar_id, u.banned_until, m.joined_at
              FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ? ORDER BY m.joined_at LIMIT 200",
             vec![Sql::Text(id.into())],
         );

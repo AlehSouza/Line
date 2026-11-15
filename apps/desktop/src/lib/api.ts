@@ -147,6 +147,8 @@ export const api = {
     details?: string;
     platform?: string;
     version?: string;
+    /** Ids de imagens enviadas antes com uploadAttachment (até 5). */
+    images?: string[];
   }) => request<{ id: string }>('POST', '/reports', input),
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
