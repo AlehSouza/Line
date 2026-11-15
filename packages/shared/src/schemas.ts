@@ -75,6 +75,9 @@ export const updateChannelSchema = z.object({
 
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1).max(100),
+  isPrivate: z.boolean().optional(),
+  /** Cargos que podem ver a categoria privada. */
+  roleIds: z.array(z.string()).max(250).optional(),
 });
 
 export const sendMessageSchema = z

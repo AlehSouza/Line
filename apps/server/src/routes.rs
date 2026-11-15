@@ -770,6 +770,7 @@ async fn get_server(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let categories = q
         .categories(&server.id)
         .into_iter()
+        .filter(|cat| q.can_see_category(&me, &cat.id))
         .filter(|cat| manage || channels.iter().any(|c| c.category_id.as_deref() == Some(cat.id.as_str())))
         .collect();
     ok(ServerDetail {
@@ -1140,9 +1141,28 @@ async fn create_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
     let q = app.store.q();
     require_perm(&q, &id, &me, perms::MANAGE_CHANNELS)?;
     let input = body::<validate::CreateCategory>(&b)?.check()?;
-    let category = q.create_category(&id, &input.name);
-    app.to_server(&id, "category:create", &category);
+    let private_roles: Option<Vec<String>> = input.is_private.unwrap_or(false).then(|| {
+        let mut ids: Vec<String> = input
+            .role_ids
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|r| *r != id && q.role(r).is_some_and(|role| role.server_id == id))
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    });
+    let category = q.create_category_ex(&id, &input.name, private_roles.as_deref());
+    to_category(&app, &q, &category, "category:create");
     created(category)
+}
+
+/// Evento de categoria só para quem a enxerga (categoria privada não vaza o nome).
+fn to_category(app: &App, q: &Q, category: &Category, event: &str) {
+    match q.category_audience(&category.id) {
+        Some(ids) => app.to_users(&ids, event, category),
+        None => app.to_server(&category.server_id, event, category),
+    }
 }
 
 async fn rename_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
@@ -1151,7 +1171,7 @@ async fn rename_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
     require_perm(&q, &category.server_id, &me, perms::MANAGE_CHANNELS)?;
     let input = body::<validate::CreateCategory>(&b)?.check()?;
     let updated = q.rename_category(&category.id, &input.name);
-    app.to_server(&category.server_id, "category:update", &updated);
+    to_category(&app, &q, &updated, "category:update");
     ok(updated)
 }
 
@@ -1213,6 +1233,9 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     {
         return Err(not_found("Categoria"));
     }
+    let moving = p.category_id.as_ref().is_some_and(|c| *c != channel.category_id);
+    let before = moving.then(|| q.member_ids(&server_id)).unwrap_or_default();
+    let before: Vec<String> = before.into_iter().filter(|u| q.can_access(u, &channel.id)).collect();
     let updated = q.update_channel(
         &channel.id,
         ChannelPatch {
@@ -1222,6 +1245,20 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
             position: p.position.map(i64::from),
         },
     );
+    if moving {
+        // Mudou de categoria: quem perdeu acesso (categoria privada) recebe a remoção,
+        // quem ganhou recebe o canal como novo.
+        let lost: Vec<String> = before.iter().filter(|u| !q.can_access(u, &updated.id)).cloned().collect();
+        let gained: Vec<String> = q
+            .member_ids(&server_id)
+            .into_iter()
+            .filter(|u| !before.contains(u) && q.can_access(u, &updated.id))
+            .collect();
+        for t in q.threads_of(&updated.id).iter().map(|t| &t.id).chain([&updated.id]) {
+            app.to_users(&lost, "channel:delete", &json!({ "id": t, "serverId": server_id }));
+        }
+        app.to_users(&gained, "channel:create", &updated);
+    }
     app.to_channel(&q, &updated.id, "channel:update", &updated);
     ok(updated)
 }

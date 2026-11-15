@@ -188,8 +188,8 @@ export const api = {
     request<Channel>('POST', `/servers/${enc(serverId)}/channels`, input),
   updateChannel: (id: string, patch: UpdateChannelInput) => request<Channel>('PATCH', `/channels/${enc(id)}`, patch),
   deleteChannel: (id: string) => request<void>('DELETE', `/channels/${enc(id)}`),
-  createCategory: (serverId: string, name: string) =>
-    request<Category>('POST', `/servers/${enc(serverId)}/categories`, { name }),
+  createCategory: (serverId: string, name: string, roleIds?: string[]) =>
+    request<Category>('POST', `/servers/${enc(serverId)}/categories`, roleIds ? { name, isPrivate: true, roleIds } : { name }),
   renameCategory: (id: string, name: string) => request<Category>('PATCH', `/categories/${enc(id)}`, { name }),
   deleteCategory: (id: string) => request<void>('DELETE', `/categories/${enc(id)}`),
 

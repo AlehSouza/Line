@@ -9,7 +9,7 @@ import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { hasPerm, Perm } from '@line/shared';
+import { hasPerm, Perm, type Role } from '@line/shared';
 import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
@@ -144,6 +144,38 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function PrivateSwitch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-1.5 font-semibold">
+        <Icons.Lock size={16} />
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={onToggle}
+        className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', on ? 'bg-accent' : 'bg-edge')}
+      >
+        <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', on ? 'left-[22px]' : 'left-0.5')} />
+      </button>
+    </div>
+  );
+}
+
+function RoleOption({ role, checked, onToggle }: { role: Role; checked: boolean; onToggle: () => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
+      <span className="flex h-7 w-7 items-center justify-center" style={{ color: role.color ?? '#99aab5' }}>
+        <Icons.Shield size={18} />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{role.name}</span>
+      <Checkbox checked={checked} onChange={onToggle} />
+    </label>
+  );
+}
+
 function CreateChannelModal({
   modal,
   onClose,
@@ -248,33 +280,16 @@ function CreateChannelModal({
         </div>
 
         <div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5 font-semibold">
-              <Icons.Lock size={16} />
-              Canal privado
-            </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={isPrivate}
-              onClick={() => setIsPrivate((v) => !v)}
-              className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', isPrivate ? 'bg-accent' : 'bg-edge')}
-            >
-              <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', isPrivate ? 'left-[22px]' : 'left-0.5')} />
-            </button>
-          </div>
-          <p className="mt-1 text-sm text-muted">Somente os cargos e membros selecionados (e os administradores) poderão ver esse canal.</p>
+          <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Exclusivo de cargos" />
+          <p className="mt-1 text-sm text-muted">
+            Somente os cargos e membros selecionados (e os administradores) poderão ver esse canal.
+            {category?.isPrivate && ' A categoria já é exclusiva de cargos, então o canal segue a restrição dela.'}
+          </p>
           {isPrivate && (
             <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
               {roles.length > 0 && <p className="px-2 pt-1 pb-0.5 text-xs font-bold text-muted uppercase">Cargos</p>}
               {roles.map((r) => (
-                <label key={r.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
-                  <span className="flex h-7 w-7 items-center justify-center" style={{ color: r.color ?? '#99aab5' }}>
-                    <Icons.Shield size={18} />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{r.name}</span>
-                  <Checkbox checked={roleIds.includes(r.id)} onChange={() => toggleRole(r.id)} />
-                </label>
+                <RoleOption key={r.id} role={r} checked={roleIds.includes(r.id)} onToggle={() => toggleRole(r.id)} />
               ))}
               {roles.length > 0 && <p className="px-2 pt-2 pb-0.5 text-xs font-bold text-muted uppercase">Membros</p>}
               {members.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">Ainda não há outros membros no servidor.</p>}
@@ -297,7 +312,7 @@ function CreateChannelModal({
           <Button type="button" variant="subtle" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={busy || !name.trim()}>
+          <Button type="submit" disabled={busy || !name.trim() || (isPrivate && !roleIds.length && !memberIds.length)}>
             Criar canal
           </Button>
         </div>
@@ -426,6 +441,11 @@ function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClos
 
 function CreateCategoryModal({ serverId, onClose }: { serverId: string; onClose: () => void }) {
   const [name, setName] = useState('');
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [roleIds, setRoleIds] = useState<string[]>([]);
+  const serverRoles = useLine((s) => s.roles[serverId]);
+  const roles = (serverRoles ?? []).filter((r) => r.id !== serverId);
+  const toggleRole = (id: string) => setRoleIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const { busy, error, run } = useAction();
   return (
     <Modal title="Criar categoria" onClose={onClose}>
@@ -433,21 +453,35 @@ function CreateCategoryModal({ serverId, onClose }: { serverId: string; onClose:
         onSubmit={(e) => {
           e.preventDefault();
           run(async () => {
-            actions.upsertCategory(await api.createCategory(serverId, name));
+            actions.upsertCategory(await api.createCategory(serverId, name, isPrivate ? roleIds : undefined));
             onClose();
           });
         }}
-        className="space-y-4"
+        className="space-y-5"
       >
         <Field label="Nome da categoria">
           <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogos" />
         </Field>
+        <div>
+          <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Exclusiva de cargos" />
+          <p className="mt-1 text-sm text-muted">
+            Somente os cargos selecionados (e os administradores) poderão ver a categoria e todos os canais dentro dela.
+          </p>
+          {isPrivate && (
+            <div className="mt-3 max-h-60 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+              {roles.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">Crie um cargo nas configurações do servidor primeiro.</p>}
+              {roles.map((r) => (
+                <RoleOption key={r.id} role={r} checked={roleIds.includes(r.id)} onToggle={() => toggleRole(r.id)} />
+              ))}
+            </div>
+          )}
+        </div>
         <ErrorText>{error}</ErrorText>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={busy || !name.trim()}>
+          <Button type="submit" disabled={busy || !name.trim() || (isPrivate && !roleIds.length)}>
             Criar
           </Button>
         </div>
