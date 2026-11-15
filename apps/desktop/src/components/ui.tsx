@@ -328,6 +328,8 @@ export const Icons = {
   MoreVertical: icon(L.EllipsisVertical),
   Music: icon(L.Music),
   Mail: icon(L.Mail),
+  ShieldAlert: icon(L.ShieldAlert),
+  ShieldCheck: icon(L.ShieldCheck),
   Copy: icon(L.Copy),
   ArrowLeft: icon(L.ArrowLeft),
   ZoomIn: icon(L.ZoomIn),
