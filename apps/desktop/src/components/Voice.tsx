@@ -339,8 +339,9 @@ function TileView({
         <Video
           stream={tile.stream}
           mirror={tile.isMe && tile.kind === 'person'}
-          contain={tile.kind === 'screen'}
-          onAspect={tile.kind === 'screen' ? onAspect : undefined}
+          // Em destaque a câmera também mantém a proporção original (sem esticar nem cortar), igual à tela.
+          contain={tile.kind === 'screen' || big}
+          onAspect={tile.kind === 'screen' || big ? onAspect : undefined}
         />
       ) : (
         <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
@@ -576,7 +577,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
         ) : focused ? (
           <>
             {/* Tela em destaque: espaço acima para o ícone de quem está assistindo. */}
-            <FitBox aspect={focused.kind === 'screen' ? aspect : null} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
+            <FitBox aspect={focused.kind === 'screen' || focused.stream ? aspect : null} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
             </FitBox>
             {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
