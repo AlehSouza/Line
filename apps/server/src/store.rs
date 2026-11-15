@@ -125,6 +125,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         description: r.get("description")?,
         icon_color: r.get("icon_color")?,
         tag: r.get("tag").unwrap_or_default(),
+        tag_icon: r.get("tag_icon").unwrap_or_default(),
         icon_url: image_url(r, "icon_id", "icon_filename"),
         banner_url: image_url(r, "banner_id", "banner_filename"),
         owner_id: r.get("owner_id")?,
@@ -225,6 +226,7 @@ pub struct ServerPatch {
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
     pub tag: Option<String>,
+    pub tag_icon: Option<String>,
     pub icon_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
 }
@@ -276,7 +278,7 @@ pub struct Q<'a> {
 }
 
 impl Q<'_> {
-    fn ids(&self, sql: &str, p: impl rusqlite::Params) -> Vec<String> {
+    pub fn ids(&self, sql: &str, p: impl rusqlite::Params) -> Vec<String> {
         let mut st = ok(self.c.prepare_cached(sql));
         ok(ok(st.query_map(p, |r| r.get::<_, String>(0))).collect())
     }
@@ -352,16 +354,16 @@ impl Q<'_> {
 
     /// A tag do servidor, se ele ainda tem uma e a pessoa ainda é membro.
     fn user_tag(&self, user_id: &str, server_id: &str) -> Option<UserTag> {
-        let text: Option<String> = ok(self
-            .c
-            .query_row(
-                "SELECT s.tag FROM servers s JOIN members m ON m.server_id = s.id AND m.user_id = ?
-                 WHERE s.id = ? AND s.tag != ''",
-                [user_id, server_id],
-                |r| r.get(0),
-            )
-            .optional());
-        text.map(|text| UserTag { server_id: server_id.to_string(), text })
+        if !self.is_member(server_id, user_id) {
+            return None;
+        }
+        let s = self.server(server_id).filter(|s| !s.tag.is_empty())?;
+        Some(UserTag {
+            server_id: s.id,
+            text: s.tag,
+            icon: (!s.tag_icon.is_empty()).then_some(s.tag_icon),
+            icon_url: s.icon_url,
+        })
     }
 
     /// Quem exibe a tag deste servidor (para avisar quando ela muda).
@@ -756,6 +758,9 @@ impl Q<'_> {
                 id
             ],
         ));
+        if let Some(v) = patch.tag_icon {
+            ok(self.c.execute("UPDATE servers SET tag_icon = ? WHERE id = ?", params![v, id]));
+        }
         if let Some(v) = patch.icon_id {
             ok(self.c.execute("UPDATE servers SET icon_id = ? WHERE id = ?", params![v, id]));
         }

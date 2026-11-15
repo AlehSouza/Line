@@ -9,8 +9,9 @@ import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { MusicSettings } from './Music';
+import { ServerTagSettings } from './ServerTag';
 
-type Section = 'overview' | 'roles' | 'members' | 'music';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'music';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -40,6 +41,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
   const canMembers = canRoles || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
   const nav: { id: Section; label: string; show: boolean }[] = [
     { id: 'overview', label: 'Perfil do servidor', show: canServer },
+    { id: 'tag', label: 'Tag do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
     { id: 'music', label: 'Música', show: canServer },
@@ -95,6 +97,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
               <ServerOverview serverId={serverId} onClose={onClose} />
             </div>
           )}
+          {section === 'tag' && canServer && <ServerTagSettings serverId={serverId} />}
           {section === 'roles' && canRoles && !editing && <RolesList serverId={serverId} onEdit={setEditing} />}
           {section === 'roles' && canRoles && editing && (
             <RoleEditor serverId={serverId} roleId={editing} onSelect={setEditing} onBack={() => setEditing(null)} />

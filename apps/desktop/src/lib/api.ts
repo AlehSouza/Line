@@ -168,6 +168,8 @@ export const api = {
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),
+  serverCard: (id: string) => request<ServerCardInfo>('GET', `/servers/${enc(id)}/card`),
+  channelAudience: (id: string) => request<{ userIds: string[] | null }>('GET', `/channels/${enc(id)}/audience`),
   joinPublic: (id: string) => request<Server>('POST', `/servers/${enc(id)}/join`),
   resetInvite: (id: string) => request<Server>('POST', `/servers/${enc(id)}/invite/reset`),
   kick: (serverId: string, userId: string) => request<void>('DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}`),
@@ -239,3 +241,21 @@ export const api = {
   gifs: (q = '', offset = 0) => request<Gif[]>('GET', `/gifs?q=${enc(q)}&offset=${offset}`),
   embed: (url: string) => request<LinkEmbed | null>('GET', `/embeds?url=${enc(url)}`),
 };
+
+/** Cartão do servidor (clique na tag). Privado e sem ser membro: só foto e banner. */
+export type ServerCardInfo =
+  | { id: string; private: true; iconUrl: string | null; bannerUrl: string | null }
+  | {
+      id: string;
+      private: false;
+      member: boolean;
+      name: string;
+      description: string;
+      iconUrl: string | null;
+      bannerUrl: string | null;
+      tag: string;
+      tagIcon: string;
+      memberCount: number;
+      onlineCount: number;
+      createdAt: string;
+    };

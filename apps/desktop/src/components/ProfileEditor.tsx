@@ -5,7 +5,8 @@ import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ImageCropper } from './ImageCropper';
 import { useShallow } from 'zustand/react/shallow';
-import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input } from './ui';
+import { TagIcon } from './ServerTag';
+import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { EmojiInput, EmojiTextarea } from './EmojiField';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
@@ -145,16 +146,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
                     active ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
                   )}
                 >
-                  {sv && (
-                    <span className="h-4 w-4 shrink-0 overflow-hidden rounded">
-                      {sv.iconUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={fileUrl(sv.iconUrl)} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <DefaultServerIcon />
-                      )}
-                    </span>
-                  )}
+                  {sv && <TagIcon icon={sv.tagIcon} iconUrl={sv.iconUrl} size={16} />}
                   {sv ? sv.tag : 'Nenhuma'}
                 </button>
               );

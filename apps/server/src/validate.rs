@@ -358,6 +358,7 @@ pub struct UpdateServer {
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
     pub tag: Option<String>,
+    pub tag_icon: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub icon_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -376,6 +377,11 @@ impl UpdateServer {
             if t.chars().count() > 4 || !t.chars().all(char::is_alphanumeric) {
                 return Err(validation("A tag precisa ter até 4 letras ou números"));
             }
+        }
+        if let Some(i) = &self.tag_icon
+            && (i.len() > 40 || !i.chars().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(validation("Ícone da tag inválido"));
         }
         Ok(self)
     }

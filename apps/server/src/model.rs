@@ -38,6 +38,9 @@ pub struct BotStyle {
 pub struct UserTag {
     pub server_id: String,
     pub text: String,
+    /// Nome de um ícone do Lucide; None = foto do servidor (`icon_url`).
+    pub icon: Option<String>,
+    pub icon_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -60,6 +63,8 @@ pub struct Server {
     pub icon_color: String,
     /// Tag de identificação (até 4 caracteres); vazia = sem tag.
     pub tag: String,
+    /// Ícone da tag: '' = foto do servidor; senão nome de um ícone do Lucide.
+    pub tag_icon: String,
     pub icon_url: Option<String>,
     pub banner_url: Option<String>,
     pub owner_id: String,

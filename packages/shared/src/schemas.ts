@@ -47,6 +47,7 @@ export const createServerSchema = z.object({
 export const updateServerSchema = createServerSchema.partial().extend({
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   tag: z.string().max(4).optional(),
+  tagIcon: z.string().max(40).optional(),
   iconId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
 });
