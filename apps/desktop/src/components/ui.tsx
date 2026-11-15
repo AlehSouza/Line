@@ -210,7 +210,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
   return (
     <input
       {...props}

@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { ServerOverview } from './Modals';
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
+import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { MusicSettings } from './Music';
 
@@ -443,7 +444,7 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
                 <span className="mb-2 block text-sm font-semibold">
                   Nome do cargo <span className="text-danger">*</span>
                 </span>
-                <Input value={draft.name} maxLength={100} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                <EmojiInput value={draft.name} maxLength={100} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </label>
               <div className="border-t border-edge pt-6">
                 <p className="text-sm font-semibold">
@@ -859,7 +860,7 @@ export function NicknameDialog({ serverId, userId, onClose }: { serverId: string
         }}
       >
         <label className="mb-2 block text-sm font-semibold">Apelido</label>
-        <Input autoFocus value={value} maxLength={32} placeholder={user?.displayName} onChange={(e) => setValue(e.target.value)} />
+        <EmojiInput autoFocus value={value} maxLength={32} placeholder={user?.displayName} onChange={(e) => setValue(e.target.value)} />
         <ErrorText>{error}</ErrorText>
       </form>
     </Modal>

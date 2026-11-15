@@ -6,6 +6,7 @@ import { actions, useLine } from '@/lib/store';
 import { ImageCropper } from './ImageCropper';
 import { useShallow } from 'zustand/react/shallow';
 import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input } from './ui';
+import { EmojiInput, EmojiTextarea } from './EmojiField';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
@@ -92,19 +93,19 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
     <div className="flex flex-col gap-8 lg:flex-row">
       <div className="min-w-0 flex-1 space-y-5">
         <Field label="Nome de exibição">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
+          <EmojiInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
         </Field>
         <Field label="Pronomes">
-          <Input value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} placeholder="ele/dele, ela/dela…" />
+          <EmojiInput value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} placeholder="ele/dele, ela/dela…" />
         </Field>
         <Field label="Pensamento" hint="Aparece num balãozinho ao lado da sua foto.">
-          <Input value={thought} onChange={(e) => setThought(e.target.value)} maxLength={80} placeholder="No que você está pensando?" />
+          <EmojiInput value={thought} onChange={(e) => setThought(e.target.value)} maxLength={80} placeholder="No que você está pensando?" />
         </Field>
         <Field label="Status personalizado">
-          <Input value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} maxLength={128} placeholder="Jogando, estudando, no rolê…" />
+          <EmojiInput value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} maxLength={128} placeholder="Jogando, estudando, no rolê…" />
         </Field>
         <Field label="Sobre mim">
-          <textarea
+          <EmojiTextarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             maxLength={190}

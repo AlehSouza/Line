@@ -7,13 +7,14 @@ import { NicknameDialog, ServerSettings } from './ServerSettings';
 import { UserCard } from './UserCard';
 import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { hasPerm, Perm, type Role } from '@line/shared';
 import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
+import { EmojiButton, EmojiInput, EmojiTextarea } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 
 
@@ -113,7 +114,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
         {mode === 'create' ? (
           <>
             <Field label="Nome do servidor">
-              <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+              <EmojiInput autoFocus required value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
             </Field>
             <label className="flex items-center gap-3 text-sm">
               <Checkbox checked={isPublic} onChange={setIsPublic} />
@@ -184,6 +185,7 @@ function CreateChannelModal({
 }) {
   const [type, setType] = useState<'text' | 'voice'>('text');
   const [name, setName] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [roleIds, setRoleIds] = useState<string[]>([]);
@@ -267,6 +269,7 @@ function CreateChannelModal({
           <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 focus-within:border-accent">
             {type === 'text' ? <Icons.Hash size={18} className="text-muted" /> : <Icons.Speaker size={18} className="text-muted" />}
             <input
+              ref={nameRef}
               autoFocus
               required
               value={name}
@@ -275,6 +278,7 @@ function CreateChannelModal({
               placeholder="novo-canal"
               className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
             />
+            <EmojiButton target={nameRef} />
           </div>
         </div>
 
@@ -323,6 +327,7 @@ function CreateChannelModal({
 function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: () => void }) {
   const channel = useLine((s) => s.channels[channelId]);
   const [name, setName] = useState(channel?.name ?? '');
+  const nameRef = useRef<HTMLInputElement>(null);
   const [topic, setTopic] = useState(channel?.topic ?? '');
   const { busy, error, run } = useAction();
   if (!channel) return null;
@@ -345,6 +350,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
           <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 focus-within:border-accent">
             {isText ? <Icons.Hash size={18} className="text-muted" /> : <Icons.Speaker size={18} className="text-muted" />}
             <input
+              ref={nameRef}
               autoFocus
               required
               value={name}
@@ -352,10 +358,11 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
               onChange={(e) => setName(isText ? e.target.value.replace(/\s/g, '-').toLowerCase() : e.target.value)}
               className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
             />
+            <EmojiButton target={nameRef} />
           </div>
         </div>
         <Field label="Descrição do canal" hint="Aparece ao lado do nome, no topo do canal.">
-          <Input value={topic} maxLength={1024} placeholder="Diga a todos como usar este canal" onChange={(e) => setTopic(e.target.value)} />
+          <EmojiInput value={topic} maxLength={1024} placeholder="Diga a todos como usar este canal" onChange={(e) => setTopic(e.target.value)} />
         </Field>
         <ErrorText>{error}</ErrorText>
         <div className="flex items-center justify-between gap-2">
@@ -405,7 +412,7 @@ function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClos
         className="space-y-4"
       >
         <Field label="Nome da categoria">
-          <Input autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+          <EmojiInput autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
         </Field>
         <ErrorText>{error}</ErrorText>
         <div className="flex items-center justify-between gap-2">
@@ -459,7 +466,7 @@ function CreateCategoryModal({ serverId, onClose }: { serverId: string; onClose:
         className="space-y-5"
       >
         <Field label="Nome da categoria">
-          <Input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogos" />
+          <EmojiInput autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="Jogos" />
         </Field>
         <div>
           <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Exclusiva de cargos" />
@@ -517,7 +524,7 @@ function CreateThreadModal({
         className="space-y-4"
       >
         <Field label="Nome da thread">
-          <Input autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sobre o assunto" />
+          <EmojiInput autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sobre o assunto" />
         </Field>
         <ErrorText>{error}</ErrorText>
         <div className="flex justify-end gap-2">
@@ -554,13 +561,13 @@ function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: (
         className="space-y-4"
       >
         <Field label="Pergunta">
-          <Input autoFocus required maxLength={300} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Qual jogo hoje?" />
+          <EmojiInput autoFocus required maxLength={300} value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Qual jogo hoje?" />
         </Field>
         <div className="space-y-2">
           <span className="block text-xs font-bold tracking-wide text-muted uppercase">Opções</span>
           {options.map((o, i) => (
             <div key={i} className="flex gap-2">
-              <Input maxLength={100} value={o} onChange={(e) => setOption(i, e.target.value)} placeholder={`Opção ${i + 1}`} />
+              <EmojiInput wrapClassName="flex-1" maxLength={100} value={o} onChange={(e) => setOption(i, e.target.value)} placeholder={`Opção ${i + 1}`} />
               {options.length > 2 && (
                 <button
                   type="button"
@@ -640,10 +647,10 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
         <ServerImages icon={icon} banner={banner} setIcon={setIcon} setBanner={setBanner} onError={setImageError} />
         <ErrorText>{imageError}</ErrorText>
         <Field label="Nome">
-          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+          <EmojiInput value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
         </Field>
         <Field label="Descrição" hint="Aparece em Explorar quando o servidor é público.">
-          <textarea
+          <EmojiTextarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             maxLength={300}
@@ -806,7 +813,7 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
         </div>
         {targets.length > 1 && (
           <Field label="Nome do grupo (opcional)">
-            <Input value={groupName} onChange={(e) => setGroupName(e.target.value)} maxLength={100} />
+            <EmojiInput value={groupName} onChange={(e) => setGroupName(e.target.value)} maxLength={100} />
           </Field>
         )}
         <ErrorText>{error}</ErrorText>

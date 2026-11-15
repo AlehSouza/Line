@@ -13,6 +13,7 @@ import {
   useVoice,
 } from "@/lib/voice";
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from "./ui";
+import { EmojiInput } from "./EmojiField";
 
 // ---------- formato da mensagem de convite ----------
 // A DM leva um marcador que o app transforma num cartão do canal de voz:
@@ -395,13 +396,14 @@ export function VoiceStatusLine({ channelId }: { channelId: string }) {
     <button
       disabled={!inChannel}
       onClick={open}
-      title={inChannel ? "Definir um status do canal" : undefined}
+      title={inChannel ? (status ? "Editar o status do canal" : "Definir um status do canal") : undefined}
       className="group/st flex w-full items-center gap-1.5 rounded px-1.5 py-0.5 text-left text-xs text-muted enabled:hover:text-soft"
     >
       <span className={cx("truncate", status && "text-soft")}>
         {status || "Definir um status do canal"}
       </span>
-      {inChannel && (
+      {/* Com status definido, o lápis some: editar continua no clique no texto. */}
+      {inChannel && !status && (
         <Icons.Edit
           size={12}
           className="shrink-0 opacity-70 group-hover/st:opacity-100"
@@ -453,7 +455,7 @@ export function VoiceStatusModal({
         className="space-y-2"
       >
         <label className="block text-sm font-semibold">Status</label>
-        <Input
+        <EmojiInput
           autoFocus
           value={value}
           maxLength={100}
