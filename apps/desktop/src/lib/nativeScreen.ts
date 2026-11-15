@@ -333,3 +333,22 @@ async function startSocketScreen(
     throw err;
   }
 }
+
+// ---------- jogo aberto (app do Windows) ----------
+
+export interface RunningGame {
+  name: string;
+  /** Mesmo id do seletor de tela ("window:<hwnd>"): dá para transmitir direto. */
+  windowId: string;
+  /** Ícone do executável (data URL) ou vazio. */
+  icon: string;
+}
+
+/** Só o app do Windows sabe olhar os processos abertos; web, macOS e Linux não mostram o cartão. */
+export function hasGameDetection() {
+  return typeof window !== 'undefined' && !!window.line?.isDesktop && window.line.platform === 'win32' && hasNativeScreen();
+}
+
+export function detectGame(): Promise<RunningGame | null> {
+  return invoke<RunningGame | null>('game_running').catch(() => null);
+}
