@@ -1,11 +1,11 @@
-// Painel administrador do Line (admin.useline.tech). Sem build: JavaScript puro.
+// Painel administrador do Line (backoffice.useline.tech). Sem build: JavaScript puro.
 // O Caddy deste subdomínio repassa só o login e /api/admin/* para o servidor do Line,
 // que responde apenas para as contas admin.
 'use strict';
 
 const TOKEN_KEY = 'line.admin.token';
 /** Domínio principal: o "Entrar com Google" começa e volta por lá. */
-const MAIN = location.hostname.startsWith('admin.') ? `${location.protocol}//${location.host.slice(6)}` : '';
+const MAIN = location.hostname.startsWith('backoffice.') ? `${location.protocol}//${location.host.slice(11)}` : '';
 const $ = (sel) => document.querySelector(sel);
 
 // ---------- utilidades ----------

@@ -98,7 +98,7 @@ EnvironmentFile=-/etc/line/giphy.env
 EnvironmentFile=-/etc/line/smtp.env
 # GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET: "Entrar com Google".
 EnvironmentFile=-/etc/line/google.env
-# ADMIN_USERS: ids das contas com acesso ao painel admin.useline.tech (separados por vírgula).
+# ADMIN_USERS: ids das contas com acesso ao painel backoffice.useline.tech (separados por vírgula).
 EnvironmentFile=-/etc/line/admin.env
 ExecStart=/opt/line/line-server
 Restart=always
@@ -147,8 +147,8 @@ $DOMAIN {
 		root * /opt/line/site
 		file_server
 	}
-	# Painel administrador mudou para admin.$DOMAIN; a API admin só responde por lá.
-	redir /admin* https://admin.$DOMAIN/
+	# Painel administrador mudou para backoffice.$DOMAIN; a API admin só responde por lá.
+	redir /admin* https://backoffice.$DOMAIN/
 	@adminapi path /api/admin/*
 	handle @adminapi {
 		respond 404
@@ -165,7 +165,7 @@ $DOMAIN {
 
 # Painel administrador (projeto apps/admin; o CI envia para /opt/line/admin). Só expõe o login e a
 # API admin, que responde apenas para as contas em ADMIN_USERS. Precisa do DNS: A admin -> IP da VPS.
-admin.$DOMAIN {
+backoffice.$DOMAIN {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
@@ -282,7 +282,7 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
-# Admin do painel (admin.$DOMAIN): na primeira vez, a conta mais antiga (a do dono do Line). Para trocar, edite
+# Admin do painel (backoffice.$DOMAIN): na primeira vez, a conta mais antiga (a do dono do Line). Para trocar, edite
 # /etc/line/admin.env (ADMIN_USERS=<id>[,<id>]) e rode systemctl restart line.
 if [ ! -f /etc/line/admin.env ] && [ -f /var/lib/line/line.db ]; then
   FIRST="$(sqlite3 /var/lib/line/line.db "SELECT id || ' ' || username FROM users WHERE bot_server_id IS NULL ORDER BY created_at LIMIT 1" || true)"

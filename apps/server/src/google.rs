@@ -19,7 +19,7 @@ pub enum Target {
     Web,
     /// App desktop escutando em 127.0.0.1:{porta}.
     Desktop(u16),
-    /// Painel administrador (admin.useline.tech). Troca o código como o desktop (sem cookie),
+    /// Painel administrador (backoffice.useline.tech). Troca o código como o desktop (sem cookie),
     /// porque o cookie do login fica no domínio principal.
     Admin,
 }
@@ -87,7 +87,7 @@ impl Google {
         let client_secret = var("GOOGLE_CLIENT_SECRET")?;
         let public = var("PUBLIC_URL").unwrap_or_else(|| "https://useline.tech".into());
         let app_url = var("APP_URL").unwrap_or_else(|| format!("{}/app", public.trim_end_matches('/')));
-        let admin_url = var("ADMIN_URL").unwrap_or_else(|| public.replacen("://", "://admin.", 1));
+        let admin_url = var("ADMIN_URL").unwrap_or_else(|| public.replacen("://", "://backoffice.", 1));
         Some(Self {
             client_id,
             client_secret,

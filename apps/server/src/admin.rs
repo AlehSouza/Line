@@ -1,4 +1,4 @@
-//! Painel administrador (admin.useline.tech, projeto apps/admin): estatísticas, usuários, servidores, denúncias e
+//! Painel administrador (backoffice.useline.tech, projeto apps/admin): estatísticas, usuários, servidores, denúncias e
 //! bug reports. Tudo em /api/admin/*, só para as contas em ADMIN_USERS, com limite de pedidos.
 //! Também fica aqui o envio de denúncias e bug reports pelo app (POST /api/reports).
 use crate::errors::*;
