@@ -3,7 +3,7 @@
 import { mobile } from '@/lib/mobile';
 import { MobileBack } from './Mobile';
 
-import { MusicBotInVoice } from './Music';
+import { CallMusicBar, MusicBotInVoice } from './Music';
 import { useMusic } from '@/lib/music';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
@@ -552,7 +552,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   return (
     <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
       {!compact && (
-        <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+        <header className="relative flex h-12 shrink-0 items-center gap-2 px-4">
           <MobileBack />
           <Icons.Speaker size={20} className="text-muted" />
           <h1 className="font-bold">{title}</h1>
@@ -562,6 +562,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
               <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
             </>
           )}
+          <CallMusicBar channelId={channel.id} />
         </header>
       )}
 
