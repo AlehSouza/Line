@@ -303,6 +303,10 @@ const MIGRATIONS: &[&str] = &[
   CREATE INDEX users_created ON users(created_at);
   CREATE INDEX messages_author ON messages(author_id);
 "#,
+    // Ordem dos servidores na barra lateral, escolhida por cada pessoa (NULL = pela entrada).
+    r#"
+  ALTER TABLE members ADD COLUMN rail_position INTEGER;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

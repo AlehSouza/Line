@@ -50,18 +50,21 @@ export function UserTagBadge({ user }: { user: Pick<PublicUser, 'id' | 'tag'> })
   if (!tag) return null;
   return (
     <>
-      <button
-        type="button"
+      {/* span com role=button: a tag fica dentro de outros botões (linha da call, nome no chat). */}
+      <span
+        role="button"
+        tabIndex={0}
         title={server ? `Tag do servidor ${server.name}` : 'Tag de servidor'}
         onClick={(e) => {
           e.stopPropagation();
           setAt({ x: e.clientX, y: e.clientY });
         }}
+        onContextMenu={(e) => e.stopPropagation()}
         className="inline-flex shrink-0 cursor-pointer items-center gap-1 self-center rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft hover:bg-hover hover:text-fg"
       >
         <TagIcon icon={tag.icon} iconUrl={tag.iconUrl ?? server?.iconUrl} />
         {tag.text}
-      </button>
+      </span>
       {at && <ServerCardPopover serverId={tag.serverId} at={at} onClose={() => setAt(null)} />}
     </>
   );
@@ -97,7 +100,8 @@ function ServerCardPopover({ serverId, at, onClose }: { serverId: string; at: { 
   const full = info && !info.private ? info : null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50" onMouseDown={onClose}>
+    // Portal ainda propaga eventos pela árvore do React: não deixa o clique chegar na linha/nome por trás.
+    <div className="fixed inset-0 z-50" onMouseDown={onClose} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
       <div
         ref={box}
         role="dialog"

@@ -147,6 +147,10 @@ export const actions = {
     });
   },
 
+  setServerOrder(ids: string[]) {
+    set({ serverOrder: ids });
+  },
+
   upsertServer(server: Server) {
     set((s) => ({
       servers: { ...s.servers, [server.id]: server },

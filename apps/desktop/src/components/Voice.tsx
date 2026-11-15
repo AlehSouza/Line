@@ -4,6 +4,7 @@ import { mobile } from '@/lib/mobile';
 import { MobileBack } from './Mobile';
 
 import { CallMusicBar, MusicBotInVoice } from './Music';
+import { UserTagBadge } from './ServerTag';
 import { useMusic } from '@/lib/music';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
@@ -1515,7 +1516,10 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
                 <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-online" />
               )}
             </span>
-            <span className="flex-1 truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
+              {u && <UserTagBadge user={u} />}
+            </span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
               {p.screenStreamId && <LiveBadge userId={p.userId} channelId={channelId} />}
               {p.cameraStreamId && <Icons.Video size={15} />}

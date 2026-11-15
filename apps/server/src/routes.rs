@@ -68,6 +68,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/google/callback", get(google_callback))
         .route("/auth/google/finish", post(google_finish))
         .route("/users/@me", get(get_me).patch(update_me))
+        .route("/users/@me/servers/order", put(reorder_my_servers))
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/{id}", get(get_user))
@@ -662,6 +663,21 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
     }
     app.broadcast_presence(&q, &me);
     ok(user)
+}
+
+/// Ordem dos servidores na barra lateral (só para mim).
+async fn reorder_my_servers(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Order {
+        server_ids: Vec<String>,
+    }
+    let input = body::<Order>(&b)?;
+    if input.server_ids.len() > 500 {
+        return Err(bad_request("Lista grande demais"));
+    }
+    app.store.q().reorder_my_servers(&me, &input.server_ids);
+    no_content()
 }
 
 async fn get_user(State(app): S, Me(_): Me, Path(id): Path<String>) -> Res {
