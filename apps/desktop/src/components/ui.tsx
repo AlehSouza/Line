@@ -323,6 +323,8 @@ export const Icons = {
   UserCheck: icon(L.UserCheck),
   Clock: icon(L.Clock),
   More: icon(L.Ellipsis),
+  MoreVertical: icon(L.EllipsisVertical),
+  Music: icon(L.Music),
   Copy: icon(L.Copy),
   ArrowLeft: icon(L.ArrowLeft),
   ZoomIn: icon(L.ZoomIn),
