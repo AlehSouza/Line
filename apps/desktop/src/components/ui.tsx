@@ -302,6 +302,7 @@ export const Icons = {
   Phone: icon(L.Phone),
   PhoneOff: icon(L.PhoneOff),
   Expand: icon(L.Maximize2),
+  Shrink: icon(L.Minimize2),
   Waves: icon(L.AudioLines),
   Signal: icon(L.Signal),
   Sliders: icon(L.SlidersHorizontal),
