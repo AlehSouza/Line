@@ -25,6 +25,8 @@ import {
   setScreenVolume,
   setWatching,
   startCamera,
+  switchCamera,
+  switchScreen,
   toggleCamera,
   toggleDeafen,
   toggleMute,
@@ -79,9 +81,19 @@ function Video({
   onAspect?: (aspect: number) => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  // Troquei câmera/tela sem parar: mesmo stream com trilha nova, então reaplica na prévia.
+  const rev = useVoice((v) => v.mediaRev);
+  const lastRev = useRef(rev);
   useEffect(() => {
-    if (ref.current && ref.current.srcObject !== stream) ref.current.srcObject = stream;
-  }, [stream]);
+    const el = ref.current;
+    if (!el) return;
+    if (el.srcObject !== stream) el.srcObject = stream;
+    else if (lastRev.current !== rev) {
+      el.srcObject = null;
+      el.srcObject = stream;
+    }
+    lastRev.current = rev;
+  }, [stream, rev]);
   const report = () => {
     const v = ref.current;
     if (v && v.videoWidth && v.videoHeight) onAspect?.(v.videoWidth / v.videoHeight);
@@ -608,18 +620,18 @@ export function VoiceControls({ large }: { large?: boolean }) {
   const deafened = useVoice((v) => v.deafened);
   const camera = useVoice((v) => !!v.camera);
   const screen = useVoice((v) => !!v.screen);
-  const [picker, setPicker] = useState(false);
+  const [picker, setPicker] = useState<false | 'start' | 'switch'>(false);
   const [camPicker, setCamPicker] = useState(false);
 
-  const [devMenu, setDevMenu] = useState<'input' | 'output' | null>(null);
+  const [devMenu, setDevMenu] = useState<'input' | 'output' | 'camera' | null>(null);
   const size = large ? 22 : 18;
 
-  const shareScreen = () => (screen ? void toggleScreen() : setPicker(true));
+  const shareScreen = () => (screen ? void toggleScreen() : setPicker('start'));
   const camClick = () => (camera ? void toggleCamera() : setCamPicker(true));
   const modals = (
     <>
       {camPicker && <CameraModal onClose={() => setCamPicker(false)} />}
-      {picker && <ScreenShareModal onClose={() => setPicker(false)} />}
+      {picker && <ScreenShareModal switching={picker === 'switch' && screen} onClose={() => setPicker(false)} />}
     </>
   );
 
@@ -638,7 +650,7 @@ export function VoiceControls({ large }: { large?: boolean }) {
         danger ? 'bg-danger/15 text-danger hover:bg-danger/25' : 'text-muted hover:bg-hover hover:text-fg',
         open && 'bg-hover',
       );
-    const toggleMenu = (k: 'input' | 'output') => setDevMenu((m) => (m === k ? null : k));
+    const toggleMenu = (k: 'input' | 'output' | 'camera') => setDevMenu((m) => (m === k ? null : k));
     return (
       <div className="flex items-center gap-3 max-md:gap-2">
         <div className={group}>
@@ -655,15 +667,38 @@ export function VoiceControls({ large }: { large?: boolean }) {
           <button title="Escolher saída de áudio" onClick={() => toggleMenu('output')} className={arrow(deafened, devMenu === 'output')}>
             <Icons.Chevron size={14} />
           </button>
-          {devMenu && <DeviceMenu kind={devMenu} onClose={() => setDevMenu(null)} className="left-0 w-64" />}
+          {devMenu && devMenu !== 'camera' && <DeviceMenu kind={devMenu} onClose={() => setDevMenu(null)} className="left-0 w-64" />}
         </div>
         <div className={group}>
           <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={camClick} className={key(camera ? 'on' : 'off')}>
             {camera ? <Icons.Video size={size} /> : <Icons.VideoOff size={size} />}
           </button>
+          <button title="Escolher câmera" onClick={() => toggleMenu('camera')} className={arrow(false, devMenu === 'camera')}>
+            <Icons.Chevron size={14} />
+          </button>
+          <span className="mx-1 h-6 w-px bg-edge max-md:mx-0.5" />
           <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={key(screen ? 'on' : 'off')}>
             <Icons.Screen size={size} />
           </button>
+          <button
+            title={screen ? 'Trocar tela ou janela' : 'Escolher tela'}
+            onClick={() => {
+              setDevMenu(null);
+              setPicker(screen ? 'switch' : 'start');
+            }}
+            className={arrow(false, !!picker)}
+          >
+            <Icons.Chevron size={14} />
+          </button>
+          {devMenu === 'camera' && (
+            <CameraMenu
+              onClose={() => setDevMenu(null)}
+              onOpenModal={() => {
+                setDevMenu(null);
+                setCamPicker(true);
+              }}
+            />
+          )}
         </div>
         <button
           title="Sair da chamada"
@@ -808,7 +843,53 @@ export function CameraModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export function ScreenShareModal({ onClose }: { onClose: () => void }) {
+/** Seta da câmera: lista as câmeras. Ligada, troca na hora; desligada, abre a prévia com a escolhida. */
+function CameraMenu({ onClose, onOpenModal }: { onClose: () => void; onOpenModal: () => void }) {
+  const camera = useVoice((v) => v.camera);
+  useVoice((v) => v.mediaRev);
+  const [list, setList] = useState<MediaDeviceInfo[] | null>(null);
+  useEffect(() => {
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((all) => setList(all.filter((d) => d.kind === 'videoinput')))
+      .catch(() => setList([]));
+  }, []);
+  let saved = '';
+  try {
+    saved = localStorage.getItem(CAMERA_KEY) ?? '';
+  } catch {}
+  const current = camera?.getVideoTracks()[0]?.getSettings().deviceId ?? saved;
+  const pick = (id: string) => {
+    try {
+      localStorage.setItem(CAMERA_KEY, id);
+    } catch {}
+    if (camera) {
+      onClose();
+      if (id !== current) void switchCamera(id);
+    } else onOpenModal();
+  };
+  const item = (active: boolean) =>
+    cx('flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-hover', active && 'text-accent');
+  return (
+    <div className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-lg border border-edge bg-rail p-1.5 shadow-xl" onMouseLeave={onClose}>
+      <p className="px-2.5 pt-1 pb-1.5 text-[11px] font-bold tracking-wide text-muted uppercase">Câmera</p>
+      {list === null ? (
+        <p className="px-2.5 py-1.5 text-sm text-muted">Procurando câmeras…</p>
+      ) : list.length === 0 ? (
+        <p className="px-2.5 py-1.5 text-sm text-muted">Nenhuma câmera encontrada.</p>
+      ) : (
+        list.map((d, i) => (
+          <button key={d.deviceId || i} onClick={() => pick(d.deviceId)} className={item(current === d.deviceId)}>
+            <span className="flex-1 truncate">{d.label || `Câmera ${i + 1}`}</span>
+            {current === d.deviceId && <Icons.Check size={14} />}
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
+export function ScreenShareModal({ onClose, switching = false }: { onClose: () => void; switching?: boolean }) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
@@ -843,7 +924,8 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
     if (native && !selected) return;
     setScreenQuality({ resolution, fps });
     onClose();
-    void toggleScreen(native && selected ? { id: selected, audio } : undefined);
+    const src = native && selected ? { id: selected, audio } : undefined;
+    void (switching ? switchScreen(src) : toggleScreen(src));
   };
   const choice = (active: boolean) =>
     cx(
@@ -864,9 +946,11 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="Transmitir tela"
+      title={switching ? 'Trocar tela' : 'Transmitir tela'}
       subtitle={
-        native
+        switching
+          ? 'Escolha a nova janela ou tela. A transmissão continua, sem parar.'
+          : native
           ? 'Escolha uma janela ou tela para a galera assistir.'
           : 'Escolha a qualidade. Depois o sistema pergunta qual tela ou janela mostrar (e se o áudio vai junto).'
       }
@@ -879,7 +963,7 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
             Cancelar
           </Button>
           <Button onClick={start} disabled={native && !selected}>
-            <Icons.Screen size={16} /> Transmitir
+            <Icons.Screen size={16} /> {switching ? 'Trocar' : 'Transmitir'}
           </Button>
         </>
       }
@@ -921,7 +1005,7 @@ export function ScreenShareModal({ onClose }: { onClose: () => void }) {
                       setSelected(s.id);
                       setScreenQuality({ resolution, fps });
                       onClose();
-                      void toggleScreen({ id: s.id, audio });
+                      void (switching ? switchScreen({ id: s.id, audio }) : toggleScreen({ id: s.id, audio }));
                     }}
                     title={s.name}
                     className={cx(
