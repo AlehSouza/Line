@@ -118,6 +118,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             axum::routing::patch(edit_message).delete(delete_message),
         )
         .route("/channels/{id}/threads", get(list_threads).post(create_thread))
+        .route("/channels/{id}/audience", get(channel_audience))
+        .route("/servers/{id}/card", get(server_card))
         .route("/channels/{id}/polls", post(create_poll))
         .route("/channels/{id}/music/play", post(music_play))
         .route("/servers/{id}/music/bot", get(get_music_bot).patch(update_music_bot))
@@ -634,6 +636,7 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
             tag_server_id: p.tag_server_id,
+            ..Default::default()
         },
     );
     app.to_user(&me, "self:update", &user);
@@ -793,7 +796,7 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let q = app.store.q();
     require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
-    let before_tag = q.server(&id).map(|s| s.tag).unwrap_or_default();
+    let before_tag = q.server(&id).map(|s| (s.tag, s.tag_icon, s.icon_url)).unwrap_or_default();
     for img in [&p.icon_id, &p.banner_id].into_iter().flatten().flatten() {
         if !q.own_image(&me, img) {
             return Err(bad_request("Imagem inválida"));
@@ -807,12 +810,13 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             is_public: p.is_public,
             icon_color: p.icon_color,
             tag: p.tag,
+            tag_icon: p.tag_icon,
             icon_id: p.icon_id,
             banner_id: p.banner_id,
         },
     );
     app.server_updated(&q, &server);
-    if before_tag != server.tag {
+    if before_tag != (server.tag.clone(), server.tag_icon.clone(), server.icon_url.clone()) {
         // Quem exibe a tag precisa aparecer com a nova (ou sem nenhuma).
         for user_id in q.tag_users(&id) {
             if let Some(public) = q.public_user(&user_id) {
@@ -1239,6 +1243,43 @@ fn require_channel_manager(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<
     Ok((channel, server_id))
 }
 
+/// Quem enxerga o canal (para a lista de membros ao lado): null = todos os membros do servidor.
+async fn channel_audience(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_access(&q, &id, &me)?;
+    ok(json!({ "userIds": q.private_audience(&id) }))
+}
+
+/// Cartão do servidor (clique na tag): completo se for público ou se eu for membro;
+/// senão só a foto e o banner, marcado como privado.
+async fn server_card(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let server = q.server(&id).ok_or_else(|| not_found("Servidor"))?;
+    let member = q.is_member(&id, &me);
+    if !server.is_public && !member {
+        return ok(json!({ "id": server.id, "private": true, "iconUrl": server.icon_url, "bannerUrl": server.banner_url }));
+    }
+    let online = q
+        .ids("SELECT user_id FROM members WHERE server_id = ?", [id.as_str()])
+        .iter()
+        .filter(|u| q.public_user(u).is_some_and(|p| p.presence != "offline"))
+        .count();
+    ok(json!({
+        "id": server.id,
+        "private": false,
+        "member": member,
+        "name": server.name,
+        "description": server.description,
+        "iconUrl": server.icon_url,
+        "bannerUrl": server.banner_url,
+        "tag": server.tag,
+        "tagIcon": server.tag_icon,
+        "memberCount": server.member_count,
+        "onlineCount": online,
+        "createdAt": server.created_at,
+    }))
+}
+
 async fn get_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     ok(require_access(&app.store.q(), &id, &me)?)
 }
@@ -1454,6 +1495,9 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
             tag_server_id: None,
+            bot_name_color: p.bot_name_color,
+            bot_tag_color: p.bot_tag_color,
+            bot_tag_text: p.bot_tag_text,
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;

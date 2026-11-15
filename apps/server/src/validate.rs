@@ -278,6 +278,12 @@ pub struct UpdateProfile {
     /// Servidor cuja tag exibir (null = nenhuma).
     #[serde(default, deserialize_with = "nullable")]
     pub tag_server_id: Option<Option<String>>,
+    /// Só no perfil do bot de música.
+    #[serde(default, deserialize_with = "nullable")]
+    pub bot_name_color: Option<Option<String>>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub bot_tag_color: Option<Option<String>>,
+    pub bot_tag_text: Option<String>,
 }
 
 impl UpdateProfile {
@@ -306,6 +312,15 @@ impl UpdateProfile {
         }
         if let Some(Some(t)) = &self.thought {
             text(t, 0, 80, "O pensamento")?;
+        }
+        for c in [&mut self.bot_name_color, &mut self.bot_tag_color].into_iter().flatten().flatten() {
+            *c = color(c)?;
+        }
+        if let Some(t) = &self.bot_tag_text
+            && t != "BOT"
+            && t != "B"
+        {
+            return Err(validation("A etiqueta do bot precisa ser BOT ou B"));
         }
         Ok(self)
     }
@@ -343,6 +358,7 @@ pub struct UpdateServer {
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
     pub tag: Option<String>,
+    pub tag_icon: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub icon_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -361,6 +377,11 @@ impl UpdateServer {
             if t.chars().count() > 4 || !t.chars().all(char::is_alphanumeric) {
                 return Err(validation("A tag precisa ter até 4 letras ou números"));
             }
+        }
+        if let Some(i) = &self.tag_icon
+            && (i.len() > 40 || !i.chars().all(|c| c.is_ascii_alphanumeric()))
+        {
+            return Err(validation("Ícone da tag inválido"));
         }
         Ok(self)
     }

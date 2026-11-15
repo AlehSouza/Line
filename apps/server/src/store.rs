@@ -65,6 +65,9 @@ pub struct UserRow {
     pub bot_server_id: Option<String>,
     /// Servidor cuja tag a pessoa exibe.
     pub tag_server_id: Option<String>,
+    pub bot_name_color: Option<String>,
+    pub bot_tag_color: Option<String>,
+    pub bot_tag_text: String,
 }
 
 impl UserRow {
@@ -87,11 +90,14 @@ impl UserRow {
             thought: r.get("thought").unwrap_or(None),
             bot_server_id: r.get("bot_server_id").unwrap_or(None),
             tag_server_id: r.get("tag_server_id").unwrap_or(None),
+            bot_name_color: r.get("bot_name_color").unwrap_or(None),
+            bot_tag_color: r.get("bot_tag_color").unwrap_or(None),
+            bot_tag_text: r.get("bot_tag_text").unwrap_or_else(|_| "BOT".into()),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
@@ -119,6 +125,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         description: r.get("description")?,
         icon_color: r.get("icon_color")?,
         tag: r.get("tag").unwrap_or_default(),
+        tag_icon: r.get("tag_icon").unwrap_or_default(),
         icon_url: image_url(r, "icon_id", "icon_filename"),
         banner_url: image_url(r, "banner_id", "banner_filename"),
         owner_id: r.get("owner_id")?,
@@ -207,6 +214,9 @@ pub struct ProfilePatch {
     pub avatar_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
     pub tag_server_id: Option<Option<String>>,
+    pub bot_name_color: Option<Option<String>>,
+    pub bot_tag_color: Option<Option<String>>,
+    pub bot_tag_text: Option<String>,
 }
 
 #[derive(Default)]
@@ -216,6 +226,7 @@ pub struct ServerPatch {
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
     pub tag: Option<String>,
+    pub tag_icon: Option<String>,
     pub icon_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
 }
@@ -267,7 +278,7 @@ pub struct Q<'a> {
 }
 
 impl Q<'_> {
-    fn ids(&self, sql: &str, p: impl rusqlite::Params) -> Vec<String> {
+    pub fn ids(&self, sql: &str, p: impl rusqlite::Params) -> Vec<String> {
         let mut st = ok(self.c.prepare_cached(sql));
         ok(ok(st.query_map(p, |r| r.get::<_, String>(0))).collect())
     }
@@ -333,21 +344,26 @@ impl Q<'_> {
             thought: if presence == "offline" { None } else { row.thought.clone() },
             bot: row.bot_server_id.is_some(),
             tag: row.tag_server_id.as_deref().and_then(|s| self.user_tag(&row.id, s)),
+            bot_style: row.bot_server_id.as_ref().map(|_| BotStyle {
+                name_color: row.bot_name_color.clone(),
+                tag_color: row.bot_tag_color.clone(),
+                tag_text: row.bot_tag_text.clone(),
+            }),
         }
     }
 
     /// A tag do servidor, se ele ainda tem uma e a pessoa ainda é membro.
     fn user_tag(&self, user_id: &str, server_id: &str) -> Option<UserTag> {
-        let text: Option<String> = ok(self
-            .c
-            .query_row(
-                "SELECT s.tag FROM servers s JOIN members m ON m.server_id = s.id AND m.user_id = ?
-                 WHERE s.id = ? AND s.tag != ''",
-                [user_id, server_id],
-                |r| r.get(0),
-            )
-            .optional());
-        text.map(|text| UserTag { server_id: server_id.to_string(), text })
+        if !self.is_member(server_id, user_id) {
+            return None;
+        }
+        let s = self.server(server_id).filter(|s| !s.tag.is_empty())?;
+        Some(UserTag {
+            server_id: s.id,
+            text: s.tag,
+            icon: (!s.tag_icon.is_empty()).then_some(s.tag_icon),
+            icon_url: s.icon_url,
+        })
     }
 
     /// Quem exibe a tag deste servidor (para avisar quando ela muda).
@@ -619,6 +635,15 @@ impl Q<'_> {
         if let Some(v) = patch.tag_server_id {
             set("tag_server_id", opt(v));
         }
+        if let Some(v) = patch.bot_name_color {
+            set("bot_name_color", opt(v));
+        }
+        if let Some(v) = patch.bot_tag_color {
+            set("bot_tag_color", opt(v));
+        }
+        if let Some(v) = patch.bot_tag_text {
+            set("bot_tag_text", v.into());
+        }
         if !sets.is_empty() {
             values.push(id.to_string().into());
             ok(self.c.execute(
@@ -746,6 +771,9 @@ impl Q<'_> {
                 id
             ],
         ));
+        if let Some(v) = patch.tag_icon {
+            ok(self.c.execute("UPDATE servers SET tag_icon = ? WHERE id = ?", params![v, id]));
+        }
         if let Some(v) = patch.icon_id {
             ok(self.c.execute("UPDATE servers SET icon_id = ? WHERE id = ?", params![v, id]));
         }
@@ -1440,6 +1468,7 @@ impl Q<'_> {
                         thought: None,
                         bot: false,
                         tag: None,
+                        bot_style: None,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,

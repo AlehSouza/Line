@@ -634,7 +634,6 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [name, setName] = useState(server?.name ?? '');
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
-  const [tag, setTag] = useState(server?.tag ?? '');
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
   const [imageError, setImageError] = useState('');
@@ -656,14 +655,6 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
             maxLength={300}
             rows={3}
             className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
-          />
-        </Field>
-        <Field label="Tag do servidor" hint="Até 4 letras ou números. Os membros podem exibir a tag ao lado do nome em Editar perfil.">
-          <Input
-            value={tag}
-            onChange={(e) => setTag(e.target.value.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase().slice(0, 4))}
-            placeholder="Ex.: LINE"
-            className="w-32 font-bold tracking-wide"
           />
         </Field>
         <label className="flex items-center gap-3 text-sm">
@@ -698,7 +689,6 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
                     name,
                     description,
                     isPublic,
-                    tag,
                     ...(icon.changed ? { iconId: icon.id } : {}),
                     ...(banner.changed ? { bannerId: banner.id } : {}),
                   }),

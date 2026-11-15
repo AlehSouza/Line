@@ -240,6 +240,16 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE servers ADD COLUMN music_idle_message TEXT NOT NULL DEFAULT '';
 "#,
+    // Bot: cor do nome, cor da etiqueta e texto da etiqueta ("BOT" ou "B").
+    r#"
+  ALTER TABLE users ADD COLUMN bot_name_color TEXT;
+  ALTER TABLE users ADD COLUMN bot_tag_color TEXT;
+  ALTER TABLE users ADD COLUMN bot_tag_text TEXT NOT NULL DEFAULT 'BOT';
+"#,
+    // Ícone da tag do servidor: '' = foto do servidor; senão o nome de um ícone do Lucide.
+    r#"
+  ALTER TABLE servers ADD COLUMN tag_icon TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

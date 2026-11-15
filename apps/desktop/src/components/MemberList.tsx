@@ -1,7 +1,8 @@
 'use client';
 
 import type { PublicUser } from '@line/shared';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '@/lib/api';
 import { SearchBox, SearchResults } from './SearchPanel';
 import { actions, useLine } from '@/lib/store';
 import { openContextMenu, userMenu } from './ContextMenu';
@@ -14,6 +15,22 @@ export function MemberList({ serverId }: { serverId: string }) {
   const users = useLine((s) => s.users);
   const ownerId = useLine((s) => s.servers[serverId]?.ownerId);
   const roles = useLine((s) => s.roles[serverId]);
+  // Canal de texto aberto: a lista mostra só quem tem acesso a ele (canal/categoria exclusivos).
+  const channelId = useLine((s) => (s.view.kind === 'server' && s.view.serverId === serverId ? s.view.channelId : null));
+  const [audience, setAudience] = useState<{ channelId: string; ids: Set<string> | null } | null>(null);
+  useEffect(() => {
+    if (!channelId) return setAudience(null);
+    let alive = true;
+    api.channelAudience(channelId).then(
+      (r) => alive && setAudience({ channelId, ids: r.userIds ? new Set(r.userIds) : null }),
+      () => alive && setAudience(null),
+    );
+    return () => {
+      alive = false;
+    };
+    // Cargos e membros mudam quem enxerga o canal: busca de novo.
+  }, [channelId, roles, members]);
+  const allowed = audience && audience.channelId === channelId ? audience.ids : null;
   // Cor do cargo mais alto (com cor) de cada um.
   const colorOf = (roleIds: string[]) => (roles ?? []).find((r) => r.color && roleIds.includes(r.id))?.color ?? undefined;
 
@@ -22,7 +39,7 @@ export function MemberList({ serverId }: { serverId: string }) {
   const sections = useMemo(() => {
     const list = Object.values(members ?? {})
       .map((m) => ({ ...m, user: users[m.userId] }))
-      .filter((m): m is typeof m & { user: PublicUser } => !!m.user)
+      .filter((m): m is typeof m & { user: PublicUser } => !!m.user && (!allowed || allowed.has(m.userId)))
       .sort((a, b) => (a.nickname ?? a.user.displayName).localeCompare(b.nickname ?? b.user.displayName, 'pt-BR'));
     const hoisted = (roles ?? []).filter((r) => r.hoist && r.id !== serverId);
     const groups = hoisted.map((r) => ({ key: r.id, label: r.name, list: [] as typeof list }));
@@ -33,7 +50,7 @@ export function MemberList({ serverId }: { serverId: string }) {
       else (groups[hoisted.findIndex((r) => m.roleIds.includes(r.id))] ?? online).list.push(m);
     }
     return [...groups, online, offline];
-  }, [members, users, roles, serverId]);
+  }, [members, users, roles, serverId, allowed]);
 
   const section = (key: string, label: string, list: (typeof sections)[number]['list']) =>
     list.length > 0 && (
@@ -53,9 +70,9 @@ export function MemberList({ serverId }: { serverId: string }) {
           >
             <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
-              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: colorOf(m.roleIds) }}>
+              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: m.user.botStyle?.nameColor ?? colorOf(m.roleIds) }}>
                 {m.nickname || m.user.displayName}
-                {m.user.bot && <BotTag />}
+                {m.user.bot && <BotTag user={m.user} />}
                 <UserTagBadge user={m.user} />
                 {m.userId === ownerId && (
                   <span title="Dono do servidor" className="text-sun">
