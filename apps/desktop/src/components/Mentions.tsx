@@ -2,7 +2,7 @@
 
 import { hasPerm, Perm, type Role } from '@line/shared';
 import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
-import { displayNameIn, permsOf, useLine } from '@/lib/store';
+import { displayNameIn, mentionTag, permsOf, useLine } from '@/lib/store';
 import { Avatar, cx } from './ui';
 
 export interface MentionContext {
@@ -70,7 +70,7 @@ export function MentionPicker({
       .filter(({ u, name }) => match(name, u.username, u.displayName))
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 8)
-      .map(({ u, name }) => ({ kind: 'user', id: u.id, label: name, sub: u.username, insert: `@${u.username} ` }));
+      .map(({ u, name }) => ({ kind: 'user', id: u.id, label: name, sub: u.username, insert: `${mentionTag(state, serverId, u.username)} ` }));
     if (!serverId) return users;
     const perms = permsOf(state, serverId, meId);
     const canAll = hasPerm(perms, Perm.MentionEveryone);

@@ -55,7 +55,7 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
             {tok}
           </span>
         ) : (
-          <UserMention key={k} username={tok.slice(1)} className={cls}>
+          <UserMention key={k} username={tok.slice(1)} serverId={ctx?.serverId} className={cls}>
             {tok}
           </UserMention>
         ),

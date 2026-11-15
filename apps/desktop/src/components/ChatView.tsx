@@ -1007,13 +1007,13 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   useEffect(() => {
     if (channel.type === 'thread') return;
     const onMention = (e: Event) => {
-      const tag = (e as CustomEvent<string>).detail;
+      const tag = mentionsToText((e as CustomEvent<string>).detail, channel.serverId);
       setText((t) => (t && !t.endsWith(' ') ? `${t} ${tag}` : t + tag));
       ref.current?.focus();
     };
     window.addEventListener('line:mention', onMention);
     return () => window.removeEventListener('line:mention', onMention);
-  }, [channel.type]);
+  }, [channel.type, channel.serverId]);
 
   /** Põe o texto onde está o cursor do campo (usado pelo seletor de emojis). */
   function insertText(piece: string) {

@@ -5,7 +5,7 @@ import { mobile } from '@/lib/mobile';
 import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
-import { actions, permsOf, topPosition, useLine } from '@/lib/store';
+import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, ErrorText, Icons, presenceLabel } from './ui';
 import { StatusPicker } from './StatusPicker';
@@ -323,12 +323,24 @@ const hoverCard = (() => {
 })();
 
 /** @menção a um usuário no chat: mostra o cartão dele ao passar o mouse (ou ao clicar). */
-export function UserMention({ username, className, children }: { username: string; className: string; children: ReactNode }) {
+export function UserMention({
+  username,
+  serverId,
+  className,
+  children,
+}: {
+  username: string;
+  /** Em canal de servidor, mostra @apelido (ou nome de exibição) de quem é membro; em DMs fica o @username. */
+  serverId?: string | null;
+  className: string;
+  children: ReactNode;
+}) {
   const userId = useLine((s) => {
     const name = username.toLowerCase();
     if (s.me?.username.toLowerCase() === name) return s.me.id;
     return Object.values(s.users).find((u) => u.username.toLowerCase() === name)?.id;
   });
+  const label = useLine((s) => (serverId && userId && s.members[serverId]?.[userId] ? `@${displayNameIn(s, serverId, userId)}` : null));
   if (!userId) return <span className={className}>{children}</span>;
   return (
     <span
@@ -341,7 +353,7 @@ export function UserMention({ username, className, children }: { username: strin
         actions.openModal({ kind: 'user', userId, at: { x: r.right, y: r.top + 40 } });
       }}
     >
-      {children}
+      {label ?? children}
     </span>
   );
 }

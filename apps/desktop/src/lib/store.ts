@@ -502,23 +502,69 @@ export function topPosition(s: LineState, serverId: string, userId: string | und
 
 /** Troca `<@&id>` por `@Nome do cargo` (para notificações e para editar mensagens). */
 export function mentionsToText(content: string, serverId: string | null | undefined): string {
-  if (!serverId || !content.includes('<@&')) return content;
-  const roles = get().roles[serverId] ?? [];
-  return content.replace(/<@&([\w-]+)>/g, (all, id: string) => {
-    const r = roles.find((x) => x.id === id);
-    return r ? `@${r.name}` : all;
-  });
+  if (!serverId) return content;
+  const s = get();
+  const byUser = new Map<string, string>();
+  for (const [name, username] of mentionNames(s, serverId)) byUser.set(username, name);
+  let out = byUser.size
+    ? content.replace(/(^|[^\w<&])@([a-z0-9_.]{2,32})/g, (all, pre: string, u: string) => {
+        const name = byUser.get(u);
+        return name ? `${pre}@${name}` : all;
+      })
+    : content;
+  if (out.includes('<@&')) {
+    const roles = s.roles[serverId] ?? [];
+    out = out.replace(/<@&([\w-]+)>/g, (all, id: string) => {
+      const r = roles.find((x) => x.id === id);
+      return r ? `@${r.name}` : all;
+    });
+  }
+  return out;
+}
+
+/**
+ * Nomes que dá para usar numa menção dentro do servidor (apelido, senão nome de exibição) → username.
+ * Só entram nomes únicos entre os membros e que não sejam nome de cargo; os outros continuam como @username.
+ */
+export function mentionNames(s: LineState, serverId: string): Map<string, string> {
+  const taken = new Set((s.roles[serverId] ?? []).map((r) => r.name.toLowerCase()));
+  for (const x of ['todos', 'aqui', 'everyone', 'here']) taken.add(x);
+  const count = new Map<string, number>();
+  const pairs: [string, string][] = [];
+  for (const id of Object.keys(s.members[serverId] ?? {})) {
+    const u = s.users[id] ?? (s.me?.id === id ? s.me : undefined);
+    if (!u) continue;
+    const name = displayNameIn(s, serverId, id).trim();
+    if (!name || name === u.username) continue;
+    const k = name.toLowerCase();
+    count.set(k, (count.get(k) ?? 0) + 1);
+    pairs.push([name, u.username]);
+  }
+  return new Map(pairs.filter(([n]) => count.get(n.toLowerCase()) === 1 && !taken.has(n.toLowerCase())));
+}
+
+/** Texto inserido no campo ao mencionar alguém: no servidor, @apelido; em DMs/grupos, @username. */
+export function mentionTag(s: LineState, serverId: string | null | undefined, username: string): string {
+  if (!serverId) return `@${username}`;
+  for (const [name, u] of mentionNames(s, serverId)) if (u === username) return `@${name}`;
+  return `@${username}`;
 }
 
 /** O contrário: `@Nome do cargo` digitado vira `<@&id>` (nomes mais longos primeiro). */
 export function textToMentions(content: string, serverId: string | null | undefined): string {
   if (!serverId) return content;
-  const roles = (get().roles[serverId] ?? []).filter((r) => r.id !== serverId).sort((a, b) => b.name.length - a.name.length);
-  let out = content;
-  for (const r of roles) {
-    const esc = r.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    out = out.replace(new RegExp(`(^|[^\\w<&])@${esc}(?![\\w])`, 'gu'), (_m, pre: string) => `${pre}<@&${r.id}>`);
-  }
+  const s = get();
+  const roles = (s.roles[serverId] ?? []).filter((r) => r.id !== serverId).map((r) => [r.name, `<@&${r.id}>`] as const);
+  const users = [...mentionNames(s, serverId)].map(([name, username]) => [name, `@${username}`] as const);
+  const all = [...roles, ...users].sort((a, b) => b[0].length - a[0].length);
+  if (!all.length) return content;
+  // Uma passada só, nomes mais longos primeiro, para uma troca não ser trocada de novo.
+  const tags = new Map(all.map(([name, tag]) => [name.toLowerCase(), tag]));
+  const alt = all.map(([name]) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const out = content.replace(new RegExp(`(^|[^\\w<&])@(${alt})(?![\\p{L}\\p{N}_])`, 'giu'), (m, pre: string, name: string) => {
+    const tag = tags.get(name.toLowerCase());
+    return tag ? `${pre}${tag}` : m;
+  });
   return out;
 }
 
