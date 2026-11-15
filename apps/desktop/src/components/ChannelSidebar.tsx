@@ -232,6 +232,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 className="flex items-center gap-0.5 text-xs font-bold tracking-wide text-muted uppercase hover:text-soft"
               >
                 <Icons.Chevron size={12} className={cx('transition-transform', collapsed[cat.id] && '-rotate-90')} />
+                {cat.isPrivate && <Icons.Lock size={10} className="mr-0.5" />}
                 {cat.name}
               </button>
               {canChannels && (

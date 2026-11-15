@@ -54,6 +54,7 @@ pub struct Category {
     pub server_id: String,
     pub name: String,
     pub position: i64,
+    pub is_private: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

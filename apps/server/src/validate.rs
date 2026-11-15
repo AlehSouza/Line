@@ -411,12 +411,18 @@ impl UpdateChannel {
 #[derive(Deserialize)]
 pub struct CreateCategory {
     pub name: String,
+    /// Categoria exclusiva de cargos (só na criação).
+    pub is_private: Option<bool>,
+    pub role_ids: Option<Vec<String>>,
 }
 
 impl CreateCategory {
     pub fn check(mut self) -> ApiResult<Self> {
         self.name = self.name.trim().to_string();
         text(&self.name, 1, 100, "O nome da categoria")?;
+        if self.role_ids.as_ref().is_some_and(|m| m.len() > 250) {
+            return Err(validation("Cargos demais na categoria"));
+        }
         Ok(self)
     }
 }

@@ -131,6 +131,7 @@ fn category_from_row(r: &Row) -> rusqlite::Result<Category> {
         server_id: r.get("server_id")?,
         name: r.get("name")?,
         position: r.get("position")?,
+        is_private: r.get::<_, i64>("is_private")? != 0,
     })
 }
 
@@ -828,6 +829,11 @@ impl Q<'_> {
     }
 
     pub fn create_category(&self, server_id: &str, name: &str) -> Category {
+        self.create_category_ex(server_id, name, None)
+    }
+
+    /// `private_roles`: Some(lista) cria uma categoria visível só para esses cargos (e dono/admin).
+    pub fn create_category_ex(&self, server_id: &str, name: &str, private_roles: Option<&[String]>) -> Category {
         let id = new_id();
         let n: i64 = ok(self.c.query_row(
             "SELECT COUNT(*) FROM categories WHERE server_id = ?",
@@ -835,10 +841,53 @@ impl Q<'_> {
             |r| r.get(0),
         ));
         ok(self.c.execute(
-            "INSERT INTO categories (id, server_id, name, position) VALUES (?, ?, ?, ?)",
-            params![id, server_id, name, n],
+            "INSERT INTO categories (id, server_id, name, position, is_private) VALUES (?, ?, ?, ?, ?)",
+            params![id, server_id, name, n, private_roles.is_some() as i64],
         ));
+        for role_id in private_roles.unwrap_or_default() {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO category_roles (category_id, role_id) VALUES (?, ?)",
+                params![id, role_id],
+            ));
+        }
         self.category(&id).unwrap()
+    }
+
+    /// Quem pode ver a categoria: aberta = todos; privada = dono/admin e quem tem um dos cargos.
+    pub fn can_see_category(&self, user_id: &str, category_id: &str) -> bool {
+        let Some(cat) = self.category(category_id) else {
+            return true;
+        };
+        if !cat.is_private {
+            return true;
+        }
+        if !self.is_member(&cat.server_id, user_id) {
+            return false;
+        }
+        if perms::has(self.permissions(&cat.server_id, user_id), perms::ADMINISTRATOR) {
+            return true;
+        }
+        ok(self
+            .c
+            .query_row(
+                "SELECT 1 FROM category_roles cr JOIN member_roles mr ON mr.role_id = cr.role_id
+                 WHERE cr.category_id = ?1 AND mr.user_id = ?2 LIMIT 1",
+                [category_id, user_id],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some()
+    }
+
+    /// Quem vê a categoria, quando é privada (None = o servidor inteiro).
+    pub fn category_audience(&self, category_id: &str) -> Option<Vec<String>> {
+        let cat = self.category(category_id).filter(|c| c.is_private)?;
+        Some(
+            self.ids("SELECT user_id FROM members WHERE server_id = ?", [cat.server_id.as_str()])
+                .into_iter()
+                .filter(|u| self.can_see_category(u, category_id))
+                .collect(),
+        )
     }
 
     pub fn rename_category(&self, id: &str, name: &str) -> Category {
@@ -968,25 +1017,31 @@ impl Q<'_> {
     /// escolhido (pessoa ou cargo); canal aberto para quem tem "Ver canais". Dono e
     /// administradores veem tudo. Threads seguem o canal pai.
     pub fn can_access(&self, user_id: &str, channel_id: &str) -> bool {
-        let row: Option<(Option<String>, String, bool, String)> = ok(self
+        let row: Option<(Option<String>, String, bool, String, Option<String>)> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.is_private, r.type FROM channels r
+                "SELECT r.server_id, r.id, r.is_private, r.type, r.category_id FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?, r.get(4)?)),
             )
             .optional());
         match row {
             None => false,
-            Some((None, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
-            Some((Some(server_id), root, is_private, kind)) => {
+            Some((None, _, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((Some(server_id), root, is_private, kind, category_id)) => {
                 if !self.is_member(&server_id, user_id) {
                     return false;
                 }
                 let p = self.permissions(&server_id, user_id);
                 if perms::has(p, perms::ADMINISTRATOR) {
                     return true;
+                }
+                // Canal dentro de categoria privada herda a restrição da categoria.
+                if let Some(cat) = &category_id
+                    && !self.can_see_category(user_id, cat)
+                {
+                    return false;
                 }
                 // Quem não pode interagir (mandar mensagem / entrar na voz) nem vê o canal.
                 // Quem gerencia canais continua vendo para poder editar.
@@ -1014,18 +1069,20 @@ impl Q<'_> {
     /// Quem enxerga um canal de servidor, quando não é o servidor inteiro (canal privado ou
     /// @everyone sem "Ver canais" / sem poder interagir). None = todos os membros veem (pode usar a sala do servidor).
     pub fn private_audience(&self, channel_id: &str) -> Option<Vec<String>> {
-        let (server_id, is_private, kind): (String, bool, String) = ok(self
+        let (server_id, is_private, kind, category_private): (String, bool, String, bool) = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.is_private, r.type FROM channels r
+                "SELECT r.server_id, r.is_private, r.type,
+                        COALESCE((SELECT k.is_private FROM categories k WHERE k.id = r.category_id), 0)
+                 FROM channels r
                  WHERE r.server_id IS NOT NULL
                    AND r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?, r.get::<_, i64>(3)? != 0)),
             )
             .optional())?;
         let everyone = self.everyone_permissions(&server_id);
-        if !is_private && perms::has(everyone, perms::VIEW_CHANNELS) && perms::has(everyone, interact_perm(&kind)) {
+        if !is_private && !category_private && perms::has(everyone, perms::VIEW_CHANNELS) && perms::has(everyone, interact_perm(&kind)) {
             return None;
         }
         Some(

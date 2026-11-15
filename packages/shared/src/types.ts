@@ -78,6 +78,8 @@ export interface Category {
   serverId: string;
   name: string;
   position: number;
+  /** Exclusiva de cargos: só eles (e dono/admin) veem a categoria e os canais dela. */
+  isPrivate?: boolean;
 }
 
 export interface Channel {

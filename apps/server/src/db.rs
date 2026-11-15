@@ -222,6 +222,15 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE users ADD COLUMN sessions_after INTEGER NOT NULL DEFAULT 0;
   UPDATE users SET email_verified = 1 WHERE google_id IS NOT NULL;
 "#,
+    // Categoria privada: só os cargos escolhidos (e dono/admin) veem a categoria e os canais dela.
+    r#"
+  ALTER TABLE categories ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE category_roles (
+    category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    role_id     TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (category_id, role_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
