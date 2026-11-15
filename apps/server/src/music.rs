@@ -137,9 +137,24 @@ impl App {
             .collect()
     }
 
-    /// Alguém saiu da voz: se não sobrou ninguém ouvindo, o bot sai junto.
+    /// Alguém saiu da voz: se não sobrou ninguém ouvindo, o bot sai junto. Se quem deu o /play
+    /// saiu e ainda tem gente ouvindo, o comando da música passa para quem ficou.
     pub fn music_on_voice_left(&self, q: &Q, channel_id: &str) {
-        if !listeners(self, channel_id).is_empty() {
+        let people = listeners(self, channel_id);
+        if let Some(next) = people.first() {
+            let changed = {
+                let mut m = lock(&self.music);
+                match m.sessions.get_mut(channel_id) {
+                    Some(s) if !people.contains(&s.dj_id) => {
+                        s.dj_id = next.clone();
+                        true
+                    }
+                    _ => false,
+                }
+            };
+            if changed {
+                self.emit_music(q, channel_id);
+            }
             return;
         }
         if lock(&self.music).sessions.remove(channel_id).is_some() {
