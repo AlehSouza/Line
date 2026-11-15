@@ -412,7 +412,7 @@ function Playlist({ m, dj }: { m: LiveMusic; dj: boolean }) {
   useLine((s) => s.members);
   const st = useLine.getState();
   return (
-    <div className="max-h-[450px] space-y-0.5 overflow-y-auto scroll-smooth pr-0.5 [scrollbar-width:thin]">
+    <div className="max-h-[450px] space-y-0.5 overflow-y-auto scroll-smooth pr-0.5">
       {m.tracks.map((t, i) => {
         if (i < m.index) return null;
         const current = i === m.index;
