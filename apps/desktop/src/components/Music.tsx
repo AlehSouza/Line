@@ -98,6 +98,64 @@ function botOf(serverId: string) {
   return id ? s.users[id] : undefined;
 }
 
+// ---------- player discreto no topo da chamada ----------
+
+/** Player pequeno, centralizado no topo da tela da chamada, enquanto o bot toca no canal em que estou. */
+export function CallMusicBar({ channelId }: { channelId: string }) {
+  const m = useMusic((s) => s.states[channelId]);
+  const inCall = useVoice((v) => v.channelId === channelId);
+  const meId = useLine((s) => s.me?.id);
+  const dj = useIsDj(m);
+  useTick(!!m && !m.paused && inCall);
+  if (!m || !inCall) return null;
+  const track = m.tracks[m.index];
+  if (!track) return null;
+  const pos = positionOf(m) / 1000;
+  const pct = track.duration ? Math.min(100, (pos / track.duration) * 100) : 0;
+  const count = (k: 'skip' | 'pause') => (m.votes[k] ?? []).length;
+  const voted = (k: 'skip' | 'pause') => !!meId && (m.votes[k] ?? []).includes(meId);
+  const btn = (action: 'skip' | 'pause', icon: React.ReactNode, label: string) => (
+    <button
+      title={dj ? label : `${label} (votação: ${count(action)}/${m.needed})`}
+      onClick={() => musicControl({ channelId, action })}
+      className={cx(
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-soft transition hover:bg-white/10 hover:text-fg',
+        voted(action) && 'text-accent',
+      )}
+    >
+      {icon}
+    </button>
+  );
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-0 flex h-full items-center justify-center max-md:hidden">
+      <div className="pointer-events-auto flex max-w-[min(30rem,45%)] items-center gap-2 rounded-full px-2 py-1">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={thumbOf(track.videoId)} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs leading-tight font-semibold" title={`${track.title} — ${track.author}`}>
+            {track.title}
+          </p>
+          <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-accent transition-[width] duration-500 ease-linear" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+        {btn('pause', m.paused ? <L.Play size={14} fill="currentColor" /> : <L.Pause size={14} fill="currentColor" />, m.paused ? 'Continuar' : 'Pausar')}
+        {btn('skip', <L.SkipForward size={14} fill="currentColor" />, 'Pular')}
+        {dj && (
+          <button
+            title="Parar a música e tirar o bot do canal"
+            onClick={() => stopMusic(channelId)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-soft transition hover:bg-danger/20 hover:text-danger"
+          >
+            <L.Square size={12} fill="currentColor" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---------- player (coluna da direita) ----------
 
 export function MusicPlayer({ serverId }: { serverId: string }) {

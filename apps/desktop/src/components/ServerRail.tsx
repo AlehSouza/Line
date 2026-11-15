@@ -11,6 +11,7 @@ import { actions, permsOf, useLine } from '@/lib/store';
 import { useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { Avatar, cx, DefaultServerIcon, Icons, Logo } from './ui';
+import { useIncomingCount } from './FriendsView';
 import { confirmDialog } from './Dialogs';
 
 export function ServerRail() {
@@ -18,7 +19,7 @@ export function ServerRail() {
   const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]!).filter(Boolean)));
   const unread = useLine((s) => s.unread);
   const channels = useLine((s) => s.channels);
-  const pendingFriends = useLine((s) => Object.values(s.friends).filter((f) => f.state === 'incoming').length);
+  const pendingFriends = useIncomingCount();
 
   const dmUnread = Object.entries(unread).reduce((n, [cid, c]) => (channels[cid] && !channels[cid]!.serverId ? n + c : n), 0);
   const serverHasUnread = (serverId: string) =>

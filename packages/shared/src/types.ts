@@ -222,6 +222,12 @@ export interface VoiceState {
   joinedAt: string;
 }
 
+/** Jogo que está sendo transmitido (nome e ícone em data URL), quando a fonte é a janela de um jogo. */
+export interface ScreenGame {
+  name: string;
+  icon?: string;
+}
+
 /** Mensagem de sinalização WebRTC repassada pelo servidor entre dois participantes. */
 export type VoiceSignal =
   | { type: 'description'; description: { type: 'offer' | 'answer' | 'pranswer' | 'rollback'; sdp?: string } }
@@ -229,7 +235,7 @@ export type VoiceSignal =
   /** Quem assiste avisa quem transmite: só quem pediu recebe o vídeo e o som da tela. */
   | { type: 'watch'; on: boolean }
   /** Miniatura estática (JPEG em data URL, pequena) da tela de quem transmite, para quem ainda não assiste. */
-  | { type: 'thumb'; data: string }
+  | { type: 'thumb'; data: string; game?: ScreenGame }
   /** Quem transmite conta a todos do canal quem está assistindo à tela agora. */
   | { type: 'viewers'; ids: string[] };
 

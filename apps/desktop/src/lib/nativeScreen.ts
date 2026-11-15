@@ -90,6 +90,38 @@ export async function startNativeScreen(
   let first: ((size: { w: number; h: number }) => void) | null = null;
   const firstFrame = new Promise<{ w: number; h: number }>((resolve) => (first = resolve));
 
+  // Janela minimizada (alt+tab num jogo em tela cheia): o Windows manda quadros minúsculos e pretos,
+  // que esticavam o quadro de quem assiste. No lugar, manda "Transmissão pausada" no tamanho de antes.
+  let last: { w: number; h: number; ts: number; at: number } | null = null;
+  let pauseTimer: ReturnType<typeof setInterval> | null = null;
+  const writePaused = () => {
+    if (!last || stopped) return;
+    const c = new OffscreenCanvas(last.w, last.h);
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#111114';
+    ctx.fillRect(0, 0, last.w, last.h);
+    ctx.fillStyle = '#e4e4e7';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${Math.round(last.h / 18)}px Geist, system-ui, sans-serif`;
+    ctx.fillText('Transmissão pausada', last.w / 2, last.h / 2);
+    // Mesmo relógio dos quadros do Rust (microssegundos desde o início), sempre andando para frente.
+    const timestamp = Math.round(last.ts + (performance.now() - last.at) * 1000);
+    const frame = new VideoFrame(c, { timestamp });
+    if ((videoWriter.desiredSize ?? 1) <= 0) frame.close();
+    else void videoWriter.write(frame).catch(() => frame.close());
+  };
+  const pause = () => {
+    if (pauseTimer || !last) return;
+    writePaused();
+    pauseTimer = setInterval(writePaused, 500);
+  };
+  const resume = () => {
+    if (pauseTimer) clearInterval(pauseTimer);
+    pauseTimer = null;
+  };
+
   // A memória compartilhada pode chegar antes da resposta do comando: guarda e confere depois.
   const pendingBuffers: { session: number; buf: ArrayBuffer; data: { header: number; slotSize: number } }[] = [];
   const onBuffer = (e: SharedBufferEvent) => {
@@ -118,6 +150,12 @@ export async function startNativeScreen(
     if (m.lineScreen === 'frame') {
       if (!buffer) return;
       const flags = new Uint32Array(buffer, 0, layout.header / 4);
+      if (last && (m.w < 100 || m.h < 100)) {
+        flags[m.slot] = 0;
+        pause();
+        return;
+      }
+      resume();
       try {
         // Pede em microssegundos; o construtor copia os pixels, então o espaço já pode ser reusado.
         const frame = new VideoFrame(new Uint8Array(buffer, layout.header + m.slot * layout.slotSize, m.w * m.h * 4), {
@@ -127,6 +165,7 @@ export async function startNativeScreen(
           timestamp: m.ts,
         });
         flags[m.slot] = 0;
+        last = { w: m.w, h: m.h, ts: m.ts, at: performance.now() };
         first?.({ w: m.w, h: m.h });
         first = null;
         // Encoder atrasado: descarta em vez de acumular (latência baixa vale mais que todo quadro).
@@ -161,6 +200,7 @@ export async function startNativeScreen(
   const cleanup = (keepCapture = false) => {
     if (stopped) return;
     stopped = true;
+    resume();
     wv.removeEventListener('sharedbufferreceived', onBuffer as never);
     wv.removeEventListener('message', onMessage as never);
     if (!keepCapture) void invoke('screen_stop').catch(() => {});

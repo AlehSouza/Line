@@ -18,7 +18,7 @@ export function TitleBar() {
     if (v.kind === 'server') return s.servers[v.serverId]?.name ?? 'Line';
     if (v.kind === 'discover') return 'Explorar servidores';
     if (v.dmId && s.channels[v.dmId]) return dmTitle(s.channels[v.dmId]!, s.me?.id, s.users);
-    return v.page === 'requests' ? 'Solicitações de amizade' : 'Amigos';
+    return v.page === 'requests' ? 'Solicitações' : 'Amigos';
   });
   const inServer = useLine((s) => s.view.kind === 'server');
   const iconUrl = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconUrl : undefined));

@@ -5,6 +5,8 @@ import { MobileBack } from './Mobile';
 import type { Friend } from '@line/shared';
 import type { PublicUser } from '@line/shared';
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { useMusic } from '@/lib/music';
@@ -109,16 +111,22 @@ export function FriendsView() {
 }
 
 export function FriendRequestsView() {
-  const [tab, setTab] = useState<'incoming' | 'outgoing'>('incoming');
+  const [tab, setTab] = useState<'incoming' | 'outgoing' | 'spam'>('incoming');
   const friends = useLine((s) => s.friends);
   const users = useLine((s) => s.users);
+  useSpamMarks((m) => m.marks);
+  const spamIds = useLine(useShallow(spamRequestIds));
   const list = Object.values(friends).map((f) => ({ ...f, user: users[f.user.id] ?? f.user }));
-  const incoming = list.filter((f) => f.state === 'incoming');
+  const spam = list.filter((f) => f.state === 'incoming' && spamIds.includes(f.user.id));
+  const incoming = list.filter((f) => f.state === 'incoming' && !spamIds.includes(f.user.id));
   const outgoing = list.filter((f) => f.state === 'outgoing');
-  const shown = (tab === 'incoming' ? incoming : outgoing).sort((a, b) => a.user.displayName.localeCompare(b.user.displayName));
+  const shown = (tab === 'incoming' ? incoming : tab === 'outgoing' ? outgoing : spam).sort((a, b) =>
+    a.user.displayName.localeCompare(b.user.displayName),
+  );
   const tabs = [
     { id: 'incoming' as const, label: 'Pedidos', count: incoming.length },
     { id: 'outgoing' as const, label: 'Enviados', count: outgoing.length },
+    { id: 'spam' as const, label: 'Spam', count: spam.length },
   ];
 
   return (
@@ -126,7 +134,7 @@ export function FriendRequestsView() {
       <header className="flex h-12 shrink-0 items-center gap-4 overflow-x-auto border-b border-rail px-4 shadow-sm max-md:gap-2">
         <MobileBack />
         <span className="flex shrink-0 items-center gap-2 font-bold">
-          <Icons.Mail className="text-muted" /> Solicitações de amizade
+          <Icons.Mail className="text-muted" /> Solicitações
         </span>
         <span className="h-6 w-px shrink-0 bg-edge" />
         {tabs.map((t) => (
@@ -150,19 +158,82 @@ export function FriendRequestsView() {
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 max-md:px-3">
         <h3 className="pb-2 text-xs font-bold tracking-wide text-muted uppercase">
-          {tab === 'incoming' ? 'Pedidos recebidos' : 'Pedidos enviados'} — {shown.length}
+          {tab === 'incoming' ? 'Pedidos recebidos' : tab === 'outgoing' ? 'Pedidos enviados' : 'Possível spam'} — {shown.length}
         </h3>
+        {tab === 'spam' && (
+          <p className="pb-3 text-sm text-muted">
+            Pedidos de quem não tem nenhum servidor nem conversa em comum com você, ou que você marcou como spam. Eles não
+            contam no aviso da barra lateral.
+          </p>
+        )}
         {shown.length === 0 && (
           <p className="py-12 text-center text-muted">
-            {tab === 'incoming' ? 'Nenhum pedido de amizade por enquanto.' : 'Você não tem pedidos enviados esperando resposta.'}
+            {tab === 'incoming'
+              ? 'Nenhum pedido de amizade por enquanto.'
+              : tab === 'outgoing'
+                ? 'Você não tem pedidos enviados esperando resposta.'
+                : 'Nenhum pedido suspeito.'}
           </p>
         )}
         {shown.map((f) => (
-          <PendingRow key={f.user.id} friend={f} />
+          <PendingRow key={f.user.id} friend={f} spam={tab === 'spam'} />
         ))}
       </div>
     </div>
   );
+}
+
+// ---------- spam ----------
+
+const SPAM_KEY = 'line.spamMarks';
+type SpamMark = 'spam' | 'ok';
+
+function loadSpamMarks(): Record<string, SpamMark> {
+  try {
+    return JSON.parse(localStorage.getItem(SPAM_KEY) ?? '{}') ?? {};
+  } catch {
+    return {};
+  }
+}
+
+/** Marcações manuais ("é spam" / "não é spam"), só neste aparelho. */
+const useSpamMarks = create<{ marks: Record<string, SpamMark> }>(() => ({
+  marks: typeof window === 'undefined' ? {} : loadSpamMarks(),
+}));
+
+function markSpam(userId: string, mark: SpamMark) {
+  const marks = { ...useSpamMarks.getState().marks, [userId]: mark };
+  useSpamMarks.setState({ marks });
+  try {
+    localStorage.setItem(SPAM_KEY, JSON.stringify(marks));
+  } catch {
+    /* sem localStorage */
+  }
+}
+
+/** Pedido suspeito: ninguém em comum (nenhum servidor e nenhuma conversa com a pessoa). */
+function looksLikeSpam(s: ReturnType<typeof useLine.getState>, userId: string) {
+  if (Object.values(s.members).some((m) => m[userId])) return false;
+  if (s.dmOrder.some((id) => s.channels[id]?.recipients?.some((r) => r.id === userId))) return false;
+  return true;
+}
+
+/** Ids dos pedidos recebidos que vão para a aba Spam. */
+export function spamRequestIds(s: ReturnType<typeof useLine.getState>): string[] {
+  const marks = useSpamMarks.getState().marks;
+  return Object.values(s.friends)
+    .filter((f) => f.state === 'incoming')
+    .map((f) => f.user.id)
+    .filter((id) => (marks[id] ? marks[id] === 'spam' : looksLikeSpam(s, id)));
+}
+
+/** Pedidos recebidos que não são spam (para o aviso da barra lateral). */
+export function useIncomingCount() {
+  useSpamMarks((m) => m.marks);
+  return useLine((s) => {
+    const spam = spamRequestIds(s);
+    return Object.values(s.friends).filter((f) => f.state === 'incoming' && !spam.includes(f.user.id)).length;
+  });
 }
 
 const run = (fn: () => Promise<unknown>) => fn().catch(showError);
@@ -275,7 +346,7 @@ function FriendRow({ friend }: { friend: Friend }) {
   );
 }
 
-function PendingRow({ friend }: { friend: Friend }) {
+function PendingRow({ friend, spam }: { friend: Friend; spam?: boolean }) {
   const { user, state } = friend;
   return (
     <div className="group flex items-center gap-3 rounded-lg border-t border-edge px-2 py-2.5 hover:bg-hover">
@@ -288,6 +359,15 @@ function PendingRow({ friend }: { friend: Friend }) {
           {state === 'incoming' ? 'Pedido de amizade recebido' : 'Pedido de amizade enviado'}
         </p>
       </div>
+      {state === 'incoming' && (
+        <IconButton
+          title={spam ? 'Não é spam' : 'Marcar como spam'}
+          className={spam ? 'hover:text-accent' : 'hover:text-danger'}
+          onClick={() => markSpam(user.id, spam ? 'ok' : 'spam')}
+        >
+          {spam ? <Icons.ShieldCheck size={18} /> : <Icons.ShieldAlert size={18} />}
+        </IconButton>
+      )}
       {state === 'incoming' && (
         <IconButton title="Aceitar" className="hover:text-accent" onClick={() => run(() => api.acceptFriend(user.id))}>
           <Icons.Check size={18} />
