@@ -74,6 +74,8 @@ export function UserCard({
   if (!user || !me) return null;
   const state = friend?.state;
   const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
+  /** Cor do cartão (nome, borda do avatar e anel do status). */
+  const ring = `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))`;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
 
   async function run(fn: () => Promise<void>) {
@@ -199,12 +201,17 @@ export function UserCard({
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
           <div className="-mt-12 flex items-start gap-2">
-            {/* Borda de 4px na cor do próprio cartão (sem o anel escuro que parecia sombra). */}
-            <span
-              className="shrink-0 rounded-full border-4"
-              style={{ borderColor: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))`, background: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))` }}
-            >
-              <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={88} presence={presence} ring="rail" dotSize={20} />
+            {/* Borda de 4px na cor do cartão (a mesma do nome), sem anel escuro em volta que parecia sombra. */}
+            <span className="shrink-0 rounded-full border-4" style={{ borderColor: ring }}>
+              <Avatar
+                name={user.displayName}
+                color={user.avatarColor}
+                src={user.avatarUrl}
+                size={88}
+                presence={presence}
+                dotRingColor={ring}
+                dotSize={20}
+              />
             </span>
             {user.thought && (
               <span className="relative mt-14 max-w-[190px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
@@ -214,7 +221,7 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))` }}>
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: ring }}>
             <span className="truncate">{user.displayName}</span>
             <UserTagBadge user={user} />
           </p>
