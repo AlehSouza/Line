@@ -510,11 +510,151 @@ pub async fn search(query: &str) -> Option<String> {
     FIRST.captures(&html).or_else(|| ANY.captures(&html)).map(|c| c[1].to_string())
 }
 
+/// Vídeo já com título/canal/duração, pronto para entrar na fila.
+pub struct Item {
+    pub video_id: String,
+    pub title: String,
+    pub author: String,
+    pub duration: Option<u64>,
+}
+
+const MAX_PLAYLIST: usize = 50;
+
+fn text_of(v: &Value) -> Option<String> {
+    v["simpleText"]
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| v["runs"][0]["text"].as_str().map(str::to_string))
+}
+
+/// "1:02:03" → 3723
+fn clock_secs(t: &str) -> Option<u64> {
+    t.split(':').try_fold(0u64, |acc, p| {
+        p.trim().parse::<u64>().ok().map(|n| acc * 60 + n)
+    })
+}
+
+fn collect_items(v: &Value, out: &mut Vec<Item>, seen: &mut HashSet<String>) {
+    match v {
+        Value::Object(map) => {
+            for key in ["playlistVideoRenderer", "playlistPanelVideoRenderer"] {
+                if let Some(r) = map.get(key) {
+                    let Some(id) = r["videoId"].as_str() else {
+                        continue;
+                    };
+                    if r["isPlayable"] == Value::Bool(false) || !seen.insert(id.to_string()) {
+                        continue;
+                    }
+                    let duration = r["lengthSeconds"]
+                        .as_str()
+                        .and_then(|s| s.parse().ok())
+                        .or_else(|| text_of(&r["lengthText"]).and_then(|t| clock_secs(&t)))
+                        .filter(|d| *d > 0);
+                    out.push(Item {
+                        video_id: id.to_string(),
+                        title: text_of(&r["title"]).unwrap_or_default(),
+                        author: text_of(&r["shortBylineText"])
+                            .or_else(|| text_of(&r["longBylineText"]))
+                            .unwrap_or_default(),
+                        duration,
+                    });
+                }
+            }
+            for x in map.values() {
+                collect_items(x, out, seen);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|x| collect_items(x, out, seen)),
+        _ => {}
+    }
+}
+
+/// Músicas de uma playlist (página pública, sem chave de API). Com `start`, começa nesse vídeo.
+/// Mixes (list=RD...) não têm página de playlist; aí usa a lista lateral da página do vídeo.
+pub async fn playlist(list_id: &str, start: Option<&str>) -> Option<Vec<Item>> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36")
+        .timeout(Duration::from_secs(10))
+        .build()
+        .ok()?;
+    let mut pages = vec![format!("https://www.youtube.com/playlist?list={list_id}")];
+    if let Some(v) = start {
+        pages.push(format!(
+            "https://www.youtube.com/watch?v={v}&list={list_id}"
+        ));
+    }
+    for url in pages {
+        let Ok(r) = client
+            .get(&url)
+            .header("Accept-Language", "pt-BR,pt;q=0.9")
+            .header("Cookie", "CONSENT=YES+1; SOCS=CAI")
+            .send()
+            .await
+        else {
+            continue;
+        };
+        let Ok(html) = r.text().await else { continue };
+        let Some(at) = html
+            .find("ytInitialData = ")
+            .map(|i| i + "ytInitialData = ".len())
+        else {
+            continue;
+        };
+        let Some(Ok(data)) = serde_json::Deserializer::from_str(&html[at..])
+            .into_iter::<Value>()
+            .next()
+        else {
+            continue;
+        };
+        let mut items = Vec::new();
+        collect_items(&data, &mut items, &mut HashSet::new());
+        if items.is_empty() {
+            continue;
+        }
+        if let Some(pos) = start.and_then(|v| items.iter().position(|i| i.video_id == v)) {
+            items.drain(..pos);
+        }
+        items.truncate(MAX_PLAYLIST);
+        return Some(items);
+    }
+    None
+}
+
 /// `/play <link>`: põe na fila do canal de voz em que a pessoa está (cria a sessão se preciso).
-pub async fn play(app: &Arc<App>, me: &str, text_channel_id: &str, video_id: String) -> Result<(), String> {
+pub async fn play(
+    app: &Arc<App>,
+    me: &str,
+    text_channel_id: &str,
+    video_id: String,
+) -> Result<(), String> {
     let (title, author, duration) = fetch_meta(&video_id)
         .await
         .ok_or("Não consegui abrir esse vídeo. Ele pode ser privado ou não permitir reprodução fora do YouTube.")?;
+    play_items(
+        app,
+        me,
+        text_channel_id,
+        vec![Item {
+            video_id,
+            title,
+            author,
+            duration,
+        }],
+        false,
+    )
+}
+
+/// Põe vários vídeos na fila de uma vez (playlist = true muda só o aviso no chat).
+pub fn play_items(
+    app: &Arc<App>,
+    me: &str,
+    text_channel_id: &str,
+    items: Vec<Item>,
+    is_playlist: bool,
+) -> Result<(), String> {
+    if items.is_empty() {
+        return Err("Não achei nenhuma música nessa playlist".into());
+    }
     let q = app.store.q();
     let text = q.channel(text_channel_id).ok_or("Canal não encontrado")?;
     let server_id = text.server_id.clone().ok_or("O bot de música só funciona em servidores")?;
@@ -527,17 +667,25 @@ pub async fn play(app: &Arc<App>, me: &str, text_channel_id: &str, video_id: Str
         .member(&server_id, me)
         .map(|m| m.nickname.unwrap_or(m.user.display_name))
         .unwrap_or_default();
-    let track = Track { uid: uid(), video_id, title: title.clone(), author, duration, added_by: me.to_string() };
+    let count = items.len();
+    let title = items[0].title.clone();
+    let mut tracks: Vec<Track> = items
+        .into_iter()
+        .map(|i| Track { uid: uid(), video_id: i.video_id, title: i.title, author: i.author, duration: i.duration, added_by: me.to_string() })
+        .collect();
     let queued_at = {
         let mut m = lock(&app.music);
         match m.sessions.get_mut(&voice.channel_id) {
             Some(s) => {
-                if s.tracks.len() >= MAX_TRACKS {
+                let room = MAX_TRACKS.saturating_sub(s.tracks.len());
+                if room == 0 {
                     return Err("A fila já está cheia".into());
                 }
+                tracks.truncate(room);
                 s.text_channel_id = text.id.clone();
-                s.tracks.push(track);
-                Some(s.tracks.len() - s.index - 1)
+                let pos = s.tracks.len() - s.index;
+                s.tracks.extend(tracks);
+                Some(pos)
             }
             None => {
                 let mut s = Session {
@@ -545,7 +693,7 @@ pub async fn play(app: &Arc<App>, me: &str, text_channel_id: &str, video_id: Str
                     channel_id: voice.channel_id.clone(),
                     text_channel_id: text.id.clone(),
                     dj_id: me.to_string(),
-                    tracks: vec![track],
+                    tracks,
                     index: 0,
                     paused: false,
                     offset_ms: 0,
@@ -564,6 +712,16 @@ pub async fn play(app: &Arc<App>, me: &str, text_channel_id: &str, video_id: Str
             app.emit_music(&q, &voice.channel_id);
             app.announce(&q, &voice.channel_id);
             schedule(app, &voice.channel_id);
+            if is_playlist && count > 1 {
+                let msg = format!("**{added_by_name}** carregou uma playlist: mais {} músicas na fila.", count - 1);
+                app.bot_say(&q, &server_id, &text.id, &msg, &[]);
+            }
+        }
+        Some(pos) if is_playlist => {
+            app.emit_music(&q, &voice.channel_id);
+            let added = lock(&app.music).sessions.get(&voice.channel_id).map(|s| s.tracks.len() - s.index - pos).unwrap_or(count);
+            let msg = format!("**{added_by_name}** adicionou {added} músicas da playlist à fila (a partir da posição {pos}).");
+            app.bot_say(&q, &server_id, &text.id, &msg, &[]);
         }
         Some(pos) => {
             app.emit_music(&q, &voice.channel_id);
