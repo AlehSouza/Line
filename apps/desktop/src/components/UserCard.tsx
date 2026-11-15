@@ -9,6 +9,7 @@ import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/sto
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
 import { UserTagBadge } from './ServerTag';
+import { EmojiButton } from './EmojiField';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 
@@ -39,6 +40,7 @@ export function UserCard({
   const [menu, setMenu] = useState(false);
   const [mutual, setMutual] = useState<{ friends: PublicUser[]; servers: Server[] } | null>(null);
   const [text, setText] = useState('');
+  const dmRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -265,13 +267,17 @@ export function UserCard({
                 if (!busy) void run(() => openDm(text.trim() || undefined));
               }}
             >
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                maxLength={4000}
-                placeholder={`Conversar com @${user.username}`}
-                className="w-full rounded-lg border border-edge bg-side/70 px-3 py-2.5 text-sm outline-none placeholder:text-muted focus:border-accent"
-              />
+              <div className="relative">
+                <input
+                  ref={dmRef}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  maxLength={4000}
+                  placeholder={`Conversar com @${user.username}`}
+                  className="w-full rounded-lg border border-edge bg-side/70 py-2.5 pr-9 pl-3 text-sm outline-none placeholder:text-muted focus:border-accent"
+                />
+                <EmojiButton target={dmRef} className="absolute top-1/2 right-2.5 -translate-y-1/2" />
+              </div>
             </form>
           )}
           {!isMe && <p className="sr-only">{presenceLabel[user.presence]}</p>}

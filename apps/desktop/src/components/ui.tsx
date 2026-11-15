@@ -210,7 +210,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement> & { ref?: React.Ref<HTMLInputElement> }) {
   return (
     <input
       {...props}
@@ -298,6 +298,7 @@ export const Icons = {
   Logout: icon(L.LogOut),
   Link: icon(L.Link),
   Check: icon(L.Check),
+  Palette: icon(L.Palette),
   Message: icon(L.MessageCircle),
   Search: icon(L.Search),
   Mic: icon(L.Mic),

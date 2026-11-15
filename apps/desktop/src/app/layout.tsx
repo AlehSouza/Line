@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import './globals.css';
 import { DialogHost } from '@/components/Dialogs';
 import { TooltipHost } from '@/components/Tooltip';
+import { themeBootScript } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'Line',
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+      </head>
       <body>
         {children}
         <DialogHost />

@@ -15,7 +15,33 @@
     nativeScreen: __LINE_NATIVE_SCREEN__,
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),
-    setBadge: (count) => void invoke('set_badge', { count: Math.max(0, Number(count) || 0) }),
+    /** Contagem no ícone da barra de tarefas/dock. No Windows desenhamos a pílula vermelha ("9+"). */
+    setBadge: (count) => {
+      count = Math.max(0, Number(count) || 0);
+      let rgba = null;
+      if (count > 0 && ua.includes('Windows')) {
+        try {
+          const S = 32;
+          const c = document.createElement('canvas');
+          c.width = c.height = S;
+          const g = c.getContext('2d');
+          const text = count > 9 ? '9+' : String(count);
+          g.fillStyle = '#e5484d';
+          g.beginPath();
+          g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = '#fff';
+          g.font = `bold ${text.length > 1 ? 18 : 22}px "Segoe UI", sans-serif`;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          g.fillText(text, S / 2, S / 2 + 1);
+          rgba = Array.from(g.getImageData(0, 0, S, S).data);
+        } catch {
+          rgba = null;
+        }
+      }
+      void invoke('set_badge', { count, rgba });
+    },
     /** Controles da janela para a barra de título desenhada pela interface. */
     updates: {
       check: () => invoke('update_check').then((v) => v || null),

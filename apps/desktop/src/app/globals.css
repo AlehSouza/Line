@@ -52,6 +52,69 @@
   --font-mono: 'Geist Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
 }
 
+/*
+ * Temas (lib/theme.ts): trocam os mesmos tokens via data-theme no <html>.
+ * Sem data-theme vale o Padrão acima.
+ */
+:root[data-theme='escuro'] {
+  --color-rail: #000000;
+  --color-side: #050506;
+  --color-main: #08080a;
+  --color-raise: #111114;
+  --color-hover: #18181c;
+  --color-edge: #222228;
+}
+:root[data-theme='claro'] {
+  color-scheme: light;
+  --color-rail: #e4e4ea;
+  --color-side: #f2f2f6;
+  --color-main: #ffffff;
+  --color-raise: #f4f4f8;
+  --color-hover: #e6e6ec;
+  --color-edge: #d4d4dc;
+  --color-fg: #17171b;
+  --color-soft: #3f3f48;
+  --color-muted: #6a6a75;
+  --color-accent: #5b4ae0;
+  --color-accent-strong: #4a39cf;
+  --color-sun: #a86f00;
+  --color-danger: #d1343a;
+  --color-online: #1f9d55;
+  --color-idle: #c98a00;
+  --color-dnd: #d1343a;
+  --color-offline: #8a8a94;
+}
+:root[data-theme='carmesim'] {
+  --color-rail: #0e0708;
+  --color-side: #150a0c;
+  --color-main: #1c0e11;
+  --color-raise: #251417;
+  --color-hover: #2e191d;
+  --color-edge: #3b2127;
+  --color-fg: #f4eaeb;
+  --color-soft: #cbb4b7;
+  --color-muted: #94787c;
+  --color-accent: #dc2f4b;
+  --color-accent-strong: #c01f3a;
+  --color-danger: #ff7a4d;
+  --color-dnd: #ff7a4d;
+}
+/* Paleta Okabe-Ito: azul, laranja e amarelo no lugar de verde/vermelho. */
+:root[data-theme='daltonico'] {
+  --color-accent: #3d9be9;
+  --color-accent-strong: #1f84d6;
+  --color-sun: #f0e442;
+  --color-danger: #e69f00;
+  --color-online: #56b4e9;
+  --color-idle: #f0e442;
+  --color-dnd: #e69f00;
+  --color-offline: #8a8a94;
+}
+:root[data-theme='claro'] .glow,
+:root[data-theme='escuro'] .glow {
+  background-image: none;
+}
+
 html,
 body {
   height: 100%;

@@ -12,7 +12,8 @@ import { showError, toast } from './Dialogs';
 import { ImageCropper } from './ImageCropper';
 import { ProfileCard } from './ProfileEditor';
 import { VoiceUserMenu } from './VoiceUserMenu';
-import { Avatar, Button, cx, ErrorText, Field, Input, Slider } from './ui';
+import { Avatar, Button, cx, ErrorText, Field, Slider } from './ui';
+import { EmojiInput, EmojiTextarea } from './EmojiField';
 import { permsOf } from '@/lib/store';
 
 // ---------- quem pode o quê ----------
@@ -716,16 +717,16 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="min-w-0 flex-1 space-y-5">
             <Field label="Nome do bot">
-              <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
+              <EmojiInput value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
             </Field>
             <Field label="Pronomes">
-              <Input value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} />
+              <EmojiInput value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} />
             </Field>
             <Field label="Pensamento" hint="Balãozinho ao lado da foto.">
-              <Input value={thought} onChange={(e) => setThought(e.target.value)} maxLength={80} />
+              <EmojiInput value={thought} onChange={(e) => setThought(e.target.value)} maxLength={80} />
             </Field>
             <Field label="Descrição">
-              <textarea
+              <EmojiTextarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 maxLength={190}
@@ -734,7 +735,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
               />
             </Field>
             <Field label="Mensagem quando a fila acaba" hint="O bot fica na call e manda isso no chat onde a música foi pedida. Vazio usa a padrão.">
-              <Input value={idle} onChange={(e) => setIdle(e.target.value)} maxLength={300} placeholder={idleDefault} />
+              <EmojiInput value={idle} onChange={(e) => setIdle(e.target.value)} maxLength={300} placeholder={idleDefault} />
             </Field>
             <Field label="Cor do perfil">
               <div className="flex flex-wrap gap-2">
