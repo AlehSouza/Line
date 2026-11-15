@@ -14,7 +14,7 @@ import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
 import { cx } from './ui';
-import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
+import { IncomingCall, MiniStream, VoiceBar, VoiceStage } from './Voice';
 import { GameBar } from './GameBar';
 
 export function AppShell() {
@@ -91,7 +91,10 @@ export function AppShell() {
             <UserPanel />
           </div>
         </div>
-        <main className={cx('glow flex min-w-0 flex-1 flex-col bg-main', pane === 'nav' && 'max-md:hidden')}>{main}</main>
+        <main className={cx('glow relative flex min-w-0 flex-1 flex-col bg-main', pane === 'nav' && 'max-md:hidden')}>
+          {main}
+          <MiniStream viewingChannelId={channel?.id ?? null} />
+        </main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
         ) : (
