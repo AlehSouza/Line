@@ -47,6 +47,12 @@ export function openContextMenu(e: ReactMouseEvent | MouseEvent, items: MenuEntr
   useMenu.setState({ menu: { x: e.clientX, y: e.clientY, items: all } });
 }
 
+/** Abre um menu do Line num ponto da tela (ex.: embaixo de um botão de 3 pontinhos). */
+export function openMenuAt(at: { x: number; y: number }, items: MenuEntry[]) {
+  if (!clean(items).length) return;
+  useMenu.setState({ menu: { x: at.x, y: at.y, items } });
+}
+
 export function closeContextMenu() {
   useMenu.setState({ menu: null });
 }

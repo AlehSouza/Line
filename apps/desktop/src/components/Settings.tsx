@@ -9,12 +9,13 @@ import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
 import { showError, toast } from './Dialogs';
 
-type Section = 'account' | 'profile' | 'voice';
+type Section = 'account' | 'profile' | 'voice' | 'blocked';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
   { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
+  { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
 ];
 
 /** Configurações do usuário em tela cheia: navegação à esquerda, conteúdo à direita. */
@@ -138,6 +139,7 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               {section === 'account' && <AccountSection />}
               {section === 'profile' && <ProfileEditor />}
               {section === 'voice' && <VoiceSettingsPanel />}
+              {section === 'blocked' && <BlockedSection />}
             </div>
           </div>
         </section>
@@ -300,4 +302,35 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
 function appVersion() {
   const v = typeof window !== 'undefined' ? window.line?.version : undefined;
   return v && !v.startsWith('__') ? `v${v}` : 'Web';
+}
+
+function BlockedSection() {
+  const friends = useLine((s) => s.friends);
+  const users = useLine((s) => s.users);
+  const blocked = Object.values(friends)
+    .filter((f) => f.state === 'blocked')
+    .map((f) => users[f.user.id] ?? f.user)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+  return (
+    <div>
+      <p className="mb-4 text-sm text-muted">
+        Quem está aqui não pode te mandar pedidos de amizade nem mensagens diretas.
+      </p>
+      <h3 className="pb-2 text-xs font-bold tracking-wide text-muted uppercase">Usuários bloqueados — {blocked.length}</h3>
+      {blocked.length === 0 && <p className="py-10 text-center text-muted">Você não bloqueou ninguém.</p>}
+      {blocked.map((u) => (
+        <div key={u.id} className="flex items-center gap-3 rounded-lg border-t border-edge px-2 py-2.5 hover:bg-hover">
+          <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={36} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold">{u.displayName}</p>
+            <p className="truncate text-sm text-muted">@{u.username}</p>
+          </div>
+          <Button variant="subtle" onClick={() => api.unblockUser(u.id).catch(showError)}>
+            Desbloquear
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
 }
