@@ -891,7 +891,16 @@ function CameraMenu({ onClose, onOpenModal }: { onClose: () => void; onOpenModal
   );
 }
 
-export function ScreenShareModal({ onClose, switching = false }: { onClose: () => void; switching?: boolean }) {
+export function ScreenShareModal({
+  onClose,
+  switching = false,
+  preselect,
+}: {
+  onClose: () => void;
+  switching?: boolean;
+  /** Janela que já vem marcada (ex.: o jogo aberto, pelo cartão do painel). */
+  preselect?: string;
+}) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
@@ -899,7 +908,7 @@ export function ScreenShareModal({ onClose, switching = false }: { onClose: () =
   const native = useMemo(() => hasNativeScreen(), []);
   const [tab, setTab] = useState<'apps' | 'screens'>('apps');
   const [sources, setSources] = useState<ScreenSource[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(preselect ?? null);
   const [audio, setAudio] = useState(true);
 
   const [listError, setListError] = useState<string | null>(null);
@@ -908,7 +917,10 @@ export function ScreenShareModal({ onClose, switching = false }: { onClose: () =
     setListError(null);
     listScreenSources()
       .then((list) => {
-        setSources(list);
+        // A janela já marcada vai para o começo da lista, para aparecer sem precisar procurar.
+        const pre = preselect ? list.find((s) => s.id === preselect) : undefined;
+        setSources(pre ? [pre, ...list.filter((s) => s !== pre)] : list);
+        if (preselect && !pre) setSelected((cur) => (cur === preselect ? null : cur));
         // Sem janelas abertas, já mostra as telas.
         if (!list.some((s) => !s.isScreen)) setTab('screens');
       })
