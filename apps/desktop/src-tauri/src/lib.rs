@@ -11,6 +11,16 @@ use tauri::{
 use tauri_plugin_opener::OpenerExt;
 
 #[cfg(windows)]
+mod games;
+/// Fora do Windows não há detecção de jogos (o painel some sozinho).
+#[cfg(not(windows))]
+mod games {
+    #[tauri::command]
+    pub async fn game_running() -> Option<()> {
+        None
+    }
+}
+#[cfg(windows)]
 mod loopback;
 #[cfg(target_os = "linux")]
 mod rtc;
@@ -560,7 +570,8 @@ pub fn run() {
             rtc::rtc_push,
             screen::screen_sources,
             screen::screen_start,
-            screen::screen_stop
+            screen::screen_stop,
+            games::game_running
         ])
         .setup(|app| {
             #[cfg(target_os = "linux")]

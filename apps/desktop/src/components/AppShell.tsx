@@ -15,6 +15,7 @@ import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
 import { cx } from './ui';
 import { IncomingCall, VoiceBar, VoiceStage } from './Voice';
+import { GameBar } from './GameBar';
 
 export function AppShell() {
   const view = useLine((s) => s.view);
@@ -85,6 +86,7 @@ export function AppShell() {
             </aside>
           </div>
           <div className="m-2 mt-1 rounded-xl border border-edge bg-rail shadow-lg">
+            <GameBar />
             <VoiceBar />
             <UserPanel />
           </div>

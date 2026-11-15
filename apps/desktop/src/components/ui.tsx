@@ -296,6 +296,7 @@ export const Icons = {
   Video: icon(L.Video),
   VideoOff: icon(L.VideoOff),
   Screen: icon(L.MonitorUp),
+  Gamepad: icon(L.Gamepad2),
   Monitor: icon(L.Monitor),
   AppWindow: icon(L.AppWindow),
   Refresh: icon(L.RefreshCw),
