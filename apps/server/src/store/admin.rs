@@ -24,6 +24,8 @@ pub struct NewReport<'a> {
     pub details: &'a str,
     pub platform: &'a str,
     pub version: &'a str,
+    /// Prints enviados junto (anexos ainda sem mensagem, da própria pessoa).
+    pub images: &'a [String],
 }
 
 fn cell(v: ValueRef) -> Value {
@@ -91,6 +93,36 @@ impl Q<'_> {
             .collect()
     }
 
+    // ---------- admins ----------
+
+    pub fn admin_flag(&self, id: &str) -> bool {
+        ok(self
+            .c
+            .query_row("SELECT is_admin FROM users WHERE id = ? AND bot_server_id IS NULL", [id], |r| r.get::<_, i64>(0))
+            .optional())
+            == Some(1)
+    }
+
+    pub fn set_admin_flag(&self, id: &str, on: bool) -> bool {
+        ok(self.c.execute("UPDATE users SET is_admin = ? WHERE id = ? AND bot_server_id IS NULL", params![on as i64, id])) == 1
+    }
+
+    /// Admins adicionados pelo painel e os donos (ADMIN_USERS).
+    pub fn admin_accounts(&self, owners: &[String]) -> Vec<Value> {
+        let mut p: Vec<Sql> = owners.iter().map(|o| Sql::Text(o.clone())).collect();
+        let marks = vec!["?"; owners.len().max(1)].join(",");
+        if owners.is_empty() {
+            p.push(Sql::Text(String::new()));
+        }
+        self.rows(
+            &format!(
+                "SELECT id, username, display_name, avatar_color, created_at, (id IN ({marks})) AS owner
+                 FROM users WHERE is_admin = 1 OR id IN ({marks}) ORDER BY owner DESC, username"
+            ),
+            [p.clone(), p].concat(),
+        )
+    }
+
     // ---------- suspensão ----------
 
     /// Quando os tokens passam a valer e até quando a conta está suspensa (se estiver).
@@ -133,7 +165,38 @@ impl Q<'_> {
                 r.reason, r.details, r.platform, r.version, now_iso()
             ],
         ));
+        for img in r.images {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO report_attachments (report_id, attachment_id)
+                 SELECT ?, id FROM attachments WHERE id = ? AND uploader_id = ? AND message_id IS NULL AND content_type LIKE 'image/%'",
+                params![id, img, r.reporter_id],
+            ));
+        }
         id
+    }
+
+    /// Cópia completa da mensagem denunciada (JSON) e os anexos copiados como prova.
+    pub fn set_report_evidence(&self, report_id: &str, snapshot: &str, attachment_ids: &[String]) {
+        ok(self.c.execute("UPDATE reports SET message_snapshot = ? WHERE id = ?", params![snapshot, report_id]));
+        for a in attachment_ids {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO report_attachments (report_id, attachment_id) VALUES (?, ?)",
+                params![report_id, a],
+            ));
+        }
+    }
+
+    /// Imagens anexadas a uma denúncia/bug report (URL pública do anexo).
+    fn report_images(&self, report_id: &str) -> Vec<Value> {
+        let mut st = ok(self.c.prepare_cached(
+            "SELECT a.id, a.filename, a.content_type FROM report_attachments ra JOIN attachments a ON a.id = ra.attachment_id
+             WHERE ra.report_id = ? ORDER BY a.created_at",
+        ));
+        ok(ok(st.query_map([report_id], |r| {
+            let (id, name, ctype): (String, String, String) = (r.get(0)?, r.get(1)?, r.get(2)?);
+            Ok(json!({ "id": id, "filename": name, "contentType": ctype, "url": format!("/api/attachments/{id}/{}", super::url_segment(&name)) }))
+        }))
+        .collect())
     }
 
     pub fn admin_reports(&self, kind: Option<&str>, status: Option<&str>, offset: i64) -> Vec<Value> {
@@ -165,7 +228,12 @@ impl Q<'_> {
         }
         sql.push_str(" ORDER BY r.created_at DESC LIMIT 50 OFFSET ?");
         p.push(Sql::Integer(offset.max(0)));
-        self.rows(&sql, p)
+        let mut list = self.rows(&sql, p);
+        for r in &mut list {
+            let id = r["id"].as_str().unwrap_or_default().to_string();
+            r["images"] = json!(self.report_images(&id));
+        }
+        list
     }
 
     pub fn update_report(&self, id: &str, status: &str, note: Option<&str>, admin_id: &str) -> bool {

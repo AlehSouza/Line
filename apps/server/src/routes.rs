@@ -308,6 +308,17 @@ async fn register(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
 
 async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let input = body::<validate::Login>(&b)?.check()?;
+    let user_id = check_login(&app, &headers, &input.username, input.password).await?;
+    suspended(&app, &user_id)?;
+    let user = app.store.q().self_user(&user_id).ok_or_else(unauthorized)?;
+    ok(AuthResponse {
+        token: app.tokens.sign(&user_id),
+        user,
+    })
+}
+
+/// Confere usuário e senha (com o limite contra força bruta) e devolve o id da conta.
+pub(crate) async fn check_login(app: &App, headers: &HeaderMap, username: &str, password: String) -> ApiResult<String> {
     let invalid = || {
         ApiError::new(
             StatusCode::UNAUTHORIZED,
@@ -317,8 +328,8 @@ async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     };
     // Contra força bruta: muitas senhas erradas seguidas bloqueiam por 15 minutos
     // (por IP e por conta).
-    let ip = client_ip(&headers);
-    let user_key = input.username.trim().to_lowercase();
+    let ip = client_ip(headers);
+    let user_key = username.trim().to_lowercase();
     if ip.as_deref().is_some_and(|ip| app.login_fails_ip.blocked(ip)) || app.login_fails_user.blocked(&user_key) {
         return Err(ApiError::new(
             StatusCode::TOO_MANY_REQUESTS,
@@ -333,26 +344,21 @@ async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
         app.login_fails_user.hit(&user_key);
         invalid()
     };
-    let Some(row) = app.store.q().user_by_username(&input.username) else {
+    let Some(row) = app.store.q().user_by_username(username) else {
         return Err(fail());
     };
-    let (password, stored) = (input.password, row.password_hash.clone());
+    let stored = row.password_hash.clone();
     let valid = tokio::task::spawn_blocking(move || auth::verify_password(&password, &stored))
         .await
         .unwrap_or(false);
     if !valid {
         return Err(fail());
     }
-    suspended(&app, &row.id)?;
-    let user = app.store.q().to_self_user(&row);
-    ok(AuthResponse {
-        token: app.tokens.sign(&row.id),
-        user,
-    })
+    Ok(row.id)
 }
 
 /// Conta suspensa pelo admin: o login avisa até quando e o motivo.
-fn suspended(app: &App, user_id: &str) -> ApiResult<()> {
+pub(crate) fn suspended(app: &App, user_id: &str) -> ApiResult<()> {
     let Some((until, reason)) = app.store.q().ban_of(user_id) else { return Ok(()) };
     let when = if until.as_str() >= crate::store::BAN_FOREVER {
         "Sua conta foi suspensa.".to_string()
@@ -391,6 +397,7 @@ async fn google_start(State(app): S, headers: HeaderMap, Query(qs): Query<HashMa
     let google = app.google.as_ref().ok_or_else(google_disabled)?;
     let target = match qs.get("port").and_then(|p| p.parse::<u16>().ok()) {
         Some(port) if port >= 1024 => crate::google::Target::Desktop(port),
+        _ if qs.contains_key("admin") => crate::google::Target::Admin,
         _ => crate::google::Target::Web,
     };
     // Reaproveita o cookie se já existir (duas abas fazendo login ao mesmo tempo continuam valendo).

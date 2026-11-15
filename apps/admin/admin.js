@@ -1,8 +1,9 @@
-// Painel administrador do Line (useline.tech/admin). Sem build: JavaScript puro.
-// Usa a mesma API do app (/api/admin/*); o servidor só responde para as contas admin.
+// Painel administrador do Line (backoffice.useline.tech). Sem build: JavaScript puro.
+// O Caddy deste subdomínio repassa só /api/admin/* para o servidor do Line, que responde
+// apenas para as contas admin.
 'use strict';
 
-const TOKEN_KEY = 'line.token'; // mesma chave do app web: quem já entrou em /app entra direto
+const TOKEN_KEY = 'line.admin.token';
 const $ = (sel) => document.querySelector(sel);
 
 // ---------- utilidades ----------
@@ -136,8 +137,12 @@ async function api(method, path, body) {
     /* resposta sem JSON */
   }
   if (res.status === 401) {
-    showLogin('Sua sessão expirou. Entre de novo.');
+    toLogin('Sua sessão expirou. Entre de novo.');
     throw new Error('Sessão expirada');
+  }
+  if (res.status === 403 && path === '/admin/me') {
+    location.replace('https://useline.tech/app/');
+    throw new Error('Acesso restrito');
   }
   if (!res.ok) throw new Error(data?.message || `Erro ${res.status}`);
   return data;
@@ -155,64 +160,42 @@ async function act(fn, done) {
   }
 }
 
-// ---------- login ----------
+// ---------- sessão ----------
+// A tela de login é login.html: o servidor só entrega esta página para quem é admin
+// (cookie conferido pelo Caddy em /api/admin/gate).
 
-function showLogin(message = '') {
-  $('#shell').hidden = true;
-  $('#login').hidden = false;
-  $('#login-error').textContent = message;
-}
-
-$('#login-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = new FormData(e.target);
-  $('#login-error').textContent = '';
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: f.get('username'), password: f.get('password') }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(data?.message || `Erro ${res.status}`);
-    token = data.token;
-    try {
-      localStorage.setItem(TOKEN_KEY, token);
-    } catch {
-      /* sem localStorage: vale só nesta aba */
-    }
-    boot();
-  } catch (err) {
-    $('#login-error').textContent = err.message;
-  }
-});
-
-$('#logout').addEventListener('click', () => {
-  token = null;
+function toLogin(message = '') {
   try {
     localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* ok */
   }
-  showLogin();
+  location.replace(`/login.html${message ? `?msg=${encodeURIComponent(message)}` : ''}`);
+}
+
+$('#logout').addEventListener('click', async () => {
+  await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
+  toLogin();
 });
 
+let isOwner = false;
+
 async function boot() {
-  if (!token) return showLogin();
+  if (!token) return toLogin();
   try {
     const me = await api('GET', '/admin/me');
     $('#me').textContent = `@${me.username}`;
+    isOwner = !!me.owner;
   } catch (e) {
-    return showLogin(e.message === 'Sessão expirada' ? '' : e.message);
+    return toLogin(e.message === 'Sessão expirada' ? '' : e.message);
   }
-  $('#login').hidden = true;
   $('#shell').hidden = false;
   route();
 }
 
 // ---------- navegação ----------
 
-const pages = { overview, users, servers, reports: () => reportsPage('reports'), feedback: () => reportsPage('feedback'), log };
+const pages = { overview, users, servers, reports: () => reportsPage('reports'), feedback: () => reportsPage('feedback'), admins, log };
 
 function route() {
   const page = location.hash.slice(1) || 'overview';
@@ -710,7 +693,7 @@ function reportsPage(which) {
     if (!list.children.length) list.append(h('div', { class: 'empty' }, feedback ? 'Nenhum relato aqui.' : 'Nenhuma denúncia aqui.'));
   }
   render(
-    h('div', { class: 'head' }, h('div', {}, h('h1', {}, feedback ? 'Bugs e melhorias' : 'Denúncias'), h('span', { class: 'muted' }, feedback ? 'Enviados pelo app em "Bugs e melhorias", abaixo de Solicitações.' : 'Denúncias de usuários e mensagens feitas no app.'))),
+    h('div', { class: 'head' }, h('div', {}, h('h1', {}, feedback ? 'Bugs e melhorias' : 'Denúncias'), h('span', { class: 'muted' }, feedback ? 'Enviados pelo app em "Reportar", abaixo de Solicitações.' : 'Denúncias de usuários e mensagens feitas no app.'))),
     h(
       'div',
       { class: 'toolbar' },
@@ -721,6 +704,28 @@ function reportsPage(which) {
     h('div', { class: 'more' }, more),
   );
   load(true);
+}
+
+/** Arquivos ficam no domínio principal (/api/attachments/...). */
+const FILES = location.hostname.startsWith('backoffice.') ? `${location.protocol}//${location.host.slice(11)}` : '';
+
+/** Cópia da mensagem denunciada (guardada na hora da denúncia: vale mesmo se ela for apagada). */
+function snapshotView(r) {
+  let m = null;
+  try {
+    m = r.messageSnapshot ? JSON.parse(r.messageSnapshot) : null;
+  } catch {
+    m = null;
+  }
+  if (!m) return r.messageContent ? h('div', { class: 'quote' }, r.messageContent) : null;
+  const where = m.server ? `${m.server.name} · #${m.channel?.name || '?'}` : 'Conversa privada';
+  return h(
+    'div',
+    { class: 'quote' },
+    h('div', { class: 'muted small', style: 'margin-bottom:4px' }, h('b', { style: 'color:var(--fg)' }, m.author?.displayName || '?'), ` @${m.author?.username || '?'} · ${where} · ${date(m.createdAt)}`, m.editedAt ? ` (editada ${date(m.editedAt)})` : '', ` · id ${m.id}`),
+    m.content || h('span', { class: 'muted' }, '(sem texto)'),
+    m.attachments?.length ? h('div', { class: 'muted small', style: 'margin-top:4px' }, `Anexos: ${m.attachments.map((a) => a.filename).join(', ')}`) : null,
+  );
 }
 
 function reportCard(r, reload) {
@@ -741,8 +746,9 @@ function reportCard(r, reload) {
     ),
     r.targetUserId &&
       h('div', { style: 'margin-top:8px' }, 'Contra ', h('button', { class: 'linkish', onclick: () => openUser(r.targetUserId) }, `${r.targetName || '?'} (@${r.targetUsername || '?'})`), banned(r.targetBannedUntil) ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'suspenso') : null, where ? h('span', { class: 'muted' }, ` em ${where}`) : null),
-    r.messageContent && h('div', { class: 'quote' }, r.messageContent),
+    snapshotView(r),
     r.details && h('p', { class: 'details' }, r.details),
+    r.images?.length ? h('div', { class: 'shots' }, r.images.map((img) => (img.contentType || '').startsWith('image/') ? h('a', { href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${FILES}${img.url}`, alt: img.filename, loading: 'lazy' })) : h('a', { class: 'pill', href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, img.filename))) : null,
     (r.platform || r.version) && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, [r.platform, r.version && `versão ${r.version}`].filter(Boolean).join(' · ')),
     r.note && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, `Anotação: ${r.note}`),
     h(
@@ -757,9 +763,54 @@ function reportCard(r, reload) {
   );
 }
 
+// ---------- administradores ----------
+
+async function admins() {
+  loading();
+  let list;
+  try {
+    list = await api('GET', '/admin/admins');
+  } catch (e) {
+    return render(h('p', { class: 'error' }, e.message));
+  }
+  const input = h('input', { placeholder: '@usuário ou id da conta' });
+  const add = async () => {
+    const v = input.value.trim();
+    if (!v) return;
+    if (await act(() => api('PUT', `/admin/admins/${encodeURIComponent(v)}`), 'Administrador adicionado.')) admins();
+  };
+  render(
+    h('div', { class: 'head' }, h('div', {}, h('h1', {}, 'Administradores'), h('span', { class: 'muted' }, isOwner ? 'Quem pode abrir o backoffice. Quem não está aqui é mandado para o app.' : 'Só o dono do painel adiciona ou remove administradores.'))),
+    isOwner ? h('div', { class: 'toolbar' }, input, h('button', { class: 'btn primary', onclick: add }, 'Adicionar')) : '',
+    h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        {},
+        h('tbody', {}, list.map((u) =>
+          h(
+            'tr',
+            {},
+            h('td', {}, who(u)),
+            h('td', {}, u.owner ? h('span', { class: 'pill violet' }, 'Dono') : h('span', { class: 'pill' }, 'Admin')),
+            h(
+              'td',
+              { style: 'text-align:right' },
+              isOwner && !u.owner
+                ? h('button', { class: 'btn danger small', onclick: async () => (await ask({ title: `Remover ${u.displayName}`, message: 'A pessoa perde o acesso ao backoffice na hora.', confirm: 'Remover', danger: true })) && (await act(() => api('DELETE', `/admin/admins/${u.id}`), 'Removido.')) && admins() }, 'Remover')
+                : null,
+            ),
+          ),
+        )),
+      ),
+    ),
+  );
+}
+
 // ---------- registro ----------
 
-const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia' };
+const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia', add_admin: 'Tornou admin', remove_admin: 'Tirou admin de' };
 
 async function log() {
   loading();
@@ -782,7 +833,7 @@ async function log() {
             h(
               'tbody',
               {},
-              items.map((l) => h('tr', {}, h('td', {}, date(l.createdAt)), h('td', {}, `@${l.adminUsername || '?'}`), h('td', {}, ACTIONS[l.action] || l.action), h('td', {}, ['ban', 'unban', 'logout', 'delete_messages', 'delete_user'].includes(l.action) ? h('button', { class: 'linkish', onclick: () => openUser(l.target) }, l.target) : l.target), h('td', { style: 'white-space:normal' }, l.detail))),
+              items.map((l) => h('tr', {}, h('td', {}, date(l.createdAt)), h('td', {}, `@${l.adminUsername || '?'}`), h('td', {}, ACTIONS[l.action] || l.action), h('td', {}, ['ban', 'unban', 'logout', 'delete_messages', 'delete_user', 'add_admin', 'remove_admin'].includes(l.action) ? h('button', { class: 'linkish', onclick: () => openUser(l.target) }, l.target) : l.target), h('td', { style: 'white-space:normal' }, l.detail))),
             ),
           )
         : h('div', { class: 'empty' }, 'Nada ainda.'),

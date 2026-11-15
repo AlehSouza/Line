@@ -19,6 +19,9 @@ pub enum Target {
     Web,
     /// App desktop escutando em 127.0.0.1:{porta}.
     Desktop(u16),
+    /// Painel administrador (backoffice.useline.tech). Troca o código como o desktop (sem cookie),
+    /// porque o cookie do login fica no domínio principal.
+    Admin,
 }
 
 pub struct Google {
@@ -26,6 +29,7 @@ pub struct Google {
     client_secret: String,
     pub redirect_uri: String,
     pub app_url: String,
+    pub admin_url: String,
     /// state do OAuth → destino e o segredo do cookie do navegador que começou o login.
     states: Mutex<HashMap<String, ((Target, String), Instant)>>,
     /// Código de uso único → usuário e, no app web, o segredo do cookie (None = app desktop).
@@ -83,11 +87,13 @@ impl Google {
         let client_secret = var("GOOGLE_CLIENT_SECRET")?;
         let public = var("PUBLIC_URL").unwrap_or_else(|| "https://useline.tech".into());
         let app_url = var("APP_URL").unwrap_or_else(|| format!("{}/app", public.trim_end_matches('/')));
+        let admin_url = var("ADMIN_URL").unwrap_or_else(|| public.replacen("://", "://backoffice.", 1));
         Some(Self {
             client_id,
             client_secret,
             redirect_uri: format!("{}/api/auth/google/callback", public.trim_end_matches('/')),
             app_url: app_url.trim_end_matches('/').to_string(),
+            admin_url: admin_url.trim_end_matches('/').to_string(),
             states: Mutex::default(),
             codes: Mutex::default(),
         })
@@ -177,12 +183,13 @@ impl Google {
     /// Para onde o navegador vai depois do callback (com o código ou com o erro).
     pub fn return_url(&self, target: Target, result: Result<&str, &str>) -> String {
         let (key, value) = match result {
-            Ok(code) => (if matches!(target, Target::Web) { "google" } else { "code" }, code),
+            Ok(code) => (if matches!(target, Target::Desktop(_)) { "code" } else { "google" }, code),
             Err(msg) => ("googleError", msg),
         };
         let base = match target {
             Target::Web => format!("{}/", self.app_url),
             Target::Desktop(port) => format!("http://127.0.0.1:{port}/"),
+            Target::Admin => format!("{}/login.html", self.admin_url),
         };
         let mut url = reqwest::Url::parse(&base).unwrap();
         url.query_pairs_mut().append_pair(key, value);

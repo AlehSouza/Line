@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { useLine } from '@/lib/store';
 import { toast } from './Dialogs';
 import { Button, cx, ErrorText, Field, Icons, Modal } from './ui';
+
+const MAX_IMAGES = 5;
 
 const REASONS = ['Spam ou golpe', 'Assédio ou ofensa', 'Conteúdo impróprio', 'Discurso de ódio', 'Se passando por outra pessoa', 'Outro'];
 
@@ -39,15 +41,32 @@ export function ReportModal({
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [images, setImages] = useState<{ file: File; preview: string }[]>([]);
+  const picker = useRef<HTMLInputElement>(null);
+  const current = useRef(images);
+  current.current = images;
+  useEffect(() => () => current.current.forEach((i) => URL.revokeObjectURL(i.preview)), []);
+
+  const addImages = (files: FileList | File[] | null) => {
+    const list = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (!list.length) return;
+    setImages((cur) => {
+      const room = MAX_IMAGES - cur.length;
+      if (list.length > room) setError(`Dá para anexar até ${MAX_IMAGES} imagens.`);
+      return [...cur, ...list.slice(0, Math.max(0, room)).map((file) => ({ file, preview: URL.createObjectURL(file) }))];
+    });
+  };
 
   const isReport = !!target;
-  const title = !target ? 'Bugs e melhorias' : target.messageId ? 'Denunciar mensagem' : `Denunciar ${user?.displayName ?? 'usuário'}`;
+  const title = !target ? 'Reportar' : target.messageId ? 'Denunciar mensagem' : `Denunciar ${user?.displayName ?? 'usuário'}`;
   const canSend = isReport ? !!reason : details.trim().length >= 5;
 
   const send = async () => {
     setBusy(true);
     setError('');
     try {
+      const uploaded = [];
+      for (const img of target ? [] : images) uploaded.push((await api.uploadAttachment(img.file, img.file.name || 'imagem.png')).id);
       await api.report({
         kind: !target ? kind : target.messageId ? 'message' : 'user',
         targetUserId: target?.userId,
@@ -56,6 +75,7 @@ export function ReportModal({
         details: details.trim(),
         platform: platform(),
         version: version(),
+        images: uploaded,
       });
       toast(isReport ? 'Denúncia enviada. Obrigado por avisar!' : 'Recebido! Obrigado por ajudar a melhorar o Line.');
       onClose();
@@ -144,6 +164,62 @@ export function ReportModal({
             className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none placeholder:text-muted focus:border-accent"
           />
         </Field>
+        {!isReport && (
+          <div
+            onPaste={(e) => addImages(e.clipboardData.files)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              addImages(e.dataTransfer.files);
+            }}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-xs font-bold tracking-wide text-muted uppercase">Imagens (opcional)</span>
+              <span className="text-xs text-muted">
+                {images.length}/{MAX_IMAGES}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {images.map((img, i) => (
+                <div key={img.preview} className="group relative size-16 overflow-hidden rounded-lg border border-edge">
+                  <img src={img.preview} alt="" className="size-full object-cover" />
+                  <button
+                    type="button"
+                    title="Remover"
+                    onClick={() => {
+                      URL.revokeObjectURL(img.preview);
+                      setImages((cur) => cur.filter((_, j) => j !== i));
+                    }}
+                    className="absolute top-0.5 right-0.5 rounded-full bg-black/70 p-0.5 text-white"
+                  >
+                    <Icons.X size={12} />
+                  </button>
+                </div>
+              ))}
+              {images.length < MAX_IMAGES && (
+                <button
+                  type="button"
+                  onClick={() => picker.current?.click()}
+                  className="flex size-16 items-center justify-center rounded-lg border border-dashed border-edge text-muted hover:bg-hover hover:text-fg"
+                  title="Anexar imagem (também dá para colar ou arrastar)"
+                >
+                  <Icons.Plus size={20} />
+                </button>
+              )}
+            </div>
+            <input
+              ref={picker}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                addImages(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
+        )}
         <ErrorText>{error}</ErrorText>
       </div>
     </Modal>

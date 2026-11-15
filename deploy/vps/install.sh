@@ -98,7 +98,7 @@ EnvironmentFile=-/etc/line/giphy.env
 EnvironmentFile=-/etc/line/smtp.env
 # GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET: "Entrar com Google".
 EnvironmentFile=-/etc/line/google.env
-# ADMIN_USERS: ids das contas com acesso ao painel useline.tech/admin (separados por vírgula).
+# ADMIN_USERS: ids das contas com acesso ao painel backoffice.useline.tech (separados por vírgula).
 EnvironmentFile=-/etc/line/admin.env
 ExecStart=/opt/line/line-server
 Restart=always
@@ -147,15 +147,11 @@ $DOMAIN {
 		root * /opt/line/site
 		file_server
 	}
-	# Painel administrador (o CI envia apps/admin para /opt/line/admin). A API /api/admin/* só
-	# responde para as contas em ADMIN_USERS.
-	redir /admin /admin/
-	handle_path /admin/* {
-		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-		header Cache-Control "no-cache"
-		header X-Robots-Tag "noindex, nofollow"
-		root * /opt/line/admin
-		file_server
+	# Painel administrador mudou para backoffice.$DOMAIN; a API admin só responde por lá.
+	redir /admin* https://backoffice.$DOMAIN/
+	@adminapi path /api/admin/*
+	handle @adminapi {
+		respond 404
 	}
 	# App web completo em /app/ (o servidor entrega a interface em /).
 	redir /app /app/
@@ -164,6 +160,50 @@ $DOMAIN {
 	}
 	handle {
 		reverse_proxy 127.0.0.1:4000
+	}
+}
+
+# Backoffice (projeto apps/admin; o CI envia para /opt/line/admin). As páginas só saem para admins
+# (conferido no servidor) e a API admin responde apenas para eles. Precisa do DNS: A admin -> IP da VPS.
+backoffice.$DOMAIN {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		X-Robots-Tag "noindex, nofollow"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://$DOMAIN; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+	# Só a API admin e o que a tela de login usa chegam ao servidor do Line.
+	@api path /api/admin/* /api/auth/config /api/health
+	handle @api {
+		reverse_proxy 127.0.0.1:4000
+	}
+	@otherapi {
+		path /api/*
+		not path /api/admin/* /api/auth/config /api/health
+	}
+	handle @otherapi {
+		respond 404
+	}
+	# Tela de login: a única página entregue sem sessão.
+	@public path /login.html /login.js /admin.css
+	handle @public {
+		header Cache-Control "no-cache"
+		root * /opt/line/admin
+		file_server
+	}
+	# Todo o resto só sai depois do servidor conferir o cookie: admin passa, quem entrou e não é
+	# admin vai para o app, quem não entrou vai para /login.html.
+	handle {
+		forward_auth 127.0.0.1:4000 {
+			uri /api/admin/gate
+		}
+		header Cache-Control "no-cache"
+		root * /opt/line/admin
+		file_server
 	}
 }
 CADDY
@@ -255,7 +295,7 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
-# Admin do painel: na primeira vez, a conta mais antiga (a do dono do Line). Para trocar, edite
+# Admin do painel (backoffice.$DOMAIN): na primeira vez, a conta mais antiga (a do dono do Line). Para trocar, edite
 # /etc/line/admin.env (ADMIN_USERS=<id>[,<id>]) e rode systemctl restart line.
 if [ ! -f /etc/line/admin.env ] && [ -f /var/lib/line/line.db ]; then
   FIRST="$(sqlite3 /var/lib/line/line.db "SELECT id || ' ' || username FROM users WHERE bot_server_id IS NULL ORDER BY created_at LIMIT 1" || true)"

@@ -1692,7 +1692,8 @@ impl Q<'_> {
              AND id NOT IN (SELECT avatar_id FROM users WHERE avatar_id IS NOT NULL)
              AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)
              AND id NOT IN (SELECT icon_id FROM servers WHERE icon_id IS NOT NULL)
-             AND id NOT IN (SELECT banner_id FROM servers WHERE banner_id IS NOT NULL)",
+             AND id NOT IN (SELECT banner_id FROM servers WHERE banner_id IS NOT NULL)
+             AND id NOT IN (SELECT attachment_id FROM report_attachments)",
             [cutoff],
         ));
     }
