@@ -16,6 +16,7 @@ import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Me
 import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
+import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
 import { UserTagBadge } from './ServerTag';
 import { confirmDialog, showError, toast } from './Dialogs';
@@ -466,6 +467,7 @@ function MessageRow({
 }) {
   const serverId = useLine((s) => s.channels[message.channelId]?.serverId);
   const [draft, setDraft] = useState(message.content);
+  const editRef = useRef<HTMLTextAreaElement>(null);
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const showThreadAction = canThread && !message.thread;
   const mentionsMe = !mine && messageMentionsMe(message);
@@ -575,7 +577,9 @@ function MessageRow({
           <UpdateRequired />
         ) : editing ? (
           <div className="py-1">
+            <div className="relative">
             <textarea
+              ref={editRef}
               autoFocus
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -594,8 +598,10 @@ function MessageRow({
                 e.currentTarget.setSelectionRange(end, end);
               }}
               rows={Math.min(8, draft.split('\n').length)}
-              className="w-full resize-none rounded-lg bg-raise px-3 py-2 text-[15px] outline-none"
+              className="w-full resize-none rounded-lg bg-raise py-2 pr-10 pl-3 text-[15px] outline-none"
             />
+            <EmojiButton target={editRef} size={20} className="absolute top-2 right-3" />
+            </div>
             <p className="mt-1 text-xs text-muted">
               esc para{' '}
               <button type="button" onClick={stopEditing} className="text-accent hover:underline">

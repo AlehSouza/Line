@@ -379,14 +379,21 @@ fn request_attention(window: WebviewWindow) {
 }
 
 #[tauri::command]
-fn set_badge(window: WebviewWindow, count: i64) {
+fn set_badge(window: WebviewWindow, count: i64, rgba: Option<Vec<u8>>) {
     #[cfg(windows)]
     {
-        // O Windows não tem número no ícone; mostramos uma bolinha vermelha por cima.
-        let _ = window.set_overlay_icon(if count > 0 { Some(badge_dot()) } else { None });
+        // O Windows não tem número no ícone: a interface desenha a pílula com o número ("9+")
+        // num quadrado de 32x32 e ela vai por cima do ícone. Sem desenho, só a bolinha vermelha.
+        let icon = match rgba {
+            Some(px) if count > 0 && px.len() == 32 * 32 * 4 => Some(tauri::image::Image::new_owned(px, 32, 32)),
+            _ if count > 0 => Some(badge_dot()),
+            _ => None,
+        };
+        let _ = window.set_overlay_icon(icon);
     }
     #[cfg(not(windows))]
     {
+        let _ = rgba;
         let _ = window.set_badge_count(if count > 0 { Some(count) } else { None });
     }
 }
