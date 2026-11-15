@@ -412,6 +412,19 @@ tbody tr.click:hover {
   color: #fff;
   flex-shrink: 0;
 }
+.av {
+  overflow: hidden;
+}
+.av svg,
+.av img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.av.sq {
+  border-radius: 9px;
+}
 .who b {
   display: block;
   font-weight: 600;

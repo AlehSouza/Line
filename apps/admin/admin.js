@@ -5,6 +5,8 @@
 
 const TOKEN_KEY = 'line.admin.token';
 const $ = (sel) => document.querySelector(sel);
+/** Arquivos (fotos, prints) ficam no domínio principal (/api/attachments/...). */
+const FILES = location.hostname.startsWith('backoffice.') ? `${location.protocol}//${location.host.slice(11)}` : '';
 
 // ---------- utilidades ----------
 
@@ -56,13 +58,43 @@ function initials(name) {
     .join('')
     .toUpperCase();
 }
-function avatar(name, color) {
-  const el = h('span', { class: 'av' }, initials(name));
-  el.style.background = color || '#3a3a42';
+/** Ícone padrão (logo do Line acinzentado), igual ao do app para quem não tem foto. */
+function defaultIcon() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  const rect = document.createElementNS(ns, 'rect');
+  rect.setAttribute('width', '32');
+  rect.setAttribute('height', '32');
+  rect.setAttribute('fill', '#4a4a54');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M8 19c3-6 6-6 8-3s5 3 8-3');
+  path.setAttribute('stroke', '#d6d6de');
+  path.setAttribute('stroke-width', '3');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('fill', 'none');
+  const dot = document.createElementNS(ns, 'circle');
+  dot.setAttribute('cx', '24');
+  dot.setAttribute('cy', '10');
+  dot.setAttribute('r', '2.4');
+  dot.setAttribute('fill', '#d6d6de');
+  dot.setAttribute('opacity', '0.7');
+  svg.append(rect, path, dot);
+  return svg;
+}
+
+/** Foto (do domínio principal) ou o ícone padrão do Line. */
+function avatar(name, url, square = false) {
+  const el = h('span', { class: square ? 'av sq' : 'av', title: name || '' });
+  if (url) {
+    const img = h('img', { src: `${FILES}${url}`, alt: '', loading: 'lazy' });
+    img.addEventListener('error', () => img.replaceWith(defaultIcon()));
+    el.append(img);
+  } else el.append(defaultIcon());
   return el;
 }
 function who(u, sub) {
-  return h('div', { class: 'who' }, avatar(u.displayName || u.username, u.avatarColor), h('div', {}, h('b', {}, u.displayName || u.username || '—'), h('span', {}, sub ?? `@${u.username || '?'}`)));
+  return h('div', { class: 'who' }, avatar(u.displayName || u.username, u.avatarUrl), h('div', {}, h('b', {}, u.displayName || u.username || '—'), h('span', {}, sub ?? `@${u.username || '?'}`)));
 }
 
 let toastTimer;
@@ -578,9 +610,7 @@ function servers() {
     load: ({ q, offset }) => api('GET', `/admin/servers?q=${encodeURIComponent(q)}&offset=${offset}`),
     head: ['Servidor', 'Dono', 'Membros', 'Canais', 'Mensagens', 'Criado'],
     row: (s) => {
-      const icon = h('span', { class: 'av' }, initials(s.name));
-      icon.style.background = s.iconColor || '#3a3a42';
-      icon.style.borderRadius = '9px';
+      const icon = avatar(s.name, s.iconUrl, true);
       return h(
         'tr',
         {},
@@ -706,8 +736,6 @@ function reportsPage(which) {
   load(true);
 }
 
-/** Arquivos ficam no domínio principal (/api/attachments/...). */
-const FILES = location.hostname.startsWith('backoffice.') ? `${location.protocol}//${location.host.slice(11)}` : '';
 
 /** Cópia da mensagem denunciada (guardada na hora da denúncia: vale mesmo se ela for apagada). */
 function snapshotView(r) {

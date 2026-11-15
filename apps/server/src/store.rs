@@ -374,7 +374,7 @@ impl Q<'_> {
         self.ids("SELECT id FROM users WHERE tag_server_id = ?", [server_id])
     }
 
-    fn profile_image_url(&self, attachment_id: &str) -> String {
+    pub(crate) fn profile_image_url(&self, attachment_id: &str) -> String {
         self.attachment(attachment_id).map(|a| a.url).unwrap_or_default()
     }
 
