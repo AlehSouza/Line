@@ -630,8 +630,17 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   const [crop, setCrop] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [idle, setIdle] = useState('');
+  const [idleDefault, setIdleDefault] = useState('Esperando a próxima banger 😈');
 
   useEffect(() => {
+    api
+      .musicSettings(serverId)
+      .then((s) => {
+        setIdle(s.idleMessage);
+        setIdleDefault(s.defaultIdleMessage);
+      })
+      .catch(() => {});
     api
       .musicBot(serverId)
       .then((b) => {
@@ -680,10 +689,12 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         ...(changed.avatar ? { avatarId: avatar.id } : {}),
         ...(changed.banner ? { bannerId: banner.id } : {}),
       });
+      const s = await api.updateMusicSettings(serverId, { idleMessage: idle.trim() });
+      setIdle(s.idleMessage);
       actions.upsertUsers([b]);
       setBot(b);
       setChanged({});
-      toast('Perfil do bot salvo.');
+      toast('Bot salvo.');
     } catch (e) {
       showError(e);
     } finally {
@@ -721,6 +732,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 rows={3}
                 className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
               />
+            </Field>
+            <Field label="Mensagem quando a fila acaba" hint="O bot fica na call e manda isso no chat onde a música foi pedida. Vazio usa a padrão.">
+              <Input value={idle} onChange={(e) => setIdle(e.target.value)} maxLength={300} placeholder={idleDefault} />
             </Field>
             <Field label="Cor do perfil">
               <div className="flex flex-wrap gap-2">
