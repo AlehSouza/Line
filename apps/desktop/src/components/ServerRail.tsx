@@ -28,6 +28,21 @@ export function ServerRail() {
   const voiceStates = useVoice((v) => v.states);
   // Servidor da call em que ESTE app está conectado (só ele ganha o selo de voz).
   const myVoiceChannel = useVoice((v) => v.channelId);
+  // Arrastar servidores para mudar a ordem (salva só para mim).
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const dropOn = (targetId: string) => {
+    const from = drag;
+    setDrag(null);
+    setOver(null);
+    if (!from || from === targetId) return;
+    const ids = servers.map((s) => s.id);
+    const to = ids.indexOf(targetId);
+    ids.splice(ids.indexOf(from), 1);
+    ids.splice(to, 0, from);
+    actions.setServerOrder(ids);
+    void api.reorderMyServers(ids).catch(() => {});
+  };
   const myVoiceServer = myVoiceChannel ? channels[myVoiceChannel]?.serverId : null;
   const inVoice: Record<string, string[]> = {};
   for (const st of Object.values(voiceStates)) if (st.serverId) (inVoice[st.serverId] ??= []).push(st.userId);
@@ -56,6 +71,28 @@ export function ServerRail() {
       {servers.map((server) => (
         <RailItem
           key={server.id}
+          drag={{
+            draggable: true,
+            onDragStart: (e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              setDrag(server.id);
+            },
+            onDragEnd: () => {
+              setDrag(null);
+              setOver(null);
+            },
+            onDragOver: (e) => {
+              if (!drag) return;
+              e.preventDefault();
+              setOver(server.id);
+            },
+            onDrop: (e) => {
+              e.preventDefault();
+              dropOn(server.id);
+            },
+          }}
+          dropMark={over === server.id && drag !== server.id ? (servers.findIndex((s) => s.id === drag) < servers.findIndex((s) => s.id === server.id) ? 'below' : 'above') : null}
+          dragging={drag === server.id}
           label={server.name}
           active={view.kind === 'server' && view.serverId === server.id}
           dot={serverHasUnread(server.id)}
@@ -99,6 +136,9 @@ function RailItem({
   onContextMenu,
   voice,
   tooltip,
+  drag,
+  dropMark,
+  dragging,
   children,
 }: {
   label: string;
@@ -112,18 +152,27 @@ function RailItem({
   /** Eu estou conectado em voz neste servidor (só aí aparece o selo). */
   voice?: boolean;
   tooltip?: ReactNode;
+  /** Handlers de arrastar (só nos servidores). */
+  drag?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  /** Onde aparece a linha de "soltar aqui". */
+  dropMark?: 'above' | 'below' | null;
+  dragging?: boolean;
   children: React.ReactNode;
 }) {
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
   return (
     <div
-      className="group relative flex w-full justify-center"
+      {...drag}
+      className={cx('group relative flex w-full justify-center', dragging && 'opacity-40')}
       onMouseEnter={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setTip({ x: r.right - 4, y: r.top + r.height / 2 });
       }}
       onMouseLeave={() => setTip(null)}
     >
+      {dropMark && (
+        <span className={cx('pointer-events-none absolute left-1/2 h-0.5 w-10 -translate-x-1/2 rounded bg-accent', dropMark === 'above' ? '-top-1' : '-bottom-1')} />
+      )}
       {/* Indicador lateral: ativo = barra alta, não lido = bolinha */}
       <span
         className={cx(

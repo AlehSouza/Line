@@ -702,7 +702,7 @@ impl Q<'_> {
     pub fn servers_of(&self, user_id: &str) -> Vec<Server> {
         let list: Vec<Server> = {
             let mut st = ok(self.c.prepare_cached(&format!(
-                "{SERVER_SELECT} JOIN members me ON me.server_id = s.id AND me.user_id = ? ORDER BY me.joined_at"
+                "{SERVER_SELECT} JOIN members me ON me.server_id = s.id AND me.user_id = ? ORDER BY me.rail_position IS NULL, me.rail_position, me.joined_at"
             )));
             ok(ok(st.query_map([user_id], server_from_row)).collect())
         };
@@ -810,6 +810,19 @@ impl Q<'_> {
             )
             .optional())
         .is_some()
+    }
+
+    /// Grava a ordem dos servidores na barra lateral desta pessoa (os que faltarem vão para o fim).
+    pub fn reorder_my_servers(&self, user_id: &str, server_ids: &[String]) {
+        self.tx(|| {
+            ok(self.c.execute("UPDATE members SET rail_position = NULL WHERE user_id = ?", [user_id]));
+            for (i, id) in server_ids.iter().enumerate() {
+                ok(self.c.execute(
+                    "UPDATE members SET rail_position = ? WHERE user_id = ? AND server_id = ?",
+                    params![i as i64, user_id, id],
+                ));
+            }
+        });
     }
 
     pub fn add_member(&self, server_id: &str, user_id: &str) -> Member {

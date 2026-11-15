@@ -70,18 +70,21 @@ export function PresenceDot({
   presence,
   size = 10,
   ring = 'side',
+  ringColor,
   className,
 }: {
   presence: Presence;
   size?: number;
   ring?: Ring;
+  /** Cor livre do anel (no lugar das cores de fundo prontas). */
+  ringColor?: string;
   className?: string;
 }) {
   return (
     <span
       title={presenceLabel[presence]}
-      className={cx('block rounded-full ring-[3px]', ringClass[ring], presenceColor[presence], className)}
-      style={{ width: size, height: size }}
+      className={cx('block rounded-full', ringColor ? 'border-[3px]' : cx('ring-[3px]', ringClass[ring]), presenceColor[presence], className)}
+      style={{ width: size, height: size, ...(ringColor ? { borderColor: ringColor } : {}) }}
     />
   );
 }
@@ -144,6 +147,7 @@ export function Avatar({
   className,
   src,
   dotSize,
+  dotRingColor,
 }: {
   name: string;
   color: string;
@@ -153,6 +157,8 @@ export function Avatar({
   dotSize?: number;
   presence?: Presence;
   ring?: Ring;
+  /** Cor livre do anel da bolinha de status. */
+  dotRingColor?: string;
   className?: string;
 }) {
   return (
@@ -176,6 +182,7 @@ export function Avatar({
         <PresenceDot
           presence={presence}
           ring={ring}
+          ringColor={dotRingColor}
           size={dotSize ?? Math.max(9, Math.round(size * 0.3))}
           className="absolute -right-0.5 -bottom-0.5"
         />

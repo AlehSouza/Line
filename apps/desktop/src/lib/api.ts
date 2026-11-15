@@ -185,6 +185,7 @@ export const api = {
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),
   serverCard: (id: string) => request<ServerCardInfo>('GET', `/servers/${enc(id)}/card`),
   channelAudience: (id: string) => request<{ userIds: string[] | null }>('GET', `/channels/${enc(id)}/audience`),
+  reorderMyServers: (serverIds: string[]) => request<void>('PUT', '/users/@me/servers/order', { serverIds }),
   joinPublic: (id: string) => request<Server>('POST', `/servers/${enc(id)}/join`),
   resetInvite: (id: string) => request<Server>('POST', `/servers/${enc(id)}/invite/reset`),
   kick: (serverId: string, userId: string) => request<void>('DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}`),

@@ -313,6 +313,10 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (report_id, attachment_id)
   );
 "#,
+    // Ordem dos servidores na barra lateral, escolhida por cada pessoa (NULL = pela entrada).
+    r#"
+  ALTER TABLE members ADD COLUMN rail_position INTEGER;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
