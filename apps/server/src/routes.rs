@@ -1296,6 +1296,26 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
         }
     }
     // Link do YouTube toca direto; qualquer outro texto vira busca no YouTube (primeiro resultado).
+    // Link com &list= (ou /playlist?list=): enfileira a playlist, começando pelo vídeo do link se houver.
+    if let Some(u) = &link {
+        let host = u.host_str().unwrap_or("").trim_start_matches("www.").trim_start_matches("m.");
+        let list = u.query_pairs().find(|(k, _)| k == "list").map(|(_, v)| v.into_owned());
+        let list = list.filter(|l| {
+            matches!(host, "youtube.com" | "music.youtube.com" | "youtu.be")
+                && (2..=64).contains(&l.len())
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        });
+        if let Some(list) = list {
+            let start = crate::embeds::youtube_id(u);
+            if let Some(items) = crate::music::playlist(&list, start.as_deref()).await {
+                crate::music::play_items(&app, &me, &id, items, true).map_err(|e| bad_request(&e))?;
+                return no_content();
+            }
+            if start.is_none() {
+                return Err(bad_request("Não consegui abrir essa playlist. Ela pode ser privada."));
+            }
+        }
+    }
     let video = match link {
         Some(u) => crate::embeds::youtube_id(&u).ok_or_else(|| bad_request("Esse link não é do YouTube"))?,
         None => crate::music::search(&raw)
