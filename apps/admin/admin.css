@@ -671,3 +671,18 @@ tbody tr.click:hover {
     grid-template-columns: 110px 1fr;
   }
 }
+
+.shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.shots img {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  display: block;
+}

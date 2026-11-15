@@ -4,23 +4,11 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>Line Admin</title>
+    <title>Line Backoffice</title>
     <link rel="icon" href="https://useline.tech/site/favicon.png" />
     <link rel="stylesheet" href="admin.css" />
   </head>
   <body>
-    <div id="login" class="login" hidden>
-      <form id="login-form" class="login-card">
-        <div class="brand"><span class="logo">L</span> Line <span class="tag">admin</span></div>
-        <p class="muted">Acesso restrito ao administrador do Line.</p>
-        <label>Usuário<input name="username" autocomplete="username" required /></label>
-        <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
-        <p id="login-error" class="error"></p>
-        <button class="btn primary" type="submit">Entrar</button>
-        <a id="google" class="btn" hidden>Entrar com Google</a>
-      </form>
-    </div>
-
     <div id="shell" class="shell" hidden>
       <aside class="side">
         <div class="brand"><span class="logo">L</span> Line <span class="tag">admin</span></div>
@@ -30,6 +18,7 @@
           <a data-page="servers">Servidores</a>
           <a data-page="reports">Denúncias <span class="badge" id="badge-reports"></span></a>
           <a data-page="feedback">Bugs e melhorias <span class="badge" id="badge-feedback"></span></a>
+          <a data-page="admins">Administradores</a>
           <a data-page="log">Registro</a>
         </nav>
         <div class="side-foot">

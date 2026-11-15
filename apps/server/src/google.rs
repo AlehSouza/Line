@@ -189,7 +189,7 @@ impl Google {
         let base = match target {
             Target::Web => format!("{}/", self.app_url),
             Target::Desktop(port) => format!("http://127.0.0.1:{port}/"),
-            Target::Admin => format!("{}/", self.admin_url),
+            Target::Admin => format!("{}/login.html", self.admin_url),
         };
         let mut url = reqwest::Url::parse(&base).unwrap();
         url.query_pairs_mut().append_pair(key, value);

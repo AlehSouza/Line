@@ -163,8 +163,8 @@ $DOMAIN {
 	}
 }
 
-# Painel administrador (projeto apps/admin; o CI envia para /opt/line/admin). Só expõe o login e a
-# API admin, que responde apenas para as contas em ADMIN_USERS. Precisa do DNS: A admin -> IP da VPS.
+# Backoffice (projeto apps/admin; o CI envia para /opt/line/admin). As páginas só saem para admins
+# (conferido no servidor) e a API admin responde apenas para eles. Precisa do DNS: A admin -> IP da VPS.
 backoffice.$DOMAIN {
 	encode zstd gzip
 	header {
@@ -176,18 +176,31 @@ backoffice.$DOMAIN {
 		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://$DOMAIN; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		-Server
 	}
-	@api path /api/admin/* /api/auth/login /api/auth/config /api/auth/google/finish /api/health
+	# Só a API admin e o que a tela de login usa chegam ao servidor do Line.
+	@api path /api/admin/* /api/auth/config /api/health
 	handle @api {
 		reverse_proxy 127.0.0.1:4000
 	}
 	@otherapi {
 		path /api/*
-		not path /api/admin/* /api/auth/login /api/auth/config /api/auth/google/finish /api/health
+		not path /api/admin/* /api/auth/config /api/health
 	}
 	handle @otherapi {
 		respond 404
 	}
+	# Tela de login: a única página entregue sem sessão.
+	@public path /login.html /login.js /admin.css
+	handle @public {
+		header Cache-Control "no-cache"
+		root * /opt/line/admin
+		file_server
+	}
+	# Todo o resto só sai depois do servidor conferir o cookie: admin passa, quem entrou e não é
+	# admin vai para o app, quem não entrou vai para /login.html.
 	handle {
+		forward_auth 127.0.0.1:4000 {
+			uri /api/admin/gate
+		}
 		header Cache-Control "no-cache"
 		root * /opt/line/admin
 		file_server
