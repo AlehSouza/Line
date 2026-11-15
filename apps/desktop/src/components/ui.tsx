@@ -160,12 +160,16 @@ export function Avatar({
       <span
         className="flex h-full w-full items-center justify-center rounded-full font-semibold text-rail select-none"
         style={{ background: color, fontSize: size * 0.38 }}
+        title={src ? undefined : name}
       >
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fileUrl(src)} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
         ) : (
-          initials(name)
+          // Sem foto: o ícone do Line acinzentado, igual ao dos servidores sem imagem.
+          <span className="h-full w-full overflow-hidden rounded-full">
+            <DefaultServerIcon />
+          </span>
         )}
       </span>
       {presence && (

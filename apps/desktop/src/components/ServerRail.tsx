@@ -26,7 +26,9 @@ export function ServerRail() {
     Object.keys(unread).some((cid) => channels[cid]?.serverId === serverId);
   // Quem está em canais de voz, agrupado por servidor (para o indicador e o tooltip).
   const voiceStates = useVoice((v) => v.states);
-  const myId = useLine((s) => s.me?.id);
+  // Servidor da call em que ESTE app está conectado (só ele ganha o selo de voz).
+  const myVoiceChannel = useVoice((v) => v.channelId);
+  const myVoiceServer = myVoiceChannel ? channels[myVoiceChannel]?.serverId : null;
   const inVoice: Record<string, string[]> = {};
   for (const st of Object.values(voiceStates)) if (st.serverId) (inVoice[st.serverId] ??= []).push(st.userId);
 
@@ -59,7 +61,7 @@ export function ServerRail() {
           dot={serverHasUnread(server.id)}
           onClick={() => actions.goServer(server.id)}
           onContextMenu={(e) => openContextMenu(e, serverMenu(server.id))}
-          voice={!!myId && !!inVoice[server.id]?.includes(myId)}
+          voice={!!myVoiceServer && myVoiceServer === server.id}
           tooltip={<ServerTooltip name={server.name} voice={inVoice[server.id]} />}
         >
           {server.iconUrl ? (
