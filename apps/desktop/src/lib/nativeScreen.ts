@@ -66,7 +66,8 @@ export interface NativeScreen {
   /** Tamanho real da fonte (para reduzir até a resolução escolhida no envio). */
   width: number;
   height: number;
-  stop: () => void;
+  /** keepCapture: só solta esta captura, sem parar a do Rust (que já trocou para outra fonte). */
+  stop: (keepCapture?: boolean) => void;
 }
 
 /** Começa a capturar a fonte e só resolve quando chega o primeiro quadro. */
@@ -156,12 +157,13 @@ export async function startNativeScreen(
   wv.addEventListener('sharedbufferreceived', onBuffer);
   wv.addEventListener('message', onMessage);
 
-  const cleanup = () => {
+  // keepCapture: troca de fonte; o Rust já passou para a captura nova, não pode desligá-la.
+  const cleanup = (keepCapture = false) => {
     if (stopped) return;
     stopped = true;
     wv.removeEventListener('sharedbufferreceived', onBuffer as never);
     wv.removeEventListener('message', onMessage as never);
-    void invoke('screen_stop').catch(() => {});
+    if (!keepCapture) void invoke('screen_stop').catch(() => {});
     if (buffer) wv.releaseBuffer?.(buffer);
     for (const p of pendingBuffers) wv.releaseBuffer?.(p.buf);
     buffer = null;
@@ -308,11 +310,12 @@ async function startSocketScreen(
     }
   };
 
-  const cleanup = () => {
+  // keepCapture: troca de fonte; o Rust já passou para a captura nova, não pode desligá-la.
+  const cleanup = (keepCapture = false) => {
     if (stopped) return;
     stopped = true;
     ws.close();
-    void invoke('screen_stop').catch(() => {});
+    if (!keepCapture) void invoke('screen_stop').catch(() => {});
     video.stop();
     audioTrack?.stop();
     void audioCtx?.close().catch(() => {});

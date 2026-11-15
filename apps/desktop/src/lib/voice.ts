@@ -157,6 +157,8 @@ export interface VoiceStore {
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
+  /** Sobe quando troco a câmera ou a tela sem parar (mesmo stream, trilha nova): a prévia recarrega. */
+  mediaRev: number;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -178,6 +180,7 @@ export const useVoice = create<VoiceStore>(() => ({
   streams: {},
   speaking: {},
   error: null,
+  mediaRev: 0,
   ...loadPrefs(),
 }));
 
@@ -708,8 +711,52 @@ export async function toggleCamera() {
 }
 
 /** Captura do seletor próprio (Windows): para quando a tela parar e tamanho real da fonte. */
-let nativeStop: (() => void) | null = null;
+let nativeStop: ((keepCapture?: boolean) => void) | null = null;
 let screenSize: { width: number; height: number } | null = null;
+/** Sobe a cada captura nova: o "acabou" de uma captura já trocada não derruba a transmissão. */
+let screenGen = 0;
+
+/** Abre a captura (seletor do Line ou do navegador) sem mexer na chamada. */
+async function openScreen(source: { id: string; audio: boolean } | undefined, gen: number) {
+  const { resolution, fps } = getV().screenQuality;
+  const ended = () => {
+    if (gen === screenGen) stopScreen();
+  };
+  let stream: MediaStream;
+  let stop: ((keepCapture?: boolean) => void) | null = null;
+  let size: { width: number; height: number } | null = null;
+  if (source && hasNativeScreen()) {
+    const native = await startNativeScreen(source.id, {
+      fps,
+      audio: source.audio,
+      height: RESOLUTIONS[resolution].height,
+      onEnded: ended,
+    });
+    stream = native.stream;
+    stop = native.stop;
+    size = { width: native.width, height: native.height };
+  } else {
+    const r = RESOLUTIONS[resolution];
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: r.width, max: r.width },
+        height: { ideal: r.height, max: r.height },
+        frameRate: { ideal: fps, max: fps },
+      },
+      audio: true,
+      // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
+      systemAudio: 'include',
+      windowAudio: 'system',
+      // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
+      restrictOwnAudio: true,
+    } as DisplayMediaStreamOptions);
+  }
+  const video = stream.getVideoTracks()[0];
+  // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
+  if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
+  video?.addEventListener('ended', ended);
+  return { stream, stop, size };
+}
 
 /**
  * Liga/desliga o compartilhamento de tela.
@@ -726,45 +773,18 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
     setV({ error: 'Você não tem permissão para compartilhar a tela neste canal.' });
     return;
   }
-  const { resolution, fps } = getV().screenQuality;
+  const gen = ++screenGen;
   try {
-    let stream: MediaStream;
-    if (source && hasNativeScreen()) {
-      const native = await startNativeScreen(source.id, {
-        fps,
-        audio: source.audio,
-        height: RESOLUTIONS[resolution].height,
-        onEnded: stopScreen,
-      });
-      // Saiu da chamada enquanto abria: solta a captura.
-      if (!getV().channelId) {
-        native.stop();
-        return;
-      }
-      stream = native.stream;
-      nativeStop = native.stop;
-      screenSize = { width: native.width, height: native.height };
-    } else {
-      const r = RESOLUTIONS[resolution];
-      stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: r.width, max: r.width },
-          height: { ideal: r.height, max: r.height },
-          frameRate: { ideal: fps, max: fps },
-        },
-        audio: true,
-        // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
-        systemAudio: 'include',
-        windowAudio: 'system',
-        // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
-        restrictOwnAudio: true,
-      } as DisplayMediaStreamOptions);
-      screenSize = null;
+    const opened = await openScreen(source, gen);
+    // Saiu da chamada enquanto abria: solta a captura.
+    if (!getV().channelId) {
+      opened.stop?.();
+      stopStream(opened.stream);
+      return;
     }
-    const video = stream.getVideoTracks()[0];
-    // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
-    if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
-    video?.addEventListener('ended', stopScreen);
+    const { stream } = opened;
+    nativeStop = opened.stop;
+    screenSize = opened.size;
     setV({ screen: stream });
     addStreamToPeers(stream);
     startThumbs(stream);
@@ -773,6 +793,112 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
   } catch (err) {
     if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível compartilhar a tela.' });
   }
+}
+
+/**
+ * Troca a janela/tela transmitida sem parar: as trilhas novas entram no mesmo stream e nas mesmas
+ * conexões (replaceTrack), então quem assiste continua assistindo, sem renegociar o vídeo.
+ */
+export async function switchScreen(source?: { id: string; audio: boolean }) {
+  const screen = getV().screen;
+  if (!screen) return toggleScreen(source);
+  const gen = ++screenGen;
+  const oldStop = nativeStop;
+  let opened: Awaited<ReturnType<typeof openScreen>>;
+  try {
+    opened = await openScreen(source, gen);
+  } catch (err) {
+    if (source && hasNativeScreen()) {
+      // O Rust só captura uma fonte por vez: a antiga já parou ao tentar a nova.
+      stopScreen();
+      setV({ error: 'Não foi possível trocar a tela.' });
+      return;
+    }
+    // Cancelou ou falhou no seletor do navegador: continua transmitindo o que já estava.
+    if (screenGen === gen) screenGen = gen - 1;
+    if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível trocar a tela.' });
+    return;
+  }
+  // Parou de transmitir (ou saiu) enquanto abria: solta a captura nova.
+  if (getV().screen !== screen) {
+    opened.stop?.();
+    stopStream(opened.stream);
+    return;
+  }
+  const oldTracks = screen.getTracks();
+  const newVideo = opened.stream.getVideoTracks()[0] ?? null;
+  const newAudio = opened.stream.getAudioTracks()[0] ?? null;
+  for (const t of oldTracks) screen.removeTrack(t);
+  for (const t of opened.stream.getTracks()) screen.addTrack(t);
+  screenSize = opened.size;
+  const { resolution, fps } = getV().screenQuality;
+  for (const [id, { pc }] of peers) {
+    if (!watchers.has(id)) continue;
+    let hadAudio = false;
+    for (const sender of pc.getSenders()) {
+      const old = sender.track;
+      if (!old || !oldTracks.includes(old)) continue;
+      if (old.kind === 'video') {
+        void sender.replaceTrack(newVideo);
+        void retuneScreenSender(sender, resolution, fps);
+      } else if (newAudio) {
+        hadAudio = true;
+        void sender.replaceTrack(newAudio);
+      } else pc.removeTrack(sender);
+    }
+    // Fonte nova tem som e a antiga não tinha: o som entra na conexão (renegocia só o áudio).
+    if (newAudio && !hadAudio) pc.addTrack(newAudio, screen);
+  }
+  // A captura antiga sai sem desligar a nova no Rust (que já trocou de fonte ao começar a nova).
+  oldStop?.(true);
+  for (const t of oldTracks) t.stop();
+  nativeStop = opened.stop;
+  startThumbs(screen);
+  setV((v) => ({ mediaRev: v.mediaRev + 1 }));
+}
+
+/** Depois de trocar a fonte: ajusta taxa, fps e redução ao tamanho da tela nova. */
+async function retuneScreenSender(sender: RTCRtpSender, resolution: Resolution, fps: Fps) {
+  try {
+    const params = sender.getParameters();
+    const enc = params.encodings?.[0];
+    if (!enc) return;
+    enc.maxBitrate = RESOLUTIONS[resolution].kbps[fps] * 1000;
+    enc.maxFramerate = fps;
+    enc.scaleResolutionDownBy = downscale(resolution);
+    await sender.setParameters(params);
+  } catch {
+    // fica com os parâmetros de antes
+  }
+}
+
+/** Troca a câmera sem desligar: mesma trilha nas conexões (replaceTrack), só muda o dispositivo. */
+export async function switchCamera(deviceId: string) {
+  const camera = getV().camera;
+  if (!camera) return;
+  let fresh: MediaStream;
+  try {
+    fresh = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      audio: false,
+    });
+  } catch (err) {
+    setV({ error: (err as Error).name === 'NotAllowedError' ? 'Sem permissão para usar a câmera.' : 'Não foi possível abrir essa câmera.' });
+    return;
+  }
+  if (getV().camera !== camera) {
+    stopStream(fresh);
+    return;
+  }
+  const old = camera.getVideoTracks()[0];
+  const track = fresh.getVideoTracks()[0];
+  if (old) camera.removeTrack(old);
+  camera.addTrack(track);
+  for (const { pc } of peers.values()) {
+    for (const sender of pc.getSenders()) if (old && sender.track === old) void sender.replaceTrack(track);
+  }
+  old?.stop();
+  setV((v) => ({ mediaRev: v.mediaRev + 1 }));
 }
 
 function stopScreen() {
