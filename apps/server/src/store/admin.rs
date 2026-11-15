@@ -69,6 +69,17 @@ impl Q<'_> {
             }
             out.push(Value::Object(obj));
         }
+        drop(rows);
+        drop(st);
+        // Foto de perfil / ícone do servidor viram URL (o painel junta com o domínio principal).
+        for row in &mut out {
+            for (id_key, url_key) in [("avatarId", "avatarUrl"), ("iconId", "iconUrl")] {
+                if let Some(id) = row.get(id_key).and_then(|v| v.as_str()).map(String::from) {
+                    let url = self.profile_image_url(&id);
+                    row[url_key] = if url.is_empty() { Value::Null } else { json!(url) };
+                }
+            }
+        }
         out
     }
 
@@ -116,7 +127,7 @@ impl Q<'_> {
         }
         self.rows(
             &format!(
-                "SELECT id, username, display_name, avatar_color, created_at, (id IN ({marks})) AS owner
+                "SELECT id, username, display_name, avatar_color, avatar_id, created_at, (id IN ({marks})) AS owner
                  FROM users WHERE is_admin = 1 OR id IN ({marks}) ORDER BY owner DESC, username"
             ),
             [p.clone(), p].concat(),
@@ -337,14 +348,14 @@ impl Q<'_> {
                 "reports": self.per_day("SELECT created_at FROM reports", 30),
             },
             "topServers": self.rows(
-                "SELECT s.id, s.name, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
+                "SELECT s.id, s.name, s.icon_id, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
                         (SELECT COUNT(*) FROM messages m JOIN channels c ON c.id = m.channel_id
                           WHERE c.server_id = s.id AND m.created_at > ?) AS messages_week
                  FROM servers s ORDER BY messages_week DESC, member_count DESC LIMIT 5",
                 vec![Sql::Text(ago(24 * 7))],
             ),
             "recentUsers": self.rows(
-                "SELECT id, username, display_name, avatar_color, created_at FROM users
+                "SELECT id, username, display_name, avatar_color, avatar_id, created_at FROM users
                  WHERE bot_server_id IS NULL ORDER BY created_at DESC LIMIT 8",
                 vec![],
             ),
@@ -458,7 +469,7 @@ impl Q<'_> {
 
     pub fn admin_servers(&self, query: &str, offset: i64) -> Vec<Value> {
         let mut sql = String::from(
-            "SELECT s.id, s.name, s.description, s.icon_color, s.is_public, s.created_at, s.owner_id, s.tag,
+            "SELECT s.id, s.name, s.description, s.icon_color, s.icon_id, s.is_public, s.created_at, s.owner_id, s.tag,
                     u.username AS owner_username, u.display_name AS owner_name,
                     (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
                     (SELECT COUNT(*) FROM channels c WHERE c.server_id = s.id AND c.type <> 'thread') AS channel_count,
@@ -480,7 +491,7 @@ impl Q<'_> {
     pub fn admin_server(&self, id: &str) -> Option<Value> {
         let mut server = self.admin_servers(id, 0).into_iter().find(|s| s["id"] == id)?;
         let members = self.rows(
-            "SELECT u.id, u.username, u.display_name, u.avatar_color, u.banned_until, m.joined_at
+            "SELECT u.id, u.username, u.display_name, u.avatar_color, u.avatar_id, u.banned_until, m.joined_at
              FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ? ORDER BY m.joined_at LIMIT 200",
             vec![Sql::Text(id.into())],
         );
