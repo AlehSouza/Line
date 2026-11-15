@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { detectGame, hasGameDetection, type RunningGame } from '@/lib/nativeScreen';
-import { toggleScreen, useVoice } from '@/lib/voice';
+import { useVoice } from '@/lib/voice';
 import { Icons } from './ui';
+import { ScreenShareModal } from './Voice';
 
 /** De quanto em quanto tempo olha se abriu/fechou um jogo. */
 const POLL_MS = 10_000;
@@ -23,6 +24,7 @@ function elapsed(since: number) {
 export function GameBar() {
   const [enabled] = useState(() => hasGameDetection());
   const [game, setGame] = useState<(RunningGame & { since: number }) | null>(null);
+  const [picker, setPicker] = useState(false);
   const inCall = useVoice((v) => !!v.channelId && !v.connecting);
   const streaming = useVoice((v) => !!v.screen);
 
@@ -63,13 +65,15 @@ export function GameBar() {
       </span>
       {canStream && (
         <button
-          title="Transmitir agora"
-          onClick={() => void toggleScreen({ id: game.windowId, audio: true })}
+          title="Transmitir o jogo"
+          // Abre o seletor com o jogo já escolhido (dá para conferir qualidade e som antes).
+          onClick={() => setPicker(true)}
           className="shrink-0 rounded-md p-1.5 text-soft transition-colors hover:bg-hover hover:text-fg"
         >
           <Icons.Screen size={18} />
         </button>
       )}
+      {picker && <ScreenShareModal preselect={game.windowId} onClose={() => setPicker(false)} />}
     </div>
   );
 }

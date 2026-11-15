@@ -7,7 +7,8 @@ import { MusicBotInVoice } from './Music';
 import { useMusic } from '@/lib/music';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
-import { type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
 import {
   clearVoiceError,
@@ -96,7 +97,8 @@ function Video({
   }, [stream, rev]);
   const report = () => {
     const v = ref.current;
-    if (v && v.videoWidth && v.videoHeight) onAspect?.(v.videoWidth / v.videoHeight);
+    // Quadro minúsculo (janela minimizada do outro lado) não muda o tamanho do quadro.
+    if (v && v.videoWidth >= 100 && v.videoHeight >= 100) onAspect?.(v.videoWidth / v.videoHeight);
   };
   return (
     <video
@@ -891,7 +893,16 @@ function CameraMenu({ onClose, onOpenModal }: { onClose: () => void; onOpenModal
   );
 }
 
-export function ScreenShareModal({ onClose, switching = false }: { onClose: () => void; switching?: boolean }) {
+export function ScreenShareModal({
+  onClose,
+  switching = false,
+  preselect,
+}: {
+  onClose: () => void;
+  switching?: boolean;
+  /** Fonte já escolhida ao abrir (ex.: a janela do jogo, pelo cartão do jogo). */
+  preselect?: string;
+}) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
@@ -899,7 +910,7 @@ export function ScreenShareModal({ onClose, switching = false }: { onClose: () =
   const native = useMemo(() => hasNativeScreen(), []);
   const [tab, setTab] = useState<'apps' | 'screens'>('apps');
   const [sources, setSources] = useState<ScreenSource[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(preselect ?? null);
   const [audio, setAudio] = useState(true);
 
   const [listError, setListError] = useState<string | null>(null);
@@ -1326,6 +1337,86 @@ export function VoiceBar() {
 
 // ---------- participantes embaixo do canal de voz ----------
 
+/** Selo AO VIVO: com o mouse em cima, mostra a prévia da transmissão (e o jogo, se for um). */
+function LiveBadge({ userId, channelId }: { userId: string; channelId: string }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const thumb = useVoice((v) => v.screenThumbs[userId]);
+  const game = useVoice((v) => v.screenGames[userId]);
+  const inSameCall = useVoice((v) => v.channelId === channelId && !v.connecting);
+  const meId = useLine((s) => s.me?.id);
+  const isMe = userId === meId;
+  const show = (e: ReactMouseEvent) => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    const r = e.currentTarget.getBoundingClientRect();
+    setAt((old) => old ?? { x: r.right + 12, y: r.top + r.height / 2 });
+  };
+  const hide = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setAt(null), 150);
+  };
+  useEffect(() => () => void (hideTimer.current && clearTimeout(hideTimer.current)), []);
+  return (
+    <>
+      <span onMouseEnter={show} onMouseLeave={hide} className="rounded bg-danger px-1 text-[10px] font-bold text-white">
+        AO VIVO
+      </span>
+      {at &&
+        createPortal(
+          <div
+            onMouseEnter={() => hideTimer.current && clearTimeout(hideTimer.current)}
+            onMouseLeave={hide}
+            // O portal ainda borbulha no React: não deixa o clique abrir o cartão do usuário.
+            onClick={(e) => e.stopPropagation()}
+            style={{ left: at.x, top: at.y }}
+            className="fixed z-50 w-64 -translate-y-1/2 overflow-hidden rounded-xl border border-edge bg-rail p-2.5 shadow-2xl"
+          >
+            {game && (
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-raise">
+                  {game.icon ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={game.icon} alt="" className="h-6 w-6 object-contain" />
+                  ) : (
+                    <Icons.Gamepad size={16} className="text-muted" />
+                  )}
+                </span>
+                <span className="truncate text-sm font-semibold">{game.name}</span>
+              </div>
+            )}
+            <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
+              {thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumb} alt="" draggable={false} className="h-full w-full object-contain" />
+              ) : (
+                <Icons.Screen size={28} className="text-muted" />
+              )}
+            </div>
+            {isMe ? (
+              <p className="mt-2 text-center text-xs text-muted">Você está transmitindo.</p>
+            ) : inSameCall ? (
+              <button
+                onClick={() => {
+                  setWatching(userId, true);
+                  setAt(null);
+                }}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/90 py-1.5 text-sm font-semibold text-[#141418] transition-colors hover:bg-white"
+              >
+                <Icons.Eye size={14} /> Assistir transmissão
+              </button>
+            ) : (
+              <>
+                <p className="mt-2 text-center text-sm font-semibold">Assistir transmissão</p>
+                <p className="text-center text-xs text-muted">Entre na chamada para assistir.</p>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 export function VoiceChannelMembers({ channelId, serverId }: { channelId: string; serverId?: string }) {
   const states = useVoice((v) => v.states);
   const speaking = useVoice((v) => v.speaking);
@@ -1365,7 +1456,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
             </span>
             <span className="flex-1 truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
-              {p.screenStreamId && <span className="rounded bg-danger px-1 text-[10px] font-bold text-white">AO VIVO</span>}
+              {p.screenStreamId && <LiveBadge userId={p.userId} channelId={channelId} />}
               {p.cameraStreamId && <Icons.Video size={15} />}
               {(p.muted || p.deafened || p.serverMuted || p.serverDeafened) && (
                 <span
