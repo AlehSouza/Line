@@ -1,11 +1,11 @@
 'use client';
 
-import type { ClientToServerEvents, ServerToClientEvents, VoiceModeration, VoiceSignal, VoiceState } from '@line/shared';
+import type { ClientToServerEvents, ScreenGame, ServerToClientEvents, VoiceModeration, VoiceSignal, VoiceState } from '@line/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './noise';
 import { api } from './api';
-import { hasNativeScreen, startNativeScreen } from './nativeScreen';
+import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
 import { permsOf, useLine } from './store';
 
@@ -136,6 +136,8 @@ export interface VoiceStore {
   watching: Record<string, boolean>;
   /** Miniatura estática da tela de cada pessoa que transmite (para o quadro de quem ainda não assiste). */
   screenThumbs: Record<string, string>;
+  /** Jogo que cada pessoa está transmitindo (vem junto da miniatura). */
+  screenGames: Record<string, ScreenGame>;
   /** Quem está assistindo à tela de cada pessoa que transmite (quem transmite avisa a todos do canal). */
   screenViewers: Record<string, string[]>;
   /** Status temporário de cada canal de voz (some quando todos saem). */
@@ -170,6 +172,7 @@ export const useVoice = create<VoiceStore>(() => ({
   ...loadScreenAudio(),
   watching: {},
   screenThumbs: {},
+  screenGames: {},
   screenViewers: {},
   channelId: null,
   connecting: false,
@@ -278,9 +281,11 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       setV((v) => {
         const screenThumbs = { ...v.screenThumbs };
         delete screenThumbs[uid];
+        const screenGames = { ...v.screenGames };
+        delete screenGames[uid];
         const screenViewers = { ...v.screenViewers };
         delete screenViewers[uid];
-        return { watching: { ...v.watching, [uid]: false }, screenThumbs, screenViewers };
+        return { watching: { ...v.watching, [uid]: false }, screenThumbs, screenGames, screenViewers };
       });
     }
     // A tela dessa pessoa pode ter começado/parado: reaplica o volume da voz ou da tela em cada áudio dela.
@@ -787,7 +792,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
     screenSize = opened.size;
     setV({ screen: stream });
     addStreamToPeers(stream);
-    startThumbs(stream);
+    startThumbs(stream, source?.id);
     socket?.emit('voice:state', { screenStreamId: stream.id });
     playCallSound('start_transmission');
   } catch (err) {
@@ -853,7 +858,7 @@ export async function switchScreen(source?: { id: string; audio: boolean }) {
   oldStop?.(true);
   for (const t of oldTracks) t.stop();
   nativeStop = opened.stop;
-  startThumbs(screen);
+  startThumbs(screen, source?.id);
   setV((v) => ({ mediaRev: v.mediaRev + 1 }));
 }
 
@@ -935,10 +940,19 @@ export function clearVoiceError() {
 let thumbVideo: HTMLVideoElement | null = null;
 let thumbTimer: ReturnType<typeof setInterval> | null = null;
 let lastThumb: string | null = null;
+/** Jogo da janela que estou transmitindo (vai junto da miniatura). */
+let thumbGame: ScreenGame | undefined;
 
 /** Tira um quadro pequeno da minha tela e manda para quem ainda não assiste (a cada 10 s). */
-function startThumbs(stream: MediaStream) {
+function startThumbs(stream: MediaStream, sourceId?: string) {
   stopThumbs();
+  if (sourceId && hasGameDetection()) {
+    void detectGame().then((g) => {
+      if (!g || g.windowId !== sourceId || thumbVideo?.srcObject !== stream) return;
+      // O ícone vai pela sinalização, que só aceita mensagens pequenas.
+      thumbGame = { name: g.name, icon: g.icon && g.icon.length < 20_000 ? g.icon : undefined };
+    });
+  }
   const v = document.createElement('video');
   v.muted = true;
   v.playsInline = true;
@@ -949,7 +963,7 @@ function startThumbs(stream: MediaStream) {
     const data = captureThumb();
     if (!data) return;
     lastThumb = data;
-    for (const id of peers.keys()) if (!watchers.has(id)) send(id, { type: 'thumb', data });
+    for (const id of peers.keys()) if (!watchers.has(id)) send(id, { type: 'thumb', data, game: thumbGame });
   };
   setTimeout(tick, 1500);
   thumbTimer = setInterval(tick, 10_000);
@@ -957,7 +971,8 @@ function startThumbs(stream: MediaStream) {
 
 function captureThumb(): string | null {
   const v = thumbVideo;
-  if (!v || !v.videoWidth || !v.videoHeight) return null;
+  // Quadro minúsculo (janela minimizada): não vira miniatura, senão estica o quadro de quem vê.
+  if (!v || v.videoWidth < 100 || v.videoHeight < 100) return null;
   const width = 256;
   const height = Math.max(1, Math.round((width * v.videoHeight) / v.videoWidth));
   const c = document.createElement('canvas');
@@ -977,6 +992,7 @@ function stopThumbs() {
   if (thumbVideo) thumbVideo.srcObject = null;
   thumbVideo = null;
   lastThumb = null;
+  thumbGame = undefined;
 }
 
 /** Quem está assistindo à minha tela: só essas conexões recebem o vídeo e o som dela. */
@@ -1038,7 +1054,7 @@ function createPeer(peerId: string): Peer {
   // Quem chega vê a miniatura da minha tela antes de escolher assistir.
   if (screen && lastThumb) {
     const thumb = lastThumb;
-    setTimeout(() => send(peerId, { type: 'thumb', data: thumb }), 500);
+    setTimeout(() => send(peerId, { type: 'thumb', data: thumb, game: thumbGame }), 500);
   }
   if (screen && watchers.size) setTimeout(() => sendViewers(peerId), 500);
   // Conexão nova com quem eu já assistia: avisa de novo para a tela voltar.
@@ -1054,7 +1070,17 @@ async function onSignal(from: string, signal: VoiceSignal) {
   const { pc } = peer;
   if (signal.type === 'thumb') {
     if (typeof signal.data === 'string' && signal.data.startsWith('data:image/jpeg')) {
-      setV((v) => ({ screenThumbs: { ...v.screenThumbs, [from]: signal.data } }));
+      const g = signal.game;
+      const game =
+        g && typeof g.name === 'string'
+          ? { name: g.name.slice(0, 80), icon: typeof g.icon === 'string' && g.icon.startsWith('data:image/') ? g.icon : undefined }
+          : undefined;
+      setV((v) => {
+        const screenGames = { ...v.screenGames };
+        if (game) screenGames[from] = game;
+        else delete screenGames[from];
+        return { screenThumbs: { ...v.screenThumbs, [from]: signal.data }, screenGames };
+      });
     }
     return;
   }
