@@ -67,7 +67,7 @@ export function AuthScreen() {
     setBusy(true);
     try {
       const code = await tauri.invoke('google_login', { serverUrl: base });
-      await authenticateWithGoogle(serverUrl, code);
+      await authenticateWithGoogle(serverUrl, code, true);
     } catch (err) {
       setError(typeof err === 'string' ? err : (err as Error).message);
     } finally {

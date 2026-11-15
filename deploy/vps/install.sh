@@ -115,6 +115,20 @@ echo "==> HTTPS (Caddy)"
 cat > /etc/caddy/Caddyfile <<CADDY
 $DOMAIN {
 	encode zstd gzip
+	# Segurança: só HTTPS (HSTS), sem adivinhar tipo de arquivo, sem vazar o caminho no Referer.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	# Site e app web não podem ser abertos dentro de outro site (clickjacking). O captcha
+	# (/api/auth/captcha) fica de fora porque o app desktop o abre num iframe.
+	@noframe not path /api/*
+	header @noframe X-Frame-Options SAMEORIGIN
+	# App web: só roda scripts do próprio Line, do YouTube (bot de música) e do captcha.
+	@app path /app /app/*
+	header @app Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.youtube.com https://s.ytimg.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 	request_body {
 		max_size 110MB
 	}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
-import { logout } from '@/lib/session';
+import { logout, replaceToken } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
@@ -220,7 +220,8 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
     setBusy(true);
     try {
       if (field === 'password') {
-        await api.changePassword(current, value);
+        const { token } = await api.changePassword(current, value);
+        replaceToken(token);
         setDone(true);
       } else {
         const patch = field === 'username' ? { username: value.trim() } : { email: value.trim() || null };
