@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { dmTitle, useLine } from '@/lib/store';
-import { cx, Logo } from './ui';
+import { cx, DefaultServerIcon, Logo } from './ui';
 
 /**
  * Barra de título própria (a do Windows fica escondida), no mesmo tom do app.
@@ -20,7 +20,7 @@ export function TitleBar() {
     if (v.dmId && s.channels[v.dmId]) return dmTitle(s.channels[v.dmId]!, s.me?.id, s.users);
     return v.page === 'requests' ? 'Solicitações' : 'Amigos';
   });
-  const iconColor = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconColor : undefined));
+  const inServer = useLine((s) => s.view.kind === 'server');
   const iconUrl = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconUrl : undefined));
 
   useEffect(() => {
@@ -48,7 +48,11 @@ export function TitleBar() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fileUrl(iconUrl)} alt="" className="h-4 w-4 shrink-0 rounded object-cover" />
         ) : (
-          iconColor && <span className="h-3 w-3 shrink-0 rounded" style={{ background: iconColor }} />
+          inServer && (
+            <span className="h-4 w-4 shrink-0 overflow-hidden rounded">
+              <DefaultServerIcon />
+            </span>
+          )
         )}
         <span className="truncate">{title}</span>
       </div>

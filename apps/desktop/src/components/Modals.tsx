@@ -16,7 +16,6 @@ import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
 import { confirmDialog } from './Dialogs';
 
-const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
 export function Modals() {
   const modal = useLine((s) => s.modal);
@@ -628,7 +627,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [name, setName] = useState(server?.name ?? '');
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
-  const [color, setColor] = useState(server?.iconColor ?? COLORS[0]!);
+  const [tag, setTag] = useState(server?.tag ?? '');
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
   const [imageError, setImageError] = useState('');
@@ -638,7 +637,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
 
   return (
     <div className="space-y-4">
-        <ServerImages name={name} color={color} icon={icon} banner={banner} setIcon={setIcon} setBanner={setBanner} onError={setImageError} />
+        <ServerImages icon={icon} banner={banner} setIcon={setIcon} setBanner={setBanner} onError={setImageError} />
         <ErrorText>{imageError}</ErrorText>
         <Field label="Nome">
           <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
@@ -652,8 +651,13 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
             className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
           />
         </Field>
-        <Field label="Cor do ícone" hint="Usada quando o servidor não tem imagem.">
-          <ColorPicker value={color} onChange={setColor} />
+        <Field label="Tag do servidor" hint="Até 4 letras ou números. Os membros podem exibir a tag ao lado do nome em Editar perfil.">
+          <Input
+            value={tag}
+            onChange={(e) => setTag(e.target.value.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase().slice(0, 4))}
+            placeholder="Ex.: LINE"
+            className="w-32 font-bold tracking-wide"
+          />
         </Field>
         <label className="flex items-center gap-3 text-sm">
           <Checkbox checked={isPublic} onChange={setIsPublic} />
@@ -687,7 +691,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
                     name,
                     description,
                     isPublic,
-                    iconColor: color,
+                    tag,
                     ...(icon.changed ? { iconId: icon.id } : {}),
                     ...(banner.changed ? { bannerId: banner.id } : {}),
                   }),
@@ -811,19 +815,3 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ColorPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {COLORS.map((c) => (
-        <button
-          type="button"
-          key={c}
-          title={c}
-          onClick={() => onChange(c)}
-          className={cx('h-8 w-8 rounded-full ring-offset-2 ring-offset-side', value === c && 'ring-2 ring-fg')}
-          style={{ background: c }}
-        />
-      ))}
-    </div>
-  );
-}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { ImageCropper, type CropKind } from './ImageCropper';
 import { ImagePick } from './ProfileEditor';
-import { initials } from './ui';
+import { DefaultServerIcon } from './ui';
 
 export type ServerImage = { id: string | null; url: string | null; changed?: boolean; uploading?: boolean };
 
@@ -13,16 +13,12 @@ export type ServerImage = { id: string | null; url: string | null; changed?: boo
  * Usa o mesmo "Editar mídia" do perfil; GIF vai sem recorte para manter a animação.
  */
 export function ServerImages({
-  name,
-  color,
   icon,
   banner,
   setIcon,
   setBanner,
   onError,
 }: {
-  name: string;
-  color: string;
   icon: ServerImage;
   banner: ServerImage;
   setIcon: (i: ServerImage) => void;
@@ -66,9 +62,7 @@ export function ServerImages({
             // eslint-disable-next-line @next/next/no-img-element
             <img src={iconSrc} alt="" className="h-full w-full object-cover" />
           ) : (
-            <span className="flex h-full w-full items-center justify-center text-xl font-bold text-rail" style={{ background: color }}>
-              {initials(name || '?')}
-            </span>
+            <DefaultServerIcon />
           )}
         </ImagePick>
         {icon.url && (

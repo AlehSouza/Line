@@ -275,6 +275,9 @@ pub struct UpdateProfile {
     pub avatar_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
     pub banner_id: Option<Option<String>>,
+    /// Servidor cuja tag exibir (null = nenhuma).
+    #[serde(default, deserialize_with = "nullable")]
+    pub tag_server_id: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -339,6 +342,7 @@ pub struct UpdateServer {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
+    pub tag: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub icon_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -352,6 +356,12 @@ impl UpdateServer {
             text(d, 0, 300, "A descrição")?;
         }
         self.icon_color = self.icon_color.as_deref().map(color).transpose()?;
+        if let Some(t) = &mut self.tag {
+            *t = t.trim().to_uppercase();
+            if t.chars().count() > 4 || !t.chars().all(char::is_alphanumeric) {
+                return Err(validation("A tag precisa ter até 4 letras ou números"));
+            }
+        }
         Ok(self)
     }
 }

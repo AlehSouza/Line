@@ -19,6 +19,8 @@ export interface PublicUser {
   thought?: string | null;
   /** Bot (ex.: o bot de música do servidor). */
   bot?: boolean;
+  /** Tag de servidor que a pessoa exibe ao lado do nome. */
+  tag?: { serverId: string; text: string } | null;
 }
 
 /** Uma faixa na fila do bot de música. */
@@ -62,6 +64,8 @@ export interface Server {
   name: string;
   description: string;
   iconColor: string;
+  /** Tag de identificação do servidor (até 4 caracteres); vazia = sem tag. */
+  tag?: string;
   /** Imagem do ícone (squircle da barra lateral); sem ela mostra as iniciais. */
   iconUrl?: string | null;
   /** Banner fixo no topo da lista de canais. */

@@ -7,7 +7,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, fileUrl } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { Avatar, Button, cx, ErrorText, Icons, presenceLabel } from './ui';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
+import { UserTagBadge } from './ServerTag';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 
@@ -40,7 +41,6 @@ export function UserCard({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -124,7 +124,7 @@ export function UserCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
           <div className="absolute top-2.5 right-2.5 flex gap-1.5">
-            {!isMe && !state && (
+            {!isMe && !user.bot && !state && (
               <TopButton title="Adicionar amigo" onClick={() => run(async () => actions.upsertFriend(await api.addFriend(user.username)))}>
                 <Icons.UserPlus size={17} />
               </TopButton>
@@ -139,22 +139,23 @@ export function UserCard({
                 <Icons.Clock size={17} />
               </TopButton>
             )}
+            {isMe ? (
+              <TopButton
+                title="Editar perfil"
+                onClick={() => {
+                  onClose();
+                  actions.openModal({ kind: 'settings', section: 'profile' });
+                }}
+              >
+                <Icons.Edit size={17} />
+              </TopButton>
+            ) : user.bot ? null : (
             <span className="relative">
               <TopButton title="Mais" onClick={() => setMenu((v) => !v)}>
                 <Icons.More size={17} />
               </TopButton>
               {menu && (
                 <div className="absolute top-full right-0 z-10 mt-1.5 w-52 rounded-lg border border-edge bg-side p-1 shadow-xl">
-                  <MenuItem
-                    icon={<Icons.Copy size={16} />}
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(user.username);
-                      setCopied(true);
-                      window.setTimeout(() => setCopied(false), 1500);
-                    }}
-                  >
-                    {copied ? 'Copiado!' : 'Copiar nome de usuário'}
-                  </MenuItem>
                   {!isMe && state === 'friends' && (
                     <MenuItem
                       danger
@@ -189,13 +190,18 @@ export function UserCard({
                 </div>
               )}
             </span>
+            )}
           </div>
         </div>
 
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
           <div className="-mt-12 flex items-start gap-2">
-            <span className="shrink-0 rounded-full border-[5px] border-rail bg-rail">
+            {/* Borda de 4px na cor do próprio cartão (sem o anel escuro que parecia sombra). */}
+            <span
+              className="shrink-0 rounded-full border-4"
+              style={{ borderColor: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))`, background: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))` }}
+            >
               <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={88} presence={presence} ring="rail" dotSize={20} />
             </span>
             {user.thought && (
@@ -206,8 +212,9 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 truncate text-xl leading-tight font-bold" style={{ color: `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))` }}>
-            {user.displayName}
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))` }}>
+            <span className="truncate">{user.displayName}</span>
+            <UserTagBadge user={user} />
           </p>
           <p className="truncate text-sm text-soft">
             {user.username}
@@ -247,18 +254,8 @@ export function UserCard({
           {isMe ? (
             <div className="mt-4 space-y-2">
               <StatusPicker status={me.status} until={me.statusUntil ?? null} onPick={(st, m) => void setStatus(st, m)} />
-              <Button
-                variant="subtle"
-                className="w-full"
-                onClick={() => {
-                  onClose();
-                  actions.openModal({ kind: 'settings', section: 'profile' });
-                }}
-              >
-                <Icons.Edit size={16} /> Editar perfil
-              </Button>
             </div>
-          ) : state === 'blocked' ? (
+          ) : user.bot ? null : state === 'blocked' ? (
             <p className="mt-4 rounded-lg bg-side/70 px-3 py-2 text-sm text-muted">Você bloqueou essa pessoa.</p>
           ) : (
             <form
@@ -378,7 +375,7 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
       <div className="mt-2 flex items-center gap-3">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-edge bg-rail">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-bold">{server.name.slice(0, 2)}</span>}
+          {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full object-cover" /> : <DefaultServerIcon />}
         </span>
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 truncate text-sm font-semibold">

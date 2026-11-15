@@ -17,6 +17,7 @@ import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useL
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { VoiceStage } from './Voice';
+import { UserTagBadge } from './ServerTag';
 import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
 import { MobileBack, MobileMembersButton } from './Mobile';
@@ -566,6 +567,7 @@ function MessageRow({
               {authorName}
             </button>
             {message.author.bot && <BotTag />}
+            <UserTagBadge user={message.author} />
             <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
           </div>
         )}

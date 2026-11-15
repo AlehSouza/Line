@@ -4,7 +4,8 @@ import { useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ImageCropper } from './ImageCropper';
-import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
+import { useShallow } from 'zustand/react/shallow';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input } from './ui';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
@@ -19,6 +20,8 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const [bio, setBio] = useState(me?.bio ?? '');
   const [customStatus, setCustomStatus] = useState(me?.customStatus ?? '');
   const [color, setColor] = useState(me?.avatarColor ?? COLORS[0]!);
+  const [tagServerId, setTagServerId] = useState<string | null>(me?.tag?.serverId ?? null);
+  const taggedServers = useLine(useShallow((s) => Object.values(s.servers).filter((sv) => sv.tag)));
   const [avatar, setAvatar] = useState<Image>({ id: null, url: me?.avatarUrl ?? null });
   const [banner, setBanner] = useState<Image>({ id: null, url: me?.bannerUrl ?? null });
   const [avatarChanged, setAvatarChanged] = useState(false);
@@ -70,6 +73,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           thought: thought.trim() || null,
           ...(avatarChanged ? { avatarId: avatar.id } : {}),
           ...(bannerChanged ? { bannerId: banner.id } : {}),
+          ...(tagServerId !== (me?.tag?.serverId ?? null) ? { tagServerId } : {}),
         }),
       );
       setSaved(true);
@@ -119,6 +123,41 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
                 aria-label={c}
               />
             ))}
+          </div>
+        </Field>
+
+        <Field
+          label="Tag de servidor"
+          hint={taggedServers.length ? 'Aparece ao lado do seu nome nas mensagens e no seu perfil.' : 'Nenhum servidor seu tem tag ainda. O dono cria em Configurações do servidor → Visão geral.'}
+        >
+          <div className="flex flex-wrap gap-2">
+            {[null, ...taggedServers].map((sv) => {
+              const active = (sv?.id ?? null) === tagServerId;
+              return (
+                <button
+                  key={sv?.id ?? 'none'}
+                  type="button"
+                  title={sv?.name}
+                  onClick={() => setTagServerId(sv?.id ?? null)}
+                  className={cx(
+                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-bold',
+                    active ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
+                  )}
+                >
+                  {sv && (
+                    <span className="h-4 w-4 shrink-0 overflow-hidden rounded">
+                      {sv.iconUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={fileUrl(sv.iconUrl)} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <DefaultServerIcon />
+                      )}
+                    </span>
+                  )}
+                  {sv ? sv.tag : 'Nenhuma'}
+                </button>
+              );
+            })}
           </div>
         </Field>
 
