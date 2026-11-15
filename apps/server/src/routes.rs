@@ -123,6 +123,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/channels/{id}/polls", post(create_poll))
         .route("/channels/{id}/music/play", post(music_play))
         .route("/servers/{id}/music/bot", get(get_music_bot).patch(update_music_bot))
+        .route("/servers/{id}/music/settings", get(get_music_settings).patch(update_music_settings))
         .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
             "/messages/{id}/reactions/{emoji}",
@@ -1502,6 +1503,34 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;
     app.to_server(&id, "user:update", &bot);
     ok(bot)
+}
+
+fn music_settings_json(q: &Q, server_id: &str) -> serde_json::Value {
+    json!({
+        "idleMessage": q.music_idle_message(server_id),
+        "defaultIdleMessage": crate::music::DEFAULT_IDLE_MESSAGE,
+    })
+}
+
+async fn get_music_settings(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    ok(music_settings_json(&q, &id))
+}
+
+/// Configurações do bot de música (por enquanto, a frase de quando a fila acaba).
+async fn update_music_settings(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let v: serde_json::Value = body(&b)?;
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    if let Some(m) = v.get("idleMessage") {
+        let m = m.as_str().ok_or_else(|| bad_request("Mensagem inválida"))?.trim();
+        if m.chars().count() > 300 {
+            return Err(bad_request("A mensagem pode ter até 300 caracteres"));
+        }
+        q.set_music_idle_message(&id, m);
+    }
+    ok(music_settings_json(&q, &id))
 }
 
 async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {

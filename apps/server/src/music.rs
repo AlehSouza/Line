@@ -92,6 +92,9 @@ pub enum Op {
     Duration(String, u64),
 }
 
+/// O que o bot diz quando a fila acaba, se o servidor não escolheu outra frase.
+pub const DEFAULT_IDLE_MESSAGE: &str = "Esperando a próxima banger 😈";
+
 /// Pessoas (não bots) no canal de voz.
 fn listeners(app: &App, channel_id: &str) -> Vec<String> {
     lock(&app.voice).in_channel(channel_id).into_iter().map(|v| v.user_id).collect()
@@ -358,7 +361,9 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
             app.emit_music(q, channel_id);
             let target = lock(&app.music).sessions.get(channel_id).map(|s| (s.server_id.clone(), s.text_channel_id.clone()));
             if let Some((server_id, text)) = target {
-                app.bot_say(q, &server_id, &text, "Esperando a próxima banger 😈", &[]);
+                let custom = q.music_idle_message(&server_id);
+                let msg = if custom.trim().is_empty() { DEFAULT_IDLE_MESSAGE.to_string() } else { custom };
+                app.bot_say(q, &server_id, &text, &msg, &[]);
             }
         }
         Out::Same => {

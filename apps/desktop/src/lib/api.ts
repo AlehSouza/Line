@@ -165,6 +165,9 @@ export const api = {
   /** `/play <link>` no chat: põe o vídeo na fila do canal de voz em que você está. */
   musicPlay: (channelId: string, url: string) => request<void>('POST', `/channels/${enc(channelId)}/music/play`, { url }),
   musicBot: (serverId: string) => request<PublicUser>('GET', `/servers/${enc(serverId)}/music/bot`),
+  musicSettings: (serverId: string) => request<{ idleMessage: string; defaultIdleMessage: string }>('GET', `/servers/${enc(serverId)}/music/settings`),
+  updateMusicSettings: (serverId: string, patch: { idleMessage: string }) =>
+    request<{ idleMessage: string; defaultIdleMessage: string }>('PATCH', `/servers/${enc(serverId)}/music/settings`, patch),
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),

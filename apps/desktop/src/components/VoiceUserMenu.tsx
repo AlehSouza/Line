@@ -25,7 +25,7 @@ import {
   useVoice,
 } from "@/lib/voice";
 import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/music";
-import { cx, Icons } from "./ui";
+import { cx, Icons, Slider } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
 import { confirmDialog } from './Dialogs';
 
@@ -230,14 +230,7 @@ export function VoiceUserMenu({
               Volume do usuário
               <span className="text-muted">{musicMuted ? 0 : musicVolume}%</span>
             </p>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={musicMuted ? 0 : musicVolume}
-              onChange={(e) => setMusicVolume(Number(e.target.value))}
-              className="w-full accent-accent"
-            />
+            <Slider value={musicMuted ? 0 : musicVolume} onChange={setMusicVolume} className="w-full" label="Volume do usuário" />
           </div>
           <Sep />
           <Item onClick={run(toggleMusicMute, true)} check={musicMuted}>
@@ -265,16 +258,7 @@ export function VoiceUserMenu({
               Volume do usuário
               <span className="text-muted">{Math.round(volume * 100)}%</span>
             </p>
-            <input
-              type="range"
-              min={0}
-              max={200}
-              value={Math.round(volume * 100)}
-              onChange={(e) =>
-                setUserVolume(userId, Number(e.target.value) / 100)
-              }
-              className="w-full accent-accent"
-            />
+            <Slider max={200} value={Math.round(volume * 100)} onChange={(v) => setUserVolume(userId, v / 100)} className="w-full" label="Volume do usuário" />
           </div>
           <Sep />
           <Item
@@ -298,16 +282,7 @@ export function VoiceUserMenu({
                 <p className="mb-1.5 font-medium text-soft">
                   Volume da transmissão
                 </p>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={screenMuted ? 0 : Math.round(screenVolume * 100)}
-                  onChange={(e) =>
-                    setScreenVolume(userId, Number(e.target.value) / 100)
-                  }
-                  className="w-full accent-accent"
-                />
+                <Slider value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
               </div>
               <Item
                 onClick={run(() => toggleScreenMute(userId), true)}

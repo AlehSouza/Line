@@ -578,6 +578,19 @@ impl Q<'_> {
         (id, joined)
     }
 
+    /// Mensagem do bot de música quando a fila acaba ('' = a padrão).
+    pub fn music_idle_message(&self, server_id: &str) -> String {
+        ok(self
+            .c
+            .query_row("SELECT music_idle_message FROM servers WHERE id = ?", [server_id], |r| r.get::<_, String>(0))
+            .optional())
+        .unwrap_or_default()
+    }
+
+    pub fn set_music_idle_message(&self, server_id: &str, message: &str) {
+        ok(self.c.execute("UPDATE servers SET music_idle_message = ? WHERE id = ?", params![message, server_id]));
+    }
+
     pub fn update_user(&self, id: &str, patch: ProfilePatch) -> SelfUser {
         let mut sets = Vec::new();
         let mut values: Vec<Value> = Vec::new();
