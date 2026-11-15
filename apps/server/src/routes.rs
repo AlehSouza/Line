@@ -633,6 +633,7 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
             tag_server_id: p.tag_server_id,
+            ..Default::default()
         },
     );
     app.to_user(&me, "self:update", &user);
@@ -1453,6 +1454,9 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
             tag_server_id: None,
+            bot_name_color: p.bot_name_color,
+            bot_tag_color: p.bot_tag_color,
+            bot_tag_text: p.bot_tag_text,
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;

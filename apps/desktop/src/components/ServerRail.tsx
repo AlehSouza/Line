@@ -26,6 +26,7 @@ export function ServerRail() {
     Object.keys(unread).some((cid) => channels[cid]?.serverId === serverId);
   // Quem está em canais de voz, agrupado por servidor (para o indicador e o tooltip).
   const voiceStates = useVoice((v) => v.states);
+  const myId = useLine((s) => s.me?.id);
   const inVoice: Record<string, string[]> = {};
   for (const st of Object.values(voiceStates)) if (st.serverId) (inVoice[st.serverId] ??= []).push(st.userId);
 
@@ -58,7 +59,7 @@ export function ServerRail() {
           dot={serverHasUnread(server.id)}
           onClick={() => actions.goServer(server.id)}
           onContextMenu={(e) => openContextMenu(e, serverMenu(server.id))}
-          voice={inVoice[server.id]}
+          voice={!!myId && !!inVoice[server.id]?.includes(myId)}
           tooltip={<ServerTooltip name={server.name} voice={inVoice[server.id]} />}
         >
           {server.iconUrl ? (
@@ -106,7 +107,8 @@ function RailItem({
   action?: boolean;
   onClick: () => void;
   onContextMenu?: (e: React.MouseEvent) => void;
-  voice?: string[];
+  /** Eu estou conectado em voz neste servidor (só aí aparece o selo). */
+  voice?: boolean;
   tooltip?: ReactNode;
   children: React.ReactNode;
 }) {
@@ -146,7 +148,7 @@ function RailItem({
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {!!voice?.length && (
+        {voice && (
           <span
             className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-on-accent ring-4 ring-rail"
           >

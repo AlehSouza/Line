@@ -53,9 +53,9 @@ export function MemberList({ serverId }: { serverId: string }) {
           >
             <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
-              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: colorOf(m.roleIds) }}>
+              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: m.user.botStyle?.nameColor ?? colorOf(m.roleIds) }}>
                 {m.nickname || m.user.displayName}
-                {m.user.bot && <BotTag />}
+                {m.user.bot && <BotTag user={m.user} />}
                 <UserTagBadge user={m.user} />
                 {m.userId === ownerId && (
                   <span title="Dono do servidor" className="text-sun">

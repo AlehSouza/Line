@@ -21,6 +21,8 @@ export interface PublicUser {
   bot?: boolean;
   /** Tag de servidor que a pessoa exibe ao lado do nome. */
   tag?: { serverId: string; text: string } | null;
+  /** Só para bots: cor do nome, cor da etiqueta e texto dela ("BOT" ou "B"). */
+  botStyle?: { nameColor: string | null; tagColor: string | null; tagText: 'BOT' | 'B' };
 }
 
 /** Uma faixa na fila do bot de música. */

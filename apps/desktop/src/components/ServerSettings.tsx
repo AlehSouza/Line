@@ -338,7 +338,22 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
     hoist: role?.hoist ?? false,
   }));
   const [saving, setSaving] = useState(false);
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
   const { error, run } = useErr();
+
+  /** Arrastou um cargo na coluna da esquerda: grava a nova ordem (é a ordem da lista de membros). */
+  const dropOn = (targetId: string) => {
+    if (!drag || drag === targetId) return;
+    const everyone = roles.find((r) => r.id === serverId);
+    const list = roles.filter((r) => r.id !== serverId);
+    const ids = list.map((r) => r.id);
+    ids.splice(ids.indexOf(drag), 1);
+    ids.splice(ids.indexOf(targetId) + (list.findIndex((r) => r.id === targetId) > list.findIndex((r) => r.id === drag) ? 1 : 0), 0, drag);
+    const byId = Object.fromEntries(list.map((r) => [r.id, r]));
+    actions.setRoles(serverId, [...ids.map((id, i) => ({ ...byId[id]!, position: ids.length - i })), ...(everyone ? [everyone] : [])]);
+    void run(() => api.reorderRoles(serverId, ids));
+  };
 
   // Trocou de cargo na coluna da esquerda: recomeça o rascunho.
   useEffect(() => {
@@ -403,21 +418,45 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
           </button>
         </div>
         <div className="space-y-0.5">
-          {roles.map((r) => (
+          {roles.map((r) => {
+            const movable = r.id !== serverId && r.position < myTop;
+            return (
             <button
               key={r.id}
               disabled={r.id !== serverId && r.position >= myTop}
               onClick={() => onSelect(r.id)}
+              draggable={movable}
+              onDragStart={() => setDrag(r.id)}
+              onDragEnd={() => {
+                setDrag(null);
+                setOver(null);
+              }}
+              onDragOver={(e) => {
+                if (!drag || !movable) return;
+                e.preventDefault();
+                setOver(r.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                dropOn(r.id);
+                setDrag(null);
+                setOver(null);
+              }}
               className={cx(
                 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm disabled:opacity-50',
                 r.id === roleId ? 'bg-hover text-fg' : 'text-soft hover:bg-hover/60',
+                movable && 'cursor-grab active:cursor-grabbing',
+                over === r.id && drag !== r.id && 'ring-1 ring-accent',
+                drag === r.id && 'opacity-40',
               )}
             >
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
               <span className="truncate">{r.name}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
+        <p className="mt-3 px-2 text-xs text-muted">Arraste para reordenar. A ordem vale para a lista de membros.</p>
       </div>
 
       <div className="min-w-0 flex-1 py-8 pr-16 pl-8">

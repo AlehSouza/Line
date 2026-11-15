@@ -236,6 +236,12 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE servers ADD COLUMN tag TEXT NOT NULL DEFAULT '';
   ALTER TABLE users ADD COLUMN tag_server_id TEXT;
 "#,
+    // Bot: cor do nome, cor da etiqueta e texto da etiqueta ("BOT" ou "B").
+    r#"
+  ALTER TABLE users ADD COLUMN bot_name_color TEXT;
+  ALTER TABLE users ADD COLUMN bot_tag_color TEXT;
+  ALTER TABLE users ADD COLUMN bot_tag_text TEXT NOT NULL DEFAULT 'BOT';
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

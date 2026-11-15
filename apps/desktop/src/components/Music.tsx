@@ -600,16 +600,36 @@ export function MusicBotInVoice({ channelId, serverId }: { channelId: string; se
         <Avatar name={bot.displayName} color={bot.avatarColor} src={bot.avatarUrl} size={24} />
         {!live.paused && <span className="pointer-events-none absolute -inset-[3px] animate-pulse rounded-full border-2 border-accent" />}
       </span>
-      <span className="flex-1 truncate">{displayNameIn(useLine.getState(), serverId, bot.id)}</span>
-      <BotTag />
+      <span className="flex-1 truncate" style={{ color: bot.botStyle?.nameColor ?? undefined }}>
+        {displayNameIn(useLine.getState(), serverId, bot.id)}
+      </span>
+      <BotTag user={bot} />
     </button>
     {menu && <VoiceUserMenu userId={bot.id} channelId={channelId} x={menu.x} y={menu.y} onClose={() => setMenu(null)} />}
     </>
   );
 }
 
-export function BotTag() {
-  return <span className="shrink-0 rounded bg-accent px-1 text-[9px] leading-[14px] font-bold text-on-accent">BOT</span>;
+/** Texto claro ou escuro, o que ler melhor sobre a cor. */
+function inkOn(hex: string) {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.6 ? '#111114' : '#ffffff';
+}
+
+/** Etiqueta do bot, com a cor e o texto ("BOT" ou "B") escolhidos nas configurações do bot. */
+export function BotTag({ user, style: given }: { user?: Pick<PublicUser, 'id' | 'botStyle'>; style?: PublicUser['botStyle'] }) {
+  const live = useLine((s) => (user ? s.users[user.id]?.botStyle : undefined));
+  const style = given ?? live ?? user?.botStyle;
+  const color = style?.tagColor;
+  return (
+    <span
+      className={cx('shrink-0 rounded px-1 text-[9px] leading-[14px] font-bold', !color && 'bg-accent text-on-accent')}
+      style={color ? { background: color, color: inkOn(color) } : undefined}
+    >
+      {style?.tagText ?? 'BOT'}
+    </span>
+  );
 }
 
 // ---------- Configurações do servidor → Integrações → Música ----------
@@ -623,6 +643,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   const [thought, setThought] = useState('');
   const [bio, setBio] = useState('');
   const [color, setColor] = useState('#7c6af2');
+  const [nameColor, setNameColor] = useState<string | null>(null);
+  const [tagColor, setTagColor] = useState<string | null>(null);
+  const [tagText, setTagText] = useState<'BOT' | 'B'>('BOT');
   const [avatar, setAvatar] = useState<Img>({ id: null, url: null });
   const [banner, setBanner] = useState<Img>({ id: null, url: null });
   const [changed, setChanged] = useState<{ avatar?: boolean; banner?: boolean }>({});
@@ -640,6 +663,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         setThought(b.thought ?? '');
         setBio(b.bio);
         setColor(b.avatarColor);
+        setNameColor(b.botStyle?.nameColor ?? null);
+        setTagColor(b.botStyle?.tagColor ?? null);
+        setTagText(b.botStyle?.tagText ?? 'BOT');
         setAvatar({ id: null, url: b.avatarUrl ?? null });
         setBanner({ id: null, url: b.bannerUrl ?? null });
       })
@@ -676,6 +702,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         avatarColor: color,
         pronouns: pronouns.trim(),
         thought: thought.trim() || null,
+        botNameColor: nameColor,
+        botTagColor: tagColor,
+        botTagText: tagText,
         ...(changed.avatar ? { avatarId: avatar.id } : {}),
         ...(changed.banner ? { bannerId: banner.id } : {}),
       });
@@ -734,6 +763,42 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 ))}
               </div>
             </Field>
+            <Field label="Nome e etiqueta" hint="Como o bot aparece no chat e na lista de membros.">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 py-2.5">
+                  <span className="font-semibold" style={{ color: nameColor ?? undefined }}>
+                    {name || 'Line Música'}
+                  </span>
+                  <BotTag style={{ nameColor, tagColor, tagText }} />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs text-muted">Cor do nome</p>
+                  <SwatchRow value={nameColor} onChange={setNameColor} noneLabel="Cor do cargo" />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs text-muted">Cor da etiqueta</p>
+                  <SwatchRow value={tagColor} onChange={setTagColor} noneLabel="Padrão" />
+                </div>
+                <div>
+                  <p className="mb-1.5 text-xs text-muted">Texto da etiqueta</p>
+                  <div className="flex gap-2">
+                    {(['BOT', 'B'] as const).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTagText(t)}
+                        className={cx(
+                          'rounded-lg border px-3 py-1.5 text-sm font-bold',
+                          tagText === t ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
+                        )}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Field>
             <ErrorText>{error}</ErrorText>
             <div className="flex justify-end">
               <Button disabled={busy || uploading} onClick={save} className="px-6">
@@ -783,6 +848,41 @@ export function MusicSettings({ serverId }: { serverId: string }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+const SWATCHES = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf', '#ffffff'];
+
+/** Cores prontas + "nenhuma" (volta ao padrão) + uma cor livre. */
+function SwatchRow({ value, onChange, noneLabel }: { value: string | null; onChange: (c: string | null) => void; noneLabel: string }) {
+  const custom = value && !SWATCHES.includes(value);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={cx('rounded-full border px-2.5 py-1 text-xs', value === null ? 'border-accent text-fg' : 'border-edge text-soft hover:bg-raise')}
+      >
+        {noneLabel}
+      </button>
+      {SWATCHES.map((c) => (
+        <button
+          key={c}
+          type="button"
+          onClick={() => onChange(c)}
+          className={cx('h-7 w-7 rounded-full border border-edge ring-offset-2 ring-offset-side', value === c && 'ring-2 ring-fg')}
+          style={{ background: c }}
+          aria-label={c}
+        />
+      ))}
+      <label
+        title="Outra cor"
+        className={cx('relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-edge ring-offset-2 ring-offset-side', custom && 'ring-2 ring-fg')}
+        style={{ background: custom ? value : 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
+      >
+        <input type="color" value={value ?? '#7c6af2'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
+      </label>
     </div>
   );
 }

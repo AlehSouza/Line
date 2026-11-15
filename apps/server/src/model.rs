@@ -20,6 +20,17 @@ pub struct PublicUser {
     pub bot: bool,
     /// Tag de servidor que a pessoa escolheu exibir ao lado do nome.
     pub tag: Option<UserTag>,
+    /// Só para bots: aparência do nome e da etiqueta.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_style: Option<BotStyle>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BotStyle {
+    pub name_color: Option<String>,
+    pub tag_color: Option<String>,
+    pub tag_text: String,
 }
 
 #[derive(Clone, Debug, Serialize)]

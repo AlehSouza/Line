@@ -33,6 +33,9 @@ export const updateProfileSchema = z.object({
   avatarId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
   tagServerId: z.string().nullable().optional(),
+  botNameColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  botTagColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  botTagText: z.enum(['BOT', 'B']).optional(),
 });
 
 export const createServerSchema = z.object({

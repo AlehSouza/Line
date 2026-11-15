@@ -65,6 +65,9 @@ pub struct UserRow {
     pub bot_server_id: Option<String>,
     /// Servidor cuja tag a pessoa exibe.
     pub tag_server_id: Option<String>,
+    pub bot_name_color: Option<String>,
+    pub bot_tag_color: Option<String>,
+    pub bot_tag_text: String,
 }
 
 impl UserRow {
@@ -87,11 +90,14 @@ impl UserRow {
             thought: r.get("thought").unwrap_or(None),
             bot_server_id: r.get("bot_server_id").unwrap_or(None),
             tag_server_id: r.get("tag_server_id").unwrap_or(None),
+            bot_name_color: r.get("bot_name_color").unwrap_or(None),
+            bot_tag_color: r.get("bot_tag_color").unwrap_or(None),
+            bot_tag_text: r.get("bot_tag_text").unwrap_or_else(|_| "BOT".into()),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
@@ -207,6 +213,9 @@ pub struct ProfilePatch {
     pub avatar_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
     pub tag_server_id: Option<Option<String>>,
+    pub bot_name_color: Option<Option<String>>,
+    pub bot_tag_color: Option<Option<String>>,
+    pub bot_tag_text: Option<String>,
 }
 
 #[derive(Default)]
@@ -333,6 +342,11 @@ impl Q<'_> {
             thought: if presence == "offline" { None } else { row.thought.clone() },
             bot: row.bot_server_id.is_some(),
             tag: row.tag_server_id.as_deref().and_then(|s| self.user_tag(&row.id, s)),
+            bot_style: row.bot_server_id.as_ref().map(|_| BotStyle {
+                name_color: row.bot_name_color.clone(),
+                tag_color: row.bot_tag_color.clone(),
+                tag_text: row.bot_tag_text.clone(),
+            }),
         }
     }
 
@@ -605,6 +619,15 @@ impl Q<'_> {
         }
         if let Some(v) = patch.tag_server_id {
             set("tag_server_id", opt(v));
+        }
+        if let Some(v) = patch.bot_name_color {
+            set("bot_name_color", opt(v));
+        }
+        if let Some(v) = patch.bot_tag_color {
+            set("bot_tag_color", opt(v));
+        }
+        if let Some(v) = patch.bot_tag_text {
+            set("bot_tag_text", v.into());
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());
@@ -1427,6 +1450,7 @@ impl Q<'_> {
                         thought: None,
                         bot: false,
                         tag: None,
+                        bot_style: None,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,
