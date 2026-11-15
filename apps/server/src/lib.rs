@@ -11,6 +11,7 @@ pub mod db;
 pub mod errors;
 pub mod gateway;
 pub mod ids;
+pub mod limits;
 pub mod mail;
 pub mod model;
 pub mod music;
@@ -26,6 +27,9 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
+
+/// Quanto cada usuário pode enviar em anexos a cada 24 horas.
+pub const UPLOAD_QUOTA: u64 = 2 * 1024 * 1024 * 1024;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -58,6 +62,12 @@ pub struct App {
     pub login_fails_user: captcha::SignupLimiter,
     /// "Entrar com Google" (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET). Sem elas, o botão não aparece.
     pub google: Option<google::Google>,
+    /// Bytes enviados em anexos por usuário (cota diária, para não encher o disco).
+    pub upload_quota: limits::ByteQuota,
+    /// Mídia baixada de outros sites (/api/media): pedidos por usuário e downloads simultâneos no total
+    /// (cada um pode ocupar até 50 MB de memória).
+    pub media_requests: captcha::SignupLimiter,
+    pub media_slots: tokio::sync::Semaphore,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -244,6 +254,9 @@ pub fn build(
         login_fails_ip: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(15 * 60)),
         login_fails_user: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(15 * 60)),
         google: google::Google::from_env(),
+        upload_quota: limits::ByteQuota::new(UPLOAD_QUOTA, std::time::Duration::from_secs(24 * 60 * 60)),
+        media_requests: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(10 * 60)),
+        media_slots: tokio::sync::Semaphore::new(4),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);

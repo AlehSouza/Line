@@ -234,11 +234,19 @@ async fn get_embed(State(app): S, Me(_me): Me, Query(qs): Query<HashMap<String, 
 }
 
 /// Imagem/vídeo de outro site, arrastado para o chat: o servidor baixa e devolve os bytes.
-async fn get_media(Me(_me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
+async fn get_media(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, String>>) -> Res {
     let url = qs.get("url").map(|s| s.trim()).unwrap_or_default();
     if url.len() > 4096 || !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(ApiError::new(StatusCode::BAD_REQUEST, "INVALID_URL", "Link inválido."));
     }
+    // Cada download pode ocupar até 50 MB de memória: limita por usuário e no total.
+    let busy = || ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitos arquivos de uma vez. Espere um pouco e tente de novo.");
+    if !app.media_requests.allow(&me) {
+        return Err(busy());
+    }
+    let Ok(_slot) = tokio::time::timeout(std::time::Duration::from_secs(20), app.media_slots.acquire()).await else {
+        return Err(busy());
+    };
     match crate::embeds::fetch_media(url).await {
         Ok((ctype, bytes)) => Ok(([(axum::http::header::CONTENT_TYPE, ctype)], bytes).into_response()),
         Err(msg) => Err(ApiError::new(StatusCode::BAD_GATEWAY, "MEDIA_UNAVAILABLE", msg)),
@@ -343,24 +351,45 @@ fn google_disabled() -> ApiError {
     ApiError::new(StatusCode::NOT_FOUND, "GOOGLE_DISABLED", "Login com Google indisponível.")
 }
 
+/// Valor de um cookie do pedido.
+fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(';'))
+        .filter_map(|kv| kv.trim().split_once('='))
+        .find(|(k, _)| *k == name)
+        .map(|(_, v)| v.to_string())
+}
+
 fn redirect(url: &str) -> Response {
     (StatusCode::FOUND, [(axum::http::header::LOCATION, url.to_string())]).into_response()
 }
 
 /// Começo do "Entrar com Google": `?port=N` quando é o app desktop (que escuta em 127.0.0.1:N).
-async fn google_start(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+async fn google_start(State(app): S, headers: HeaderMap, Query(qs): Query<HashMap<String, String>>) -> Res {
     let google = app.google.as_ref().ok_or_else(google_disabled)?;
     let target = match qs.get("port").and_then(|p| p.parse::<u16>().ok()) {
         Some(port) if port >= 1024 => crate::google::Target::Desktop(port),
         _ => crate::google::Target::Web,
     };
-    Ok(redirect(&google.authorize_url(target)))
+    // Reaproveita o cookie se já existir (duas abas fazendo login ao mesmo tempo continuam valendo).
+    let nonce = cookie(&headers, crate::google::COOKIE)
+        .filter(|n| n.len() == 43 && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+        .unwrap_or_else(crate::google::new_nonce);
+    let mut res = redirect(&google.authorize_url(target, &nonce));
+    if let Ok(v) = google.cookie_header(&nonce).parse() {
+        res.headers_mut().insert(axum::http::header::SET_COOKIE, v);
+    }
+    Ok(res)
 }
 
 /// Volta do Google: acha a conta (pelo Google ou pelo email verificado) ou cria uma nova.
-async fn google_callback(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+async fn google_callback(State(app): S, headers: HeaderMap, Query(qs): Query<HashMap<String, String>>) -> Res {
     let google = app.google.as_ref().ok_or_else(google_disabled)?;
-    let Some(target) = qs.get("state").and_then(|s| google.take_state(s)) else {
+    let nonce = cookie(&headers, crate::google::COOKIE);
+    let Some(target) = qs.get("state").and_then(|s| google.take_state(s, nonce.as_deref())) else {
         return Err(validation("Esse login expirou. Tente entrar com o Google de novo."));
     };
     let fail = |msg: &str| Ok(redirect(&google.return_url(target, Err(msg))));
@@ -419,21 +448,25 @@ async fn google_callback(State(app): S, Query(qs): Query<HashMap<String, String>
             user.public.id
         }
     };
-    let code = google.issue_code(user_id);
+    let web_nonce = matches!(target, crate::google::Target::Web).then(|| nonce.clone().unwrap_or_default());
+    let code = google.issue_code(user_id, web_nonce);
     Ok(redirect(&google.return_url(target, Ok(&code))))
 }
 
 #[derive(serde::Deserialize)]
 struct GoogleFinish {
     code: String,
+    /// true quando quem troca o código é o app desktop (que recebeu o código pelo 127.0.0.1).
+    #[serde(default)]
+    desktop: bool,
 }
 
 /// Troca o código de uso único do callback pelo token do Line.
-async fn google_finish(State(app): S, b: Bytes) -> Res {
+async fn google_finish(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let google = app.google.as_ref().ok_or_else(google_disabled)?;
     let input: GoogleFinish = serde_json::from_slice(&b).map_err(|_| validation("Código inválido"))?;
     let user_id = google
-        .take_code(input.code.trim())
+        .take_code(input.code.trim(), cookie(&headers, crate::google::COOKIE).as_deref(), input.desktop)
         .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?;
     let user = app.store.q().self_user(&user_id).ok_or_else(|| validation("Conta não encontrada"))?;
     ok(AuthResponse {
@@ -558,8 +591,15 @@ async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
         .await
         .expect("scrypt");
-    app.store.q().set_password_hash(&me, &hash);
-    Ok(StatusCode::NO_CONTENT.into_response())
+    // Senha nova: todas as sessões abertas (outros aparelhos, token roubado) caem.
+    // Quem trocou recebe um token novo e reconecta com ele.
+    {
+        let q = app.store.q();
+        q.set_password_hash(&me, &hash);
+        q.revoke_sessions(&me);
+    }
+    app.disconnect_user(&me);
+    ok(json!({ "token": app.tokens.sign(&me) }))
 }
 
 async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
@@ -1499,6 +1539,12 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
         .filter(|m| *m != mime::APPLICATION_OCTET_STREAM)
         .unwrap_or_else(|| mime_guess(&filename));
 
+    // Cota diária por usuário, para ninguém encher o disco do servidor.
+    let quota_left = app.upload_quota.max.saturating_sub(app.upload_quota.used(&me));
+    let over_quota = || ApiError::new(StatusCode::TOO_MANY_REQUESTS, "UPLOAD_QUOTA", "Você chegou no limite de envios de hoje (2 GB). Tente de novo amanhã.");
+    if quota_left == 0 {
+        return Err(over_quota());
+    }
     let id = crate::ids::attachment_id();
     tokio::fs::create_dir_all(&app.uploads_dir)
         .await
@@ -1523,6 +1569,11 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
             }
         };
         size += chunk.len();
+        if size as u64 > quota_left {
+            drop(file);
+            let _ = tokio::fs::remove_file(&path).await;
+            return Err(over_quota());
+        }
         if file.write_all(&chunk).await.is_err() {
             drop(file);
             let _ = tokio::fs::remove_file(&path).await;
@@ -1534,6 +1585,7 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
         let _ = tokio::fs::remove_file(&path).await;
         return Err(validation("Arquivo vazio"));
     }
+    app.upload_quota.add(&me, size as u64);
     let attachment = app.store.q().create_attachment(
         &id,
         &me,

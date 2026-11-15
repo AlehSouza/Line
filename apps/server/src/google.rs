@@ -26,8 +26,19 @@ pub struct Google {
     client_secret: String,
     pub redirect_uri: String,
     pub app_url: String,
-    states: Mutex<HashMap<String, (Target, Instant)>>,
-    codes: Mutex<HashMap<String, (String, Instant)>>,
+    /// state do OAuth → destino e o segredo do cookie do navegador que começou o login.
+    states: Mutex<HashMap<String, ((Target, String), Instant)>>,
+    /// Código de uso único → usuário e, no app web, o segredo do cookie (None = app desktop).
+    codes: Mutex<HashMap<String, ((String, Option<String>), Instant)>>,
+}
+
+/// Cookie que prende o login com Google ao navegador que o começou (contra login CSRF:
+/// sem ele, um link de callback de outra pessoa faria a vítima entrar na conta dela).
+pub const COOKIE: &str = "line_oauth";
+
+/// Novo segredo para o cookie do login.
+pub fn new_nonce() -> String {
+    random_token()
 }
 
 /// O que interessa do perfil do Google.
@@ -83,8 +94,8 @@ impl Google {
     }
 
     /// Link da tela de consentimento do Google.
-    pub fn authorize_url(&self, target: Target) -> String {
-        let state = put(&self.states, target, STATE_TTL);
+    pub fn authorize_url(&self, target: Target, nonce: &str) -> String {
+        let state = put(&self.states, (target, nonce.to_string()), STATE_TTL);
         let mut url = reqwest::Url::parse("https://accounts.google.com/o/oauth2/v2/auth").unwrap();
         url.query_pairs_mut()
             .append_pair("client_id", &self.client_id)
@@ -96,17 +107,32 @@ impl Google {
         url.into()
     }
 
-    pub fn take_state(&self, state: &str) -> Option<Target> {
-        take(&self.states, state, STATE_TTL)
+    /// Destino do login, se o `state` existe e o cookie é do mesmo navegador que o começou.
+    pub fn take_state(&self, state: &str, cookie: Option<&str>) -> Option<Target> {
+        let (target, nonce) = take(&self.states, state, STATE_TTL)?;
+        (cookie == Some(nonce.as_str())).then_some(target)
     }
 
-    /// Código de uso único que o app troca pelo token.
-    pub fn issue_code(&self, user_id: String) -> String {
-        put(&self.codes, user_id, CODE_TTL)
+    /// Código de uso único que o app troca pelo token. `nonce`: segredo do cookie no app web;
+    /// None no app desktop (o código volta pelo 127.0.0.1).
+    pub fn issue_code(&self, user_id: String, nonce: Option<String>) -> String {
+        put(&self.codes, (user_id, nonce), CODE_TTL)
     }
 
-    pub fn take_code(&self, code: &str) -> Option<String> {
-        take(&self.codes, code, CODE_TTL)
+    /// Código do app web só vale com o cookie do mesmo navegador; código do desktop só no desktop.
+    pub fn take_code(&self, code: &str, cookie: Option<&str>, desktop: bool) -> Option<String> {
+        let (user_id, nonce) = take(&self.codes, code, CODE_TTL)?;
+        let ok = match &nonce {
+            Some(n) => !desktop && cookie == Some(n.as_str()),
+            None => desktop,
+        };
+        ok.then_some(user_id)
+    }
+
+    /// Cabeçalho Set-Cookie do login (só HTTPS marca Secure; vale 10 minutos).
+    pub fn cookie_header(&self, nonce: &str) -> String {
+        let secure = if self.redirect_uri.starts_with("https://") { "; Secure" } else { "" };
+        format!("{COOKIE}={nonce}; Path=/api/auth/google; Max-Age=600; HttpOnly; SameSite=Lax{secure}")
     }
 
     /// Troca o `code` do callback pelo perfil do usuário. O perfil vem direto do Google por

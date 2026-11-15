@@ -142,7 +142,7 @@ export const api = {
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
     request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),
   authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean; google?: boolean }>('GET', '/auth/config'),
-  googleFinish: (code: string) => request<AuthResponse>('POST', '/auth/google/finish', { code }),
+  googleFinish: (code: string, desktop = false) => request<AuthResponse>('POST', '/auth/google/finish', { code, desktop }),
   forgotPassword: (email: string) => request<void>('POST', '/auth/forgot', { email }),
   resetPassword: (token: string, newPassword: string) =>
     request<{ username: string }>('POST', '/auth/reset', { token, newPassword }),
@@ -153,7 +153,7 @@ export const api = {
   updateAccount: (patch: { username?: string; email?: string | null; currentPassword: string }) =>
     request<SelfUser>('PATCH', '/users/@me/account', patch),
   changePassword: (currentPassword: string, newPassword: string) =>
-    request<void>('POST', '/users/@me/password', { currentPassword, newPassword }),
+    request<{ token: string }>('POST', '/users/@me/password', { currentPassword, newPassword }),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 

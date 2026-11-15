@@ -519,6 +519,10 @@ async fn voice_moderate(
     if !can_moderate_voice(&q, &me, &server_id, action) {
         return;
     }
+    // Hierarquia: só modera quem está abaixo do seu cargo mais alto (o dono fica acima de todos).
+    if target != me && q.top_position(&server_id, target) >= q.top_position(&server_id, &me) {
+        return;
+    }
     let value = d.get("value").and_then(|v| v.as_bool());
     match action {
         "mute" | "deafen" => {

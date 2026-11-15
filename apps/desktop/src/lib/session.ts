@@ -92,16 +92,24 @@ export async function authenticate(
 }
 
 /** "Entrar com Google": troca o código de uso único (que voltou do Google) pelo token. */
-export async function authenticateWithGoogle(serverUrl: string, code: string) {
+export async function authenticateWithGoogle(serverUrl: string, code: string, desktop = false) {
   const url = serverUrl.trim().replace(/\/+$/, '') || DEFAULT_SERVER_URL;
   configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
-  const res = await api.googleFinish(code);
+  const res = await api.googleFinish(code, desktop);
   storage.set(STORAGE_URL, url);
   storage.set(STORAGE_TOKEN, res.token);
   configureApi({ token: res.token });
   useLine.setState({ serverUrl: url, token: res.token });
   actions.setMe(res.user);
   await bootstrap();
+}
+
+/** Troca o token da sessão (ex.: depois de mudar a senha, que derruba as sessões antigas) e reconecta. */
+export function replaceToken(token: string) {
+  storage.set(STORAGE_TOKEN, token);
+  configureApi({ token });
+  useLine.setState({ token });
+  if (socket) connectSocket();
 }
 
 export function logout() {
