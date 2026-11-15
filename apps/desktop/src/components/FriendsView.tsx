@@ -514,7 +514,7 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
       className="overflow-hidden rounded-xl border border-edge bg-side"
       onContextMenu={group ? undefined : (e) => openContextMenu(e, friendMenu(user))}
     >
-      <button onClick={group ? undefined : open} className={cx('flex w-full items-center gap-3 px-3 py-2.5 text-left', !group && 'hover:bg-hover')}>
+      <button onClick={group ? undefined : open} className={cx('flex w-full items-center gap-3 bg-hover/70 px-3 py-2.5 text-left', !group && 'hover:bg-hover')}>
         {group ? (
           <span className="flex shrink-0 -space-x-2.5">
             {people.slice(0, 3).map((p) => (
