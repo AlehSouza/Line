@@ -236,6 +236,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE servers ADD COLUMN tag TEXT NOT NULL DEFAULT '';
   ALTER TABLE users ADD COLUMN tag_server_id TEXT;
 "#,
+    // Bot de música: mensagem quando a fila acaba ('' = a padrão).
+    r#"
+  ALTER TABLE servers ADD COLUMN music_idle_message TEXT NOT NULL DEFAULT '';
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

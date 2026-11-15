@@ -514,3 +514,37 @@ export function Checkbox({ checked, onChange, className }: { checked: boolean; o
     </span>
   );
 }
+
+/** Slider no padrão do Line: trilho fino escuro, preenchido de violeta até o valor. */
+export function Slider({
+  value,
+  min = 0,
+  max = 100,
+  step = 1,
+  onChange,
+  className,
+  label,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (value: number) => void;
+  className?: string;
+  label?: string;
+}) {
+  const pct = max > min ? Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100)) : 0;
+  return (
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      aria-label={label}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cx('line-range line-slider', className)}
+      style={{ '--fill': `${pct}%` } as React.CSSProperties}
+    />
+  );
+}

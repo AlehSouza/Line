@@ -235,6 +235,25 @@ body {
   background: #fff;
   box-shadow: 0 0 0 2px var(--color-accent);
 }
+/* Slider dos menus e players (components/ui.tsx → Slider): trilho escuro do tema. */
+.line-slider {
+  height: 6px;
+  background: linear-gradient(to right, var(--color-accent) var(--fill, 0%), var(--color-edge) var(--fill, 0%));
+}
+.line-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-fg);
+  box-shadow: 0 0 0 3px var(--color-accent), 0 1px 3px rgb(0 0 0 / 0.4);
+  transition: transform 120ms;
+}
+.line-slider:hover::-webkit-slider-thumb { transform: scale(1.15); }
+.line-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--color-fg);
+  box-shadow: 0 0 0 3px var(--color-accent);
+}
 .line-range::-moz-range-thumb {
   width: 12px;
   height: 12px;

@@ -36,7 +36,7 @@ import {
   toggleScreenMute,
   useVoice,
 } from '@/lib/voice';
-import { Avatar, Button, cx, Icons, Modal, Select, useAvatarTint } from './ui';
+import { Avatar, Button, cx, Icons, Modal, Select, Slider, useAvatarTint } from './ui';
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
@@ -208,14 +208,7 @@ function ScreenMenu({ userId }: { userId: string }) {
               Volume da transmissão
               <span className="text-xs text-muted">{muted ? 0 : Math.round(volume * 100)}%</span>
             </p>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={muted ? 0 : Math.round(volume * 100)}
-              onChange={(e) => setScreenVolume(userId, Number(e.target.value) / 100)}
-              className="w-full accent-accent"
-            />
+            <Slider value={muted ? 0 : Math.round(volume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
           </div>
         </div>
       )}

@@ -12,7 +12,7 @@ import { showError, toast } from './Dialogs';
 import { ImageCropper } from './ImageCropper';
 import { ProfileCard } from './ProfileEditor';
 import { VoiceUserMenu } from './VoiceUserMenu';
-import { Avatar, Button, cx, ErrorText, Field, Input } from './ui';
+import { Avatar, Button, cx, ErrorText, Field, Slider } from './ui';
 import { EmojiInput, EmojiTextarea } from './EmojiField';
 import { permsOf } from '@/lib/store';
 
@@ -374,14 +374,7 @@ export function MusicPlayer({ serverId }: { serverId: string }) {
         {listening ? (
           <label className="relative mt-1 flex items-center gap-2 text-muted" title="Volume da música (só para você)">
             {volume === 0 ? <L.VolumeX size={13} /> : <L.Volume2 size={13} />}
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={volume}
-              onChange={(e) => setMusicVolume(Number(e.target.value))}
-              className="h-1 flex-1 cursor-pointer accent-[var(--color-accent)]"
-            />
+            <Slider value={volume} onChange={setMusicVolume} className="flex-1" label="Volume da música" />
           </label>
         ) : (
           <button
@@ -448,8 +441,22 @@ function Playlist({ m, dj }: { m: LiveMusic; dj: boolean }) {
             <span className="w-4 shrink-0 text-center text-[10px] text-muted tabular-nums">
               {current ? <L.AudioLines size={12} className="text-accent" /> : i - m.index}
             </span>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={thumbOf(t.videoId)} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+            {dj && !current ? (
+              <button
+                title="Tocar agora"
+                onClick={() => musicControl({ channelId: m.channelId, action: 'jump', index: i })}
+                className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={thumbOf(t.videoId)} alt="" className="h-full w-full object-cover" />
+                <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                  <L.Play size={14} fill="currentColor" />
+                </span>
+              </button>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={thumbOf(t.videoId)} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+            )}
             <div className="min-w-0 flex-1">
               <p className={cx('truncate text-xs font-medium', current && 'text-accent')} title={t.title}>
                 {t.title}
@@ -459,11 +466,6 @@ function Playlist({ m, dj }: { m: LiveMusic; dj: boolean }) {
               </p>
             </div>
             <span className="hidden shrink-0 items-center group-hover:flex">
-              {dj && !current && (
-                <button title="Tocar agora" onClick={() => musicControl({ channelId: m.channelId, action: 'jump', index: i })} className="p-0.5 text-muted hover:text-fg">
-                  <L.Play size={13} />
-                </button>
-              )}
               {canRemove && (
                 <button title="Tirar da fila" onClick={() => musicControl({ channelId: m.channelId, action: 'remove', uid: t.uid })} className="p-0.5 text-muted hover:text-danger">
                   <L.Trash2 size={13} />
@@ -629,8 +631,17 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   const [crop, setCrop] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [idle, setIdle] = useState('');
+  const [idleDefault, setIdleDefault] = useState('Esperando a próxima banger 😈');
 
   useEffect(() => {
+    api
+      .musicSettings(serverId)
+      .then((s) => {
+        setIdle(s.idleMessage);
+        setIdleDefault(s.defaultIdleMessage);
+      })
+      .catch(() => {});
     api
       .musicBot(serverId)
       .then((b) => {
@@ -679,10 +690,12 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         ...(changed.avatar ? { avatarId: avatar.id } : {}),
         ...(changed.banner ? { bannerId: banner.id } : {}),
       });
+      const s = await api.updateMusicSettings(serverId, { idleMessage: idle.trim() });
+      setIdle(s.idleMessage);
       actions.upsertUsers([b]);
       setBot(b);
       setChanged({});
-      toast('Perfil do bot salvo.');
+      toast('Bot salvo.');
     } catch (e) {
       showError(e);
     } finally {
@@ -720,6 +733,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 rows={3}
                 className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
               />
+            </Field>
+            <Field label="Mensagem quando a fila acaba" hint="O bot fica na call e manda isso no chat onde a música foi pedida. Vazio usa a padrão.">
+              <EmojiInput value={idle} onChange={(e) => setIdle(e.target.value)} maxLength={300} placeholder={idleDefault} />
             </Field>
             <Field label="Cor do perfil">
               <div className="flex flex-wrap gap-2">
