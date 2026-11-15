@@ -35,11 +35,24 @@ export function DmSidebar() {
           }}
           className={cx(
             'flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium',
-            view.kind === 'home' && !activeDm ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+            view.kind === 'home' && !activeDm && !view.page ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
           )}
         >
           <Icons.Users />
           <span className="flex-1 text-left">Amigos</span>
+        </button>
+        <button
+          onClick={() => {
+            actions.goRequests();
+            mobile.showMain();
+          }}
+          className={cx(
+            'flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium',
+            view.kind === 'home' && view.page === 'requests' ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+          )}
+        >
+          <Icons.Mail />
+          <span className="flex-1 truncate text-left">Solicitações de amizade</span>
           {pending > 0 && (
             <span className="rounded-full bg-danger px-1.5 text-xs leading-5 font-bold text-white">{pending}</span>
           )}

@@ -25,16 +25,14 @@ export function FriendsView() {
   const q = query.trim().toLowerCase();
   const match = (f: Friend) =>
     !q || f.user.displayName.toLowerCase().includes(q) || f.user.username.toLowerCase().includes(q);
-  const pending = list.filter((f) => (f.state === 'incoming' || f.state === 'outgoing') && match(f));
   const accepted = list.filter((f) => f.state === 'friends');
   const shown = (tab === 'online' ? accepted.filter((f) => f.user.presence !== 'offline') : accepted)
     .filter(match)
     .sort((a, b) => a.user.displayName.localeCompare(b.user.displayName));
-  const incoming = list.filter((f) => f.state === 'incoming').length;
 
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: 'online', label: 'Disponíveis' },
-    { id: 'all', label: 'Todos', badge: incoming },
+    { id: 'all', label: 'Todos' },
   ];
   const heading = tab === 'online' ? 'Disponíveis' : 'Todos os amigos';
 
@@ -101,21 +99,68 @@ export function FriendsView() {
                 <FriendRow key={f.user.id} friend={f} />
               ))}
 
-              {pending.length > 0 && (
-                <>
-                  <h3 className="pt-6 pb-2 text-xs font-bold tracking-wide text-muted uppercase">
-                    Solicitações pendentes — {pending.length}
-                  </h3>
-                  {pending.map((f) => (
-                    <PendingRow key={f.user.id} friend={f} />
-                  ))}
-                </>
-              )}
             </>
           )}
         </div>
       </div>
       <ActiveNow friends={accepted} />
+    </div>
+  );
+}
+
+export function FriendRequestsView() {
+  const [tab, setTab] = useState<'incoming' | 'outgoing'>('incoming');
+  const friends = useLine((s) => s.friends);
+  const users = useLine((s) => s.users);
+  const list = Object.values(friends).map((f) => ({ ...f, user: users[f.user.id] ?? f.user }));
+  const incoming = list.filter((f) => f.state === 'incoming');
+  const outgoing = list.filter((f) => f.state === 'outgoing');
+  const shown = (tab === 'incoming' ? incoming : outgoing).sort((a, b) => a.user.displayName.localeCompare(b.user.displayName));
+  const tabs = [
+    { id: 'incoming' as const, label: 'Pedidos', count: incoming.length },
+    { id: 'outgoing' as const, label: 'Enviados', count: outgoing.length },
+  ];
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-4 overflow-x-auto border-b border-rail px-4 shadow-sm max-md:gap-2">
+        <MobileBack />
+        <span className="flex shrink-0 items-center gap-2 font-bold">
+          <Icons.Mail className="text-muted" /> Solicitações de amizade
+        </span>
+        <span className="h-6 w-px shrink-0 bg-edge" />
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cx(
+              'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-0.5 text-[15px] font-medium',
+              tab === t.id ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+            )}
+          >
+            {t.label}
+            {t.count > 0 &&
+              (t.id === 'incoming' ? (
+                <span className="rounded-full bg-danger px-1.5 text-xs leading-5 font-bold text-white">{t.count}</span>
+              ) : (
+                <span className="text-sm text-muted">({t.count})</span>
+              ))}
+          </button>
+        ))}
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4 max-md:px-3">
+        <h3 className="pb-2 text-xs font-bold tracking-wide text-muted uppercase">
+          {tab === 'incoming' ? 'Pedidos recebidos' : 'Pedidos enviados'} — {shown.length}
+        </h3>
+        {shown.length === 0 && (
+          <p className="py-12 text-center text-muted">
+            {tab === 'incoming' ? 'Nenhum pedido de amizade por enquanto.' : 'Você não tem pedidos enviados esperando resposta.'}
+          </p>
+        )}
+        {shown.map((f) => (
+          <PendingRow key={f.user.id} friend={f} />
+        ))}
+      </div>
     </div>
   );
 }
