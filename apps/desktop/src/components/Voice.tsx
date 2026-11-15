@@ -893,16 +893,7 @@ function CameraMenu({ onClose, onOpenModal }: { onClose: () => void; onOpenModal
   );
 }
 
-export function ScreenShareModal({
-  onClose,
-  switching = false,
-  preselect,
-}: {
-  onClose: () => void;
-  switching?: boolean;
-  /** Fonte já escolhida ao abrir (ex.: a janela do jogo, pelo cartão do jogo). */
-  preselect?: string;
-}) {
+export function ScreenShareModal({ onClose, switching = false }: { onClose: () => void; switching?: boolean }) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
@@ -910,7 +901,7 @@ export function ScreenShareModal({
   const native = useMemo(() => hasNativeScreen(), []);
   const [tab, setTab] = useState<'apps' | 'screens'>('apps');
   const [sources, setSources] = useState<ScreenSource[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(preselect ?? null);
+  const [selected, setSelected] = useState<string | null>(null);
   const [audio, setAudio] = useState(true);
 
   const [listError, setListError] = useState<string | null>(null);
