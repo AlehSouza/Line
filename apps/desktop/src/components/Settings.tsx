@@ -8,12 +8,14 @@ import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
 import { showError, toast } from './Dialogs';
+import { getTheme, setTheme, THEMES, type ThemeId } from '@/lib/theme';
 
-type Section = 'account' | 'profile' | 'voice' | 'blocked';
+type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'blocked';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
   { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
+  { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
   { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
 ];
@@ -138,6 +140,7 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
             <div className={cx('mx-auto px-6 py-10', section === 'profile' ? 'max-w-[1000px]' : 'max-w-[700px]')}>
               {section === 'account' && <AccountSection />}
               {section === 'profile' && <ProfileEditor />}
+              {section === 'appearance' && <AppearanceSection />}
               {section === 'voice' && <VoiceSettingsPanel />}
               {section === 'blocked' && <BlockedSection />}
             </div>
@@ -302,6 +305,48 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
 function appVersion() {
   const v = typeof window !== 'undefined' ? window.line?.version : undefined;
   return v && !v.startsWith('__') ? `v${v}` : 'Web';
+}
+
+function AppearanceSection() {
+  const [theme, setCurrent] = useState<ThemeId>('padrao');
+  useEffect(() => setCurrent(getTheme()), []);
+  return (
+    <div>
+      <h3 className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Tema</h3>
+      <p className="mb-4 text-sm text-muted">Vale só para este aparelho.</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {THEMES.map((t) => {
+          const active = t.id === theme;
+          return (
+            <button
+              key={t.id}
+              onClick={() => {
+                setTheme(t.id);
+                setCurrent(t.id);
+              }}
+              className={cx(
+                'rounded-xl border-2 p-2 text-left transition-colors',
+                active ? 'border-accent bg-raise' : 'border-edge hover:border-muted',
+              )}
+            >
+              <div className="flex h-16 overflow-hidden rounded-lg" style={{ background: t.colors[1] }}>
+                <div className="w-4" style={{ background: t.colors[0] }} />
+                <div className="flex flex-1 flex-col justify-center gap-1.5 px-2">
+                  <div className="h-2 w-3/4 rounded-full" style={{ background: t.colors[2] }} />
+                  <div className="h-2 w-1/2 rounded-full" style={{ background: t.colors[3] }} />
+                </div>
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 px-1">
+                <span className="font-semibold">{t.label}</span>
+                {active && <Icons.Check size={14} className="text-accent" />}
+              </div>
+              <p className="px-1 text-xs text-muted">{t.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function BlockedSection() {
