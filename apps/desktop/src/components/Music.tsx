@@ -2,7 +2,7 @@
 
 import type { PublicUser } from '@line/shared';
 import * as L from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
 import { api } from '@/lib/api';
 import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, useMusic, type LiveMusic } from '@/lib/music';
 import { actions, displayNameIn, useLine } from '@/lib/store';
@@ -42,6 +42,143 @@ export function stopCommand(serverId: string) {
   }
   stopMusic(m.channelId);
   return true;
+}
+
+/** `/pular`, `/pausar`, `/voltar` no chat: controla a música do canal de voz em que estou. */
+export function controlCommand(serverId: string, action: 'skip' | 'pause' | 'prev') {
+  const voice = useVoice.getState().channelId;
+  const m = voice ? useMusic.getState().states[voice] : undefined;
+  if (!m || m.serverId !== serverId) {
+    toast('Não tem música tocando no seu canal de voz.');
+    return false;
+  }
+  musicControl({ channelId: m.channelId, action });
+  if (!isDj(m)) toast('Seu voto foi contado.');
+  return true;
+}
+
+/** Bot de música do servidor (pode ainda não existir antes do primeiro /play). */
+function useServerBot(serverId: string | null) {
+  return useLine((s) => {
+    if (!serverId) return undefined;
+    const id = Object.keys(s.members[serverId] ?? {}).find((u) => s.users[u]?.bot);
+    return id ? s.users[id] : undefined;
+  });
+}
+
+function BotBadge({ serverId, size = 18 }: { serverId: string | null; size?: number }) {
+  const bot = useServerBot(serverId);
+  const name = bot?.displayName ?? 'Música Line';
+  return (
+    <>
+      {bot ? (
+        <Avatar name={bot.displayName} color={bot.avatarColor} src={bot.avatarUrl} size={size} />
+      ) : (
+        <span className="flex shrink-0 items-center justify-center rounded-full bg-accent/20 text-accent" style={{ width: size, height: size }}>
+          <L.Music size={size * 0.6} />
+        </span>
+      )}
+      <span className="truncate font-semibold text-fg">{name}</span>
+    </>
+  );
+}
+
+/** Aviso acima da caixa de mensagem enquanto o /play procura a música. */
+export function MusicSearching({ serverId }: { serverId: string | null }) {
+  return (
+    <div className="mb-1.5 flex items-center gap-2 px-1 text-xs text-soft">
+      <BotBadge serverId={serverId} />
+      <span className="min-w-0 truncate">está procurando sua música... aguarde um instante...</span>
+      <L.LoaderCircle size={13} className="shrink-0 animate-spin text-accent" />
+    </div>
+  );
+}
+
+export interface SlashPickerHandle {
+  onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+}
+
+const COMMANDS = [
+  { name: 'play', args: '[link ou nome da música]', desc: 'Toca uma música do YouTube no seu canal de voz (ou põe na fila).' },
+  { name: 'pausar', args: '', desc: 'Pausa ou continua a música.' },
+  { name: 'pular', args: '', desc: 'Pula para a próxima música da fila.' },
+  { name: 'voltar', args: '', desc: 'Volta para a música anterior.' },
+  { name: 'stop', args: '', desc: 'Para a música e tira o bot do canal.' },
+];
+
+/** Lista de comandos do bot que aparece ao digitar "/" no começo da mensagem. */
+export function SlashPicker({
+  serverId,
+  text,
+  onPick,
+  ref,
+}: {
+  serverId: string | null;
+  text: string;
+  onPick: (insert: string) => void;
+  ref?: Ref<SlashPickerHandle>;
+}) {
+  const [index, setIndex] = useState(0);
+  const [closed, setClosed] = useState(false);
+  const m = serverId ? /^\/(\S*)$/.exec(text) : null;
+  const query = m ? m[1]!.toLowerCase() : null;
+  const options = query === null ? [] : COMMANDS.filter((c) => c.name.startsWith(query));
+  const visible = !closed && options.length > 0;
+  useEffect(() => setIndex(0), [query]);
+  useEffect(() => {
+    if (query === null) setClosed(false);
+  }, [query]);
+  const pick = (c: (typeof COMMANDS)[number]) => onPick(`/${c.name} `);
+
+  useImperativeHandle(ref, () => ({
+    onKeyDown(e) {
+      if (!visible) return false;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const d = e.key === 'ArrowDown' ? 1 : -1;
+        setIndex((i) => (i + d + options.length) % options.length);
+        return true;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && options[index] && `/${options[index]!.name}` !== text)) {
+        e.preventDefault();
+        const c = options[Math.min(index, options.length - 1)];
+        if (c) pick(c);
+        return true;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setClosed(true);
+        return true;
+      }
+      return false;
+    },
+  }));
+
+  if (!visible) return null;
+  return (
+    <div className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
+      <p className="flex items-center gap-2 px-2 pt-1 pb-1.5 text-xs">
+        <BotBadge serverId={serverId} size={16} />
+      </p>
+      {options.map((c, i) => (
+        <button
+          key={c.name}
+          type="button"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            pick(c);
+          }}
+          onMouseEnter={() => setIndex(i)}
+          className={cx('flex w-full flex-col rounded-md px-2 py-1.5 text-left', i === index && 'bg-hover')}
+        >
+          <span className="text-[15px] font-semibold">
+            /{c.name} {c.args && <span className="font-normal text-muted">{c.args}</span>}
+          </span>
+          <span className="text-xs text-muted">{c.desc}</span>
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** Botão de parar a música (player e anúncio no chat). */

@@ -137,9 +137,24 @@ impl App {
             .collect()
     }
 
-    /// Alguém saiu da voz: se não sobrou ninguém ouvindo, o bot sai junto.
+    /// Alguém saiu da voz: se não sobrou ninguém ouvindo, o bot sai junto. Se quem deu o /play
+    /// saiu e ainda tem gente ouvindo, o comando da música passa para quem ficou.
     pub fn music_on_voice_left(&self, q: &Q, channel_id: &str) {
-        if !listeners(self, channel_id).is_empty() {
+        let people = listeners(self, channel_id);
+        if let Some(next) = people.first() {
+            let changed = {
+                let mut m = lock(&self.music);
+                match m.sessions.get_mut(channel_id) {
+                    Some(s) if !people.contains(&s.dj_id) => {
+                        s.dj_id = next.clone();
+                        true
+                    }
+                    _ => false,
+                }
+            };
+            if changed {
+                self.emit_music(q, channel_id);
+            }
             return;
         }
         if lock(&self.music).sessions.remove(channel_id).is_some() {
@@ -221,18 +236,28 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
         Same,
         NewTrack,
         Ended,
+        Idle,
     }
     let out = {
         let mut m = lock(&app.music);
         let Some(s) = m.sessions.get_mut(channel_id) else { return false };
         let now = now_ms();
+        // Fila acabou: o bot continua no canal, parado depois da última faixa, esperando o próximo /play.
+        let idle = |s: &mut Session| {
+            s.index = s.tracks.len();
+            s.paused = true;
+            s.offset_ms = 0;
+            s.votes.clear();
+            s.generation += 1;
+            Out::Idle
+        };
         let next = |s: &mut Session| {
             if s.index + 1 < s.tracks.len() {
                 s.index += 1;
                 s.restart();
                 Out::NewTrack
             } else {
-                Out::Ended
+                idle(s)
             }
         };
         let current_uid = s.current().map(|t| t.uid.clone()).unwrap_or_default();
@@ -288,7 +313,7 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
                         s.restart();
                         Out::NewTrack
                     } else {
-                        Out::Ended
+                        idle(s)
                     }
                 }
                 Some(j) => {
@@ -329,6 +354,13 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
     match out {
         Out::Nothing => return false,
         Out::Ended => app.emit_music(q, channel_id),
+        Out::Idle => {
+            app.emit_music(q, channel_id);
+            let target = lock(&app.music).sessions.get(channel_id).map(|s| (s.server_id.clone(), s.text_channel_id.clone()));
+            if let Some((server_id, text)) = target {
+                app.bot_say(q, &server_id, &text, "Esperando a próxima banger 😈", &[]);
+            }
+        }
         Out::Same => {
             app.emit_music(q, channel_id);
             schedule(app, channel_id);
@@ -676,6 +708,16 @@ pub fn play_items(
     let queued_at = {
         let mut m = lock(&app.music);
         match m.sessions.get_mut(&voice.channel_id) {
+            Some(s) if s.index >= s.tracks.len() => {
+                // Bot parado esperando: começa uma fila nova com quem pediu no comando.
+                tracks.truncate(MAX_TRACKS);
+                s.tracks = tracks;
+                s.index = 0;
+                s.dj_id = me.to_string();
+                s.text_channel_id = text.id.clone();
+                s.restart();
+                None
+            }
             Some(s) => {
                 let room = MAX_TRACKS.saturating_sub(s.tracks.len());
                 if room == 0 {

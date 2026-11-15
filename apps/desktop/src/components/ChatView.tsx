@@ -10,7 +10,7 @@ import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
-import { BotTag, MusicAnnounceCard, musicFromContent, stopCommand } from './Music';
+import { BotTag, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
@@ -937,6 +937,8 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const mentions = useRef<MentionPickerHandle>(null);
+  const slash = useRef<SlashPickerHandle>(null);
+  const [searching, setSearching] = useState(0);
   const [caret, setCaret] = useState(0);
   const myPerms = useLine((s) => permsOf(s, channel.serverId, s.me?.id));
   const canSend = hasPerm(myPerms, Perm.SendMessages);
@@ -1120,16 +1122,24 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     const play = !gif && channel.serverId ? /^\/play(?:\s+(.+))?$/i.exec(text.trim()) : null;
     if (play) {
       if (!play[1]) return toast('Use /play [link do YouTube ou nome da música]');
-      setSending(true);
+      // Libera a caixa na hora; o aviso do bot fica acima dela até a música ser encontrada.
+      setText('');
+      setSearching((n) => n + 1);
       try {
         await api.musicPlay(channel.id, play[1]);
-        setText('');
       } catch (e) {
         showError(e);
       } finally {
-        setSending(false);
-        ref.current?.focus();
+        setSearching((n) => n - 1);
       }
+      return;
+    }
+    // /pular, /pausar, /voltar: controles da música (quem não é o DJ vota).
+    const ctl = !gif && channel.serverId ? /^\/(pular|skip|pausar|pause|voltar|back)\s*$/i.exec(text.trim()) : null;
+    if (ctl) {
+      const k = ctl[1]!.toLowerCase();
+      const action = k === 'pular' || k === 'skip' ? 'skip' : k === 'voltar' || k === 'back' ? 'prev' : 'pause';
+      if (controlCommand(channel.serverId!, action)) setText('');
       return;
     }
     const mass = !gif && channel.serverId ? massMention(content) : null;
@@ -1168,6 +1178,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (mentions.current?.onKeyDown(e)) return;
+    if (slash.current?.onKeyDown(e)) return;
     if (e.key === 'ArrowUp' && !text && !pending.length && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent('line:edit-last', { detail: channel.id }));
@@ -1182,7 +1193,23 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   return (
     <div className="shrink-0 px-4 pb-2">
       {notice && <p className="mb-1.5 px-1 text-xs font-semibold text-sun">{notice}</p>}
+      {searching > 0 && <MusicSearching serverId={channel.serverId} />}
       <div className="relative rounded-xl bg-raise">
+        {canSend && (
+          <SlashPicker
+            ref={slash}
+            serverId={channel.serverId}
+            text={text}
+            onPick={(insert) => {
+              setText(insert);
+              setCaret(insert.length);
+              requestAnimationFrame(() => {
+                ref.current?.focus();
+                ref.current?.setSelectionRange(insert.length, insert.length);
+              });
+            }}
+          />
+        )}
         {canSend && (
           <MentionPicker
             ref={mentions}
