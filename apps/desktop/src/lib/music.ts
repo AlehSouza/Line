@@ -200,7 +200,8 @@ function current(): LiveMusic | null {
 
 function reconcile() {
   const st = current();
-  if (!st) {
+  // Sem sessão, ou fila acabou (o bot fica no canal esperando o próximo /play): silêncio.
+  if (!st || !st.tracks[st.index]) {
     if (player && playerReady && loadedUid) {
       try {
         player.stopVideo();
