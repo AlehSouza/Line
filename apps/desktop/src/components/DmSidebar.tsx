@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { actions, dmTitle, useLine } from '@/lib/store';
 import { Avatar, cx, Icons } from './ui';
 import { confirmDialog, showError } from './Dialogs';
+import { useIncomingCount } from './FriendsView';
 
 export function DmSidebar() {
   const view = useLine((s) => s.view);
@@ -15,7 +16,7 @@ export function DmSidebar() {
   const unread = useLine((s) => s.unread);
   const dms = useLine(useShallow((s) => s.dmOrder.map((id) => s.channels[id]!).filter(Boolean)));
   const activeDm = view.kind === 'home' ? view.dmId : null;
-  const pending = useLine((s) => Object.values(s.friends).filter((f) => f.state === 'incoming').length);
+  const pending = useIncomingCount();
 
   return (
     <div className="flex h-full flex-col">
@@ -52,7 +53,7 @@ export function DmSidebar() {
           )}
         >
           <Icons.Mail />
-          <span className="flex-1 truncate text-left">Solicitações de amizade</span>
+          <span className="flex-1 truncate text-left">Solicitações</span>
           {pending > 0 && (
             <span className="rounded-full bg-danger px-1.5 text-xs leading-5 font-bold text-white">{pending}</span>
           )}

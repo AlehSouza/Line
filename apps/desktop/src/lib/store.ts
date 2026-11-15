@@ -368,7 +368,7 @@ export const actions = {
     if (dmId) actions.markRead(dmId);
   },
 
-  /** Página "Solicitações de amizade" (abaixo de Amigos). */
+  /** Página "Solicitações" (abaixo de Amigos). */
   goRequests() {
     set({ view: { kind: 'home', dmId: null, page: 'requests' }, threadId: null });
   },
