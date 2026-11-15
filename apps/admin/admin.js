@@ -1,8 +1,11 @@
-// Painel administrador do Line (useline.tech/admin). Sem build: JavaScript puro.
-// Usa a mesma API do app (/api/admin/*); o servidor só responde para as contas admin.
+// Painel administrador do Line (admin.useline.tech). Sem build: JavaScript puro.
+// O Caddy deste subdomínio repassa só o login e /api/admin/* para o servidor do Line,
+// que responde apenas para as contas admin.
 'use strict';
 
-const TOKEN_KEY = 'line.token'; // mesma chave do app web: quem já entrou em /app entra direto
+const TOKEN_KEY = 'line.admin.token';
+/** Domínio principal: o "Entrar com Google" começa e volta por lá. */
+const MAIN = location.hostname.startsWith('admin.') ? `${location.protocol}//${location.host.slice(6)}` : '';
 const $ = (sel) => document.querySelector(sel);
 
 // ---------- utilidades ----------
@@ -175,12 +178,7 @@ $('#login-form').addEventListener('submit', async (e) => {
     });
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error(data?.message || `Erro ${res.status}`);
-    token = data.token;
-    try {
-      localStorage.setItem(TOKEN_KEY, token);
-    } catch {
-      /* sem localStorage: vale só nesta aba */
-    }
+    saveToken(data.token);
     boot();
   } catch (err) {
     $('#login-error').textContent = err.message;
@@ -197,7 +195,49 @@ $('#logout').addEventListener('click', () => {
   showLogin();
 });
 
+function saveToken(t) {
+  token = t;
+  try {
+    localStorage.setItem(TOKEN_KEY, t);
+  } catch {
+    /* sem localStorage: vale só nesta aba */
+  }
+}
+
+/** Volta do Google: ?google=<código de uso único> vira o token. */
+async function googleReturn() {
+  const qs = new URLSearchParams(location.search);
+  const code = qs.get('google');
+  const err = qs.get('googleError');
+  if (!code && !err) return '';
+  history.replaceState(null, '', location.pathname + location.hash);
+  if (err) return err;
+  try {
+    const res = await fetch('/api/auth/google/finish', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, desktop: true }) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return data?.message || `Erro ${res.status}`;
+    saveToken(data.token);
+    return '';
+  } catch {
+    return 'Não deu para falar com o servidor.';
+  }
+}
+
+async function setupGoogle() {
+  try {
+    const cfg = await (await fetch('/api/auth/config')).json();
+    if (!cfg.google) return;
+    const btn = $('#google');
+    btn.href = `${MAIN}/api/auth/google/start?admin=1`;
+    btn.hidden = false;
+  } catch {
+    /* sem Google */
+  }
+}
+
 async function boot() {
+  const err = await googleReturn();
+  if (err) return showLogin(err);
   if (!token) return showLogin();
   try {
     const me = await api('GET', '/admin/me');
@@ -790,4 +830,5 @@ async function log() {
   );
 }
 
+setupGoogle();
 boot();

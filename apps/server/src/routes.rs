@@ -391,6 +391,7 @@ async fn google_start(State(app): S, headers: HeaderMap, Query(qs): Query<HashMa
     let google = app.google.as_ref().ok_or_else(google_disabled)?;
     let target = match qs.get("port").and_then(|p| p.parse::<u16>().ok()) {
         Some(port) if port >= 1024 => crate::google::Target::Desktop(port),
+        _ if qs.contains_key("admin") => crate::google::Target::Admin,
         _ => crate::google::Target::Web,
     };
     // Reaproveita o cookie se já existir (duas abas fazendo login ao mesmo tempo continuam valendo).
