@@ -327,6 +327,7 @@ export const Icons = {
   More: icon(L.Ellipsis),
   MoreVertical: icon(L.EllipsisVertical),
   Music: icon(L.Music),
+  Mail: icon(L.Mail),
   Copy: icon(L.Copy),
   ArrowLeft: icon(L.ArrowLeft),
   ZoomIn: icon(L.ZoomIn),

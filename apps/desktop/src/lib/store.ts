@@ -4,7 +4,7 @@ import { ALL_PERMS, hasPerm, Perm, type Category, type Channel, type Friend, typ
 import { create } from 'zustand';
 
 export type View =
-  | { kind: 'home'; dmId: string | null }
+  | { kind: 'home'; dmId: string | null; page?: 'requests' }
   | { kind: 'server'; serverId: string; channelId: string | null }
   | { kind: 'discover' };
 
@@ -366,6 +366,11 @@ export const actions = {
   goHome(dmId: string | null = null) {
     set({ view: { kind: 'home', dmId }, threadId: null });
     if (dmId) actions.markRead(dmId);
+  },
+
+  /** Página "Solicitações de amizade" (abaixo de Amigos). */
+  goRequests() {
+    set({ view: { kind: 'home', dmId: null, page: 'requests' }, threadId: null });
   },
 
   goServer(serverId: string, channelId?: string | null) {

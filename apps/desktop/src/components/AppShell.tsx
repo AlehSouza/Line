@@ -8,7 +8,7 @@ import { ChannelSidebar } from './ChannelSidebar';
 import { ChatView, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
-import { FriendsView } from './FriendsView';
+import { FriendRequestsView, FriendsView } from './FriendsView';
 import { MembersDrawer, ServerSidePanel } from './MemberList';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
@@ -58,7 +58,7 @@ export function AppShell() {
 
   let main;
   if (view.kind === 'discover') main = <DiscoverView />;
-  else if (view.kind === 'home' && !view.dmId) main = <FriendsView />;
+  else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : <FriendsView />;
   else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
   else if (channel) main = <ChatView channel={channel} />;
   else main = <EmptyServer />;
