@@ -10,12 +10,34 @@
 <meta property="og:image" content="/site/icon.png">
 <link rel="icon" type="image/png" href="/site/favicon.png">
 <style>
+@font-face {
+  font-family: 'Geist';
+  src: url('/site/fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('/site/fonts/Geist-Italic-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/site/fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
   :root {
     --rail: #0a0a0c; --side: #111114; --main: #16161a; --raise: #1d1d22; --hover: #24242a; --edge: #2b2b32;
     --fg: #ededf0; --soft: #b5b5bf; --muted: #84848f;
     --accent: #7c6af2; --accent-strong: #6a57e6; --sun: #f5c451; --online: #3fbf7f; --danger: #f2555a;
-    --font: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-    --mono: 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+    --font: 'Geist', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'Geist Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }

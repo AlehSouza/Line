@@ -1,5 +1,29 @@
 @import 'tailwindcss';
 
+/* Fonte Geist (Vercel, licença OFL) empacotada no app para funcionar offline. */
+@font-face {
+  font-family: 'Geist';
+  src: url('./fonts/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist';
+  src: url('./fonts/Geist-Italic-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('./fonts/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
 /*
  * Identidade visual do Line: grafite neutro (cinzas quase pretos) com destaque violeta.
  * Todas as cores vêm daqui; troque estes tokens para criar outros temas.
@@ -24,8 +48,8 @@
   --color-dnd: #f2555a;
   --color-offline: #6e6e78;
 
-  --font-sans: 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
+  --font-sans: 'Geist', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Geist Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', Menlo, monospace;
 }
 
 html,
