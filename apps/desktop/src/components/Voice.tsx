@@ -25,6 +25,7 @@ import {
   setScreenQuality,
   setScreenVolume,
   setWatching,
+  requestStageFocus,
   startCamera,
   switchCamera,
   switchScreen,
@@ -500,6 +501,13 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   useEffect(() => {
     if (firstScreen) setFocus((f) => f ?? firstScreen);
   }, [firstScreen]);
+  // Veio do mini player: abre com aquela tela em destaque.
+  const stageFocus = useVoice((v) => v.stageFocus);
+  useEffect(() => {
+    if (!stageFocus) return;
+    setFocus(stageFocus);
+    requestStageFocus(null);
+  }, [stageFocus]);
   const focused = tiles.find((t) => t.key === focus);
   const [aspect, setAspect] = useState<number | null>(null);
   useEffect(() => setAspect(null), [focus]);
@@ -614,6 +622,62 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- mini player ----------
+
+/**
+ * Assistindo a uma transmissão e fui para outro canal: a tela continua num quadro pequeno no canto
+ * superior direito. Clicar volta para o canal de voz com ela em destaque.
+ */
+export function MiniStream({ viewingChannelId }: { viewingChannelId: string | null }) {
+  const myChannel = useVoice((v) => (v.connecting ? null : v.channelId));
+  const watching = useVoice((v) => v.watching);
+  const states = useVoice((v) => v.states);
+  const streams = useVoice((v) => v.streams);
+  const users = useLine((s) => s.users);
+  const [closed, setClosed] = useState<string | null>(null);
+  if (!myChannel || viewingChannelId === myChannel) return null;
+  const target = Object.keys(watching).find((uid) => {
+    const st = states[uid];
+    return watching[uid] && st?.channelId === myChannel && st.screenStreamId && streams[st.screenStreamId];
+  });
+  if (!target) return null;
+  const state = states[target]!;
+  const stream = streams[state.screenStreamId!]!;
+  // Fechei este mini player: só volta numa transmissão nova.
+  if (closed === state.screenStreamId) return null;
+  const name = displayNameIn(useLine.getState(), state.serverId, target) || users[target]?.displayName || 'alguém';
+  const open = () => {
+    requestStageFocus(`screen:${target}`);
+    if (state.serverId) actions.goServer(state.serverId, state.channelId);
+    else actions.goHome(state.channelId);
+  };
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      title="Voltar para a transmissão"
+      onClick={open}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && open()}
+      className="group absolute top-16 right-4 z-30 aspect-video w-80 cursor-pointer overflow-hidden rounded-xl border border-edge bg-black shadow-2xl max-md:hidden"
+    >
+      <Video stream={stream} contain />
+      <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
+        <Icons.Screen size={12} /> Tela de {name}
+      </span>
+      <button
+        title="Fechar"
+        onClick={(e) => {
+          e.stopPropagation();
+          setClosed(state.screenStreamId ?? null);
+        }}
+        className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 text-white hover:bg-black/80 group-hover:block"
+      >
+        <Icons.X size={14} />
+      </button>
     </div>
   );
 }

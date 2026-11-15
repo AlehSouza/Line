@@ -161,6 +161,8 @@ export interface VoiceStore {
   screenQuality: ScreenQuality;
   /** Sobe quando troco a câmera ou a tela sem parar (mesmo stream, trilha nova): a prévia recarrega. */
   mediaRev: number;
+  /** Quadro a pôr em destaque quando a tela da chamada abrir (ex.: clique no mini player). */
+  stageFocus: string | null;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -184,6 +186,7 @@ export const useVoice = create<VoiceStore>(() => ({
   speaking: {},
   error: null,
   mediaRev: 0,
+  stageFocus: null,
   ...loadPrefs(),
 }));
 
@@ -529,6 +532,11 @@ export function toggleScreenMute(userId: string) {
 }
 
 /** Assistir / sair da transmissão de alguém. Avisa quem transmite, que passa a mandar (ou para de mandar) a tela só para mim. */
+/** Pede para a tela da chamada abrir com este quadro em destaque ("screen:<id>" ou "person:<id>"). */
+export function requestStageFocus(key: string | null) {
+  setV({ stageFocus: key });
+}
+
 export function setWatching(userId: string, on: boolean) {
   if (!!getV().watching[userId] !== on) playCallSound(on ? 'enter_in_transmission' : 'left_transmission');
   setV((v) => ({ watching: { ...v.watching, [userId]: on } }));
