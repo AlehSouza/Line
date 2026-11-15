@@ -61,8 +61,6 @@ interface VoicePrefs {
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
-  /** Sobe quando troco a câmera ou a tela sem parar (mesmo stream, trilha nova): a prévia recarrega. */
-  mediaRev: number;
 }
 
 const PREFS_KEY = 'line.voice';
@@ -159,6 +157,8 @@ export interface VoiceStore {
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
+  /** Sobe quando troco a câmera ou a tela sem parar (mesmo stream, trilha nova): a prévia recarrega. */
+  mediaRev: number;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
