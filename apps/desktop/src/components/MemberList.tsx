@@ -7,6 +7,7 @@ import { actions, useLine } from '@/lib/store';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { Avatar, cx, ListSkeleton } from './ui';
 import { BotTag, MusicPlayer } from './Music';
+import { UserTagBadge } from './ServerTag';
 
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
@@ -55,6 +56,7 @@ export function MemberList({ serverId }: { serverId: string }) {
               <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: colorOf(m.roleIds) }}>
                 {m.nickname || m.user.displayName}
                 {m.user.bot && <BotTag />}
+                <UserTagBadge user={m.user} />
                 {m.userId === ownerId && (
                   <span title="Dono do servidor" className="text-sun">
                     ★

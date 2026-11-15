@@ -610,6 +610,11 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             return Err(bad_request("Imagem inválida"));
         }
     }
+    if let Some(Some(server_id)) = &p.tag_server_id
+        && !q.server(server_id).is_some_and(|s| !s.tag.is_empty() && q.is_member(server_id, &me))
+    {
+        return Err(bad_request("Esse servidor não tem tag"));
+    }
     let user = q.update_user(
         &me,
         ProfilePatch {
@@ -627,6 +632,7 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
             thought: p.thought,
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
+            tag_server_id: p.tag_server_id,
         },
     );
     app.to_user(&me, "self:update", &user);
@@ -786,6 +792,7 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let q = app.store.q();
     require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
+    let before_tag = q.server(&id).map(|s| s.tag).unwrap_or_default();
     for img in [&p.icon_id, &p.banner_id].into_iter().flatten().flatten() {
         if !q.own_image(&me, img) {
             return Err(bad_request("Imagem inválida"));
@@ -798,11 +805,22 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             description: p.description,
             is_public: p.is_public,
             icon_color: p.icon_color,
+            tag: p.tag,
             icon_id: p.icon_id,
             banner_id: p.banner_id,
         },
     );
     app.server_updated(&q, &server);
+    if before_tag != server.tag {
+        // Quem exibe a tag precisa aparecer com a nova (ou sem nenhuma).
+        for user_id in q.tag_users(&id) {
+            if let Some(public) = q.public_user(&user_id) {
+                let mut to = q.audience_of(&user_id);
+                to.push(user_id.clone());
+                app.to_users(&to, "user:update", &public);
+            }
+        }
+    }
     ok(server)
 }
 
@@ -1434,6 +1452,7 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             thought: p.thought,
             avatar_id: p.avatar_id,
             banner_id: p.banner_id,
+            tag_server_id: None,
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;

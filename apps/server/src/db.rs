@@ -231,6 +231,11 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (category_id, role_id)
   );
 "#,
+    // Tag do servidor (estilo tag de clã) e a tag que cada pessoa escolheu exibir.
+    r#"
+  ALTER TABLE servers ADD COLUMN tag TEXT NOT NULL DEFAULT '';
+  ALTER TABLE users ADD COLUMN tag_server_id TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

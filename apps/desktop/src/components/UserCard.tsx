@@ -7,7 +7,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, fileUrl } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { Avatar, Button, cx, ErrorText, Icons, presenceLabel } from './ui';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
+import { UserTagBadge } from './ServerTag';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 
@@ -40,7 +41,6 @@ export function UserCard({
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -139,22 +139,23 @@ export function UserCard({
                 <Icons.Clock size={17} />
               </TopButton>
             )}
+            {isMe ? (
+              <TopButton
+                title="Editar perfil"
+                onClick={() => {
+                  onClose();
+                  actions.openModal({ kind: 'settings', section: 'profile' });
+                }}
+              >
+                <Icons.Edit size={17} />
+              </TopButton>
+            ) : (
             <span className="relative">
               <TopButton title="Mais" onClick={() => setMenu((v) => !v)}>
                 <Icons.More size={17} />
               </TopButton>
               {menu && (
                 <div className="absolute top-full right-0 z-10 mt-1.5 w-52 rounded-lg border border-edge bg-side p-1 shadow-xl">
-                  <MenuItem
-                    icon={<Icons.Copy size={16} />}
-                    onClick={() => {
-                      void navigator.clipboard?.writeText(user.username);
-                      setCopied(true);
-                      window.setTimeout(() => setCopied(false), 1500);
-                    }}
-                  >
-                    {copied ? 'Copiado!' : 'Copiar nome de usuário'}
-                  </MenuItem>
                   {!isMe && state === 'friends' && (
                     <MenuItem
                       danger
@@ -189,6 +190,7 @@ export function UserCard({
                 </div>
               )}
             </span>
+            )}
           </div>
         </div>
 
@@ -206,8 +208,9 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 truncate text-xl leading-tight font-bold" style={{ color: `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))` }}>
-            {user.displayName}
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))` }}>
+            <span className="truncate">{user.displayName}</span>
+            <UserTagBadge user={user} />
           </p>
           <p className="truncate text-sm text-soft">
             {user.username}
@@ -247,16 +250,6 @@ export function UserCard({
           {isMe ? (
             <div className="mt-4 space-y-2">
               <StatusPicker status={me.status} until={me.statusUntil ?? null} onPick={(st, m) => void setStatus(st, m)} />
-              <Button
-                variant="subtle"
-                className="w-full"
-                onClick={() => {
-                  onClose();
-                  actions.openModal({ kind: 'settings', section: 'profile' });
-                }}
-              >
-                <Icons.Edit size={16} /> Editar perfil
-              </Button>
             </div>
           ) : state === 'blocked' ? (
             <p className="mt-4 rounded-lg bg-side/70 px-3 py-2 text-sm text-muted">Você bloqueou essa pessoa.</p>
@@ -378,7 +371,7 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
       <div className="mt-2 flex items-center gap-3">
         <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-edge bg-rail">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full object-cover" /> : <span className="text-sm font-bold">{server.name.slice(0, 2)}</span>}
+          {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full object-cover" /> : <DefaultServerIcon />}
         </span>
         <span className="min-w-0">
           <span className="flex items-center gap-1.5 truncate text-sm font-semibold">

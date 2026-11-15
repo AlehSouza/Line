@@ -7,7 +7,7 @@ import type { Server } from '@line/shared';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions } from '@/lib/store';
-import { Button, Icons, initials, Input, Skeleton } from './ui';
+import { Button, DefaultServerIcon, Icons, Input, Skeleton } from './ui';
 import { showError } from './Dialogs';
 
 export function DiscoverView() {
@@ -100,15 +100,14 @@ export function DiscoverView() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={fileUrl(s.bannerUrl)} alt="" className="h-16 w-full object-cover" />
             ) : (
-              <div className="h-16" style={{ background: `linear-gradient(135deg, ${s.iconColor}, transparent)` }} />
+              <div className="h-16 bg-gradient-to-br from-raise to-transparent" />
             )}
             <div className="-mt-7 flex flex-1 flex-col gap-2 px-4 pb-4">
               <span
                 className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[17px] text-lg font-bold text-rail ring-4 ring-side"
-                style={{ background: s.iconColor }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {s.iconUrl ? <img src={fileUrl(s.iconUrl)} alt="" className="h-full w-full object-cover" /> : initials(s.name)}
+                {s.iconUrl ? <img src={fileUrl(s.iconUrl)} alt="" className="h-full w-full object-cover" /> : <DefaultServerIcon />}
               </span>
               <h3 className="font-bold">{s.name}</h3>
               <p className="line-clamp-3 flex-1 text-sm text-muted">{s.description || 'Sem descrição.'}</p>

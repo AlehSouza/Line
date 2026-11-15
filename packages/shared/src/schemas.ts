@@ -32,6 +32,7 @@ export const updateProfileSchema = z.object({
   thought: z.string().max(80).nullable().optional(),
   avatarId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
+  tagServerId: z.string().nullable().optional(),
 });
 
 export const createServerSchema = z.object({
@@ -42,6 +43,7 @@ export const createServerSchema = z.object({
 
 export const updateServerSchema = createServerSchema.partial().extend({
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  tag: z.string().max(4).optional(),
   iconId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
 });

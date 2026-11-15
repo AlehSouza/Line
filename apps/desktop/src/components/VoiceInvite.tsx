@@ -182,8 +182,10 @@ export function VoiceInviteModal({
       subtitle={`Os convidados vão cair direto em 🔊 ${channel.name}`}
       onClose={onClose}
       width={480}
+      fixedBody
     >
-      <div className="space-y-3">
+      {/* Só a lista de amigos rola; busca e código de convite ficam fixos. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="relative">
           <Icons.Search
             size={16}
@@ -200,7 +202,7 @@ export function VoiceInviteModal({
         <p className="text-xs font-semibold text-muted">
           Amigos e membros do servidor
         </p>
-        <div className="-mx-2 max-h-[38vh] space-y-0.5 overflow-y-auto">
+        <div className="-mx-2 max-h-[38vh] min-h-0 space-y-0.5 overflow-y-auto">
           {shown.length === 0 && (
             <p className="px-2 py-3 text-sm text-muted">Ninguém encontrado.</p>
           )}

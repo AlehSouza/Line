@@ -33,6 +33,17 @@ export function Logo({ size = 28 }: { size?: number }) {
   );
 }
 
+/** Ícone padrão de servidor sem imagem: o logo do Line acinzentado, ocupando todo o espaço. */
+export function DefaultServerIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden className={cx('h-full w-full', className)}>
+      <rect width="32" height="32" fill="#4a4a54" />
+      <path d="M8 19c3-6 6-6 8-3s5 3 8-3" stroke="#d6d6de" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <circle cx="24" cy="10" r="2.4" fill="#d6d6de" opacity="0.7" />
+    </svg>
+  );
+}
+
 const presenceColor: Record<Presence, string> = {
   online: 'bg-online',
   idle: 'bg-idle',

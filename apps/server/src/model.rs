@@ -18,6 +18,15 @@ pub struct PublicUser {
     pub thought: Option<String>,
     /// Bot (ex.: o de música do servidor).
     pub bot: bool,
+    /// Tag de servidor que a pessoa escolheu exibir ao lado do nome.
+    pub tag: Option<UserTag>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserTag {
+    pub server_id: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -38,6 +47,8 @@ pub struct Server {
     pub name: String,
     pub description: String,
     pub icon_color: String,
+    /// Tag de identificação (até 4 caracteres); vazia = sem tag.
+    pub tag: String,
     pub icon_url: Option<String>,
     pub banner_url: Option<String>,
     pub owner_id: String,

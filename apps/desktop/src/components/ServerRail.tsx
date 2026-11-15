@@ -10,7 +10,7 @@ import { api, fileUrl } from '@/lib/api';
 import { actions, permsOf, useLine } from '@/lib/store';
 import { useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
-import { Avatar, cx, Icons, initials, Logo } from './ui';
+import { Avatar, cx, DefaultServerIcon, Icons, Logo } from './ui';
 import { confirmDialog } from './Dialogs';
 
 export function ServerRail() {
@@ -55,7 +55,6 @@ export function ServerRail() {
           label={server.name}
           active={view.kind === 'server' && view.serverId === server.id}
           dot={serverHasUnread(server.id)}
-          color={server.iconUrl ? undefined : server.iconColor}
           onClick={() => actions.goServer(server.id)}
           onContextMenu={(e) => openContextMenu(e, serverMenu(server.id))}
           voice={inVoice[server.id]}
@@ -65,7 +64,9 @@ export function ServerRail() {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full rounded-[inherit] object-cover" />
           ) : (
-            <span className="text-sm font-bold text-rail">{initials(server.name)}</span>
+            <span className="h-full w-full overflow-hidden rounded-[inherit]">
+              <DefaultServerIcon />
+            </span>
           )}
         </RailItem>
       ))}

@@ -63,6 +63,8 @@ pub struct UserRow {
     pub thought: Option<String>,
     /// Bot de música: o servidor a que ele pertence.
     pub bot_server_id: Option<String>,
+    /// Servidor cuja tag a pessoa exibe.
+    pub tag_server_id: Option<String>,
 }
 
 impl UserRow {
@@ -84,11 +86,12 @@ impl UserRow {
             pronouns: r.get("pronouns").unwrap_or_default(),
             thought: r.get("thought").unwrap_or(None),
             bot_server_id: r.get("bot_server_id").unwrap_or(None),
+            tag_server_id: r.get("tag_server_id").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
@@ -115,6 +118,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         name: r.get("name")?,
         description: r.get("description")?,
         icon_color: r.get("icon_color")?,
+        tag: r.get("tag").unwrap_or_default(),
         icon_url: image_url(r, "icon_id", "icon_filename"),
         banner_url: image_url(r, "banner_id", "banner_filename"),
         owner_id: r.get("owner_id")?,
@@ -202,6 +206,7 @@ pub struct ProfilePatch {
     pub thought: Option<Option<String>>,
     pub avatar_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
+    pub tag_server_id: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -210,6 +215,7 @@ pub struct ServerPatch {
     pub description: Option<String>,
     pub is_public: Option<bool>,
     pub icon_color: Option<String>,
+    pub tag: Option<String>,
     pub icon_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
 }
@@ -326,7 +332,27 @@ impl Q<'_> {
             pronouns: row.pronouns.clone(),
             thought: if presence == "offline" { None } else { row.thought.clone() },
             bot: row.bot_server_id.is_some(),
+            tag: row.tag_server_id.as_deref().and_then(|s| self.user_tag(&row.id, s)),
         }
+    }
+
+    /// A tag do servidor, se ele ainda tem uma e a pessoa ainda é membro.
+    fn user_tag(&self, user_id: &str, server_id: &str) -> Option<UserTag> {
+        let text: Option<String> = ok(self
+            .c
+            .query_row(
+                "SELECT s.tag FROM servers s JOIN members m ON m.server_id = s.id AND m.user_id = ?
+                 WHERE s.id = ? AND s.tag != ''",
+                [user_id, server_id],
+                |r| r.get(0),
+            )
+            .optional());
+        text.map(|text| UserTag { server_id: server_id.to_string(), text })
+    }
+
+    /// Quem exibe a tag deste servidor (para avisar quando ela muda).
+    pub fn tag_users(&self, server_id: &str) -> Vec<String> {
+        self.ids("SELECT id FROM users WHERE tag_server_id = ?", [server_id])
     }
 
     fn profile_image_url(&self, attachment_id: &str) -> String {
@@ -577,6 +603,9 @@ impl Q<'_> {
         if let Some(v) = patch.banner_id {
             set("banner_id", opt(v));
         }
+        if let Some(v) = patch.tag_server_id {
+            set("tag_server_id", opt(v));
+        }
         if !sets.is_empty() {
             values.push(id.to_string().into());
             ok(self.c.execute(
@@ -694,12 +723,13 @@ impl Q<'_> {
     pub fn update_server(&self, id: &str, patch: ServerPatch) -> Server {
         let s = self.server(id).unwrap();
         ok(self.c.execute(
-            "UPDATE servers SET name = ?, description = ?, is_public = ?, icon_color = ? WHERE id = ?",
+            "UPDATE servers SET name = ?, description = ?, is_public = ?, icon_color = ?, tag = ? WHERE id = ?",
             params![
                 patch.name.unwrap_or(s.name),
                 patch.description.unwrap_or(s.description),
                 patch.is_public.unwrap_or(s.is_public) as i64,
                 patch.icon_color.unwrap_or(s.icon_color),
+                patch.tag.unwrap_or(s.tag),
                 id
             ],
         ));
@@ -1396,6 +1426,7 @@ impl Q<'_> {
                         pronouns: String::new(),
                         thought: None,
                         bot: false,
+                        tag: None,
                     },
                     content: r.get("content")?,
                     created_at: r.get("m_created_at")?,
