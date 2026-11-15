@@ -98,6 +98,8 @@ EnvironmentFile=-/etc/line/giphy.env
 EnvironmentFile=-/etc/line/smtp.env
 # GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET: "Entrar com Google".
 EnvironmentFile=-/etc/line/google.env
+# ADMIN_USERS: ids das contas com acesso ao painel useline.tech/admin (separados por vírgula).
+EnvironmentFile=-/etc/line/admin.env
 ExecStart=/opt/line/line-server
 Restart=always
 RestartSec=2
@@ -145,6 +147,16 @@ $DOMAIN {
 		root * /opt/line/site
 		file_server
 	}
+	# Painel administrador (o CI envia apps/admin para /opt/line/admin). A API /api/admin/* só
+	# responde para as contas em ADMIN_USERS.
+	redir /admin /admin/
+	handle_path /admin/* {
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		header Cache-Control "no-cache"
+		header X-Robots-Tag "noindex, nofollow"
+		root * /opt/line/admin
+		file_server
+	}
 	# App web completo em /app/ (o servidor entrega a interface em /).
 	redir /app /app/
 	handle_path /app/* {
@@ -159,12 +171,16 @@ CADDY
 echo "==> Pasta de atualizações do app"
 # Usuário sem privilégios que o CI usa para enviar os arquivos (chave pública em /etc/line/deploy.pub).
 id line-deploy >/dev/null 2>&1 || useradd --create-home --shell /bin/bash line-deploy
-install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates /opt/line/site
+install -d -o line-deploy -g line-deploy -m 755 /opt/line/updates /opt/line/site /opt/line/admin
 # O CI também publica o app web (mesmo build do desktop) a cada merge.
 chown -R line-deploy:line-deploy /opt/line/web
 # Primeira instalação: coloca o site da branch já baixada (depois o CI mantém atualizado).
 if [ ! -f /opt/line/site/index.html ] && [ -f "$SRC/apps/site/index.html" ]; then
   cp -r "$SRC/apps/site/." /opt/line/site/ && chown -R line-deploy:line-deploy /opt/line/site
+fi
+# Painel admin: sempre a versão do código instalado (o CI também atualiza a cada merge).
+if [ -f "$SRC/apps/admin/index.html" ]; then
+  cp -r "$SRC/apps/admin/." /opt/line/admin/ && chown -R line-deploy:line-deploy /opt/line/admin
 fi
 if [ -f /etc/line/deploy.pub ]; then
   install -d -o line-deploy -g line-deploy -m 700 /home/line-deploy/.ssh
@@ -239,6 +255,17 @@ Persistent=true
 WantedBy=timers.target
 UNIT
 
+# Admin do painel: na primeira vez, a conta mais antiga (a do dono do Line). Para trocar, edite
+# /etc/line/admin.env (ADMIN_USERS=<id>[,<id>]) e rode systemctl restart line.
+if [ ! -f /etc/line/admin.env ] && [ -f /var/lib/line/line.db ]; then
+  FIRST="$(sqlite3 /var/lib/line/line.db "SELECT id || ' ' || username FROM users WHERE bot_server_id IS NULL ORDER BY created_at LIMIT 1" || true)"
+  if [ -n "$FIRST" ]; then
+    echo "ADMIN_USERS=${FIRST%% *}" > /etc/line/admin.env
+    chmod 640 /etc/line/admin.env && chgrp line /etc/line/admin.env
+    echo "    Painel admin liberado para @${FIRST#* } (${FIRST%% *})"
+  fi
+fi
+[ -f /etc/line/admin.env ] && echo "    Admins do painel: $(cat /etc/line/admin.env)"
 systemctl daemon-reload
 systemctl enable --now line-backup.timer >/dev/null
 systemctl enable --now line.service

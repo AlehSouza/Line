@@ -365,6 +365,7 @@ async fn voice_join(
                 .unwrap_or(!v.is_null() && v != &json!(0) && v != &json!(""))
         })
     };
+    q.log_activity("voice_join", &me, channel.server_id.as_deref());
     let state = lock(&app.voice).join(
         &me,
         s.id,

@@ -65,6 +65,13 @@ pub struct MusicRegistry {
     sessions: HashMap<String, Session>,
 }
 
+impl MusicRegistry {
+    /// Quantos canais têm música tocando agora (painel admin).
+    pub fn playing_count(&self) -> usize {
+        self.sessions.values().filter(|s| !s.paused && s.current().is_some()).count()
+    }
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

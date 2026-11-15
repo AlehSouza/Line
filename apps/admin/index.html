@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Line Admin</title>
+    <link rel="icon" href="/site/favicon.png" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <div id="login" class="login" hidden>
+      <form id="login-form" class="login-card">
+        <div class="brand"><span class="logo">L</span> Line <span class="tag">admin</span></div>
+        <p class="muted">Acesso restrito ao administrador do Line.</p>
+        <label>Usuário<input name="username" autocomplete="username" required /></label>
+        <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
+        <p id="login-error" class="error"></p>
+        <button class="btn primary" type="submit">Entrar</button>
+        <p class="muted small">Se você já entrou no app web (useline.tech/app) neste navegador, o painel usa a mesma sessão.</p>
+      </form>
+    </div>
+
+    <div id="shell" class="shell" hidden>
+      <aside class="side">
+        <div class="brand"><span class="logo">L</span> Line <span class="tag">admin</span></div>
+        <nav id="nav">
+          <a data-page="overview">Visão geral</a>
+          <a data-page="users">Usuários</a>
+          <a data-page="servers">Servidores</a>
+          <a data-page="reports">Denúncias <span class="badge" id="badge-reports"></span></a>
+          <a data-page="feedback">Bugs e melhorias <span class="badge" id="badge-feedback"></span></a>
+          <a data-page="log">Registro</a>
+        </nav>
+        <div class="side-foot">
+          <span id="me" class="muted small"></span>
+          <button id="logout" class="btn ghost small">Sair</button>
+        </div>
+      </aside>
+      <main id="main" class="main"></main>
+    </div>
+
+    <div id="drawer" class="drawer" hidden>
+      <div class="drawer-back" data-close></div>
+      <section class="drawer-panel" id="drawer-panel"></section>
+    </div>
+    <div id="dialog" class="dialog" hidden></div>
+    <div id="toast" class="toast" hidden></div>
+    <script src="admin.js"></script>
+  </body>
+</html>

@@ -250,6 +250,59 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE servers ADD COLUMN tag_icon TEXT NOT NULL DEFAULT '';
 "#,
+    // Painel administrador: suspensão de contas, denúncias/bug reports, log das ações do admin,
+    // contagem de uso (entradas em chamadas, músicas tocadas) e a tabela da recuperação de senha
+    // (que faltava nas migrações).
+    r#"
+  ALTER TABLE users ADD COLUMN banned_until TEXT;
+  ALTER TABLE users ADD COLUMN ban_reason TEXT;
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at    TEXT
+  );
+  CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id);
+  CREATE TABLE reports (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    reporter_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_user_id  TEXT,
+    message_id      TEXT,
+    channel_id      TEXT,
+    server_id       TEXT,
+    message_content TEXT,
+    reason          TEXT NOT NULL DEFAULT '',
+    details         TEXT NOT NULL DEFAULT '',
+    platform        TEXT NOT NULL DEFAULT '',
+    version         TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'open',
+    note            TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    resolved_at     TEXT,
+    resolved_by     TEXT
+  );
+  CREATE INDEX reports_status ON reports(status, created_at);
+  CREATE TABLE admin_log (
+    id         TEXT PRIMARY KEY,
+    admin_id   TEXT NOT NULL,
+    action     TEXT NOT NULL,
+    target     TEXT NOT NULL DEFAULT '',
+    detail     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE activity (
+    kind       TEXT NOT NULL,
+    user_id    TEXT,
+    server_id  TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX activity_kind ON activity(kind, created_at);
+  CREATE INDEX messages_created ON messages(created_at);
+  CREATE INDEX users_created ON users(created_at);
+  CREATE INDEX messages_author ON messages(author_id);
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

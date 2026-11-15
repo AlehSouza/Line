@@ -164,7 +164,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             "/api/health",
             get(|| async { Json(json!({ "ok": true, "name": "line", "version": VERSION })) }),
         )
-        .nest("/api", api)
+        .nest("/api", api.merge(crate::admin::router()))
         .fallback(web_fallback)
         .with_state(app)
         .layer(socket_layer)
@@ -257,7 +257,7 @@ async fn get_media(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, S
 }
 
 /// IP de quem chamou, como o Caddy informa. Sem o cabeçalho (acesso direto, testes), não limita.
-fn client_ip(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn client_ip(headers: &HeaderMap) -> Option<String> {
     let v = headers.get("x-forwarded-for")?.to_str().ok()?;
     v.split(',').next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
@@ -343,11 +343,27 @@ async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     if !valid {
         return Err(fail());
     }
+    suspended(&app, &row.id)?;
     let user = app.store.q().to_self_user(&row);
     ok(AuthResponse {
         token: app.tokens.sign(&row.id),
         user,
     })
+}
+
+/// Conta suspensa pelo admin: o login avisa até quando e o motivo.
+fn suspended(app: &App, user_id: &str) -> ApiResult<()> {
+    let Some((until, reason)) = app.store.q().ban_of(user_id) else { return Ok(()) };
+    let when = if until.as_str() >= crate::store::BAN_FOREVER {
+        "Sua conta foi suspensa.".to_string()
+    } else {
+        let br = chrono::DateTime::parse_from_rfc3339(&until)
+            .map(|d| (d.with_timezone(&chrono::Utc) - chrono::Duration::hours(3)).format("%d/%m/%Y às %H:%M").to_string())
+            .unwrap_or(until);
+        format!("Sua conta está suspensa até {br}.")
+    };
+    let why = if reason.is_empty() { String::new() } else { format!(" Motivo: {reason}") };
+    Err(ApiError::new(StatusCode::FORBIDDEN, "ACCOUNT_SUSPENDED", format!("{when}{why}")))
 }
 
 fn google_disabled() -> ApiError {
@@ -471,6 +487,7 @@ async fn google_finish(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let user_id = google
         .take_code(input.code.trim(), cookie(&headers, crate::google::COOKIE).as_deref(), input.desktop)
         .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?;
+    suspended(&app, &user_id)?;
     let user = app.store.q().self_user(&user_id).ok_or_else(|| validation("Conta não encontrada"))?;
     ok(AuthResponse {
         token: app.tokens.sign(&user_id),
@@ -855,7 +872,7 @@ async fn reset_invite(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res 
     ok(server)
 }
 
-fn remove_from_server(app: &App, q: &Q, server_id: &str, user_id: &str) {
+pub(crate) fn remove_from_server(app: &App, q: &Q, server_id: &str, user_id: &str) {
     app.drop_voice(
         q,
         VoiceFilter {
@@ -1446,6 +1463,7 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
             let start = crate::embeds::youtube_id(u);
             if let Some(items) = crate::music::playlist(&list, start.as_deref()).await {
                 crate::music::play_items(&app, &me, &id, items, true).map_err(|e| bad_request(&e))?;
+                log_music(&app, &me, &id);
                 return no_content();
             }
             if start.is_none() {
@@ -1460,7 +1478,15 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
             .ok_or_else(|| bad_request("Não achei nenhum vídeo no YouTube com esse nome"))?,
     };
     crate::music::play(&app, &me, &id, video).await.map_err(|e| bad_request(&e))?;
+    log_music(&app, &me, &id);
     no_content()
+}
+
+/// Conta o /play para o painel admin.
+fn log_music(app: &App, me: &str, channel_id: &str) {
+    let q = app.store.q();
+    let server_id = q.channel(channel_id).and_then(|c| c.server_id);
+    q.log_activity("music_play", me, server_id.as_deref());
 }
 
 async fn get_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
