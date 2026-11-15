@@ -138,6 +138,16 @@ export interface LinkEmbed {
 }
 
 export const api = {
+  /** Bug report, sugestão ou denúncia (cai no painel administrador). */
+  report: (input: {
+    kind: 'bug' | 'idea' | 'user' | 'message';
+    targetUserId?: string;
+    messageId?: string;
+    reason?: string;
+    details?: string;
+    platform?: string;
+    version?: string;
+  }) => request<{ id: string }>('POST', '/reports', input),
   health: () => request<{ ok: boolean; name: string }>('GET', '/health'),
   register: (username: string, password: string, displayName?: string, email?: string, captchaToken?: string) =>
     request<AuthResponse>('POST', '/auth/register', { username, password, displayName, email, captchaToken }),

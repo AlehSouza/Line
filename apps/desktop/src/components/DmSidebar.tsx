@@ -58,6 +58,13 @@ export function DmSidebar() {
             <span className="rounded-full bg-danger px-1.5 text-xs leading-5 font-bold text-white">{pending}</span>
           )}
         </button>
+        <button
+          onClick={() => actions.openModal({ kind: 'report' })}
+          className="flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium text-muted hover:bg-hover hover:text-soft"
+        >
+          <Icons.Bug />
+          <span className="flex-1 truncate text-left">Bugs e melhorias</span>
+        </button>
 
         <div className="flex items-center justify-between px-2 pt-4 pb-1">
           <span className="text-xs font-bold tracking-wide text-muted uppercase">Mensagens diretas</span>

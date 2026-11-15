@@ -2,6 +2,7 @@
 //!
 //! Usado de dois jeitos: como binário (`line-server`) e embutido no app desktop (Tauri),
 //! que sobe o servidor junto com a janela.
+pub mod admin;
 pub mod auth;
 pub mod captcha;
 pub mod gifs;
@@ -68,6 +69,11 @@ pub struct App {
     /// (cada um pode ocupar até 50 MB de memória).
     pub media_requests: captcha::SignupLimiter,
     pub media_slots: tokio::sync::Semaphore,
+    /// Contas com acesso ao painel administrador (ADMIN_USERS: ids das contas, separados por vírgula).
+    pub admins: Vec<String>,
+    /// Pedidos ao painel admin por IP e denúncias/bug reports por usuário.
+    pub admin_requests: captcha::SignupLimiter,
+    pub report_requests: captcha::SignupLimiter,
 }
 
 /// Servidor TURN (coturn com `use-auth-secret`): gera credenciais temporárias por usuário.
@@ -257,6 +263,14 @@ pub fn build(
         upload_quota: limits::ByteQuota::new(UPLOAD_QUOTA, std::time::Duration::from_secs(24 * 60 * 60)),
         media_requests: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(10 * 60)),
         media_slots: tokio::sync::Semaphore::new(4),
+        admins: std::env::var("ADMIN_USERS")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        admin_requests: captcha::SignupLimiter::with(600, std::time::Duration::from_secs(10 * 60)),
+        report_requests: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(60 * 60)),
     });
     let _ = cell.set(app.clone());
     gateway::register(&io);
@@ -286,8 +300,14 @@ impl App {
     /// (troca de senha pelo email, login com Google que tomou a conta de volta).
     pub fn user_from_token(&self, token: &str) -> Option<String> {
         let (user_id, iat) = self.tokens.verify_claims(token)?;
-        let after = self.store.q().sessions_after(&user_id)?;
-        (iat >= after).then_some(user_id)
+        // Conta suspensa pelo admin também não entra.
+        let (after, banned) = self.store.q().session_gate(&user_id)?;
+        (iat >= after && banned.is_none()).then_some(user_id)
+    }
+
+    /// A conta tem acesso ao painel administrador? Só pelo id (nome de usuário pode mudar de dono).
+    pub fn is_admin(&self, user_id: &str) -> bool {
+        self.admins.iter().any(|a| a == user_id)
     }
 
     /// Apaga do disco os arquivos que não pertencem mais a nenhum anexo

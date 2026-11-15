@@ -26,6 +26,8 @@ export type Modal =
   | { kind: 'image'; url: string; filename: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }
   | { kind: 'voice-status'; channelId: string }
+  /** Bug/sugestão (sem alvo) ou denúncia de usuário/mensagem. */
+  | { kind: 'report'; target?: { userId: string; messageId?: string; preview?: string } }
   | null;
 
 interface MessageBucket {

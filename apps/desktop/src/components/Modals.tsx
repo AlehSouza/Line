@@ -6,6 +6,7 @@ import { ProfileEditor } from './ProfileEditor';
 import { NicknameDialog, ServerSettings } from './ServerSettings';
 import { UserCard } from './UserCard';
 import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
+import { ReportModal } from './ReportModal';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
@@ -57,6 +58,8 @@ export function Modals() {
       return <VoiceInviteModal serverId={modal.serverId} channelId={modal.channelId} onClose={close} />;
     case 'voice-status':
       return <VoiceStatusModal channelId={modal.channelId} onClose={close} />;
+    case 'report':
+      return <ReportModal target={modal.target} onClose={close} />;
   }
 }
 

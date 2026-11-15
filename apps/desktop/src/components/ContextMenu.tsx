@@ -272,5 +272,11 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
     },
     !isBot && 'sep',
     !isBot && id('Copiar ID do usuário', userId),
+    !isMe && !isBot && {
+      label: 'Denunciar usuário',
+      icon: <Icons.Flag size={15} />,
+      danger: true,
+      onClick: () => actions.openModal({ kind: 'report', target: { userId } }),
+    },
   ];
 }

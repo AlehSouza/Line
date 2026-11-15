@@ -525,6 +525,16 @@ function MessageRow({
           'sep',
           !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(plain) },
           { label: 'Copiar ID da mensagem', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(message.id) },
+          !mine && !message.author.bot && {
+            label: 'Denunciar mensagem',
+            icon: <Icons.Flag size={15} />,
+            danger: true,
+            onClick: () =>
+              actions.openModal({
+                kind: 'report',
+                target: { userId: message.author.id, messageId: message.id, preview: plain || message.attachments[0]?.filename },
+              }),
+          },
           canDelete && 'sep',
           canDelete && {
             label: 'Apagar mensagem',

@@ -299,6 +299,9 @@ jobs:
           # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
           scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \
             || echo "Sem /opt/line/site na VPS: rode o install.sh de novo para ativar o site."
+          # Painel administrador (useline.tech/admin). Precisa da pasta criada pelo install.sh.
+          scp -i ~/.ssh/deploy -r apps/admin/* "line-deploy@$HOST:/opt/line/admin/" \
+            || echo "Sem /opt/line/admin na VPS: rode o install.sh de novo para ativar o painel."
           # App web (useline.tech/app): sai junto com o desktop, mesma versão. Os arquivos novos
           # entram por cima; o index.html vai por último para nunca apontar para um arquivo que falta.
           if tar czf - -C web --exclude=./index.html . | ssh -i ~/.ssh/deploy "line-deploy@$HOST" "tar xzf - -C /opt/line/web" \
