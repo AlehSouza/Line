@@ -124,7 +124,7 @@ export function UserCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
           <div className="absolute top-2.5 right-2.5 flex gap-1.5">
-            {!isMe && !state && (
+            {!isMe && !user.bot && !state && (
               <TopButton title="Adicionar amigo" onClick={() => run(async () => actions.upsertFriend(await api.addFriend(user.username)))}>
                 <Icons.UserPlus size={17} />
               </TopButton>
@@ -149,7 +149,7 @@ export function UserCard({
               >
                 <Icons.Edit size={17} />
               </TopButton>
-            ) : (
+            ) : user.bot ? null : (
             <span className="relative">
               <TopButton title="Mais" onClick={() => setMenu((v) => !v)}>
                 <Icons.More size={17} />
@@ -197,7 +197,11 @@ export function UserCard({
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
           <div className="-mt-12 flex items-start gap-2">
-            <span className="shrink-0 rounded-full border-[5px] border-rail bg-rail">
+            {/* Borda de 4px na cor do próprio cartão (sem o anel escuro que parecia sombra). */}
+            <span
+              className="shrink-0 rounded-full border-4"
+              style={{ borderColor: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))`, background: `color-mix(in srgb, ${user.avatarColor} 20%, var(--color-rail))` }}
+            >
               <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={88} presence={presence} ring="rail" dotSize={20} />
             </span>
             {user.thought && (
@@ -251,7 +255,7 @@ export function UserCard({
             <div className="mt-4 space-y-2">
               <StatusPicker status={me.status} until={me.statusUntil ?? null} onPick={(st, m) => void setStatus(st, m)} />
             </div>
-          ) : state === 'blocked' ? (
+          ) : user.bot ? null : state === 'blocked' ? (
             <p className="mt-4 rounded-lg bg-side/70 px-3 py-2 text-sm text-muted">Você bloqueou essa pessoa.</p>
           ) : (
             <form

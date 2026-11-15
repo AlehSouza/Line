@@ -1881,6 +1881,9 @@ async fn add_friend(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if target.id == me {
         return Err(bad_request("Você não pode adicionar a si mesmo"));
     }
+    if target.bot_server_id.is_some() {
+        return Err(bad_request("Não dá para adicionar um bot como amigo"));
+    }
     let result = q.request_friend(&me, &target.id);
     if matches!(result, FriendRequest::Blocked) {
         return Err(bad_request("Não foi possível enviar o pedido para essa pessoa"));
