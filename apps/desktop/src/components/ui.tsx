@@ -298,6 +298,7 @@ export const Icons = {
   Logout: icon(L.LogOut),
   Link: icon(L.Link),
   Check: icon(L.Check),
+  Palette: icon(L.Palette),
   Message: icon(L.MessageCircle),
   Search: icon(L.Search),
   Mic: icon(L.Mic),
