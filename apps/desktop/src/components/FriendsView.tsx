@@ -10,7 +10,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { useMusic } from '@/lib/music';
-import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
+import { joinVoice, leaveVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Input, presenceLabel } from './ui';
 import { confirmDialog, showError } from './Dialogs';
 import { openContextMenu, openMenuAt, type MenuEntry } from './ContextMenu';
@@ -459,10 +459,16 @@ function ActiveNow({ friends }: { friends: Friend[] }) {
 }
 
 function ActiveList({ friends }: { friends: Friend[] }) {
-  // Cada cartão decide sozinho se tem algo para mostrar; contamos quantos aparecem para o vazio.
   const states = useVoice((s) => s.states);
-  const any = friends.some((f) => states[f.user.id] || f.user.customStatus || f.user.thought);
-  if (!any)
+  // Amigos no mesmo canal de voz (mesma música / mesma chamada) ficam juntos num cartão só.
+  const groups = new Map<string, PublicUser[]>();
+  const solo: PublicUser[] = [];
+  for (const f of friends) {
+    const vs = states[f.user.id];
+    if (vs) groups.set(vs.channelId, [...(groups.get(vs.channelId) ?? []), f.user]);
+    else if (f.user.customStatus || f.user.thought) solo.push(f.user);
+  }
+  if (!groups.size && !solo.length)
     return (
       <div className="pt-6 text-center">
         <p className="font-semibold">Tudo calmo por enquanto…</p>
@@ -473,28 +479,53 @@ function ActiveList({ friends }: { friends: Friend[] }) {
     );
   return (
     <>
-      {friends.map((f) => (
-        <ActiveCard key={f.user.id} user={f.user} />
+      {[...groups.entries()].map(([channelId, people]) => (
+        <ActiveCard key={channelId} people={people} />
+      ))}
+      {solo.map((u) => (
+        <ActiveCard key={u.id} people={[u]} />
       ))}
     </>
   );
 }
 
-function ActiveCard({ user }: { user: PublicUser }) {
+function names(people: PublicUser[]) {
+  if (people.length === 1) return people[0]!.displayName;
+  if (people.length === 2) return `${people[0]!.displayName} e ${people[1]!.displayName}`;
+  return `${people[0]!.displayName}, ${people[1]!.displayName} e mais ${people.length - 2}`;
+}
+
+function ActiveCard({ people }: { people: PublicUser[] }) {
+  const user = people[0]!;
   const activity = useActivity(user);
   const users = useLine((s) => s.users);
   const myChannel = useVoice((s) => s.channelId);
   const status = user.customStatus || user.thought;
   if (!activity && !status) return null;
+  const group = people.length > 1;
+  const ids = new Set(people.map((p) => p.id));
+  const others = activity ? activity.with.filter((id) => !ids.has(id)) : [];
   const open = (e: React.MouseEvent) =>
     actions.openModal({ kind: 'user', userId: user.id, at: { x: e.clientX, y: e.clientY } });
+  const inside = !!activity?.channelId && myChannel === activity.channelId;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-edge bg-side" onContextMenu={(e) => openContextMenu(e, friendMenu(user))}>
-      <button onClick={open} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-hover">
-        <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={32} presence={user.presence} ring="side" />
+    <div
+      className="overflow-hidden rounded-xl border border-edge bg-side"
+      onContextMenu={group ? undefined : (e) => openContextMenu(e, friendMenu(user))}
+    >
+      <button onClick={group ? undefined : open} className={cx('flex w-full items-center gap-3 px-3 py-2.5 text-left', !group && 'hover:bg-hover')}>
+        {group ? (
+          <span className="flex shrink-0 -space-x-2.5">
+            {people.slice(0, 3).map((p) => (
+              <Avatar key={p.id} name={p.displayName} color={p.avatarColor} src={p.avatarUrl} size={32} ring="side" />
+            ))}
+          </span>
+        ) : (
+          <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={32} presence={user.presence} ring="side" />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold">{user.displayName}</p>
+          <p className="truncate font-semibold">{names(people)}</p>
           <p className="truncate text-xs text-muted">{activity ? activity.line : status}</p>
         </div>
       </button>
@@ -506,26 +537,33 @@ function ActiveCard({ user }: { user: PublicUser }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{activity.title}</p>
             {activity.detail && <p className="truncate text-xs text-muted">{activity.detail}</p>}
-            {activity.with.length > 0 && (
+            {others.length > 0 && (
               <div className="mt-1 flex -space-x-1.5">
-                {activity.with.slice(0, 5).map((id) => {
+                {others.slice(0, 5).map((id) => {
                   const u = users[id];
                   return u ? <Avatar key={id} name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={18} ring="side" /> : null;
                 })}
-                {activity.with.length > 5 && <span className="pl-2.5 text-xs text-muted">+{activity.with.length - 5}</span>}
+                {others.length > 5 && <span className="pl-2.5 text-xs text-muted">+{others.length - 5}</span>}
               </div>
             )}
           </div>
-          {activity.channelId && activity.serverId && myChannel !== activity.channelId && (
-            <Button
-              variant="subtle"
-              onClick={() => {
-                actions.goServer(activity.serverId!, activity.channelId!);
-                void joinVoice(activity.channelId!);
-              }}
-            >
-              Entrar
+          {inside ? (
+            <Button variant="subtle" className="hover:text-danger" onClick={() => void leaveVoice()}>
+              Sair
             </Button>
+          ) : (
+            activity.channelId &&
+            activity.serverId && (
+              <Button
+                variant="subtle"
+                onClick={() => {
+                  actions.goServer(activity.serverId!, activity.channelId!);
+                  void joinVoice(activity.channelId!);
+                }}
+              >
+                Entrar
+              </Button>
+            )
           )}
         </div>
       )}
