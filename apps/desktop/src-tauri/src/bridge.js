@@ -56,6 +56,17 @@
         return internals ? internals.invoke('update_run') : Promise.reject(new Error('indisponível'));
       },
     },
+    /** Iniciar com o computador. get() devolve null quando não dá (versão da Store). */
+    startup: {
+      get: () => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('startup_get') : Promise.resolve(null);
+      },
+      set: (enabled, minimized) => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('startup_set', { enabled, minimized }) : Promise.reject(new Error('indisponível'));
+      },
+    },
     window: {
       minimize: () => void invoke('window_minimize'),
       toggleMaximize: () => invoke('window_toggle_maximize'),
