@@ -213,11 +213,23 @@ pub async fn screen_start(id: String, fps: u32, audio: bool, height: Option<u32>
         }
         "screen" => {
             let d = content.displays().into_iter().find(|d| d.display_id() == raw).ok_or("tela não encontrada")?;
-            let filter = SCContentFilter::create()
-                .with_display(&d)
-                .with_excluding_windows(&[])
-                .build()
-                .map_err(|e| e.to_string())?;
+            // Tira o próprio Line do áudio (vozes da chamada, sons, música): o WKWebView toca pelo
+            // processo de mídia do WebKit, que o excludes_current_process_audio não pega. As janelas
+            // do Line continuam na imagem (exceção abaixo).
+            let me = std::process::id() as i32;
+            let apps: Vec<_> = content.applications().into_iter().filter(|a| a.process_id() == me).collect();
+            let wins: Vec<_> = content
+                .windows()
+                .into_iter()
+                .filter(|w| w.owning_application().is_some_and(|a| a.process_id() == me))
+                .collect();
+            let builder = SCContentFilter::create().with_display(&d).with_excluding_windows(&[]);
+            let builder = if apps.is_empty() {
+                builder
+            } else {
+                builder.with_excluding_applications(&apps.iter().collect::<Vec<_>>(), &wins.iter().collect::<Vec<_>>())
+            };
+            let filter = builder.build().map_err(|e| e.to_string())?;
             let s = filter.point_pixel_scale().max(1.0) as f64;
             (filter, d.width() as f64 * s, d.height() as f64 * s)
         }

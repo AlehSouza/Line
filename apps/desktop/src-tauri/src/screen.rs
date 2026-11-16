@@ -288,7 +288,7 @@ pub async fn screen_start(
     let slot_size = largest_frame() * 9 / 8;
     let size = (HEADER + SLOTS * slot_size) as u64;
 
-    let (tx, rx) = mpsc::channel::<Result<usize, String>>();
+    let (tx, rx) = mpsc::channel::<Result<(usize, u32), String>>();
     window
         .with_webview(move |pw| {
             let res = (|| unsafe {
@@ -308,12 +308,15 @@ pub async fn screen_start(
                 core.PostSharedBufferToScript(&buffer, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, &HSTRING::from(extra))
                     .map_err(|e| e.to_string())?;
                 BUFFER.with(|b| *b.borrow_mut() = Some(buffer));
-                Ok(ptr as usize)
+                // Processo principal do WebView2: é ele (e os filhos dele) que tocam o som do Line.
+                let mut browser_pid = 0u32;
+                let _ = core.BrowserProcessId(&mut browser_pid);
+                Ok((ptr as usize, browser_pid))
             })();
             let _ = tx.send(res);
         })
         .map_err(|e| e.to_string())?;
-    let ptr = tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(5)))
+    let (ptr, browser_pid) = tauri::async_runtime::spawn_blocking(move || rx.recv_timeout(Duration::from_secs(5)))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|_| "o WebView2 não respondeu".to_string())??;
@@ -345,7 +348,9 @@ pub async fn screen_start(
     // Áudio: do app da janela (e filhos), ou do sistema todo menos o Line.
     let (target_pid, include) = match &item {
         Item::Window(w) => (w.process_id().unwrap_or(0), true),
-        Item::Monitor(_) => (std::process::id(), false),
+        // O som do Line (vozes, sons, música) sai dos processos do WebView2, que nem sempre ficam
+        // na árvore do Line.exe: exclui a árvore do navegador do WebView2 (o Line.exe não toca nada).
+        Item::Monitor(_) => (if browser_pid != 0 { browser_pid } else { std::process::id() }, false),
     };
 
     let started = match item {
