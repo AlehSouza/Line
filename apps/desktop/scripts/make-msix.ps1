@@ -6,6 +6,8 @@ param(
   [Parameter(Mandatory)] [string] $IdentityName,
   [Parameter(Mandatory)] [string] $Publisher,
   [Parameter(Mandatory)] [string] $PublisherName,
+  # Nome reservado na Partner Center; precisa ser igual. No menu Iniciar o app continua "Line".
+  [string] $DisplayName = "Line",
   [string] $Release = "target/release",
   [string] $Out = "target/release/bundle/msix"
 )
@@ -28,7 +30,7 @@ Copy-Item (Join-Path $msix "Assets/*") (Join-Path $stage "Assets")
 $v = "$Version.0"
 $xml = Get-Content (Join-Path $msix "AppxManifest.xml") -Raw
 $esc = { param($s) [System.Security.SecurityElement]::Escape($s) }
-$xml = $xml.Replace("{{IDENTITY_NAME}}", (& $esc $IdentityName)).Replace("{{PUBLISHER}}", (& $esc $Publisher)).Replace("{{PUBLISHER_NAME}}", (& $esc $PublisherName)).Replace("{{VERSION}}", $v).Replace("{{EXE}}", $exe)
+$xml = $xml.Replace("{{IDENTITY_NAME}}", (& $esc $IdentityName)).Replace("{{PUBLISHER}}", (& $esc $Publisher)).Replace("{{PUBLISHER_NAME}}", (& $esc $PublisherName)).Replace("{{DISPLAY_NAME}}", (& $esc $DisplayName)).Replace("{{VERSION}}", $v).Replace("{{EXE}}", $exe)
 Set-Content -Path (Join-Path $stage "AppxManifest.xml") -Value $xml -Encoding UTF8
 
 $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" | Sort-Object FullName -Descending | Select-Object -First 1
