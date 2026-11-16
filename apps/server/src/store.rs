@@ -420,6 +420,7 @@ impl Q<'_> {
             status_until: row.status_until.clone(),
             created_at: row.created_at.clone(),
             email: row.email.clone(),
+            has_password: !row.password_hash.is_empty() && row.password_hash != "google",
         }
     }
 

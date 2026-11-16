@@ -159,7 +159,11 @@ pub struct UpdateAccount {
     pub username: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub email: Option<Option<String>>,
+    #[serde(default)]
     pub current_password: String,
+    /// Código de 6 caracteres enviado por email (alternativa à senha atual).
+    #[serde(default)]
+    pub code: String,
 }
 
 impl UpdateAccount {
@@ -175,7 +179,10 @@ impl UpdateAccount {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangePassword {
+    #[serde(default)]
     pub current_password: String,
+    #[serde(default)]
+    pub code: String,
     pub new_password: String,
 }
 

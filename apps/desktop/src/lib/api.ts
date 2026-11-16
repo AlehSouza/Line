@@ -163,10 +163,12 @@ export const api = {
 
   me: () => request<SelfUser>('GET', '/users/@me'),
   updateMe: (patch: UpdateProfileInput) => request<SelfUser>('PATCH', '/users/@me', patch),
-  updateAccount: (patch: { username?: string; email?: string | null; currentPassword: string }) =>
+  updateAccount: (patch: { username?: string; email?: string | null; currentPassword?: string; code?: string }) =>
     request<SelfUser>('PATCH', '/users/@me/account', patch),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    request<{ token: string }>('POST', '/users/@me/password', { currentPassword, newPassword }),
+  changePassword: (proof: { currentPassword?: string; code?: string }, newPassword: string) =>
+    request<{ token: string }>('POST', '/users/@me/password', { ...proof, newPassword }),
+  /** Manda um código de 6 caracteres para o email da conta (confirma sem a senha atual). */
+  sendEmailCode: () => request<void>('POST', '/users/@me/code'),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
