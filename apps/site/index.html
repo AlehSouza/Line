@@ -407,6 +407,7 @@ main { display: block; overflow-x: clip; }
 .card:hover::before, .card:hover::after { opacity: 1; }
 .c-7 { grid-column: span 7; }
 .c-5 { grid-column: span 5; }
+.c-12 { grid-column: 1 / -1; }
 .card h3 { margin: 0; font-size: 21px; font-weight: 650; letter-spacing: -.015em; }
 .card p { margin: 10px 0 0; color: var(--soft); font-size: 16px; max-width: 34em; }
 .card-vis { margin-top: auto; padding-top: 28px; }
@@ -427,16 +428,6 @@ main { display: block; overflow-x: clip; }
 .nolist { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 10px; }
 .nolist li { display: flex; align-items: center; gap: 10px; font-size: 15.5px; }
 .nolist svg { width: 18px; height: 18px; color: var(--online); flex: none; }
-.term { border-radius: 14px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); font: 400 13.5px/1.75 var(--mono); color: #e6e4f0; overflow: hidden; }
-.term-bar { display: flex; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--rule-soft); }
-.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--rule); }
-.term-bar span { margin-left: auto; font-size: 12px; color: var(--muted); }
-.term pre { margin: 0; padding: 14px 16px 18px; min-height: 10.5em; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
-.term .p { color: var(--brand-hi); }
-.term .c { color: var(--muted); }
-.term .ok { color: var(--online); }
-.cur { display: inline-block; width: .6em; height: 1.1em; vertical-align: -.2em; background: #e6e4f0; animation: cur 1s steps(1) infinite; }
-@keyframes cur { 50% { opacity: 0; } }
 .os-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .os-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 20px 8px 16px; border-radius: 16px; background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--rule); font-size: 14px; font-weight: 600; transition: box-shadow .4s, background-color .4s, translate .4s var(--ease); }
 .os-tile svg { width: 30px; height: 30px; color: var(--soft); transition: color .4s; }
@@ -563,7 +554,7 @@ main { display: block; overflow-x: clip; }
   .step-media { display: block; position: relative; height: 440px; margin-top: 28px; }
   .step-media .scene { opacity: 1; scale: 1; filter: none; border-radius: 18px; overflow: hidden; background: var(--a-main); color: var(--a-fg); font-size: 13.5px; line-height: 1.45; box-shadow: 0 0 0 1px rgba(255, 255, 255, .09), 0 30px 70px -30px rgba(76, 59, 212, .6); }
   .bento { grid-template-columns: 1fr; }
-  .c-7, .c-5 { grid-column: auto; }
+  .c-7, .c-5, .c-12 { grid-column: auto; }
   .dl-grid { grid-template-columns: 1fr; max-width: 560px; }
   .faq-grid { grid-template-columns: 1fr; }
   .faq-grid .sec-head { position: static; }
@@ -895,20 +886,7 @@ main { display: block; overflow-x: clip; }
             </ul>
           </div>
         </article>
-        <article class="card c-5 rv">
-          <h3>Seu próprio servidor</h3>
-          <p>Hospede no seu computador ou numa VPS. Tudo fica num único arquivo SQLite, e o backup é copiar uma pasta.</p>
-          <div class="card-vis">
-            <div class="term">
-              <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>servidor</span></div>
-              <pre class="js-term"><span class="p">$</span> PORT=4000 DATA_DIR=./dados ./line-server
-<span class="ok">✓</span> banco em ./dados/line.db
-<span class="ok">✓</span> ouvindo na porta 4000
-<span class="c"># pronto para receber conexões</span></pre>
-            </div>
-          </div>
-        </article>
-        <article class="card c-7 rv" style="--i:1">
+        <article class="card c-12 rv">
           <h3>Em todos os seus computadores</h3>
           <p>Instale no Windows, no macOS ou no Linux, ou use direto no navegador. Sua conta, seus servidores e suas conversas são os mesmos em todos.</p>
           <div class="card-vis">
@@ -1324,20 +1302,6 @@ main { display: block; overflow-x: clip; }
   let osK = 0;
   if (reduce) osTiles[0].classList.add('on');
   else setInterval(() => { if (!osOn()) return; osTiles.forEach((t, i) => t.classList.toggle('on', i === osK)); osK = (osK + 1) % osTiles.length; }, 1400);
-
-  /* Terminal: digita quando aparece. */
-  const term = $('.js-term');
-  if (!reduce) {
-    const lines = term.innerHTML.split('\n');
-    const tio = new IntersectionObserver(async es => {
-      if (!es[0].isIntersecting) return;
-      tio.disconnect();
-      const cmd = lines[0].replace(/<[^>]+>/g, '').slice(2);
-      for (let i = 1; i <= cmd.length; i++) { term.innerHTML = `<span class="p">$</span> ${cmd.slice(0, i)}<span class="cur"></span>`; await sleep(26); }
-      for (let i = 2; i <= lines.length; i++) { await sleep(380); term.innerHTML = lines.slice(0, i).join('\n') + (i === lines.length ? '\n<span class="p">$</span> <span class="cur"></span>' : ''); }
-    }, { threshold: .6 });
-    tio.observe(term);
-  }
 
   // Daqui para baixo: demonstrações que se mexem sozinhas (paradas com reduzir movimento).
 
