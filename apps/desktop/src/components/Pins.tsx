@@ -5,6 +5,7 @@ import type { Channel, Message } from '@line/shared';
 import { api, fileUrl } from '@/lib/api';
 import { jumpToMessage } from '@/lib/session';
 import { mentionsToText, useLine } from '@/lib/store';
+import { StyledName } from '@/lib/nameStyle';
 import { openMenuAt, type MenuEntry } from './ContextMenu';
 import { showError } from './Dialogs';
 import { Avatar, cx, Icons } from './ui';
@@ -106,6 +107,16 @@ export function PinsButton({ channel, canPin }: { channel: Channel; canPin: bool
   }, [open]);
 
   const shown = (items ?? []).filter(isPinned);
+  const members = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
+  const roles = useLine((s) => (channel.serverId ? s.roles[channel.serverId] : undefined));
+  const users = useLine((s) => s.users);
+  // Mesma cor/apelido do chat: cor do bot, senão a do primeiro cargo colorido.
+  const colorOf = (userId: string) => {
+    const botColor = users[userId]?.botStyle?.nameColor;
+    if (botColor) return botColor;
+    const mine = members?.[userId]?.roleIds;
+    return mine?.length ? (roles ?? []).find((r) => r.color && mine.includes(r.id))?.color ?? undefined : undefined;
+  };
 
   return (
     <div ref={box} className="relative">
@@ -138,13 +149,18 @@ export function PinsButton({ channel, canPin }: { channel: Channel; canPin: bool
                   <Avatar name={m.author.displayName} color={m.author.avatarColor} src={m.author.avatarUrl} size={32} />
                   <div className="min-w-0 flex-1">
                     <p className="flex items-baseline gap-2">
-                      <span className="truncate text-sm font-semibold">{m.author.displayName}</span>
+                      <StyledName user={users[m.author.id] ?? m.author} color={colorOf(m.author.id)} className="truncate text-sm font-semibold">
+                        {members?.[m.author.id]?.nickname || m.author.displayName}
+                      </StyledName>
                       <span className="shrink-0 text-[11px] text-muted">{pinnedUntilLabel(m.pinnedUntil)}</span>
                     </p>
-                    <p className="line-clamp-3 text-sm break-words whitespace-pre-wrap text-soft">{summary(m, channel.serverId)}</p>
+                    {!(m.attachments[0]?.contentType.startsWith('video/') && !m.content && !m.poll) && (
+                      <p className="line-clamp-3 text-sm break-words whitespace-pre-wrap text-soft">{summary(m, channel.serverId)}</p>
+                    )}
                     {m.attachments[0]?.contentType.startsWith('image/') && (
                       <img src={fileUrl(m.attachments[0].url)} alt="" className="mt-1 max-h-28 rounded-md object-cover" />
                     )}
+                    {m.attachments[0]?.contentType.startsWith('video/') && <VideoThumb src={fileUrl(m.attachments[0].url)} />}
                   </div>
                   {canPin && (
                     <button
@@ -166,6 +182,31 @@ export function PinsButton({ channel, canPin }: { channel: Channel; canPin: bool
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** Miniatura do vídeo (primeiro quadro) com botão de play, no estilo do player do chat. */
+function VideoThumb({ src }: { src: string }) {
+  const [dur, setDur] = useState<number | null>(null);
+  const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  return (
+    <div className="relative mt-1.5 aspect-video w-full max-w-[280px] overflow-hidden rounded-lg border border-edge bg-black">
+      <video
+        src={`${src}#t=0.1`}
+        preload="metadata"
+        muted
+        playsInline
+        onLoadedMetadata={(e) => Number.isFinite(e.currentTarget.duration) && setDur(e.currentTarget.duration)}
+        className="pointer-events-none h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+      <span className="absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent/90 text-white shadow-lg transition-transform group-hover:scale-110">
+        <Icons.Play size={18} className="ml-0.5 fill-current" />
+      </span>
+      {dur !== null && (
+        <span className="absolute right-1.5 bottom-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[11px] font-medium text-white tabular-nums">{fmt(dur)}</span>
       )}
     </div>
   );
