@@ -11,13 +11,14 @@ import { ActivityPrivacySection, GamesSection } from './Activity';
 import { showError, toast } from './Dialogs';
 import { getTheme, setTheme, THEMES, type ThemeId } from '@/lib/theme';
 
-type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'blocked' | 'games' | 'activity';
+type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'app' | 'blocked' | 'games' | 'activity';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
   { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
+  { id: 'app', label: 'Aplicativo', icon: <Icons.Monitor size={18} />, keywords: 'aplicativo iniciar inicialização computador ligar sistema abrir junto minimizado bandeja windows' },
   { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
   { id: 'games', label: 'Jogos registrados', icon: <Icons.Gamepad size={18} />, keywords: 'jogos apps registrados jogo atual adicionados atividade' },
   { id: 'activity', label: 'Privacidade nas atividades', icon: <Icons.Users size={18} />, keywords: 'jogos apps atividade privacidade compartilhar servidores' },
@@ -37,7 +38,9 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
 
   if (!me) return null;
   const q = query.trim().toLowerCase();
-  const nav = q ? NAV.filter((n) => `${n.label} ${n.keywords}`.toLowerCase().includes(q)) : NAV;
+  // "Aplicativo" só existe no app desktop (no navegador não há o que configurar ali).
+  const all = typeof window !== 'undefined' && window.line?.startup ? NAV : NAV.filter((n) => n.id !== 'app');
+  const nav = q ? all.filter((n) => `${n.label} ${n.keywords}`.toLowerCase().includes(q)) : all;
   const title = NAV.find((n) => n.id === section)!.label;
 
   return (
@@ -146,12 +149,90 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               {section === 'profile' && <ProfileEditor />}
               {section === 'appearance' && <AppearanceSection />}
               {section === 'voice' && <VoiceSettingsPanel />}
+              {section === 'app' && <AppSection />}
               {section === 'blocked' && <BlockedSection />}
               {section === 'games' && <GamesSection />}
               {section === 'activity' && <ActivityPrivacySection />}
             </div>
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-50', on ? 'bg-accent' : 'bg-raise')}
+    >
+      <span className={cx('absolute top-1 h-4 w-4 rounded-full bg-white transition-all', on ? 'left-6' : 'left-1')} />
+    </button>
+  );
+}
+
+/** Configurações → Aplicativo: abrir o Line junto com o computador. */
+function AppSection() {
+  const [s, setS] = useState<{ enabled: boolean; minimized: boolean } | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const mac = typeof window !== 'undefined' && window.line?.platform === 'darwin';
+  const linux = typeof window !== 'undefined' && window.line?.platform === 'linux';
+
+  useEffect(() => {
+    window.line?.startup?.get().then(setS, () => setS(null));
+  }, []);
+
+  const save = async (next: { enabled: boolean; minimized: boolean }) => {
+    const prev = s;
+    setS(next);
+    setBusy(true);
+    try {
+      await window.line?.startup?.set(next.enabled, next.minimized);
+    } catch (e) {
+      setS(prev);
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (s === undefined) return <p className="text-sm text-muted">Carregando…</p>;
+  if (s === null)
+    return (
+      <div>
+        <h2 className="mb-4 text-xl font-bold">Inicialização</h2>
+        <p className="text-sm text-muted">
+          Nesta versão do Line, quem cuida disso é o Windows: abra Configurações do Windows → Aplicativos → Inicialização e ligue o Line.
+        </p>
+      </div>
+    );
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold">Inicialização</h2>
+      <div className="flex items-start gap-6">
+        <div className="flex-1">
+          <p className="font-medium">Abrir o Line ao ligar o computador</p>
+          <p className="text-sm text-muted">O Line abre sozinho quando você entra no {mac ? 'Mac' : linux ? 'computador' : 'Windows'}, e você já fica online.</p>
+        </div>
+        <Toggle on={s.enabled} disabled={busy} label="Abrir o Line ao ligar o computador" onChange={(v) => void save({ ...s, enabled: v })} />
+      </div>
+      <div className={cx('flex items-start gap-6', !s.enabled && 'pointer-events-none opacity-50')}>
+        <div className="flex-1">
+          <p className="font-medium">Começar minimizado</p>
+          <p className="text-sm text-muted">
+            {linux
+              ? 'A janela abre minimizada, sem aparecer na sua frente.'
+              : `A janela não aparece: o Line fica quietinho no ícone da ${mac ? 'barra de menus' : 'bandeja'}. Clique nele para abrir.`}
+          </p>
+        </div>
+        <Toggle on={s.minimized} disabled={busy || !s.enabled} label="Começar minimizado" onChange={(v) => void save({ ...s, minimized: v })} />
       </div>
     </div>
   );

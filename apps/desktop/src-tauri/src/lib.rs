@@ -37,6 +37,78 @@ use screen_linux as screen;
 
 const MAIN: &str = "main";
 
+/// Argumento que o sistema passa quando abre o Line ao ligar o computador.
+const AUTOSTART_ARG: &str = "--autostart";
+
+/// Preferências de "Iniciar com o computador" que o Rust precisa antes de abrir a janela.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+struct StartupPrefs {
+    #[serde(default = "yes")]
+    minimized: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn startup_prefs_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("startup.json"))
+}
+
+fn load_startup_prefs(app: &tauri::AppHandle) -> StartupPrefs {
+    startup_prefs_path(app)
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or(StartupPrefs { minimized: true })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartupState {
+    enabled: bool,
+    minimized: bool,
+}
+
+/// Estado de "Iniciar com o computador". Nada (null) quando não dá: versão da Store, onde
+/// o Windows controla isso sozinho em Configurações > Aplicativos > Inicialização.
+#[tauri::command]
+fn startup_get(app: tauri::AppHandle) -> Option<StartupState> {
+    use tauri_plugin_autostart::ManagerExt;
+    if from_store() {
+        return None;
+    }
+    let enabled = app.autolaunch().is_enabled().unwrap_or(false);
+    Some(StartupState { enabled, minimized: load_startup_prefs(&app).minimized })
+}
+
+#[tauri::command]
+fn startup_set(app: tauri::AppHandle, enabled: bool, minimized: bool) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    if from_store() {
+        return Err("Na versão da Microsoft Store, ative em Configurações do Windows > Aplicativos > Inicialização.".into());
+    }
+    if let Some(path) = startup_prefs_path(&app) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, serde_json::to_vec(&StartupPrefs { minimized }).unwrap_or_default());
+    }
+    let auto = app.autolaunch();
+    let now = auto.is_enabled().unwrap_or(false);
+    let res = match (enabled, now) {
+        (true, _) => auto.enable(),
+        (false, true) => auto.disable(),
+        (false, false) => Ok(()),
+    };
+    res.map_err(|e| format!("Não deu para mudar a inicialização: {e}"))
+}
+
+/// Aberto pelo sistema ao ligar o computador, com "abrir minimizado" ligado?
+fn start_hidden(app: &tauri::AppHandle) -> bool {
+    std::env::args().any(|a| a == AUTOSTART_ARG) && load_startup_prefs(app).minimized
+}
+
 /// Servidor embutido (se subiu). Fica no estado do app para desligar ao sair.
 
 #[tauri::command]
@@ -389,7 +461,21 @@ fn create_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 fn open_main(app: &tauri::AppHandle) {
+    open_main_with(app, false);
+}
+
+/// `hidden`: começa escondida na bandeja (no Linux, sem bandeja, minimizada).
+fn open_main_with(app: &tauri::AppHandle, hidden: bool) {
     match create_window(app) {
+        Ok(window) if hidden => {
+            #[cfg(not(any(windows, target_os = "macos")))]
+            {
+                let _ = window.show();
+                let _ = window.minimize();
+            }
+            #[cfg(any(windows, target_os = "macos"))]
+            let _ = window;
+        }
         // Mostra só depois de carregar, sem piscar branco.
         Ok(window) => {
             let _ = window.show();
@@ -559,6 +645,11 @@ pub fn run() {
             show_main(app);
         }))
         .plugin(tauri_plugin_opener::init())
+        // Iniciar com o computador (Registro no Windows, LaunchAgent no macOS, .desktop no Linux).
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![AUTOSTART_ARG]),
+        ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             request_attention,
@@ -571,6 +662,8 @@ pub fn run() {
             update_install,
             update_run,
             google_login,
+            startup_get,
+            startup_set,
             #[cfg(target_os = "linux")]
             rtc::rtc_attach,
             #[cfg(target_os = "linux")]
@@ -614,6 +707,12 @@ pub fn run() {
             let handle = app.handle().clone();
             #[cfg(any(windows, target_os = "macos"))]
             create_tray(&handle)?;
+            // Aberto ao ligar o computador com "minimizado": fica quieto na bandeja, sem a
+            // janelinha de atualização (dá para conferir depois pelo menu da bandeja).
+            if start_hidden(&handle) {
+                open_main_with(&handle, true);
+                return Ok(());
+            }
             // Windows e macOS: antes de abrir o app, uma janelinha procura atualização,
             // baixa e instala. Sem atualização (ou sem internet), segue direto para o app.
             if cfg!(any(windows, target_os = "macos")) && !cfg!(debug_assertions) && !from_store() {

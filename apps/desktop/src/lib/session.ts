@@ -416,6 +416,10 @@ declare global {
         install: () => Promise<void>;
         run?: () => Promise<void>;
       };
+      startup?: {
+        get: () => Promise<{ enabled: boolean; minimized: boolean } | null>;
+        set: (enabled: boolean, minimized: boolean) => Promise<void>;
+      };
       /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
       nativeScreen?: boolean;
     };
