@@ -5,6 +5,7 @@ import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { fileUrl } from '@/lib/api';
 import { createPortal } from 'react-dom';
+import { ColorPicker } from './ColorPicker';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function cx(...parts: (string | number | false | null | undefined)[]) {
@@ -595,13 +596,13 @@ export function SwatchRow({ value, onChange, noneLabel }: { value: string | null
           aria-label={c}
         />
       ))}
-      <label
+      <ColorPicker
         title="Outra cor"
+        value={value}
+        onChange={onChange}
         className={cx('relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-edge ring-offset-2 ring-offset-side', custom && 'ring-2 ring-fg')}
         style={{ background: custom ? value : 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
-      >
-        <input type="color" value={value ?? '#7c6af2'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
-      </label>
+      />
     </div>
   );
 }
