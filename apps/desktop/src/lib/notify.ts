@@ -54,8 +54,10 @@ export function infoOf(s: LineState, channelId: string): { serverId: string | nu
   return s.channelInfo[channelId] ?? { serverId: null, parentId: null };
 }
 
-export const serverNotify = (s: LineState, serverId: string): ServerNotify => s.notify.servers?.[serverId] ?? {};
-export const channelNotify = (s: LineState, channelId: string): ChannelNotify => s.notify.channels?.[channelId] ?? {};
+// Objeto vazio fixo: seletores do zustand não podem devolver um objeto novo a cada chamada (loop infinito).
+const EMPTY: Readonly<ServerNotify> = Object.freeze({});
+export const serverNotify = (s: LineState, serverId: string): ServerNotify => s.notify.servers?.[serverId] ?? EMPTY;
+export const channelNotify = (s: LineState, channelId: string): ChannelNotify => s.notify.channels?.[channelId] ?? EMPTY;
 
 export const isServerMuted = (s: LineState, serverId: string) => muteActive(s.notify.servers?.[serverId]);
 

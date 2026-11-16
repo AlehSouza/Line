@@ -37,6 +37,9 @@ const useMenu = create<{ menu: MenuState }>(() => ({ menu: null }));
 
 const DEV = process.env.NODE_ENV === 'development';
 
+/** Tem algum menu de clique direito aberto agora? (tooltips somem enquanto ele está aberto). */
+export const useContextMenuOpen = () => useMenu((s) => !!s.menu);
+
 /** Abre um menu do Line no lugar do clique. Use no onContextMenu de cada elemento. */
 export function openContextMenu(e: ReactMouseEvent | MouseEvent, items: MenuEntry[]) {
   if (DEV && e.shiftKey) return;
