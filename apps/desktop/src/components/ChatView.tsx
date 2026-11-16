@@ -22,6 +22,7 @@ import { UserTagBadge } from './ServerTag';
 import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
 import { MobileBack, MobileMembersButton } from './Mobile';
+import { isPinned, openPinMenu, PinnedNote, PinsButton } from './Pins';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -37,6 +38,7 @@ export function ChatView({ channel }: { channel: Channel }) {
   const inCall = useVoice((v) => v.channelId === channel.id);
   const composer = useRef<ComposerHandle>(null);
   const drop = useFileDrop(composer);
+  const canPin = useCan(channel.serverId, Perm.ManageMessages);
 
   useEffect(() => {
     actions.markRead(channel.id);
@@ -66,9 +68,12 @@ export function ChatView({ channel }: { channel: Channel }) {
             <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
           </>
         )}
-        {!isDm && <MobileMembersButton />}
+        <div className="ml-auto flex items-center gap-1">
+          {!channel.id.startsWith('draft:') && <PinsButton channel={channel} canPin={isDm || canPin} />}
+          {!isDm && <MobileMembersButton />}
+        </div>
         {isDm && !inCall && (
-          <div className="ml-auto flex gap-1">
+          <div className="flex gap-1">
             <button title="Iniciar chamada de voz" onClick={() => joinVoice(channel.id)} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
               <Icons.Phone size={20} />
             </button>
@@ -396,6 +401,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 grouped={grouped}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
+                canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages)}
                 editing={editing === m.id}
                 onEdit={() => setEditing(m.id)}
                 onDoneEditing={() => setEditing(null)}
@@ -449,6 +455,7 @@ function MessageRow({
   onDoneEditing,
   myUsername,
   canThread,
+  canPin,
   tight,
 }: {
   highlighted?: boolean;
@@ -465,6 +472,7 @@ function MessageRow({
   onDoneEditing: () => void;
   myUsername?: string;
   canThread: boolean;
+  canPin?: boolean;
   tight?: boolean;
 }) {
   const serverId = useLine((s) => s.channels[message.channelId]?.serverId);
@@ -507,6 +515,7 @@ function MessageRow({
           if (parent) actions.openThreadDraft(parent, message.id, name);
         };
         const plain = message.content ? mentionsToText(message.content, serverId) : '';
+        const menuAt = { x: e.clientX, y: e.clientY };
         openContextMenu(e, [
           { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
           showThreadAction && { label: 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: startThread },
@@ -527,6 +536,11 @@ function MessageRow({
           'sep',
           !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(plain) },
           { label: 'Copiar ID da mensagem', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(message.id) },
+          canPin && {
+            label: isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem',
+            icon: <Icons.Pin size={15} />,
+            onClick: () => openPinMenu(message, menuAt),
+          },
           !mine && !message.author.bot && {
             label: 'Denunciar mensagem',
             icon: <Icons.Flag size={15} />,
@@ -585,6 +599,7 @@ function MessageRow({
             <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
           </div>
         )}
+        <PinnedNote message={message} />
         {missingFeatures(message.requires).length ? (
           <UpdateRequired />
         ) : editing ? (
@@ -694,6 +709,18 @@ function MessageRow({
           {mine && (
             <button title="Editar" onClick={() => { setDraft(mentionsToText(message.content, serverId)); onEdit(); }} className="p-1.5 text-muted hover:text-fg">
               <Icons.Edit size={16} />
+            </button>
+          )}
+          {canPin && (
+            <button
+              title={isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem'}
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                openPinMenu(message, { x: r.right - 208, y: r.bottom + 4 });
+              }}
+              className={cx('p-1.5 hover:text-fg', isPinned(message) ? 'text-accent' : 'text-muted')}
+            >
+              <Icons.Pin size={16} />
             </button>
           )}
           {!mine && !message.author.bot && (

@@ -118,7 +118,7 @@ fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
 fn message_select() -> String {
     format!(
         "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at,
-                m.mention_everyone, m.mention_roles, m.requires
+                m.mention_everyone, m.mention_roles, m.requires, m.pinned_at, m.pinned_until, m.pinned_by
          FROM messages m JOIN users u ON u.id = m.author_id"
     )
 }
@@ -1547,13 +1547,20 @@ impl Q<'_> {
                         .filter(|s| !s.is_empty())
                         .map(String::from)
                         .collect(),
+                    pinned_at: r.get("pinned_at")?,
+                    pinned_until: r.get("pinned_until")?,
+                    pinned_by: r.get("pinned_by")?,
                 };
                 Ok((user, msg))
             }))
             .collect())
         };
+        let now = now_iso();
         rows.into_iter()
             .map(|(u, mut m)| {
+                if m.pinned_until.as_deref().is_some_and(|until| until <= now.as_str()) {
+                    (m.pinned_at, m.pinned_until, m.pinned_by) = (None, None, None);
+                }
                 m.author = self.to_public_user(&u);
                 m.attachments = self.attachments_of(&m.id);
                 m.thread = self.thread_of_message(&m.id);
@@ -1565,6 +1572,33 @@ impl Q<'_> {
                 m
             })
             .collect()
+    }
+
+    /// Fixa (ou muda a duração). `until` None = sempre.
+    pub fn pin_message(&self, id: &str, by: &str, until: Option<&str>) {
+        ok(self.c.execute(
+            "UPDATE messages SET pinned_at = ?, pinned_until = ?, pinned_by = ? WHERE id = ?",
+            params![now_iso(), until, by, id],
+        ));
+    }
+
+    pub fn unpin_message(&self, id: &str) {
+        ok(self.c.execute(
+            "UPDATE messages SET pinned_at = NULL, pinned_until = NULL, pinned_by = NULL WHERE id = ?",
+            [id],
+        ));
+    }
+
+    /// Fixadas que ainda valem, da mais recente para a mais antiga.
+    pub fn pinned_messages(&self, channel_id: &str) -> Vec<Message> {
+        self.message_rows(
+            &format!(
+                "{} WHERE m.channel_id = ? AND m.pinned_at IS NOT NULL AND (m.pinned_until IS NULL OR m.pinned_until > ?)
+                 ORDER BY m.pinned_at DESC LIMIT 100",
+                message_select()
+            ),
+            params![channel_id, now_iso()],
+        )
     }
 
     pub fn message(&self, id: &str) -> Option<Message> {

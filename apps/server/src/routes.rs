@@ -128,6 +128,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/servers/{id}/agent/replies", get(get_bot_replies).put(set_bot_replies))
         .route("/servers/{id}/music/settings", get(get_music_settings).patch(update_music_settings))
         .route("/messages/{id}/poll/votes", post(vote_poll))
+        .route("/messages/{id}/pin", put(pin_message).delete(unpin_message))
+        .route("/channels/{id}/pins", get(list_pins))
         .route(
             "/messages/{id}/reactions/{emoji}",
             put(add_reaction).delete(remove_reaction),
@@ -2028,6 +2030,74 @@ async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     let updated = q.edit_message(&message.id, &input.content);
     app.to_channel(&q, &message.channel_id, "message:update", &updated);
     ok(updated)
+}
+
+/// Quanto tempo uma mensagem pode ficar fixada (minutos): 1h, 5h, 10h, 1 dia, 7 dias, 30 dias.
+/// Sem `minutes` (ou null) = sempre.
+const PIN_MINUTES: [i64; 6] = [60, 300, 600, 1440, 10080, 43200];
+/// Máximo de fixadas ao mesmo tempo por canal.
+const MAX_PINS: usize = 50;
+
+/// Mensagem que `me` pode fixar/desafixar: em servidor precisa de Gerenciar mensagens;
+/// em DM e grupo qualquer participante pode.
+fn pinnable(q: &Q, me: &str, id: &str) -> ApiResult<Message> {
+    let message = q
+        .message(id)
+        .filter(|m| q.can_access(me, &m.channel_id))
+        .ok_or_else(|| not_found("Mensagem"))?;
+    let channel = q.channel(&message.channel_id).ok_or_else(|| not_found("Mensagem"))?;
+    if let Some(server_id) = channel.server_id.as_deref()
+        && !has(q.permissions(server_id, me), perms::MANAGE_MESSAGES)
+    {
+        return Err(forbidden("Você precisa da permissão Gerenciar mensagens para fixar"));
+    }
+    Ok(message)
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PinInput {
+    minutes: Option<i64>,
+}
+
+async fn pin_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input: PinInput = if b.is_empty() {
+        PinInput::default()
+    } else {
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?
+    };
+    let until = match input.minutes {
+        None => None,
+        Some(m) if PIN_MINUTES.contains(&m) => Some(
+            (chrono::Utc::now() + chrono::Duration::minutes(m))
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string(),
+        ),
+        Some(_) => return Err(validation("Duração inválida")),
+    };
+    let q = app.store.q();
+    let message = pinnable(&q, &me, &id)?;
+    if message.pinned_at.is_none() && q.pinned_messages(&message.channel_id).len() >= MAX_PINS {
+        return Err(validation(format!("Esse canal já tem {MAX_PINS} mensagens fixadas. Desafixe alguma antes.")));
+    }
+    q.pin_message(&message.id, &me, until.as_deref());
+    let updated = q.message(&message.id).ok_or_else(|| not_found("Mensagem"))?;
+    app.to_channel(&q, &message.channel_id, "message:update", &updated);
+    ok(updated)
+}
+
+async fn unpin_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let message = pinnable(&q, &me, &id)?;
+    q.unpin_message(&message.id);
+    let updated = q.message(&message.id).ok_or_else(|| not_found("Mensagem"))?;
+    app.to_channel(&q, &message.channel_id, "message:update", &updated);
+    ok(updated)
+}
+
+async fn list_pins(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let channel = require_access(&q, &id, &me)?;
+    ok(q.pinned_messages(&channel.id))
 }
 
 async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {

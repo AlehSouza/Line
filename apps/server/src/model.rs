@@ -175,6 +175,10 @@ pub struct Message {
     /// Recursos que o app precisa conhecer para mostrar esta mensagem (ex.: "poll", "audio").
     /// Se o app não conhecer algum, mostra o aviso para atualizar no lugar do conteúdo.
     pub requires: Vec<String>,
+    /// Fixada no canal: desde quando e até quando (None = sempre). Vencida vira None.
+    pub pinned_at: Option<String>,
+    pub pinned_until: Option<String>,
+    pub pinned_by: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

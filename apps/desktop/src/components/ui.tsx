@@ -371,6 +371,8 @@ export const Icons = {
   Eye: icon(L.Eye),
   Bug: icon(L.Bug),
   Flag: icon(L.Flag),
+  Pin: icon(L.Pin),
+  PinOff: icon(L.PinOff),
 };
 
 /** Bloco de carregamento com brilho animado. */

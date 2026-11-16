@@ -187,6 +187,10 @@ export interface Message {
   reactions?: Reaction[];
   /** Recursos que o app precisa conhecer para mostrar a mensagem (ver `CLIENT_FEATURES`). */
   requires?: string[];
+  /** Fixada no canal: desde quando, até quando (null = sempre) e por quem. */
+  pinnedAt?: string | null;
+  pinnedUntil?: string | null;
+  pinnedBy?: string | null;
 }
 
 export interface Reaction {

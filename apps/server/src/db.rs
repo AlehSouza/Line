@@ -324,6 +324,13 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE servers ADD COLUMN bot_replies TEXT NOT NULL DEFAULT '[]';
   ALTER TABLE users ADD COLUMN bot_ring_color TEXT;
 "#,
+    // Mensagens fixadas: quando, até quando (NULL = sempre) e por quem.
+    r#"
+  ALTER TABLE messages ADD COLUMN pinned_at TEXT;
+  ALTER TABLE messages ADD COLUMN pinned_until TEXT;
+  ALTER TABLE messages ADD COLUMN pinned_by TEXT;
+  CREATE INDEX messages_pinned ON messages(channel_id, pinned_at) WHERE pinned_at IS NOT NULL;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -244,6 +244,10 @@ export const api = {
     request<Message>('DELETE', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
   votePoll: (messageId: string, optionId: string) =>
     request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
+  /** Fixa a mensagem por `minutes` (null = sempre). */
+  pinMessage: (id: string, minutes: number | null) => request<Message>('PUT', `/messages/${enc(id)}/pin`, { minutes }),
+  unpinMessage: (id: string) => request<Message>('DELETE', `/messages/${enc(id)}/pin`),
+  pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
 
