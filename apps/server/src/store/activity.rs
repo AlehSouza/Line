@@ -110,11 +110,13 @@ impl Q<'_> {
         ));
     }
 
-    /// Parou de jogar: soma o tempo da sessão.
+    /// Parou de jogar: soma o tempo da sessão (no total e na semana).
     pub fn game_stopped(&self, user_id: &str, name: &str, secs: i64) {
         ok(self.c.execute(
-            "UPDATE user_games SET total_secs = total_secs + ?3, last_played = ?4 WHERE user_id = ?1 AND name = ?2",
-            params![user_id, name, secs.max(0), now_iso()],
+            "UPDATE user_games SET total_secs = total_secs + ?3, last_played = ?4,
+               week_secs = CASE WHEN week_start = ?5 THEN week_secs + ?3 ELSE ?3 END, week_start = ?5
+             WHERE user_id = ?1 AND name = ?2",
+            params![user_id, name, secs.max(0), now_iso(), week_start()],
         ));
     }
 
@@ -172,19 +174,22 @@ impl Q<'_> {
             .to_string();
         let mut out = vec![];
         let mut st = ok(self.c.prepare_cached(
-            "SELECT g.name, g.icon, g.last_played, g.total_secs, c.cover
+            "SELECT g.name, g.icon, g.last_played, g.total_secs, c.cover,
+               CASE WHEN g.week_start = ?3 THEN g.week_secs ELSE 0 END
              FROM user_games g LEFT JOIN game_covers c ON c.name = lower(g.name)
-             WHERE g.user_id = ? AND g.hidden = 0 AND g.last_played > ? ORDER BY g.last_played DESC LIMIT 1",
+             WHERE g.user_id = ?1 AND g.hidden = 0 AND g.last_played > ?2 ORDER BY g.last_played DESC LIMIT 1",
         ));
+        let week = week_start();
         for id in user_ids {
             let row = ok(st
-                .query_row(params![id, since], |r| {
+                .query_row(params![id, since, week], |r| {
                     Ok(json!({
                         "name": r.get::<_, String>(0)?,
                         "icon": r.get::<_, Option<String>>(1)?,
                         "lastPlayed": r.get::<_, String>(2)?,
                         "totalSecs": r.get::<_, i64>(3)?,
                         "cover": r.get::<_, Option<String>>(4)?,
+                        "weekSecs": r.get::<_, i64>(5)?,
                     }))
                 })
                 .optional());
@@ -199,14 +204,16 @@ impl Q<'_> {
         ok(self
             .c
             .query_row(
-                "SELECT g.icon, g.total_secs, c.cover FROM user_games g LEFT JOIN game_covers c ON c.name = lower(g.name)
-                 WHERE g.user_id = ? AND g.name = ?",
-                [user_id, name],
+                "SELECT g.icon, g.total_secs, c.cover, CASE WHEN g.week_start = ?3 THEN g.week_secs ELSE 0 END
+                 FROM user_games g LEFT JOIN game_covers c ON c.name = lower(g.name)
+                 WHERE g.user_id = ?1 AND g.name = ?2",
+                params![user_id, name, week_start()],
                 |r| {
                     Ok(json!({
                         "icon": r.get::<_, Option<String>>(0)?,
                         "totalSecs": r.get::<_, i64>(1)?,
                         "cover": r.get::<_, Option<String>>(2)?,
+                        "weekSecs": r.get::<_, i64>(3)?,
                     }))
                 },
             )
@@ -232,4 +239,13 @@ impl Q<'_> {
             params![name.to_lowercase(), cover, now_iso()],
         ));
     }
+}
+
+/// Segunda-feira (UTC) da semana atual, "AAAA-MM-DD".
+fn week_start() -> String {
+    use chrono::Datelike;
+    let d = chrono::Utc::now().date_naive();
+    (d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64))
+        .format("%Y-%m-%d")
+        .to_string()
 }

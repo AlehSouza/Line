@@ -91,6 +91,8 @@ export interface ServerActivity {
   icon?: string | null;
   cover?: string | null;
   totalSecs?: number | null;
+  /** Segundos jogados nesta semana (sem a sessão aberta). */
+  weekSecs?: number | null;
 }
 
 export interface MyGame {

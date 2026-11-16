@@ -111,7 +111,7 @@ export function withTone(emoji: string, tone: string): string {
 const RECENT_KEY = 'line:emoji-recentes';
 const RECENT_MAX = 36;
 
-function readRecent(): string[] {
+export function readRecent(): string[] {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]');
     return Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, RECENT_MAX) : [];

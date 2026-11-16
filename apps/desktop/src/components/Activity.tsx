@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, fileUrl, type ActivitySettings, type MyGame, type ServerActivity } from '@/lib/api';
 import { actions, displayNameIn, useLine } from '@/lib/store';
 import { showError } from './Dialogs';
+import { ActivityHoverCard } from './GameCard';
 import { Avatar, cx, DefaultServerIcon, Icons } from './ui';
 
 export function formatPlayed(secs?: number | null) {
@@ -53,6 +54,18 @@ export function ActivitySection({ serverId }: { serverId: string }) {
   const [items, setItems] = useState<ServerActivity[]>([]);
   const users = useLine((s) => s.users);
   const [, tick] = useState(0);
+  const [card, setCard] = useState<{ userId: string; rect: DOMRect } | null>(null);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const hoverOpen = (userId: string, el: HTMLElement) => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setCard({ userId, rect: el.getBoundingClientRect() }), 300);
+  };
+  const hoverClose = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setCard(null), 250);
+  };
+  const keep = () => window.clearTimeout(hoverTimer.current);
+  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
 
   useEffect(() => {
     let alive = true;
@@ -80,6 +93,7 @@ export function ActivitySection({ serverId }: { serverId: string }) {
 
   const shown = items.filter((a) => users[a.userId]);
   if (!shown.length) return null;
+  const open = card && shown.find((a) => a.userId === card.userId);
 
   return (
     <div>
@@ -99,8 +113,16 @@ export function ActivitySection({ serverId }: { serverId: string }) {
           return (
             <button
               key={a.userId}
-              onClick={(e) => actions.openModal({ kind: 'user', userId: a.userId, at: { x: e.clientX, y: e.clientY } })}
-              className="flex w-full items-center gap-2.5 rounded-xl border border-edge bg-rail/60 p-2.5 text-left hover:bg-hover"
+              onMouseEnter={(e) => hoverOpen(a.userId, e.currentTarget)}
+              onMouseLeave={hoverClose}
+              onClick={(e) => {
+                window.clearTimeout(hoverTimer.current);
+                setCard({ userId: a.userId, rect: e.currentTarget.getBoundingClientRect() });
+              }}
+              className={cx(
+                'flex w-full items-center gap-2.5 rounded-xl border border-edge bg-rail/60 p-2.5 text-left hover:bg-hover',
+                open?.userId === a.userId && 'bg-hover',
+              )}
             >
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5 text-xs">
@@ -130,6 +152,17 @@ export function ActivitySection({ serverId }: { serverId: string }) {
           );
         })}
       </div>
+      {open && card && (
+        <ActivityHoverCard
+          key={open.userId}
+          activity={open}
+          serverId={serverId}
+          anchor={card.rect}
+          onEnter={keep}
+          onLeave={(busy) => !busy && hoverClose()}
+          onClose={() => setCard(null)}
+        />
+      )}
     </div>
   );
 }
