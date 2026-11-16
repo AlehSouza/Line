@@ -99,6 +99,27 @@
   --color-danger: #ff7a4d;
   --color-dnd: #ff7a4d;
 }
+/* Rosa pastel claro; texto ameixa escuro para bom contraste. */
+:root[data-theme='pink'] {
+  color-scheme: light;
+  --color-rail: #f6d9e4;
+  --color-side: #fbe8ef;
+  --color-main: #fff5f8;
+  --color-raise: #fdecf2;
+  --color-hover: #f8dbe6;
+  --color-edge: #efc3d3;
+  --color-fg: #2b1520;
+  --color-soft: #5a3446;
+  --color-muted: #8a6273;
+  --color-accent: #d6336c;
+  --color-accent-strong: #bd2459;
+  --color-sun: #a86f00;
+  --color-danger: #c62828;
+  --color-online: #1f9d55;
+  --color-idle: #c98a00;
+  --color-dnd: #c62828;
+  --color-offline: #9a8590;
+}
 /* Paleta Okabe-Ito: azul, laranja e amarelo no lugar de verde/vermelho. */
 :root[data-theme='daltonico'] {
   --color-accent: #3d9be9;
