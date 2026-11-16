@@ -10,12 +10,9 @@ e na release `build-N` do GitHub.
    e entre na Partner Center (https://partner.microsoft.com/dashboard/apps-and-games/overview).
 2. **Apps e jogos → Novo produto → App MSIX ou PWA**, e reserve o nome **Line**
    (reservado: **Line: Chat e Voz**, já é o padrão do CI; se mudar, crie a variável `MSSTORE_DISPLAY_NAME`).
-3. No produto, abra **Gerenciamento de produto → Identidade do produto** e copie três valores para
-   o GitHub, em **Settings → Secrets and variables → Actions → Variables**:
-   - `MSSTORE_IDENTITY_NAME` ← *Package/Identity/Name* (ex.: `12345Xande.Line`)
-   - `MSSTORE_PUBLISHER` ← *Package/Identity/Publisher* (ex.: `CN=1A2B3C4D-...`)
-   - `MSSTORE_PUBLISHER_NAME` ← *Package/Properties/PublisherDisplayName*
-4. Rode o CI de novo (Actions → CI → Run workflow) para o pacote sair com essa identidade.
+3. Identidade do produto (já está no CI, não precisa configurar nada): `AlexandreSouza.LineChateVoz`,
+   publisher `CN=0B1640DA-C2DE-40D6-9091-7568BF2908F8`, ID da Store `9NJ9ZQ9T92QR`. Para trocar, use as
+   variáveis `MSSTORE_IDENTITY_NAME`, `MSSTORE_PUBLISHER`, `MSSTORE_PUBLISHER_NAME` e `MSSTORE_DISPLAY_NAME`.
 
 ## Cada envio
 
@@ -35,8 +32,8 @@ e na release `build-N` do GitHub.
 ## Atualizações
 
 A versão da Store não usa o atualizador próprio do Line (a Store não deixa e a pasta do app é só
-leitura): o app percebe que está instalado pela Store e o botão de atualizar abre a página de
-atualizações da Store. Para a Store distribuir uma versão nova, faça um novo envio com o `.msix`
+leitura): o app percebe que está instalado pela Store e o botão de atualizar abre a página do
+Line na Store. Para a Store distribuir uma versão nova, faça um novo envio com o `.msix`
 mais recente. O instalador `.exe` do site continua se atualizando sozinho como antes.
 
 Depois de publicado, o Line também fica disponível pelo winget sem configuração extra

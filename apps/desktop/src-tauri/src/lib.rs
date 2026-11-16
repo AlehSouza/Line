@@ -146,9 +146,9 @@ fn from_store() -> bool {
             .unwrap_or(false)
 }
 
-/// Na versão da Store, "atualizar" abre a página de downloads e atualizações da Store.
+/// Na versão da Store, "atualizar" abre a página do Line na Store.
 fn open_store_updates(app: &tauri::AppHandle) {
-    let _ = app.opener().open_url("ms-windows-store://downloadsandupdates", None::<&str>);
+    let _ = app.opener().open_url("ms-windows-store://pdp/?ProductId=9NJ9ZQ9T92QR", None::<&str>);
 }
 
 /// Procura versão nova no servidor de atualizações. Devolve a versão, ou nada se já está em dia.

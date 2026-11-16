@@ -67,10 +67,10 @@ jobs:
         shell: pwsh
         env:
           # Dados da Partner Center (Produto > Identidade do produto), em Settings > Variables.
-          # Sem eles o pacote sai com uma identidade de teste: serve para ver que monta, não para enviar.
-          IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME || 'Line.Teste' }}
-          PUBLISHER: ${{ vars.MSSTORE_PUBLISHER || 'CN=Line' }}
-          PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME || 'Line' }}
+          # Os padrões abaixo são os do produto "Line: Chat e Voz" (ID 9NJ9ZQ9T92QR); as variáveis só servem para trocar.
+          IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME || 'AlexandreSouza.LineChateVoz' }}
+          PUBLISHER: ${{ vars.MSSTORE_PUBLISHER || 'CN=0B1640DA-C2DE-40D6-9091-7568BF2908F8' }}
+          PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME || 'Alexandre Souza' }}
           DISPLAY_NAME: ${{ vars.MSSTORE_DISPLAY_NAME || 'Line: Chat e Voz' }}
         run: >
           apps/desktop/scripts/make-msix.ps1 -Version "0.1.${{ github.run_number }}"
