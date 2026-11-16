@@ -11,6 +11,7 @@ import type { Channel, PublicUser, VoiceState } from '@line/shared';
 import { type MouseEvent as ReactMouseEvent, type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
+import { StyledName } from '@/lib/nameStyle';
 import {
   clearVoiceError,
   type Fps,
@@ -346,7 +347,7 @@ function TileView({
       )}
       <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium">
         {tile.kind === 'screen' && <Icons.Screen size={14} />}
-        {tile.kind === 'screen' ? `Tela de ${name}` : name}
+        {tile.kind === 'screen' ? `Tela de ${name}` : <StyledName user={tile.user}>{name}</StyledName>}
         {tile.kind === 'person' && tile.state.deafened ? (
           <Icons.HeadphonesOff size={14} className="text-danger" />
         ) : tile.kind === 'person' && tile.state.muted ? (
@@ -1536,7 +1537,9 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
               )}
             </span>
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="truncate">{displayNameIn(useLine.getState(), p.serverId, p.userId)}</span>
+              <StyledName user={u} className="truncate">
+                {displayNameIn(useLine.getState(), p.serverId, p.userId)}
+              </StyledName>
               {u && <UserTagBadge user={u} />}
             </span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
