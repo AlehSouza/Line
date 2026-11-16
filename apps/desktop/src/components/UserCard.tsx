@@ -5,7 +5,7 @@ import { mobile } from '@/lib/mobile';
 import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
-import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
+import { actions, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
 import { UserTagBadge } from './ServerTag';
@@ -43,6 +43,8 @@ export function UserCard({
   const dmRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
+  const roleColor = useMemberColor(useViewServer(), userId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -75,7 +77,9 @@ export function UserCard({
   const state = friend?.state;
   const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
   /** Cor do cartão (nome, borda do avatar e anel do status). */
-  const ring = `color-mix(in srgb, ${user.avatarColor} 75%, var(--color-fg))`;
+  const nameColor = user.botStyle?.nameColor ?? roleColor ?? 'var(--color-fg)';
+  // Mesma cor do topo do fundo do cartão: a borda parece um recorte do avatar no cartão.
+  const ring = `color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail))`;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
 
   async function run(fn: () => Promise<void>) {
@@ -201,8 +205,8 @@ export function UserCard({
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
           <div className="-mt-12 flex items-start gap-2">
-            {/* Borda de 4px na cor do cartão (a mesma do nome), sem anel escuro em volta que parecia sombra. */}
-            <span className="shrink-0 rounded-full border-4" style={{ borderColor: ring }}>
+            {/* Borda de 4px na cor do fundo do cartão (recorte), sem sombra; flex evita o vão da linha de texto. */}
+            <span className="flex shrink-0 rounded-full border-4" style={{ borderColor: ring, background: ring }}>
               <Avatar
                 name={user.displayName}
                 color={user.avatarColor}
@@ -211,6 +215,7 @@ export function UserCard({
                 presence={presence}
                 dotRingColor={ring}
                 dotSize={20}
+                className="block"
               />
             </span>
             {user.thought && (
@@ -221,7 +226,7 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: ring }}>
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: nameColor }}>
             <span className="truncate">{user.displayName}</span>
             <UserTagBadge user={user} />
           </p>
