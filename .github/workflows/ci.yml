@@ -71,9 +71,10 @@ jobs:
           IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME || 'Line.Teste' }}
           PUBLISHER: ${{ vars.MSSTORE_PUBLISHER || 'CN=Line' }}
           PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME || 'Line' }}
+          DISPLAY_NAME: ${{ vars.MSSTORE_DISPLAY_NAME || 'Line: Chat e Voz' }}
         run: >
           apps/desktop/scripts/make-msix.ps1 -Version "0.1.${{ github.run_number }}"
-          -IdentityName $env:IDENTITY_NAME -Publisher $env:PUBLISHER -PublisherName $env:PUBLISHER_NAME
+          -IdentityName $env:IDENTITY_NAME -Publisher $env:PUBLISHER -PublisherName $env:PUBLISHER_NAME -DisplayName $env:DISPLAY_NAME
       - uses: actions/upload-artifact@v4
         with:
           name: Line-microsoft-store

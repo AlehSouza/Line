@@ -9,7 +9,7 @@ e na release `build-N` do GitHub.
 1. Crie a conta de desenvolvedor individual (grátis) em https://storedeveloper.microsoft.com
    e entre na Partner Center (https://partner.microsoft.com/dashboard/apps-and-games/overview).
 2. **Apps e jogos → Novo produto → App MSIX ou PWA**, e reserve o nome **Line**
-   (se estiver ocupado, algo como "Line Chat").
+   (reservado: **Line: Chat e Voz**, já é o padrão do CI; se mudar, crie a variável `MSSTORE_DISPLAY_NAME`).
 3. No produto, abra **Gerenciamento de produto → Identidade do produto** e copie três valores para
    o GitHub, em **Settings → Secrets and variables → Actions → Variables**:
    - `MSSTORE_IDENTITY_NAME` ← *Package/Identity/Name* (ex.: `12345Xande.Line`)
