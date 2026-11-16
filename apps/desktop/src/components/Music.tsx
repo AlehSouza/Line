@@ -4,7 +4,7 @@ import type { PublicUser } from '@line/shared';
 import * as L from 'lucide-react';
 import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
 import { api, fileUrl, type AgentReply } from '@/lib/api';
-import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, useMusic, type LiveMusic } from '@/lib/music';
+import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, toggleMusicMute, useMusic, type LiveMusic } from '@/lib/music';
 import { actions, displayNameIn, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { hasPerm, Perm } from '@line/shared';
@@ -281,6 +281,7 @@ export function CallMusicBar({ channelId }: { channelId: string }) {
         </div>
         {btn('pause', m.paused ? <L.Play size={14} fill="currentColor" /> : <L.Pause size={14} fill="currentColor" />, m.paused ? 'Continuar' : 'Pausar')}
         {btn('skip', <L.SkipForward size={14} fill="currentColor" />, 'Pular')}
+        <CallVolume />
         {dj && (
           <button
             title="Parar a música e tirar o bot do canal"
@@ -290,6 +291,24 @@ export function CallMusicBar({ channelId }: { channelId: string }) {
             <L.Square size={12} fill="currentColor" />
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Volume do agente só para mim, o mesmo do menu "Volume do agente". */
+function CallVolume() {
+  const volume = useMusic((s) => (s.muted ? 0 : s.volume));
+  return (
+    <div className="group/vol flex shrink-0 items-center" title="Volume do agente (só para você)">
+      <button
+        onClick={toggleMusicMute}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-soft transition hover:bg-white/10 hover:text-fg"
+      >
+        {volume === 0 ? <L.VolumeX size={14} /> : volume < 50 ? <L.Volume1 size={14} /> : <L.Volume2 size={14} />}
+      </button>
+      <div className="w-0 overflow-hidden transition-[width] duration-200 group-hover/vol:w-20 group-focus-within/vol:w-20">
+        <Slider value={volume} onChange={setMusicVolume} className="w-20 pr-1" label="Volume do agente" />
       </div>
     </div>
   );
