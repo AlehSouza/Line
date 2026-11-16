@@ -303,7 +303,7 @@ function FriendRow({ friend }: { friend: Friend }) {
 
   return (
     <div
-      className="group flex cursor-pointer items-center gap-3 rounded-lg border-t border-edge px-2 py-2.5 hover:bg-hover"
+      className="group flex cursor-pointer items-center gap-3 border-t border-edge px-2 py-2.5 hover:bg-hover"
       onClick={() => run(() => openDm(user.id))}
       onContextMenu={(e) => openContextMenu(e, friendMenu(user))}
     >
@@ -349,7 +349,7 @@ function FriendRow({ friend }: { friend: Friend }) {
 function PendingRow({ friend, spam }: { friend: Friend; spam?: boolean }) {
   const { user, state } = friend;
   return (
-    <div className="group flex items-center gap-3 rounded-lg border-t border-edge px-2 py-2.5 hover:bg-hover">
+    <div className="group flex items-center gap-3 border-t border-edge px-2 py-2.5 hover:bg-hover">
       <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={36} presence={user.presence} ring="main" />
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold">
