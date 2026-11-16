@@ -63,6 +63,9 @@ mkdir -p /var/lib/line /etc/line
 chown line:line /var/lib/line
 install -m 755 target/release/line-server /opt/line/line-server
 rm -rf /opt/line/web && cp -r apps/desktop/out /opt/line/web
+# Comando para atualizar pela VPS: baixa a última versão do GitHub e roda este script.
+echo "$DOMAIN" > /etc/line/domain
+install -m 755 deploy/vps/update.sh /usr/local/bin/install.lastversion.update
 
 PUBLIC_IP="$(curl -fsS https://api.ipify.org || true)"
 PRIVATE_IP="$(hostname -I | awk '{print $1}')"
@@ -321,6 +324,7 @@ if curl -fsS http://127.0.0.1:4000/api/health >/dev/null; then
   echo
   echo "Pronto! Abra https://$DOMAIN no navegador ou coloque esse endereço no campo Servidor do app."
   echo "(O certificado HTTPS pode levar 1 minuto para sair na primeira vez.)"
+  echo "Para atualizar depois, rode: install.lastversion.update"
 else
   echo "O servidor não respondeu. Veja: journalctl -u line -n 50"
   exit 1
