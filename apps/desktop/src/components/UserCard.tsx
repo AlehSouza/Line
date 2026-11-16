@@ -356,7 +356,10 @@ export function UserMention({
     if (s.me?.username.toLowerCase() === name) return s.me.id;
     return Object.values(s.users).find((u) => u.username.toLowerCase() === name)?.id;
   });
-  const label = useLine((s) => (serverId && userId && s.members[serverId]?.[userId] ? `@${displayNameIn(s, serverId, userId)}` : null));
+  // Membro do servidor ou agente (bot): mostra o apelido/nome, nunca o @usuário com id do agente.
+  const label = useLine((s) =>
+    userId && ((serverId && s.members[serverId]?.[userId]) || s.users[userId]?.bot) ? `@${displayNameIn(s, serverId, userId)}` : null,
+  );
   if (!userId) return <span className={className}>{children}</span>;
   return (
     <span
