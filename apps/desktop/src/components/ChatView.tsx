@@ -385,6 +385,8 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
           const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
           const grouped =
             !newDay &&
+            !m.deleted &&
+            !prev?.deleted &&
             prev?.author.id === m.author.id &&
             new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < GROUP_WINDOW_MS;
           const author = users[m.author.id] ?? m.author;
@@ -501,6 +503,23 @@ function MessageRow({
     } catch (e) {
       showError(e);
     }
+  }
+
+  if (message.deleted) {
+    return (
+      <div
+        data-mid={message.id}
+        className={cx('flex gap-4 px-4 py-1.5', tight ? 'mt-2' : 'mt-4', highlighted && 'bg-accent/15')}
+      >
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
+          <Icons.Trash size={18} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="pt-2 text-[15px] text-soft">A mensagem foi excluída.</p>
+          {message.thread && <ThreadChip thread={message.thread} />}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -762,6 +781,16 @@ function MessageRow({
 function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; myUsername?: string; mentionCtx: ReturnType<typeof useMentionContext> }) {
   const author = useLine((s) => s.users[message.author.id]) ?? message.author;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  if (message.deleted) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-1">
+        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
+          <Icons.Trash size={16} />
+        </div>
+        <p className="text-[15px] text-soft">A mensagem foi excluída.</p>
+      </div>
+    );
+  }
   return (
     <div className="group relative flex gap-3 px-4 py-1 hover:bg-black/10">
       <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={36} />

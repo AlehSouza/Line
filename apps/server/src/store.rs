@@ -120,7 +120,7 @@ fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
 fn message_select() -> String {
     format!(
         "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at,
-                m.mention_everyone, m.mention_roles, m.requires, m.pinned_at, m.pinned_until, m.pinned_by
+                m.mention_everyone, m.mention_roles, m.requires, m.pinned_at, m.pinned_until, m.pinned_by, m.deleted_at
          FROM messages m JOIN users u ON u.id = m.author_id"
     )
 }
@@ -1873,6 +1873,7 @@ impl Q<'_> {
                     pinned_at: r.get("pinned_at")?,
                     pinned_until: r.get("pinned_until")?,
                     pinned_by: r.get("pinned_by")?,
+                    deleted: r.get::<_, Option<String>>("deleted_at")?.is_some(),
                 };
                 Ok((user, msg))
             }))
@@ -2403,6 +2404,22 @@ impl Q<'_> {
 
     pub fn delete_message(&self, id: &str) {
         ok(self.c.execute("DELETE FROM messages WHERE id = ?", [id]));
+    }
+
+    /// Exclui só o conteúdo: a mensagem fica como "A mensagem foi excluída." para não
+    /// perder a thread que tem respostas.
+    pub fn soft_delete_message(&self, id: &str) {
+        for table in ["attachments", "message_reactions", "poll_options", "polls"] {
+            ok(self
+                .c
+                .execute(&format!("DELETE FROM {table} WHERE message_id = ?"), [id]));
+        }
+        ok(self.c.execute(
+            "UPDATE messages SET content = '', edited_at = NULL, mention_everyone = 0, mention_roles = '',
+                requires = '', pinned_at = NULL, pinned_until = NULL, pinned_by = NULL, deleted_at = ?
+             WHERE id = ?",
+            params![now_iso(), id],
+        ));
     }
 
     // ---------- amizades ----------
