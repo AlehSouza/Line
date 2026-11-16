@@ -203,13 +203,14 @@ impl App {
             return;
         }
         let joined = asked.join(" ");
-        let mut best: Option<(f64, &str)> = None;
+        let mut best: Option<(f64, &str, &serde_json::Value)> = None;
         for item in items {
             let (Some(question), Some(answer)) = (item.get("q").and_then(|v| v.as_str()), item.get("a").and_then(|v| v.as_str())) else {
                 continue;
             };
             let words = normalize_words(&question.to_lowercase().replace(handle.as_str(), " "));
-            if words.is_empty() || answer.trim().is_empty() {
+            let has_media = item.get("media").and_then(|m| m.as_array()).is_some_and(|m| !m.is_empty());
+            if words.is_empty() || (answer.trim().is_empty() && !has_media) {
                 continue;
             }
             // Pergunta inteira dentro da mensagem vale mais; senão, a parte das palavras dela que apareceu.
@@ -220,12 +221,24 @@ impl App {
                 let pool = if important.is_empty() { words.iter().collect() } else { important };
                 pool.iter().filter(|w| asked.contains(w)).count() as f64 / pool.len() as f64
             };
-            if score >= 0.6 && best.is_none_or(|(b, _)| score > b) {
-                best = Some((score, answer));
+            if score >= 0.6 && best.is_none_or(|(b, _, _)| score > b) {
+                best = Some((score, answer, item));
             }
         }
-        if let Some((_, answer)) = best {
-            self.bot_say(q, server_id, channel_id, answer.trim(), &[]);
+        if let Some((_, answer, item)) = best {
+            // Cada resposta leva uma cópia das mídias (apagar a mensagem não apaga o original).
+            let mut ids = vec![];
+            if let Some(bot) = self.music_bot(q, server_id) {
+                for m in item.get("media").and_then(|m| m.as_array()).into_iter().flatten() {
+                    let Some(src) = m.get("id").and_then(|x| x.as_str()).and_then(|id| q.attachment(id)) else { continue };
+                    let new_id = crate::ids::new_id();
+                    if std::fs::copy(self.uploads_dir.join(&src.id), self.uploads_dir.join(&new_id)).is_ok() {
+                        q.clone_attachment(&src, &new_id, &bot.id);
+                        ids.push(new_id);
+                    }
+                }
+            }
+            self.bot_say_with(q, server_id, channel_id, answer.trim(), &ids);
         }
     }
 
@@ -235,6 +248,16 @@ impl App {
         }
         let Some(bot) = self.music_bot(q, server_id) else { return };
         let message = q.create_message(text_channel_id, &bot.id, content, &[], requires);
+        self.to_channel(q, text_channel_id, "message:create", &message);
+    }
+
+    /// Mensagem do agente com anexos (ids já criados em nome dele).
+    fn bot_say_with(&self, q: &Q, server_id: &str, text_channel_id: &str, content: &str, attachment_ids: &[String]) {
+        if q.channel(text_channel_id).is_none() {
+            return;
+        }
+        let Some(bot) = self.music_bot(q, server_id) else { return };
+        let message = q.create_message(text_channel_id, &bot.id, content, attachment_ids, &[]);
         self.to_channel(q, text_channel_id, "message:create", &message);
     }
 

@@ -1577,7 +1577,20 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         refresh_thread_starter(&app, &q, &channel);
     }
     if let Some(server_id) = &channel.server_id {
-        app.smart_reply(&q, server_id, &channel.id, &me, &input.content);
+        let text = input.content.trim();
+        let lower = text.to_lowercase();
+        if lower == "/hoje" || lower.starts_with("/hoje ") {
+            // /hoje [cidade]: o agente responde com data, feriado, tempo e curiosidade (busca na rede).
+            let city: String = text.chars().skip(5).collect::<String>().trim().chars().take(60).collect();
+            let (app2, server_id, channel_id) = (app.clone(), server_id.clone(), channel.id.clone());
+            tokio::spawn(async move {
+                let reply = crate::today::report(&city).await;
+                let q = app2.store.q();
+                app2.bot_say(&q, &server_id, &channel_id, &reply, &[]);
+            });
+        } else {
+            app.smart_reply(&q, server_id, &channel.id, &me, &input.content);
+        }
     }
     created(message)
 }
@@ -1723,23 +1736,47 @@ async fn set_bot_replies(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
     if items.len() > 100 {
         return Err(validation("No máximo 100 respostas"));
     }
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    // Mídias que já estavam salvas continuam valendo mesmo que outra pessoa tenha enviado.
+    let current: std::collections::HashSet<String> = q
+        .bot_replies(&id)
+        .as_array()
+        .into_iter()
+        .flatten()
+        .flat_map(|i| i.get("media").and_then(|m| m.as_array()).cloned().unwrap_or_default())
+        .filter_map(|m| m.get("id").and_then(|x| x.as_str()).map(String::from))
+        .collect();
     let mut clean = vec![];
     for item in items {
         let question = item.get("q").and_then(|x| x.as_str()).unwrap_or("").trim();
         let answer = item.get("a").and_then(|x| x.as_str()).unwrap_or("").trim();
-        if question.is_empty() && answer.is_empty() {
+        let media_ids: Vec<String> = item
+            .get("media")
+            .and_then(|m| m.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.get("id").and_then(|x| x.as_str()).or_else(|| m.as_str()).map(String::from))
+            .collect();
+        if question.is_empty() && answer.is_empty() && media_ids.is_empty() {
             continue;
         }
-        if question.is_empty() || answer.is_empty() {
-            return Err(validation("Preencha a pergunta e a resposta"));
+        if question.is_empty() || (answer.is_empty() && media_ids.is_empty()) {
+            return Err(validation("Preencha a pergunta e a resposta (texto, imagem ou vídeo)"));
         }
         if question.chars().count() > 200 || answer.chars().count() > 2000 {
             return Err(validation("Pergunta até 200 letras e resposta até 2000"));
         }
-        clean.push(json!({ "q": question, "a": answer }));
+        if media_ids.len() > 4 {
+            return Err(validation("No máximo 4 imagens ou vídeos por resposta"));
+        }
+        let mut media = vec![];
+        for mid in &media_ids {
+            let a = q.loose_media(mid, &me, current.contains(mid)).ok_or_else(|| validation("Imagem ou vídeo inválido"))?;
+            media.push(json!({ "id": a.id, "filename": a.filename, "contentType": a.content_type, "url": a.url }));
+        }
+        clean.push(json!({ "q": question, "a": answer, "media": media }));
     }
-    let q = app.store.q();
-    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let list = serde_json::Value::Array(clean);
     q.set_bot_replies(&id, &list);
     ok(list)

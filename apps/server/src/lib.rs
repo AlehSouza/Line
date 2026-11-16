@@ -20,6 +20,7 @@ pub mod perms;
 pub mod presence;
 pub mod routes;
 pub mod store;
+pub mod today;
 pub mod validate;
 pub mod voice;
 

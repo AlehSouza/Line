@@ -180,7 +180,7 @@ function RolesList({ serverId, onEdit }: { serverId: string; onEdit: (id: string
           </span>
           <span className="min-w-0 flex-1">
             <span className="block font-semibold">Permissões padrão</span>
-            <span className="block text-xs text-muted">@everyone · vale para todos os membros do servidor</span>
+            <span className="block text-xs text-muted">@todos · vale para todos os membros do servidor (mencione @todos para notificar todos)</span>
           </span>
           <Icons.Chevron size={18} className="-rotate-90 text-muted" />
         </button>
@@ -465,7 +465,7 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
       </div>
 
       <div className="min-w-0 flex-1 py-8 pr-16 pl-8">
-        <h2 className="truncate text-lg font-bold">Editar cargo · {isEveryone ? '@everyone' : role.name}</h2>
+        <h2 className="truncate text-lg font-bold">Editar cargo · {isEveryone ? '@todos' : role.name}</h2>
         <div className="mt-5 flex gap-6 border-b border-edge">
           {tabs.map((t) => (
             <button
