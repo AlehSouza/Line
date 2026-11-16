@@ -123,7 +123,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
       {drop.over && <DropOverlay target={thread.name} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         <h2 className="font-bold">Conversa</h2>
-        <span className="truncate text-sm text-muted">{thread.name}</span>
+        <span className="truncate text-sm text-muted">{mentionsToText(thread.name, thread.serverId)}</span>
         <div className="ml-auto flex gap-1">
           {canDelete && (
             <button
@@ -551,7 +551,7 @@ function MessageRow({
         const row = e.currentTarget;
         const startThread = () => {
           const parent = useLine.getState().channels[message.channelId];
-          const name = (message.content.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+          const name = (mentionsToText(message.content, serverId).split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
           if (parent) actions.openThreadDraft(parent, message.id, name);
         };
         const plain = message.content ? mentionsToText(message.content, serverId) : '';
@@ -741,7 +741,7 @@ function MessageRow({
               title="Responder"
               onClick={() => {
                 const parent = useLine.getState().channels[message.channelId];
-                const name = (message.content.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+                const name = (mentionsToText(message.content, serverId).split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
                 if (parent) actions.openThreadDraft(parent, message.id, name);
               }}
               className="p-1.5 text-muted hover:text-fg"
