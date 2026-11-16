@@ -146,7 +146,7 @@ $DOMAIN {
 		file_server
 	}
 	# Site de apresentação na raiz (o CI envia apps/site para /opt/line/site).
-	@site path / /index.html /downloads /downloads/ /status /status/ /site/*
+	@site path / /index.html /downloads /downloads/ /status /status/ /robots.txt /sitemap.xml /site/*
 	handle @site {
 		rewrite /downloads* /index.html
 		# Status dos servidores (apps/site/site/status.html).

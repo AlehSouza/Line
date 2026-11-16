@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /updates/
+
+Sitemap: https://useline.tech/sitemap.xml
