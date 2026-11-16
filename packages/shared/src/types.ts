@@ -200,6 +200,8 @@ export interface Message {
   pinnedAt?: string | null;
   pinnedUntil?: string | null;
   pinnedBy?: string | null;
+  /** Excluída, mas mantida porque a thread dela tem respostas. */
+  deleted?: boolean;
 }
 
 export interface Reaction {

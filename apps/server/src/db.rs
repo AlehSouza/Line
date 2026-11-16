@@ -372,6 +372,10 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (channel_id, kind, target_id)
   );
 "#,
+    // Mensagem que abriu uma thread com respostas não some: fica "A mensagem foi excluída.".
+    r#"
+  ALTER TABLE messages ADD COLUMN deleted_at TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

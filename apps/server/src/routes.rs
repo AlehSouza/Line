@@ -2134,7 +2134,18 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
     if let Some(Some(mid)) = &channel.thread_message_id
         && let Some(starter) = q.message(mid)
     {
-        app.to_channel(&q, &starter.channel_id, "message:update", &starter);
+        if starter.deleted {
+            // Sem a thread, a mensagem excluída não tem mais por que ficar.
+            q.delete_message(&starter.id);
+            app.to_channel(
+                &q,
+                &starter.channel_id,
+                "message:delete",
+                &json!({ "id": starter.id, "channelId": starter.channel_id }),
+            );
+        } else {
+            app.to_channel(&q, &starter.channel_id, "message:update", &starter);
+        }
     }
     drop(q);
     app.sweep_uploads();
@@ -2557,6 +2568,7 @@ async fn add_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String
     let q = app.store.q();
     let message = q
         .message(&id)
+        .filter(|m| !m.deleted)
         .ok_or_else(|| bad_request("Mensagem não encontrada"))?;
     require_access(&q, &message.channel_id, &me)?;
     if !q.has_reaction_emoji(&id, &emoji) && q.reaction_kinds(&id) >= MAX_REACTION_KINDS {
@@ -2862,6 +2874,9 @@ async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if message.author.id != me {
         return Err(forbidden("Você só pode editar suas próprias mensagens"));
     }
+    if message.deleted {
+        return Err(bad_request("Esta mensagem foi excluída"));
+    }
     let input = body::<validate::SendMessage>(&b)?.check_with(!message.attachments.is_empty())?;
     let updated = q.edit_message(&message.id, &input.content);
     app.to_channel(&q, &message.channel_id, "message:update", &updated);
@@ -2879,7 +2894,7 @@ const MAX_PINS: usize = 50;
 fn pinnable(q: &Q, me: &str, id: &str) -> ApiResult<Message> {
     let message = q
         .message(id)
-        .filter(|m| q.can_access(me, &m.channel_id))
+        .filter(|m| !m.deleted && q.can_access(me, &m.channel_id))
         .ok_or_else(|| not_found("Mensagem"))?;
     let channel = q
         .channel(&message.channel_id)
@@ -2963,6 +2978,15 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
     let files = q.attachment_ids_of_message(&message.id);
+    // Com respostas na thread, a mensagem fica como "A mensagem foi excluída.".
+    if message.thread.as_ref().is_some_and(|t| t.message_count > 0) {
+        q.soft_delete_message(&message.id);
+        app.remove_upload_files(&files);
+        if let Some(updated) = q.message(&message.id) {
+            app.to_channel(&q, &channel.id, "message:update", &updated);
+        }
+        return no_content();
+    }
     q.delete_message(&message.id);
     app.remove_upload_files(&files);
     app.to_channel(

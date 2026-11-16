@@ -192,6 +192,8 @@ pub struct Message {
     pub pinned_at: Option<String>,
     pub pinned_until: Option<String>,
     pub pinned_by: Option<String>,
+    /// Excluída, mas mantida porque a thread dela tem respostas.
+    pub deleted: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
