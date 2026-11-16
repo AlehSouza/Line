@@ -1139,9 +1139,10 @@ function createPeer(peerId: string): Peer {
     if (pc.connectionState === 'failed') pc.restartIce();
   };
 
-  pc.ontrack = ({ track, streams }) => {
+  pc.ontrack = ({ track, streams, receiver }) => {
     const stream = streams[0] ?? new MediaStream([track]);
     peer.streamIds.add(stream.id);
+    bufferScreen(peerId, stream, track, receiver);
     setV((v) => ({ streams: { ...v.streams, [stream.id]: stream } }));
     if (track.kind === 'audio') attachAudio(peerId, stream);
     const onGone = () => {
@@ -1265,6 +1266,27 @@ async function renegotiateIfPending(peer: Peer) {
     console.warn('Falha ao renegociar voz', err);
   } finally {
     peer.makingOffer = false;
+  }
+}
+
+/**
+ * Tela recebida: guarda ~50 ms a mais antes de mostrar. Dá tempo de o reenvio (NACK) repor um
+ * pacote perdido e de reordenar os que chegam trocados, em vez de travar ou borrar o quadro.
+ * Voz e câmera ficam sem buffer extra (latência da conversa).
+ */
+const SCREEN_BUFFER_MS = 50;
+function bufferScreen(peerId: string, stream: MediaStream, track: MediaStreamTrack, receiver: RTCRtpReceiver) {
+  const state = getV().states[peerId];
+  const isScreen =
+    stream.id === state?.screenStreamId || (track.kind === 'video' && !!state && stream.id !== state.cameraStreamId);
+  if (!isScreen) return;
+  const r = receiver as unknown as { jitterBufferTarget?: number | null; playoutDelayHint?: number };
+  try {
+    // jitterBufferTarget em ms (Chromium/WebView2 novos); playoutDelayHint em segundos (antigos, WebKit).
+    if ('jitterBufferTarget' in receiver) r.jitterBufferTarget = SCREEN_BUFFER_MS;
+    else r.playoutDelayHint = SCREEN_BUFFER_MS / 1000;
+  } catch {
+    // navegador sem esse ajuste: segue com o buffer automático
   }
 }
 
