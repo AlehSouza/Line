@@ -204,6 +204,16 @@ export function UserCard({
                       Desbloquear
                     </MenuItem>
                   )}
+                  <MenuItem
+                    danger
+                    icon={<Icons.Flag size={16} />}
+                    onClick={() => {
+                      onClose();
+                      actions.openModal({ kind: 'report', target: { userId } });
+                    }}
+                  >
+                    Denunciar perfil
+                  </MenuItem>
                 </div>
               )}
             </span>
