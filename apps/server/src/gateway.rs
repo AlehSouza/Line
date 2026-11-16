@@ -372,11 +372,7 @@ async fn voice_join(
         let _ = ack.send(&json!({ "ok": false, "error": "Esse canal é de texto" }));
         return;
     }
-    let p = channel
-        .server_id
-        .as_deref()
-        .map(|sid| q.permissions(sid, &me))
-        .unwrap_or(perms::ALL);
+    let p = q.channel_permissions(&me, &channel.id);
     if !has(p, perms::CONNECT) {
         let _ = ack.send(&json!({ "ok": false, "error": "Você não tem permissão para entrar neste canal de voz" }));
         return;
@@ -486,12 +482,12 @@ async fn voice_state(
         return;
     }
     let q = app.store.q();
-    let server_id = lock(&app.voice)
+    let channel_id = lock(&app.voice)
         .get(&me)
-        .and_then(|v| v.state.server_id.clone());
-    let p = server_id
+        .map(|v| v.state.channel_id.clone());
+    let p = channel_id
         .as_deref()
-        .map(|sid| q.permissions(sid, &me))
+        .map(|cid| q.channel_permissions(&me, cid))
         .unwrap_or(perms::ALL);
     let mut patch = VoicePatch::from_json(&patch);
     // Sem "Falar" fica sempre mudo; sem "Vídeo" não liga câmera nem compartilha tela.

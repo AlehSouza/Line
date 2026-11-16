@@ -107,6 +107,17 @@ pub struct Channel {
     pub position: i64,
     /// Canal privado: só o dono do servidor e os membros escolhidos enxergam.
     pub is_private: bool,
+    /// Canal privado: pessoas e cargos que enxergam.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role_ids: Option<Vec<String>>,
+    /// Só quem está nas listas abaixo manda mensagem (texto) ou fala (voz).
+    pub interact_restricted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interact_member_ids: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interact_role_ids: Option<Vec<String>>,
     pub last_message_at: Option<String>,
     /// Só para dm / group_dm / thread.
     #[serde(skip_serializing_if = "Option::is_none")]

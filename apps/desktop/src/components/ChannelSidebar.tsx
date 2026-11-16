@@ -24,6 +24,9 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const perms = useLine((s) => permsOf(s, serverId, s.me?.id));
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  // Arrastar e soltar: o que está sendo arrastado e onde vai cair.
+  const [drag, setDrag] = useState<{ kind: 'channel' | 'category'; id: string } | null>(null);
+  const [over, setOver] = useState<{ kind: 'channel' | 'category' | 'loose'; id: string; pos: 'above' | 'below' } | null>(null);
 
   const { categories, byCategory, loose, threads } = useMemo(() => {
     const all = Object.values(allChannels).filter((c) => c.serverId === serverId);
@@ -54,13 +57,107 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const canSettings = hasPerm(perms, Perm.ManageServer) || hasPerm(perms, Perm.ManageRoles) || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
   const canNick = hasPerm(perms, Perm.ChangeNickname) || hasPerm(perms, Perm.ManageNicknames);
 
+  /** Metade de cima ou de baixo do item, para saber se solta antes ou depois dele. */
+  const half = (e: React.DragEvent): 'above' | 'below' => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return e.clientY < r.top + r.height / 2 ? 'above' : 'below';
+  };
+  const endDrag = () => {
+    setDrag(null);
+    setOver(null);
+  };
+  const startDrag = (e: React.DragEvent, kind: 'channel' | 'category', id: string) => {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', id);
+    setDrag({ kind, id });
+  };
+
+  /** Monta a nova ordem (categorias e canais com a categoria de cada um) e salva no servidor. */
+  const drop = () => {
+    const d = drag;
+    const o = over;
+    endDrag();
+    if (!d || !o || o.id === d.id) return;
+    const catIds = categories.map((k) => k.id);
+    const lists: Record<string, Channel[]> = { '': [...loose] };
+    for (const k of categories) lists[k.id] = [...(byCategory[k.id] ?? [])];
+
+    if (d.kind === 'category') {
+      // Categoria solta sobre outra categoria ou sobre um canal dela.
+      const target = o.kind === 'category' ? o.id : o.kind === 'channel' ? allChannels[o.id]?.categoryId : null;
+      if (!target || target === d.id) return;
+      const from = catIds.indexOf(d.id);
+      catIds.splice(from, 1);
+      const to = catIds.indexOf(target);
+      catIds.splice(o.pos === 'below' || o.kind === 'channel' ? to + 1 : to, 0, d.id);
+    } else {
+      const moving = allChannels[d.id];
+      if (!moving) return;
+      for (const key of Object.keys(lists)) lists[key] = lists[key].filter((c) => c.id !== d.id);
+      if (o.kind === 'channel') {
+        const key = allChannels[o.id]?.categoryId && lists[allChannels[o.id]!.categoryId!] ? allChannels[o.id]!.categoryId! : '';
+        const i = lists[key].findIndex((c) => c.id === o.id);
+        lists[key].splice(o.pos === 'below' ? i + 1 : i, 0, moving);
+      } else if (o.kind === 'category') {
+        // Em cima do nome da categoria: entra como o primeiro canal dela.
+        lists[o.id]?.unshift(moving);
+      } else {
+        lists[''].push(moving);
+      }
+    }
+
+    const order = [
+      ...lists[''].map((c) => ({ id: c.id, categoryId: null as string | null })),
+      ...catIds.flatMap((k) => (lists[k] ?? []).map((c) => ({ id: c.id, categoryId: k as string | null }))),
+    ];
+    // Atualiza na hora; o servidor confirma e manda para todo mundo.
+    order.forEach((x, i) => {
+      const c = allChannels[x.id];
+      if (c && (c.position !== i || c.categoryId !== x.categoryId)) actions.upsertChannel({ ...c, position: i, categoryId: x.categoryId });
+    });
+    catIds.forEach((id, i) => {
+      const k = allCategories[id];
+      if (k && k.position !== i) actions.upsertCategory({ ...k, position: i });
+    });
+    void (async () => {
+      const { api } = await import('@/lib/api');
+      await api.setChannelLayout(serverId, catIds, order).catch(showError);
+    })();
+  };
+
   const renderChannel = (c: Channel) => {
     const active = c.id === activeId;
     const hasUnread = !!unread[c.id] && !active;
     const Icon = c.type === 'voice' ? Icons.Speaker : Icons.Hash;
     return (
       <div key={c.id}>
-        <div className="group relative" onContextMenu={(e) => openContextMenu(e, channelMenu(c, canChannels, hasPerm(perms, Perm.CreateInvite)))}>
+        <div
+          className={cx('group relative', drag?.id === c.id && 'opacity-40')}
+          onContextMenu={(e) => openContextMenu(e, channelMenu(c, canChannels, hasPerm(perms, Perm.CreateInvite)))}
+          draggable={canChannels}
+          onDragStart={(e) => startDrag(e, 'channel', c.id)}
+          onDragEnd={endDrag}
+          onDragOver={(e) => {
+            if (!drag) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (drag.kind === 'category') {
+              // Categoria arrastada sobre um canal: cai depois da categoria desse canal.
+              if (c.categoryId) setOver({ kind: 'category', id: c.categoryId, pos: 'below' });
+              return;
+            }
+            setOver({ kind: 'channel', id: c.id, pos: half(e) });
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            drop();
+          }}
+        >
+          {over?.kind === 'channel' && over.id === c.id && drag?.kind === 'channel' && drag.id !== c.id && (
+            <span className={cx('pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-accent', over.pos === 'above' ? '-top-px' : '-bottom-px')} />
+          )}
           <button
             onClick={() => {
               actions.goServer(serverId, c.id);
@@ -223,10 +320,45 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
 
       <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
         {!loaded && <ListSkeleton count={8} />}
-        {loose.length > 0 && <div className="space-y-0.5">{loose.map(renderChannel)}</div>}
+        {(loose.length > 0 || drag?.kind === 'channel') && (
+          <div
+            className={cx('space-y-0.5', !loose.length && 'rounded-md border border-dashed px-2 py-1.5 text-xs text-muted', over?.kind === 'loose' ? 'border-accent' : 'border-edge')}
+            onDragOver={(e) => {
+              if (drag?.kind !== 'channel') return;
+              e.preventDefault();
+              setOver({ kind: 'loose', id: '', pos: 'below' });
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              drop();
+            }}
+          >
+            {loose.length ? loose.map(renderChannel) : 'Solte aqui para tirar da categoria'}
+          </div>
+        )}
         {categories.filter((cat) => canChannels || byCategory[cat.id]?.length).map((cat) => (
-          <div key={cat.id}>
-            <div className="group flex items-center justify-between px-1 pb-1">
+          <div key={cat.id} className={cx('relative', drag?.id === cat.id && 'opacity-40')}>
+            {over?.kind === 'category' && over.id === cat.id && drag?.kind === 'category' && drag.id !== cat.id && (
+              <span className={cx('pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-accent', over.pos === 'above' ? '-top-2' : '-bottom-2')} />
+            )}
+            <div
+              className={cx(
+                'group flex items-center justify-between rounded px-1 pb-1',
+                over?.kind === 'category' && over.id === cat.id && drag?.kind === 'channel' && 'bg-accent/15',
+              )}
+              draggable={canChannels}
+              onDragStart={(e) => startDrag(e, 'category', cat.id)}
+              onDragEnd={endDrag}
+              onDragOver={(e) => {
+                if (!drag) return;
+                e.preventDefault();
+                setOver({ kind: 'category', id: cat.id, pos: half(e) });
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                drop();
+              }}
+            >
               <button
                 onClick={() => setCollapsed((c) => ({ ...c, [cat.id]: !c[cat.id] }))}
                 className="flex items-center gap-0.5 text-xs font-bold tracking-wide text-muted uppercase hover:text-soft"

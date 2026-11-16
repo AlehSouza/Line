@@ -327,22 +327,102 @@ function CreateChannelModal({
   );
 }
 
+/** Lista de cargos e membros com caixinhas (canal privado / quem pode interagir). */
+function AudienceList({
+  serverId,
+  roleIds,
+  memberIds,
+  onRoles,
+  onMembers,
+}: {
+  serverId: string;
+  roleIds: string[];
+  memberIds: string[];
+  onRoles: (ids: string[]) => void;
+  onMembers: (ids: string[]) => void;
+}) {
+  const serverRoles = useLine((s) => s.roles[serverId]);
+  const ownerId = useLine((s) => s.servers[serverId]?.ownerId);
+  const memberRefs = useLine((s) => s.members[serverId]);
+  const users = useLine((s) => s.users);
+  const roles = (serverRoles ?? []).filter((r) => r.id !== serverId);
+  // O dono sempre pode tudo, então não aparece.
+  const members = Object.keys(memberRefs ?? {})
+    .filter((id) => id !== ownerId && users[id])
+    .map((id) => users[id])
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
+  return (
+    <div className="mt-3 max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+      {roles.length > 0 && <p className="px-2 pt-1 pb-0.5 text-xs font-bold text-muted uppercase">Cargos</p>}
+      {roles.map((r) => (
+        <RoleOption key={r.id} role={r} checked={roleIds.includes(r.id)} onToggle={() => onRoles(toggle(roleIds, r.id))} />
+      ))}
+      {roles.length > 0 && <p className="px-2 pt-2 pb-0.5 text-xs font-bold text-muted uppercase">Membros</p>}
+      {members.length === 0 && <p className="px-2 py-1.5 text-sm text-muted">Ainda não há outros membros no servidor.</p>}
+      {members.map((u) => (
+        <label key={u.id} className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-hover">
+          <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={28} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">{u.displayName}</span>
+            <span className="block truncate text-xs text-muted">@{u.username}</span>
+          </span>
+          <Checkbox checked={memberIds.includes(u.id)} onChange={() => onMembers(toggle(memberIds, u.id))} />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+const sameSet = (a: string[] = [], b: string[] = []) => a.length === b.length && a.every((x) => b.includes(x));
+
 function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: () => void }) {
   const channel = useLine((s) => s.channels[channelId]);
+  const category = useLine((s) => (channel?.categoryId ? s.categories[channel.categoryId] : undefined));
   const [name, setName] = useState(channel?.name ?? '');
   const nameRef = useRef<HTMLInputElement>(null);
   const [topic, setTopic] = useState(channel?.topic ?? '');
+  const [isPrivate, setIsPrivate] = useState(!!channel?.isPrivate);
+  const [roleIds, setRoleIds] = useState<string[]>(channel?.roleIds ?? []);
+  const [memberIds, setMemberIds] = useState<string[]>(channel?.memberIds ?? []);
+  const [restricted, setRestricted] = useState(!!channel?.interactRestricted);
+  const [interactRoleIds, setInteractRoleIds] = useState<string[]>(channel?.interactRoleIds ?? []);
+  const [interactMemberIds, setInteractMemberIds] = useState<string[]>(channel?.interactMemberIds ?? []);
   const { busy, error, run } = useAction();
   if (!channel) return null;
   const isText = channel.type !== 'voice';
-  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '');
+  const hasAccess = !!channel.serverId && (channel.type === 'text' || channel.type === 'voice');
+  const accessChanged =
+    isPrivate !== !!channel.isPrivate ||
+    restricted !== !!channel.interactRestricted ||
+    (isPrivate && (!sameSet(roleIds, channel.roleIds) || !sameSet(memberIds, channel.memberIds))) ||
+    (restricted && (!sameSet(interactRoleIds, channel.interactRoleIds) || !sameSet(interactMemberIds, channel.interactMemberIds)));
+  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged;
+  const emptyPrivate = isPrivate && !roleIds.length && !memberIds.length;
   return (
     <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           run(async () => {
-            actions.upsertChannel(await api.updateChannel(channelId, { name: name.trim(), topic: topic.trim() }));
+            actions.upsertChannel(
+              await api.updateChannel(channelId, {
+                name: name.trim(),
+                topic: topic.trim(),
+                ...(hasAccess && accessChanged
+                  ? {
+                      access: {
+                        isPrivate,
+                        roleIds: isPrivate ? roleIds : [],
+                        memberIds: isPrivate ? memberIds : [],
+                        interactRestricted: restricted,
+                        interactRoleIds: restricted ? interactRoleIds : [],
+                        interactMemberIds: restricted ? interactMemberIds : [],
+                      },
+                    }
+                  : {}),
+              }),
+            );
             onClose();
           });
         }}
@@ -367,6 +447,41 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
         <Field label="Descrição do canal" hint="Aparece ao lado do nome, no topo do canal.">
           <EmojiInput value={topic} maxLength={1024} placeholder="Diga a todos como usar este canal" onChange={(e) => setTopic(e.target.value)} />
         </Field>
+        {hasAccess && channel.serverId && (
+          <>
+            <div>
+              <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Quem pode ver" />
+              <p className="mt-1 text-sm text-muted">
+                {isPrivate
+                  ? `Só os cargos e membros marcados (e os administradores) veem ${isText ? 'e leem este canal' : 'e entram neste canal'}.`
+                  : 'Desligado: todos com a permissão "Ver canais" enxergam o canal.'}
+                {category?.isPrivate && ' A categoria já é exclusiva de cargos, então o canal também segue a restrição dela.'}
+              </p>
+              {isPrivate && (
+                <AudienceList serverId={channel.serverId} roleIds={roleIds} memberIds={memberIds} onRoles={setRoleIds} onMembers={setMemberIds} />
+              )}
+            </div>
+            <div>
+              <PrivateSwitch on={restricted} onToggle={() => setRestricted((v) => !v)} label={isText ? 'Quem pode enviar mensagens' : 'Quem pode falar'} />
+              <p className="mt-1 text-sm text-muted">
+                {restricted
+                  ? isText
+                    ? 'Só os marcados (e os administradores) enviam mensagens, anexos e threads. Os outros só leem.'
+                    : 'Só os marcados (e os administradores) falam e ligam câmera ou tela. Os outros entram e só escutam.'
+                  : 'Desligado: vale o que cada cargo pode fazer no servidor.'}
+              </p>
+              {restricted && (
+                <AudienceList
+                  serverId={channel.serverId}
+                  roleIds={interactRoleIds}
+                  memberIds={interactMemberIds}
+                  onRoles={setInteractRoleIds}
+                  onMembers={setInteractMemberIds}
+                />
+              )}
+            </div>
+          </>
+        )}
         <ErrorText>{error}</ErrorText>
         <div className="flex items-center justify-between gap-2">
           <Button
@@ -387,7 +502,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={busy || !name.trim() || !changed}>
+            <Button type="submit" disabled={busy || !name.trim() || !changed || emptyPrivate}>
               Salvar
             </Button>
           </div>

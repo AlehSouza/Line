@@ -1,6 +1,6 @@
 'use client';
 
-import { ALL_PERMS, hasPerm, Perm, type Category, type Channel, type Friend, type Member, type Message, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
+import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, type Friend, type Member, type Message, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
 import { create } from 'zustand';
 
 export type View =
@@ -480,6 +480,20 @@ export function permsOf(s: LineState, serverId: string | null | undefined, userI
   let p = roles.find((r) => r.id === serverId)?.permissions ?? 0;
   for (const r of roles) if (mine.includes(r.id)) p |= r.permissions;
   return hasPerm(p, Perm.Administrator) ? ALL_PERMS : p;
+}
+
+/** Permissões dentro de um canal: as do servidor, menos mandar mensagem / falar quando o canal
+ *  restringe quem interage e a pessoa (ou um cargo dela) não está na lista. Threads seguem o pai. */
+export function channelPermsOf(s: LineState, channelId: string | null | undefined, userId: string | undefined): number {
+  let c = channelId ? s.channels[channelId] : undefined;
+  if (c?.type === 'thread' && c.parentId) c = s.channels[c.parentId] ?? c;
+  const p = permsOf(s, c?.serverId, userId);
+  if (!c?.serverId || !c.interactRestricted || !userId || p === ALL_PERMS) return p;
+  const mine = s.members[c.serverId]?.[userId]?.roleIds ?? [];
+  const roles = c.interactRoleIds ?? [];
+  const allowed =
+    (c.interactMemberIds ?? []).includes(userId) || roles.includes(c.serverId) || roles.some((r) => mine.includes(r));
+  return allowed ? p : p & ~INTERACT_PERMS;
 }
 
 /** Minhas permissões no servidor (fora de servidor, tudo). */

@@ -258,6 +258,8 @@ export const api = {
   createChannel: (serverId: string, input: CreateChannelInput) =>
     request<Channel>('POST', `/servers/${enc(serverId)}/channels`, input),
   updateChannel: (id: string, patch: UpdateChannelInput) => request<Channel>('PATCH', `/channels/${enc(id)}`, patch),
+  setChannelLayout: (serverId: string, categoryIds: string[], channels: { id: string; categoryId: string | null }[]) =>
+    request<void>('PUT', `/servers/${enc(serverId)}/layout`, { categoryIds, channels }),
   deleteChannel: (id: string) => request<void>('DELETE', `/channels/${enc(id)}`),
   createCategory: (serverId: string, name: string, roleIds?: string[]) =>
     request<Category>('POST', `/servers/${enc(serverId)}/categories`, roleIds ? { name, isPrivate: true, roleIds } : { name }),

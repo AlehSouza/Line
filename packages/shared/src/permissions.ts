@@ -23,6 +23,9 @@ export const Perm = {
 
 export const ALL_PERMS = (1 << 19) - 1;
 
+/** O que um canal com "quem pode interagir" tira de quem não está na lista (igual ao servidor). */
+export const INTERACT_PERMS = Perm.SendMessages | Perm.AttachFiles | Perm.CreateThreads | Perm.Speak | Perm.Video;
+
 export const hasPerm = (perms: number, flag: number) => (perms & flag) === flag;
 
 /** Qual menção geral a mensagem tem: 'todos' (@todos/@everyone) vale mais que 'aqui' (@aqui/@here). */

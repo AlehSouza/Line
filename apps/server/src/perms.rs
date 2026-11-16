@@ -25,6 +25,10 @@ pub const MUTE_MEMBERS: i64 = 1 << 17;
 /// Mover outros entre canais de voz e desconectar da voz.
 pub const MOVE_MEMBERS: i64 = 1 << 18;
 
+/// O que um canal com "quem pode interagir" tira de quem não está na lista.
+/// Ver o canal e entrar na voz continuam valendo (fica só lendo / só ouvindo).
+pub const INTERACT: i64 = SEND_MESSAGES | ATTACH_FILES | CREATE_THREADS | SPEAK | VIDEO;
+
 pub const ALL: i64 = (1 << 19) - 1;
 
 /// O que o @everyone de um servidor novo pode fazer.
