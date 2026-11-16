@@ -230,7 +230,7 @@ export const api = {
   ignored: () => request<string[]>('GET', '/users/@me/ignored'),
   ignore: (id: string) => request<void>('PUT', `/users/${enc(id)}/ignore`),
   unignore: (id: string) => request<void>('DELETE', `/users/${enc(id)}/ignore`),
-  searchGames: (q: string) => request<{ games: ProfileGame[]; enabled: boolean }>('GET', `/games/search?q=${enc(q)}`),
+  searchGames: (q: string) => request<{ games: ProfileGame[]; enabled: boolean; error?: string }>('GET', `/games/search?q=${enc(q)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
   servers: () => request<Server[]>('GET', '/servers'),

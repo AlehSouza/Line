@@ -243,6 +243,7 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
   const [text, setText] = useState('');
   const [results, setResults] = useState<ProfileGame[]>([]);
   const [loading, setLoading] = useState(false);
+  const [problem, setProblem] = useState('');
   const seq = useRef(0);
 
   useEffect(() => {
@@ -253,8 +254,16 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
     const t = window.setTimeout(() => {
       api
         .searchGames(q)
-        .then((r) => n === seq.current && setResults(r.games))
-        .catch(() => n === seq.current && setResults([]))
+        .then((r) => {
+          if (n !== seq.current) return;
+          setResults(r.games);
+          setProblem(!r.enabled ? 'A busca de jogos não está ligada no servidor.' : r.error ? `A busca de jogos falhou: ${r.error}` : '');
+        })
+        .catch((e) => {
+          if (n !== seq.current) return;
+          setResults([]);
+          setProblem(`A busca de jogos falhou: ${(e as Error).message}`);
+        })
         .finally(() => n === seq.current && setLoading(false));
     }, 350);
     return () => window.clearTimeout(t);
@@ -278,6 +287,7 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
         })}
       </div>
       {loading && <p className="mt-2 text-sm text-muted">Procurando…</p>}
+      {!loading && problem && <p className="mt-2 rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{problem}</p>}
       {!loading && typed.length >= 2 && !exact && !taken.includes(typed.toLowerCase()) && (
         <button type="button" onClick={() => onPick({ name: typed, cover: null })} className="mt-3 flex w-full items-center gap-2 rounded-lg border border-dashed border-edge px-3 py-2 text-left text-sm text-soft hover:bg-raise">
           <Icons.Plus size={15} /> Usar “{typed}” sem capa

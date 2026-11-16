@@ -296,8 +296,10 @@ async fn search_games(State(app): S, Me(_): Me, Query(qs): Query<HashMap<String,
     if text.chars().count() < 2 {
         return ok(json!({ "games": [], "enabled": true }));
     }
-    let games = igdb.search(text).await;
-    ok(json!({ "games": games, "enabled": true }))
+    match igdb.search(text).await {
+        Ok(games) => ok(json!({ "games": games, "enabled": true })),
+        Err(error) => ok(json!({ "games": [], "enabled": true, "error": error })),
+    }
 }
 
 /// Id do vídeo num link do YouTube (watch?v=, youtu.be/, shorts/, music.youtube.com).
