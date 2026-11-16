@@ -272,7 +272,9 @@ async fn users(State(app): S, Admin(_): Admin, Query(qs): Query<HashMap<String, 
         let presence = q.presence_of(&id, u["status"].as_str().unwrap_or("online"));
         u["online"] = json!(online.contains(&id));
         u["presence"] = json!(presence);
-        u["admin"] = json!(app.is_admin(&id));
+        // Não usar app.is_admin aqui: ele pega o banco de novo e o `q` acima já segura a trava
+        // (com 1 vCPU isso congelava o servidor inteiro).
+        u["admin"] = json!(app.is_owner(&id) || q.admin_flag(&id));
     }
     ok(list)
 }
