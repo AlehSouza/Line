@@ -56,8 +56,11 @@ export function AppShell() {
     document.title = unreadTotal ? `(${unreadTotal}) Line` : 'Line';
   }, [unreadTotal]);
 
+  const suspended = useLine((s) => view.kind === 'server' && !!s.servers[view.serverId]?.suspended);
+
   let main;
-  if (view.kind === 'discover') main = <DiscoverView />;
+  if (suspended) main = <SuspendedServer />;
+  else if (view.kind === 'discover') main = <DiscoverView />;
   else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : <FriendsView />;
   else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
   else if (channel) main = <ChatView channel={channel} />;
@@ -104,6 +107,18 @@ export function AppShell() {
       {membersOpen && view.kind === 'server' && channel?.type === 'text' && <MembersDrawer serverId={view.serverId} onClose={mobile.closeMembers} />}
       <Modals />
       <IncomingCall />
+    </div>
+  );
+}
+
+/** Servidor suspenso pelo Line: nada de mensagens nem voz, só o aviso. */
+function SuspendedServer() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="text-4xl font-extrabold text-fg sm:text-5xl">Servidor suspenso.</div>
+      <p className="max-w-md text-sm text-muted">
+        Este servidor foi suspenso pela equipe do Line. Ninguém pode mandar mensagens nem entrar nos canais de voz enquanto ele estiver suspenso.
+      </p>
     </div>
   );
 }

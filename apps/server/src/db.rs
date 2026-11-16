@@ -355,6 +355,9 @@ const MIGRATIONS: &[&str] = &[
     fetched_at TEXT NOT NULL
   );
 "#,
+    r#"
+  ALTER TABLE servers ADD COLUMN suspended_at TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -80,6 +80,8 @@ pub struct Server {
     pub invite_code: String,
     pub member_count: i64,
     pub created_at: String,
+    /// Suspenso pelo admin do Line: ninguém fala, manda mensagem nem entra na voz.
+    pub suspended: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

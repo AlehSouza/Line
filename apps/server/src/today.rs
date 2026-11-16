@@ -6,9 +6,28 @@ use std::time::Duration as StdDuration;
 const DEFAULT_CITY: &str = "São Paulo";
 const UA: &str = "Line/1.0 (https://useline.tech)";
 
-const WEEKDAYS: [&str; 7] = ["segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo"];
+const WEEKDAYS: [&str; 7] = [
+    "segunda-feira",
+    "terça-feira",
+    "quarta-feira",
+    "quinta-feira",
+    "sexta-feira",
+    "sábado",
+    "domingo",
+];
 const MONTHS: [&str; 12] = [
-    "janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro",
 ];
 
 /// Domingo de Páscoa (algoritmo de Meeus/Jones/Butcher).
@@ -73,14 +92,23 @@ fn weather_text(code: i64) -> (&'static str, &'static str) {
 }
 
 fn client() -> Option<reqwest::Client> {
-    reqwest::Client::builder().timeout(StdDuration::from_secs(6)).user_agent(UA).build().ok()
+    reqwest::Client::builder()
+        .timeout(StdDuration::from_secs(6))
+        .user_agent(UA)
+        .build()
+        .ok()
 }
 
 async fn weather(city: &str) -> Option<String> {
     let http = client()?;
     let geo: serde_json::Value = http
         .get("https://geocoding-api.open-meteo.com/v1/search")
-        .query(&[("name", city), ("count", "1"), ("language", "pt"), ("format", "json")])
+        .query(&[
+            ("name", city),
+            ("count", "1"),
+            ("language", "pt"),
+            ("format", "json"),
+        ])
         .send()
         .await
         .ok()?
@@ -88,7 +116,10 @@ async fn weather(city: &str) -> Option<String> {
         .await
         .ok()?;
     let place = geo.get("results")?.get(0)?;
-    let (lat, lon) = (place.get("latitude")?.as_f64()?, place.get("longitude")?.as_f64()?);
+    let (lat, lon) = (
+        place.get("latitude")?.as_f64()?,
+        place.get("longitude")?.as_f64()?,
+    );
     let name = place.get("name")?.as_str()?.to_string();
     let region = place.get("admin1").and_then(|v| v.as_str()).unwrap_or("");
     let f: serde_json::Value = http
@@ -97,7 +128,11 @@ async fn weather(city: &str) -> Option<String> {
             ("latitude", lat.to_string()),
             ("longitude", lon.to_string()),
             ("current", "temperature_2m,weather_code".into()),
-            ("daily", "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max".into()),
+            (
+                "daily",
+                "weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+                    .into(),
+            ),
             ("timezone", "auto".into()),
             ("forecast_days", "1".into()),
         ])
@@ -112,7 +147,11 @@ async fn weather(city: &str) -> Option<String> {
     let code = first("weather_code").unwrap_or(-1.0) as i64;
     let (icon, desc) = weather_text(code);
     let mut parts = vec![desc.to_string()];
-    if let Some(now) = f.get("current").and_then(|c| c.get("temperature_2m")).and_then(|v| v.as_f64()) {
+    if let Some(now) = f
+        .get("current")
+        .and_then(|c| c.get("temperature_2m"))
+        .and_then(|v| v.as_f64())
+    {
         parts.push(format!("agora {:.0}°C", now));
     }
     if let (Some(min), Some(max)) = (first("temperature_2m_min"), first("temperature_2m_max")) {
@@ -121,13 +160,22 @@ async fn weather(city: &str) -> Option<String> {
     if let Some(rain) = first("precipitation_probability_max") {
         parts.push(format!("chuva {:.0}%", rain));
     }
-    let place = if region.is_empty() || region == name { name } else { format!("{name}, {region}") };
-    Some(format!("{icon} **Tempo em {place}:** {}", parts.join(" · ")))
+    let place = if region.is_empty() || region == name {
+        name
+    } else {
+        format!("{name}, {region}")
+    };
+    Some(format!(
+        "{icon} **Tempo em {place}:** {}",
+        parts.join(" · ")
+    ))
 }
 
 async fn curiosity(month: u32, day: u32, seed: usize) -> Option<String> {
     let http = client()?;
-    let url = format!("https://api.wikimedia.org/feed/v1/wikipedia/pt/onthisday/selected/{month:02}/{day:02}");
+    let url = format!(
+        "https://api.wikimedia.org/feed/v1/wikipedia/pt/onthisday/selected/{month:02}/{day:02}"
+    );
     let v: serde_json::Value = http.get(url).send().await.ok()?.json().await.ok()?;
     let list = v.get("selected")?.as_array()?;
     if list.is_empty() {
@@ -147,8 +195,15 @@ pub async fn report(city: &str) -> String {
     // Horário de Brasília (sem horário de verão desde 2019).
     let now = Utc::now() - Duration::hours(3);
     let today = now.date_naive();
-    let city = if city.trim().is_empty() { DEFAULT_CITY } else { city.trim() };
-    let (w, c) = tokio::join!(weather(city), curiosity(today.month(), today.day(), today.ordinal() as usize));
+    let city = if city.trim().is_empty() {
+        DEFAULT_CITY
+    } else {
+        city.trim()
+    };
+    let (w, c) = tokio::join!(
+        weather(city),
+        curiosity(today.month(), today.day(), today.ordinal() as usize)
+    );
 
     let mut lines = vec![format!(
         "📅 **Hoje é {}, {} de {} de {}**",
@@ -159,7 +214,11 @@ pub async fn report(city: &str) -> String {
     )];
     let mut all = holidays(today.year());
     all.extend(holidays(today.year() + 1));
-    let todays: Vec<&str> = all.iter().filter(|(d, _)| *d == today).map(|(_, n)| *n).collect();
+    let todays: Vec<&str> = all
+        .iter()
+        .filter(|(d, _)| *d == today)
+        .map(|(_, n)| *n)
+        .collect();
     if todays.is_empty() {
         lines.push("🗓️ Não é feriado nacional.".into());
     } else {
@@ -172,10 +231,15 @@ pub async fn report(city: &str) -> String {
             d.day(),
             d.month(),
             WEEKDAYS[d.weekday().num_days_from_monday() as usize],
-            if days == 1 { "amanhã".to_string() } else { format!("daqui a {days} dias") }
+            if days == 1 {
+                "amanhã".to_string()
+            } else {
+                format!("daqui a {days} dias")
+            }
         ));
     }
-    lines.push(w.unwrap_or_else(|| format!("🌡️ Não consegui ver a previsão do tempo para {city}.")));
+    lines
+        .push(w.unwrap_or_else(|| format!("🌡️ Não consegui ver a previsão do tempo para {city}.")));
     if let Some(c) = c {
         lines.push(c);
     }

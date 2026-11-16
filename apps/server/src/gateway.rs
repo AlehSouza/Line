@@ -99,7 +99,10 @@ impl App {
             .into_iter()
             .partition(|u| has(q.permissions(&server.id, u), perms::CREATE_INVITE));
         self.to_users(&with, "server:update", server);
-        let hidden = Server { invite_code: String::new(), ..server.clone() };
+        let hidden = Server {
+            invite_code: String::new(),
+            ..server.clone()
+        };
         self.to_users(&without, "server:update", &hidden);
     }
 
@@ -120,12 +123,25 @@ impl App {
 
     /// Quem está em cada canal de voz (com o horário de entrada, usado no cronômetro) e o status
     /// de cada canal, só do que o usuário enxerga.
-    pub fn voice_snapshot(&self, q: &Q, user_id: &str) -> (Vec<crate::voice::VoiceState>, serde_json::Map<String, Value>) {
+    pub fn voice_snapshot(
+        &self,
+        q: &Q,
+        user_id: &str,
+    ) -> (
+        Vec<crate::voice::VoiceState>,
+        serde_json::Map<String, Value>,
+    ) {
         let (states, statuses) = {
             let voice = lock(&self.voice);
-            (voice.all().into_iter().map(|v| v.state).collect::<Vec<_>>(), voice.statuses())
+            (
+                voice.all().into_iter().map(|v| v.state).collect::<Vec<_>>(),
+                voice.statuses(),
+            )
         };
-        let states = states.into_iter().filter(|v| q.can_access(user_id, &v.channel_id)).collect();
+        let states = states
+            .into_iter()
+            .filter(|v| q.can_access(user_id, &v.channel_id))
+            .collect();
         let statuses = statuses
             .into_iter()
             .filter(|(c, _)| q.can_access(user_id, c))
@@ -281,7 +297,10 @@ async fn typing_start(
     };
     let payload =
         json!({ "channelId": channel_id, "userId": me, "displayName": user.display_name });
-    let private = channel.server_id.as_ref().and_then(|_| q.private_audience(&channel.id));
+    let private = channel
+        .server_id
+        .as_ref()
+        .and_then(|_| q.private_audience(&channel.id));
     match (&channel.server_id, private) {
         (Some(_), Some(ids)) => {
             let others: Vec<String> = ids.into_iter().filter(|r| *r != me).collect();
@@ -323,7 +342,11 @@ async fn presence_activity(
 }
 
 /// Jogo aberto no app do Windows: `{ name, icon }` ou null.
-async fn presence_game(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+async fn presence_game(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
     let d = d.ok();
     app.get().set_game(&me, d.as_ref().filter(|v| !v.is_null()));
 }
@@ -349,7 +372,11 @@ async fn voice_join(
         let _ = ack.send(&json!({ "ok": false, "error": "Esse canal é de texto" }));
         return;
     }
-    let p = channel.server_id.as_deref().map(|sid| q.permissions(sid, &me)).unwrap_or(perms::ALL);
+    let p = channel
+        .server_id
+        .as_deref()
+        .map(|sid| q.permissions(sid, &me))
+        .unwrap_or(perms::ALL);
     if !has(p, perms::CONNECT) {
         let _ = ack.send(&json!({ "ok": false, "error": "Você não tem permissão para entrar neste canal de voz" }));
         return;
@@ -397,25 +424,41 @@ async fn voice_join(
 
 /// O app pede de novo o estado da voz (ao conectar, ao entrar num servidor ou abrir outro),
 /// para não depender só do que chegou no momento da conexão.
-async fn voice_sync(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, ack: AckSender) {
+async fn voice_sync(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    ack: AckSender,
+) {
     let q = app.store.q();
     let (states, statuses) = app.voice_snapshot(&q, &me);
     let _ = ack.send(&json!({ "states": states, "statuses": statuses }));
 }
 
-async fn music_control(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+async fn music_control(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
     if let Ok(d) = d {
         crate::music::control(app.get(), &me, &d);
     }
 }
 
-async fn music_report(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+async fn music_report(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
     if let Ok(d) = d {
         crate::music::report(app.get(), &me, &d);
     }
 }
 
-async fn music_sync(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, ack: AckSender) {
+async fn music_sync(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    ack: AckSender,
+) {
     let q = app.store.q();
     let _ = ack.send(&app.music_snapshot(&q, &me));
 }
@@ -443,8 +486,13 @@ async fn voice_state(
         return;
     }
     let q = app.store.q();
-    let server_id = lock(&app.voice).get(&me).and_then(|v| v.state.server_id.clone());
-    let p = server_id.as_deref().map(|sid| q.permissions(sid, &me)).unwrap_or(perms::ALL);
+    let server_id = lock(&app.voice)
+        .get(&me)
+        .and_then(|v| v.state.server_id.clone());
+    let p = server_id
+        .as_deref()
+        .map(|sid| q.permissions(sid, &me))
+        .unwrap_or(perms::ALL);
     let mut patch = VoicePatch::from_json(&patch);
     // Sem "Falar" fica sempre mudo; sem "Vídeo" não liga câmera nem compartilha tela.
     if !has(p, perms::SPEAK) && patch.muted == Some(false) {
@@ -501,7 +549,11 @@ async fn voice_status(
 
 /// Silenciar pede "Silenciar membros"; mover e desconectar pedem "Mover membros".
 fn can_moderate_voice(q: &Q, user_id: &str, server_id: &str, action: &str) -> bool {
-    let flag = if matches!(action, "mute" | "deafen") { perms::MUTE_MEMBERS } else { perms::MOVE_MEMBERS };
+    let flag = if matches!(action, "mute" | "deafen") {
+        perms::MUTE_MEMBERS
+    } else {
+        perms::MOVE_MEMBERS
+    };
     has(q.permissions(server_id, user_id), flag)
 }
 
@@ -534,7 +586,11 @@ async fn voice_moderate(
     let value = d.get("value").and_then(|v| v.as_bool());
     match action {
         "mute" | "deafen" => {
-            let flags = if action == "mute" { (value, None) } else { (None, value) };
+            let flags = if action == "mute" {
+                (value, None)
+            } else {
+                (None, value)
+            };
             let state = lock(&app.voice).set_server_flags(target, flags.0, flags.1);
             if let Some(state) = state {
                 app.to_channel(
@@ -546,7 +602,11 @@ async fn voice_moderate(
             }
         }
         "disconnect" => {
-            app.to_socket(entry.sid, "voice:kicked", &json!({ "channelId": entry.state.channel_id }));
+            app.to_socket(
+                entry.sid,
+                "voice:kicked",
+                &json!({ "channelId": entry.state.channel_id }),
+            );
             app.leave_voice(&q, target);
         }
         "move" => {
@@ -554,8 +614,12 @@ async fn voice_moderate(
                 .get("channelId")
                 .and_then(|c| c.as_str())
                 .and_then(|id| q.channel(id))
-                .filter(|c| c.kind == "voice" && c.server_id.as_deref() == Some(server_id.as_str()));
-            if let Some(to) = to.filter(|c| c.id != entry.state.channel_id && q.can_access(target, &c.id)) {
+                .filter(|c| {
+                    c.kind == "voice" && c.server_id.as_deref() == Some(server_id.as_str())
+                });
+            if let Some(to) =
+                to.filter(|c| c.id != entry.state.channel_id && q.can_access(target, &c.id))
+            {
                 app.to_socket(entry.sid, "voice:move", &json!({ "channelId": to.id }));
             }
         }

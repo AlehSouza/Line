@@ -13,8 +13,12 @@ pub struct Turnstile {
 
 impl Turnstile {
     pub fn from_env() -> Option<Self> {
-        let site_key = std::env::var("TURNSTILE_SITE_KEY").ok().filter(|s| !s.is_empty())?;
-        let secret = std::env::var("TURNSTILE_SECRET").ok().filter(|s| !s.is_empty())?;
+        let site_key = std::env::var("TURNSTILE_SITE_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())?;
+        let secret = std::env::var("TURNSTILE_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty())?;
         Some(Self { site_key, secret })
     }
 
@@ -84,8 +88,13 @@ impl SignupLimiter {
         let (max, window) = (self.1, self.2);
         let map = self.0.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
-        map.get(key)
-            .is_some_and(|times| times.iter().filter(|t| now.duration_since(**t) < window).count() >= max)
+        map.get(key).is_some_and(|times| {
+            times
+                .iter()
+                .filter(|t| now.duration_since(**t) < window)
+                .count()
+                >= max
+        })
     }
 
     /// Registra uma tentativa (ex.: senha errada) para `key`.

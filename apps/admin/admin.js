@@ -463,7 +463,9 @@ function users() {
 }
 
 function drawer(...nodes) {
-  $('#drawer-panel').replaceChildren(h('button', { class: 'btn ghost small close', onclick: closeDrawer }, 'Fechar'), ...nodes);
+  // Listas (map) e nulos podem vir misturados: achata tudo antes de pôr na tela.
+  const flat = nodes.flat(Infinity).filter((n) => n !== null && n !== undefined && n !== false);
+  $('#drawer-panel').replaceChildren(h('button', { class: 'btn ghost small close', onclick: closeDrawer }, 'Fechar'), ...flat);
   $('#drawer').hidden = false;
   $('#drawer-panel').scrollTop = 0;
 }
@@ -579,10 +581,22 @@ async function openUser(id) {
     u.servers.length
       ? h('div', { class: 'list' }, u.servers.map((s) => h('div', { class: 'row', style: 'cursor:pointer', onclick: () => openServer(s.id) }, h('div', {}, h('b', {}, s.name), s.ownerId === u.id ? h('span', { class: 'pill violet', style: 'margin-left:6px' }, 'Dono') : null), h('span', { class: 'muted small' }, `${num(s.memberCount)} membros`))))
       : h('p', { class: 'muted' }, 'Não está em nenhum servidor.'),
-    h('h2', {}, `Denúncias contra (${u.reports.length})`),
-    u.reports.length ? u.reports.map((r) => h('div', { class: 'msg' }, h('div', { class: 'meta' }, h('span', {}, `${r.reason || r.kind} · por @${r.reporterUsername || '?'}`), h('span', {}, `${statusLabel(r.status)} · ${ago(r.createdAt)}`)), r.messageContent && h('div', { class: 'text' }, r.messageContent), r.details && h('div', { class: 'text muted' }, r.details))) : h('p', { class: 'muted' }, 'Nenhuma.'),
-    h('h2', {}, 'Mensagens recentes em servidores'),
-    h('p', { class: 'muted small' }, 'DMs ficam de fora: conversas privadas não aparecem no painel.'),
+    userTabs(u, id),
+  );
+}
+
+/** Abas da ficha: mensagens recentes e o histórico completo de denúncias (mais recentes primeiro). */
+function userTabs(u, id) {
+  const reportItem = (r) =>
+    h(
+      'div',
+      { class: 'msg' },
+      h('div', { class: 'meta' }, h('span', {}, `${r.reason || r.kind} · por @${r.reporterUsername || '?'}`), h('span', { title: date(r.createdAt) }, `${statusLabel(r.status)} · ${date(r.createdAt)} (${ago(r.createdAt)})`)),
+      r.messageContent ? h('div', { class: 'text' }, r.messageContent) : null,
+      r.details ? h('div', { class: 'text muted' }, r.details) : null,
+    );
+  const messages = () => [
+    h('p', { class: 'muted small' }, 'Só servidores: conversas privadas (DMs) não aparecem no painel.'),
     u.recentMessages.length
       ? u.recentMessages.map((m) =>
           h(
@@ -593,7 +607,25 @@ async function openUser(id) {
           ),
         )
       : h('p', { class: 'muted' }, 'Nenhuma.'),
-  );
+  ];
+  const reports = () => {
+    const list = [...u.reports].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list.length ? list.map(reportItem) : [h('p', { class: 'muted' }, 'Nenhuma denúncia contra essa conta.')];
+  };
+  const tabs = [
+    { id: 'reports', label: `Denúncias contra (${u.reports.length})`, render: reports },
+    { id: 'messages', label: 'Mensagens recentes', render: messages },
+  ];
+  const body = h('div', { style: 'margin-top:12px' });
+  const bar = h('div', { class: 'tabs' });
+  const show = (t) => {
+    for (const b of bar.children) b.classList.toggle('on', b.dataset.tab === t.id);
+    body.replaceChildren(...t.render().flat(Infinity).filter(Boolean));
+  };
+  for (const t of tabs) bar.append(h('button', { class: 'tab', 'data-tab': t.id, onclick: () => show(t) }, t.label));
+  const wrap = h('div', { style: 'margin-top:24px' }, bar, body);
+  show(tabs[0]);
+  return wrap;
 }
 
 async function deleteMessage(id, after) {
@@ -645,6 +677,7 @@ async function openServer(id) {
       h('dd', {}, s.ownerUsername ? h('button', { class: 'linkish', onclick: () => openUser(s.ownerId) }, `${s.ownerName} (@${s.ownerUsername})`) : '—'),
       h('dt', {}, 'Criado em'),
       h('dd', {}, date(s.createdAt)),
+      s.suspendedAt ? [h('dt', {}, 'Situação'), h('dd', {}, h('span', { class: 'pill red' }, `Suspenso ${ago(s.suspendedAt)}`))] : null,
       h('dt', {}, 'Membros'),
       h('dd', {}, num(s.memberCount)),
       h('dt', {}, 'Mensagens'),
@@ -654,20 +687,35 @@ async function openServer(id) {
     h(
       'div',
       { class: 'actions' },
-      h(
-        'button',
-        {
-          class: 'btn danger solid',
-          onclick: async () => {
-            if (!(await ask({ title: `Apagar ${s.name}`, message: `Apaga o servidor com todos os canais e mensagens para os ${num(s.memberCount)} membros. Não dá para desfazer.`, confirm: 'Apagar servidor', danger: true }))) return;
-            if (await act(() => api('DELETE', `/admin/servers/${id}`), 'Servidor apagado.')) {
-              closeDrawer();
-              refreshList();
-            }
-          },
-        },
-        'Apagar servidor',
-      ),
+      s.suspendedAt
+        ? h(
+            'button',
+            {
+              class: 'btn solid',
+              onclick: async () => {
+                if (!(await ask({ title: `Reativar ${s.name}`, message: 'O servidor volta a funcionar para todos os membros, com tudo que tinha.', confirm: 'Reativar servidor' }))) return;
+                if (await act(() => api('DELETE', `/admin/servers/${id}/suspend`), 'Servidor reativado.')) {
+                  openServer(id);
+                  refreshList();
+                }
+              },
+            },
+            'Reativar servidor',
+          )
+        : h(
+            'button',
+            {
+              class: 'btn danger solid',
+              onclick: async () => {
+                if (!(await ask({ title: `Suspender ${s.name}`, message: `Desativa o servidor para os ${num(s.memberCount)} membros: ninguém manda mensagem nem entra na voz, e todos veem "Servidor suspenso.". Nada é apagado e você pode reativar depois.`, confirm: 'Suspender servidor', danger: true }))) return;
+                if (await act(() => api('PUT', `/admin/servers/${id}/suspend`), 'Servidor suspenso.')) {
+                  openServer(id);
+                  refreshList();
+                }
+              },
+            },
+            'Suspender servidor',
+          ),
     ),
     h('h2', {}, `Canais (${s.channels.length})`),
     h('div', { class: 'list' }, s.channels.map((c) => h('div', { class: 'row' }, h('span', {}, c.type === 'voice' ? '🔊 ' : '# ', c.name, c.isPrivate ? h('span', { class: 'pill', style: 'margin-left:6px' }, 'privado') : null), h('span', { class: 'muted small' }, c.type === 'voice' ? 'voz' : `${num(c.messageCount)} mensagens`)))),

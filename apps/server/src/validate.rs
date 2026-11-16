@@ -80,7 +80,11 @@ fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
         return Ok(serde_json::Value::Null);
     };
     for key in ["bg", "fg", "border", "iconColor"] {
-        if let Some(c) = obj.get(key).and_then(|c| c.as_str()).filter(|c| !c.is_empty()) {
+        if let Some(c) = obj
+            .get(key)
+            .and_then(|c| c.as_str())
+            .filter(|c| !c.is_empty())
+        {
             out.insert(key.into(), color(c)?.into());
         }
     }
@@ -90,7 +94,11 @@ fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
         }
         out.insert("iconStyle".into(), s.into());
     }
-    Ok(if out.is_empty() { serde_json::Value::Null } else { out.into() })
+    Ok(if out.is_empty() {
+        serde_json::Value::Null
+    } else {
+        out.into()
+    })
 }
 
 fn color(raw: &str) -> ApiResult<String> {
@@ -142,7 +150,10 @@ pub fn optional_email(raw: Option<&str>) -> ApiResult<Option<String>> {
             let valid = e.len() <= 254
                 && !e.contains(char::is_whitespace)
                 && e.split_once('@').is_some_and(|(user, host)| {
-                    !user.is_empty() && host.contains('.') && !host.starts_with('.') && !host.ends_with('.')
+                    !user.is_empty()
+                        && host.contains('.')
+                        && !host.starts_with('.')
+                        && !host.ends_with('.')
                 });
             if !valid {
                 return Err(validation("Digite um email válido"));
@@ -208,7 +219,12 @@ impl CreatePoll {
     pub fn check(mut self) -> ApiResult<Self> {
         self.question = self.question.trim().to_string();
         text(&self.question, 1, 300, "A pergunta")?;
-        self.options = self.options.iter().map(|o| o.trim().to_string()).filter(|o| !o.is_empty()).collect();
+        self.options = self
+            .options
+            .iter()
+            .map(|o| o.trim().to_string())
+            .filter(|o| !o.is_empty())
+            .collect();
         if self.options.len() < 2 || self.options.len() > 10 {
             return Err(validation("A enquete precisa de 2 a 10 opções"));
         }
@@ -223,7 +239,12 @@ impl CreatePoll {
 pub fn reaction_emoji(raw: &str) -> ApiResult<String> {
     let e = raw.trim();
     let n = e.chars().count();
-    if n == 0 || n > 16 || e.len() > 64 || e.chars().any(|c| c.is_ascii_alphabetic() || c.is_whitespace() || c.is_control()) {
+    if n == 0
+        || n > 16
+        || e.len() > 64
+        || e.chars()
+            .any(|c| c.is_ascii_alphabetic() || c.is_whitespace() || c.is_control())
+    {
         return Err(validation("Emoji inválido"));
     }
     if !e.chars().any(|c| (c as u32) >= 0x2000) {
@@ -245,7 +266,8 @@ pub struct ForgotPassword {
 
 impl ForgotPassword {
     pub fn check(mut self) -> ApiResult<Self> {
-        self.email = optional_email(Some(&self.email))?.ok_or_else(|| validation("Digite seu email"))?;
+        self.email =
+            optional_email(Some(&self.email))?.ok_or_else(|| validation("Digite seu email"))?;
         Ok(self)
     }
 }
@@ -342,7 +364,15 @@ impl UpdateProfile {
         if let Some(Some(t)) = &self.thought {
             text(t, 0, 80, "O pensamento")?;
         }
-        for c in [&mut self.bot_name_color, &mut self.bot_tag_color, &mut self.bot_ring_color].into_iter().flatten().flatten() {
+        for c in [
+            &mut self.bot_name_color,
+            &mut self.bot_tag_color,
+            &mut self.bot_ring_color,
+        ]
+        .into_iter()
+        .flatten()
+        .flatten()
+        {
             *c = color(c)?;
         }
         if let Some(t) = &self.bot_tag_text
@@ -443,7 +473,9 @@ impl CreateChannel {
         if kind != "text" && kind != "voice" {
             return Err(validation("Tipo de canal inválido"));
         }
-        if self.member_ids.as_ref().is_some_and(|m| m.len() > 500) || self.role_ids.as_ref().is_some_and(|m| m.len() > 250) {
+        if self.member_ids.as_ref().is_some_and(|m| m.len() > 500)
+            || self.role_ids.as_ref().is_some_and(|m| m.len() > 250)
+        {
             return Err(validation("Membros demais no canal privado"));
         }
         if let Some(t) = &self.topic {
@@ -514,7 +546,10 @@ impl SendMessage {
     pub fn check_with(mut self, has_attachments: bool) -> ApiResult<Self> {
         self.content = self.content.trim().to_string();
         self.requires.retain(|f| {
-            !f.is_empty() && f.len() <= 32 && f.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            !f.is_empty()
+                && f.len() <= 32
+                && f.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         });
         self.requires.sort();
         self.requires.dedup();
@@ -585,7 +620,10 @@ fn role_name(raw: &str) -> ApiResult<String> {
     let s = raw.trim().to_string();
     text(&s, 1, 100, "O nome do cargo")?;
     let lower = s.to_lowercase();
-    if matches!(lower.trim_start_matches('@'), "everyone" | "here" | "todos" | "aqui") {
+    if matches!(
+        lower.trim_start_matches('@'),
+        "everyone" | "here" | "todos" | "aqui"
+    ) {
         return Err(validation("Esse nome é reservado"));
     }
     Ok(s)
@@ -655,7 +693,11 @@ pub struct UpdateMember {
 impl UpdateMember {
     /// Apelido vazio volta para o nome de exibição (None).
     pub fn check(self) -> ApiResult<Option<String>> {
-        let nick = self.nickname.flatten().map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+        let nick = self
+            .nickname
+            .flatten()
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty());
         if let Some(n) = &nick {
             text(n, 1, 32, "O apelido")?;
         }

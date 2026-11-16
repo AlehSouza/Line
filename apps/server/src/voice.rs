@@ -116,7 +116,12 @@ impl VoiceRegistry {
 
     /// Tira o usuário da voz. O bool diz se o canal ficou vazio e perdeu o status.
     /// Silenciar / desativar áudio no servidor (moderação).
-    pub fn set_server_flags(&mut self, user_id: &str, muted: Option<bool>, deafened: Option<bool>) -> Option<VoiceState> {
+    pub fn set_server_flags(
+        &mut self,
+        user_id: &str,
+        muted: Option<bool>,
+        deafened: Option<bool>,
+    ) -> Option<VoiceState> {
         let s = &mut self.by_user.get_mut(user_id)?.state;
         if let Some(m) = muted {
             s.server_muted = m;

@@ -16,7 +16,12 @@ pub struct Mailer {
 
 impl Mailer {
     pub fn from_env() -> Option<Self> {
-        let var = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let var = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
         let host = var("SMTP_HOST")?;
         let port: u16 = var("SMTP_PORT").and_then(|p| p.parse().ok()).unwrap_or(465);
         let builder = if port == 465 {
@@ -52,7 +57,9 @@ impl Mailer {
 
     /// Email com o link de redefinição. Erros só vão para o log.
     pub async fn send_password_reset(&self, to: &str, name: &str, link: &str) {
-        let Ok(to_box) = to.parse::<Mailbox>() else { return };
+        let Ok(to_box) = to.parse::<Mailbox>() else {
+            return;
+        };
         let text = format!(
             "Oi, {name}!\n\nAlguém (talvez você) pediu para redefinir a senha da sua conta no Line.\n\
              Para escolher uma senha nova, abra o link abaixo. Ele vale por 30 minutos e só funciona uma vez.\n\n\
@@ -86,7 +93,9 @@ impl Mailer {
 impl Mailer {
     /// Email com o código de 6 caracteres pedido nas configurações da conta.
     pub async fn send_code(&self, to: &str, name: &str, code: &str) {
-        let Ok(to_box) = to.parse::<Mailbox>() else { return };
+        let Ok(to_box) = to.parse::<Mailbox>() else {
+            return;
+        };
         let text = format!(
             "Oi, {name}!\n\nSeu código de confirmação do Line é: {code}\n\n\
              Ele vale por 15 minutos. Se não foi você que pediu, é só ignorar este email.\n"
@@ -117,5 +126,8 @@ impl Mailer {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }

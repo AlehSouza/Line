@@ -17,7 +17,11 @@ pub struct ActivitySettings {
 
 impl Default for ActivitySettings {
     fn default() -> Self {
-        Self { share: true, scope: "all".into(), hidden_servers: vec![] }
+        Self {
+            share: true,
+            scope: "all".into(),
+            hidden_servers: vec![],
+        }
     }
 }
 
@@ -70,9 +74,12 @@ impl Q<'_> {
         let mut st = ok(self.c.prepare_cached(
             "SELECT m.server_id, (SELECT COUNT(*) FROM members x WHERE x.server_id = m.server_id) FROM members m WHERE m.user_id = ?",
         ));
-        let rows: Vec<(String, i64)> = ok(ok(st.query_map([owner], |r| Ok((r.get(0)?, r.get(1)?)))).collect());
+        let rows: Vec<(String, i64)> =
+            ok(ok(st.query_map([owner], |r| Ok((r.get(0)?, r.get(1)?)))).collect());
         rows.into_iter()
-            .filter(|(id, n)| !s.hidden_servers.contains(id) && (s.scope != "small" || *n <= SMALL_SERVER))
+            .filter(|(id, n)| {
+                !s.hidden_servers.contains(id) && (s.scope != "small" || *n <= SMALL_SERVER)
+            })
             .map(|(id, _)| id)
             .collect()
     }
@@ -114,7 +121,11 @@ impl Q<'_> {
     pub fn game_hidden(&self, user_id: &str, name: &str) -> bool {
         ok(self
             .c
-            .query_row("SELECT hidden FROM user_games WHERE user_id = ? AND name = ?", [user_id, name], |r| r.get::<_, i64>(0))
+            .query_row(
+                "SELECT hidden FROM user_games WHERE user_id = ? AND name = ?",
+                [user_id, name],
+                |r| r.get::<_, i64>(0),
+            )
             .optional())
         .is_some_and(|h| h != 0)
     }
@@ -127,7 +138,10 @@ impl Q<'_> {
     }
 
     pub fn remove_game(&self, user_id: &str, name: &str) {
-        ok(self.c.execute("DELETE FROM user_games WHERE user_id = ? AND name = ?", [user_id, name]));
+        ok(self.c.execute(
+            "DELETE FROM user_games WHERE user_id = ? AND name = ?",
+            [user_id, name],
+        ));
     }
 
     /// Jogos da pessoa, do mais recente ao mais antigo.
@@ -153,7 +167,9 @@ impl Q<'_> {
 
     /// Jogo mais recente (não escondido) de cada um, jogado nas últimas `hours` horas.
     pub fn recent_games(&self, user_ids: &[String], hours: i64) -> Vec<(String, Value)> {
-        let since = (chrono::Utc::now() - chrono::Duration::hours(hours)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let since = (chrono::Utc::now() - chrono::Duration::hours(hours))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
         let mut out = vec![];
         let mut st = ok(self.c.prepare_cached(
             "SELECT g.name, g.icon, g.last_played, g.total_secs, c.cover
@@ -201,7 +217,11 @@ impl Q<'_> {
     pub fn cached_cover(&self, name: &str) -> Option<Option<String>> {
         ok(self
             .c
-            .query_row("SELECT cover FROM game_covers WHERE name = ?", [name.to_lowercase()], |r| r.get::<_, Option<String>>(0))
+            .query_row(
+                "SELECT cover FROM game_covers WHERE name = ?",
+                [name.to_lowercase()],
+                |r| r.get::<_, Option<String>>(0),
+            )
             .optional())
     }
 

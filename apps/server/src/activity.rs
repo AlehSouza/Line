@@ -22,8 +22,17 @@ pub struct Igdb {
 
 impl Igdb {
     pub fn from_env() -> Option<Self> {
-        let var = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
-        Some(Self { client_id: var("IGDB_CLIENT_ID")?, secret: var("IGDB_CLIENT_SECRET")?, token: Default::default() })
+        let var = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
+        Some(Self {
+            client_id: var("IGDB_CLIENT_ID")?,
+            secret: var("IGDB_CLIENT_SECRET")?,
+            token: Default::default(),
+        })
     }
 
     async fn token(&self, http: &reqwest::Client) -> Option<String> {
@@ -35,7 +44,11 @@ impl Igdb {
         }
         let v: Value = http
             .post("https://id.twitch.tv/oauth2/token")
-            .query(&[("client_id", self.client_id.as_str()), ("client_secret", self.secret.as_str()), ("grant_type", "client_credentials")])
+            .query(&[
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.secret.as_str()),
+                ("grant_type", "client_credentials"),
+            ])
             .send()
             .await
             .ok()?
@@ -43,17 +56,25 @@ impl Igdb {
             .await
             .ok()?;
         let tok = v.get("access_token")?.as_str()?.to_string();
-        let secs = v.get("expires_in").and_then(|x| x.as_u64()).unwrap_or(3600).saturating_sub(300);
+        let secs = v
+            .get("expires_in")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(3600)
+            .saturating_sub(300);
         *t = Some((tok.clone(), Instant::now() + Duration::from_secs(secs)));
         Some(tok)
     }
 
     /// URL da capa do jogo (ou None se a IGDB não achou).
     pub async fn cover(&self, name: &str) -> Option<String> {
-        let http = reqwest::Client::builder().timeout(Duration::from_secs(8)).build().ok()?;
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .build()
+            .ok()?;
         let token = self.token(&http).await?;
         let safe: String = name.chars().filter(|c| *c != '"' && *c != '\\').collect();
-        let body = format!("search \"{safe}\"; fields name,cover.image_id; where cover != null; limit 1;");
+        let body =
+            format!("search \"{safe}\"; fields name,cover.image_id; where cover != null; limit 1;");
         let v: Value = http
             .post("https://api.igdb.com/v4/games")
             .header("Client-ID", &self.client_id)
@@ -66,25 +87,35 @@ impl Igdb {
             .await
             .ok()?;
         let id = v.get(0)?.get("cover")?.get("image_id")?.as_str()?;
-        Some(format!("https://images.igdb.com/igdb/image/upload/t_cover_big/{id}.jpg"))
+        Some(format!(
+            "https://images.igdb.com/igdb/image/upload/t_cover_big/{id}.jpg"
+        ))
     }
 }
 
 /// Nome de jogo aceitável vindo do app.
 fn clean_name(s: &str) -> Option<String> {
-    let n: String = s.trim().chars().filter(|c| !c.is_control()).take(80).collect();
+    let n: String = s
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(80)
+        .collect();
     (!n.is_empty()).then_some(n)
 }
 
 /// Ícone pequeno em data URL PNG (até 48 KB).
 fn clean_icon(s: Option<&str>) -> Option<String> {
-    s.filter(|i| i.starts_with("data:image/png;base64,") && i.len() <= 48 * 1024).map(String::from)
+    s.filter(|i| i.starts_with("data:image/png;base64,") && i.len() <= 48 * 1024)
+        .map(String::from)
 }
 
 impl App {
     /// Jogo de agora (para quem pode ver): nome, desde quando e capa/ícone.
     fn activity_payload(&self, q: &crate::store::Q, user_id: &str) -> Value {
-        let playing = lock(&self.playing.0).get(user_id).map(|(n, since, _)| (n.clone(), since.clone()));
+        let playing = lock(&self.playing.0)
+            .get(user_id)
+            .map(|(n, since, _)| (n.clone(), since.clone()));
         match playing {
             Some((name, since)) if !q.game_hidden(user_id, &name) => {
                 let info = q.game_info(user_id, &name).unwrap_or(json!({}));
@@ -120,10 +151,15 @@ impl App {
 
     /// `presence:game` do app: `{ name, icon }` ou null.
     pub fn set_game(self: &Arc<Self>, user_id: &str, data: Option<&Value>) {
-        let name = data.and_then(|d| d.get("name")).and_then(|n| n.as_str()).and_then(clean_name);
+        let name = data
+            .and_then(|d| d.get("name"))
+            .and_then(|n| n.as_str())
+            .and_then(clean_name);
         let icon = clean_icon(data.and_then(|d| d.get("icon")).and_then(|i| i.as_str()));
         let q = self.store.q();
-        let current = lock(&self.playing.0).get(user_id).map(|(n, _, _)| n.clone());
+        let current = lock(&self.playing.0)
+            .get(user_id)
+            .map(|(n, _, _)| n.clone());
         if current == name {
             return;
         }
@@ -133,7 +169,10 @@ impl App {
             return;
         };
         q.game_started(user_id, &name, icon.as_deref());
-        lock(&self.playing.0).insert(user_id.to_string(), (name.clone(), crate::ids::now_iso(), Instant::now()));
+        lock(&self.playing.0).insert(
+            user_id.to_string(),
+            (name.clone(), crate::ids::now_iso(), Instant::now()),
+        );
         self.broadcast_activity(&q, user_id);
         let need_cover = self.igdb.is_some() && q.cached_cover(&name).is_none();
         drop(q);
@@ -160,14 +199,22 @@ impl App {
 
     /// Atividade de agora (ou recente, até 24 h) dos membros de um servidor que eu posso ver.
     pub fn server_activities(&self, q: &crate::store::Q, me: &str, server_id: &str) -> Vec<Value> {
-        let members: Vec<String> = q.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id]);
+        let members: Vec<String> = q.ids(
+            "SELECT user_id FROM members WHERE server_id = ?",
+            [server_id],
+        );
         let playing = lock(&self.playing.0).clone();
         let mut out: Vec<(bool, String, Value)> = vec![];
-        let mut settings_cache: HashMap<String, crate::store::activity::ActivitySettings> = HashMap::new();
-        let visible = |id: &str, cache: &mut HashMap<String, crate::store::activity::ActivitySettings>| {
-            let s = cache.entry(id.to_string()).or_insert_with(|| q.activity_settings(id)).clone();
-            s.share && q.activity_servers(id, &s).iter().any(|x| x == server_id) || id == me
-        };
+        let mut settings_cache: HashMap<String, crate::store::activity::ActivitySettings> =
+            HashMap::new();
+        let visible =
+            |id: &str, cache: &mut HashMap<String, crate::store::activity::ActivitySettings>| {
+                let s = cache
+                    .entry(id.to_string())
+                    .or_insert_with(|| q.activity_settings(id))
+                    .clone();
+                s.share && q.activity_servers(id, &s).iter().any(|x| x == server_id) || id == me
+            };
         let mut rest = vec![];
         for id in &members {
             if let Some((name, since, _)) = playing.get(id) {
@@ -188,7 +235,11 @@ impl App {
             if !visible(&id, &mut settings_cache) {
                 continue;
             }
-            let last = g.get("lastPlayed").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let last = g
+                .get("lastPlayed")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             let mut v = g;
             v["userId"] = json!(id);
             v["playing"] = json!(false);

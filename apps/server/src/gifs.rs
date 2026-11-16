@@ -23,7 +23,9 @@ pub struct Gif {
 
 impl Giphy {
     pub fn from_env() -> Option<Self> {
-        let key = std::env::var("GIPHY_API_KEY").ok().filter(|s| !s.is_empty())?;
+        let key = std::env::var("GIPHY_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())?;
         Some(Self { key })
     }
 
@@ -68,7 +70,11 @@ impl Giphy {
                 Some(Gif {
                     id: s(&g["id"]),
                     title: s(&g["title"]),
-                    preview: if prev.is_empty() { s(&img["fixed_width"]["url"]) } else { prev },
+                    preview: if prev.is_empty() {
+                        s(&img["fixed_width"]["url"])
+                    } else {
+                        prev
+                    },
                     url,
                     width: n(&full["width"]),
                     height: n(&full["height"]),

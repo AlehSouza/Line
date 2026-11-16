@@ -66,7 +66,11 @@ fn random_token() -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn take<V: Clone>(map: &Mutex<HashMap<String, (V, Instant)>>, key: &str, ttl: Duration) -> Option<V> {
+fn take<V: Clone>(
+    map: &Mutex<HashMap<String, (V, Instant)>>,
+    key: &str,
+    ttl: Duration,
+) -> Option<V> {
     let mut m = map.lock().unwrap_or_else(|e| e.into_inner());
     m.retain(|_, (_, t)| t.elapsed() < ttl);
     m.remove(key).map(|(v, _)| v)
@@ -82,12 +86,19 @@ fn put<V>(map: &Mutex<HashMap<String, (V, Instant)>>, v: V, ttl: Duration) -> St
 
 impl Google {
     pub fn from_env() -> Option<Self> {
-        let var = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let var = |k: &str| {
+            std::env::var(k)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        };
         let client_id = var("GOOGLE_CLIENT_ID")?;
         let client_secret = var("GOOGLE_CLIENT_SECRET")?;
         let public = var("PUBLIC_URL").unwrap_or_else(|| "https://useline.tech".into());
-        let app_url = var("APP_URL").unwrap_or_else(|| format!("{}/app", public.trim_end_matches('/')));
-        let admin_url = var("ADMIN_URL").unwrap_or_else(|| public.replacen("://", "://backoffice.", 1));
+        let app_url =
+            var("APP_URL").unwrap_or_else(|| format!("{}/app", public.trim_end_matches('/')));
+        let admin_url =
+            var("ADMIN_URL").unwrap_or_else(|| public.replacen("://", "://backoffice.", 1));
         Some(Self {
             client_id,
             client_secret,
@@ -137,8 +148,14 @@ impl Google {
 
     /// Cabeçalho Set-Cookie do login (só HTTPS marca Secure; vale 10 minutos).
     pub fn cookie_header(&self, nonce: &str) -> String {
-        let secure = if self.redirect_uri.starts_with("https://") { "; Secure" } else { "" };
-        format!("{COOKIE}={nonce}; Path=/api/auth/google; Max-Age=600; HttpOnly; SameSite=Lax{secure}")
+        let secure = if self.redirect_uri.starts_with("https://") {
+            "; Secure"
+        } else {
+            ""
+        };
+        format!(
+            "{COOKIE}={nonce}; Path=/api/auth/google; Max-Age=600; HttpOnly; SameSite=Lax{secure}"
+        )
     }
 
     /// Troca o `code` do callback pelo perfil do usuário. O perfil vem direto do Google por
@@ -183,7 +200,14 @@ impl Google {
     /// Para onde o navegador vai depois do callback (com o código ou com o erro).
     pub fn return_url(&self, target: Target, result: Result<&str, &str>) -> String {
         let (key, value) = match result {
-            Ok(code) => (if matches!(target, Target::Desktop(_)) { "code" } else { "google" }, code),
+            Ok(code) => (
+                if matches!(target, Target::Desktop(_)) {
+                    "code"
+                } else {
+                    "google"
+                },
+                code,
+            ),
             Err(msg) => ("googleError", msg),
         };
         let base = match target {
