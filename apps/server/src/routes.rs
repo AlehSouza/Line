@@ -71,6 +71,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/servers/order", put(reorder_my_servers))
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
+        .route("/users/@me/code", post(send_email_code))
         .route("/users/{id}", get(get_user))
         .route("/users/{id}/mutual", get(get_mutual))
         .route("/search", get(search))
@@ -586,9 +587,71 @@ async fn check_password(app: &App, me: &str, password: String) -> ApiResult<()> 
     if valid { Ok(()) } else { Err(validation("Senha atual incorreta")) }
 }
 
+/// Validade do código enviado por email nas configurações.
+const CODE_MINUTES: i64 = 15;
+/// Sem 0/O e 1/I para não confundir na hora de digitar.
+const CODE_ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+/// Hash do código de confirmação. Fica na mesma tabela dos links de recuperação,
+/// mas preso ao usuário (o mesmo código de outra conta não confere).
+fn email_code_hash(me: &str, code: &str) -> String {
+    reset_token_hash(&format!("code:{me}:{}", code.trim().to_uppercase()))
+}
+
+/// Envia um código de 6 caracteres para o email da conta. Serve para trocar senha, @ ou email
+/// sem a senha atual (ex.: conta criada pelo Google, que não tem senha).
+async fn send_email_code(State(app): S, Me(me): Me) -> Res {
+    if app.mailer.is_none() {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "RESET_DISABLED", "O envio de email ainda não está disponível."));
+    }
+    let code: String = {
+        use rand::Rng;
+        let mut rng = rand::rng();
+        (0..6).map(|_| CODE_ALPHABET[rng.random_range(0..CODE_ALPHABET.len())] as char).collect()
+    };
+    let (email, name) = {
+        let q = app.store.q();
+        let user = q.user_row(&me).ok_or_else(|| validation("Conta não encontrada"))?;
+        let Some(email) = user.email.clone().filter(|e| !e.is_empty()) else {
+            return Err(validation("Sua conta não tem email cadastrado."));
+        };
+        if q.reset_requested_recently(&me, 60) {
+            return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Espere um minuto para pedir outro código."));
+        }
+        q.create_password_reset(&me, &email_code_hash(&me, &code), CODE_MINUTES);
+        (email, user.display_name)
+    };
+    let app = app.clone();
+    tokio::spawn(async move {
+        if let Some(mailer) = &app.mailer {
+            mailer.send_code(&email, &name, &code).await;
+        }
+    });
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Confere a senha atual ou o código do email. Com o código, devolve o hash dele para o
+/// handler gastar só quando a alteração der certo.
+async fn check_identity(app: &App, me: &str, password: String, code: &str) -> ApiResult<Option<String>> {
+    if code.trim().is_empty() {
+        check_password(app, me, password).await?;
+        return Ok(None);
+    }
+    let wrong = || validation("Código incorreto ou expirado. Peça um novo.");
+    if app.code_tries.blocked(me) {
+        return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitas tentativas. Peça um novo código daqui a pouco."));
+    }
+    let hash = email_code_hash(me, code);
+    if app.store.q().password_reset_user(&hash).as_deref() != Some(me) {
+        app.code_tries.hit(me);
+        return Err(wrong());
+    }
+    Ok(Some(hash))
+}
+
 async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input = body::<validate::UpdateAccount>(&b)?.check()?;
-    check_password(&app, &me, input.current_password.clone()).await?;
+    let code_hash = check_identity(&app, &me, input.current_password.clone(), &input.code).await?;
     let q = app.store.q();
     if let Some(name) = &input.username
         && q.user_by_username(name).is_some_and(|u| u.id != me)
@@ -600,6 +663,11 @@ async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {
         && q.email_in_use(email)
     {
         return Err(conflict("Esse email já tem uma conta"));
+    }
+    if let Some(hash) = &code_hash {
+        if !q.consume_password_reset(hash) {
+            return Err(validation("Código incorreto ou expirado. Peça um novo."));
+        }
     }
     if let Some(name) = &input.username {
         q.set_username(&me, name);
@@ -617,7 +685,7 @@ async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {
 
 async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input = body::<validate::ChangePassword>(&b)?.check()?;
-    check_password(&app, &me, input.current_password).await?;
+    let code_hash = check_identity(&app, &me, input.current_password, &input.code).await?;
     let password = input.new_password;
     let hash = tokio::task::spawn_blocking(move || auth::hash_password(&password))
         .await
@@ -626,6 +694,13 @@ async fn change_password(State(app): S, Me(me): Me, b: Bytes) -> Res {
     // Quem trocou recebe um token novo e reconecta com ele.
     {
         let q = app.store.q();
+        if let Some(code_hash) = &code_hash {
+            if !q.consume_password_reset(code_hash) {
+                return Err(validation("Código incorreto ou expirado. Peça um novo."));
+            }
+            // O código chegou no email: ele está confirmado.
+            q.set_email_verified(&me);
+        }
         q.set_password_hash(&me, &hash);
         q.revoke_sessions(&me);
     }

@@ -821,7 +821,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 ))}
               </div>
             </Field>
-            <Field label="Nome e etiqueta" hint="Como o bot aparece no chat e na lista de membros.">
+            <Field label="Nome e etiqueta" hint="Como o bot aparece no chat e na lista de membros." group>
               <div className="space-y-3">
                 <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 py-2.5">
                   <span className="font-semibold" style={{ color: nameColor ?? undefined }}>

@@ -58,6 +58,8 @@ pub struct App {
     pub mailer: Option<mail::Mailer>,
     /// Pedidos de recuperação de senha por IP.
     pub resets: captcha::SignupLimiter,
+    /// Tentativas de código de confirmação por email (por usuário).
+    pub code_tries: captcha::SignupLimiter,
     /// Senhas erradas no login, por IP e por nome de usuário (contra força bruta).
     pub login_fails_ip: captcha::SignupLimiter,
     pub login_fails_user: captcha::SignupLimiter,
@@ -257,6 +259,7 @@ pub fn build(
         embeds: embeds::EmbedCache::default(),
         mailer: mail::Mailer::from_env(),
         resets: captcha::SignupLimiter::with(5, std::time::Duration::from_secs(60 * 60)),
+        code_tries: captcha::SignupLimiter::with(5, std::time::Duration::from_secs(15 * 60)),
         login_fails_ip: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(15 * 60)),
         login_fails_user: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(15 * 60)),
         google: google::Google::from_env(),

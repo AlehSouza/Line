@@ -56,6 +56,8 @@ pub struct SelfUser {
     pub status_until: Option<String>,
     pub created_at: String,
     pub email: Option<String>,
+    /// false em conta criada pelo Google que ainda não definiu senha.
+    pub has_password: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

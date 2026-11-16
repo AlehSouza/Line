@@ -83,6 +83,39 @@ impl Mailer {
     }
 }
 
+impl Mailer {
+    /// Email com o código de 6 caracteres pedido nas configurações da conta.
+    pub async fn send_code(&self, to: &str, name: &str, code: &str) {
+        let Ok(to_box) = to.parse::<Mailbox>() else { return };
+        let text = format!(
+            "Oi, {name}!\n\nSeu código de confirmação do Line é: {code}\n\n\
+             Ele vale por 15 minutos. Se não foi você que pediu, é só ignorar este email.\n"
+        );
+        let html = format!(
+            r#"<div style="font-family:system-ui,sans-serif;background:#0f0f12;color:#e6e6ea;padding:32px">
+<div style="max-width:440px;margin:0 auto;background:#18181c;border:1px solid #2a2a31;border-radius:16px;padding:28px">
+<h2 style="margin:0 0 12px;color:#fff">Seu código de confirmação</h2>
+<p>Oi, {name}! Use este código nas configurações da sua conta no Line:</p>
+<p style="text-align:center;margin:28px 0;font-size:32px;font-weight:700;letter-spacing:8px;color:#fff;font-family:ui-monospace,monospace">{code}</p>
+<p style="color:#9a9aa5;font-size:13px">O código vale por 15 minutos. Se não foi você que pediu, é só ignorar este email.</p>
+</div></div>"#,
+            name = html_escape(name),
+        );
+        let msg = Message::builder()
+            .from(self.from.clone())
+            .to(to_box)
+            .subject(format!("Seu código do Line: {code}"))
+            .multipart(MultiPart::alternative_plain_html(text, html));
+        let msg = match msg {
+            Ok(m) => m,
+            Err(err) => return tracing::warn!("email de código inválido: {err}"),
+        };
+        if let Err(err) = self.transport.send(msg).await {
+            tracing::warn!("falha ao enviar email de código: {err}");
+        }
+    }
+}
+
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }

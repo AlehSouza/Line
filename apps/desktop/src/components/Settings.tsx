@@ -188,7 +188,12 @@ function AccountSection() {
 
       <div id="conta-senha" className="space-y-1">
         <h2 className="mb-4 text-xl font-bold">Senha e segurança</h2>
-        <Row label="Senha" value={<span className="text-muted">••••••••</span>} onEdit={() => setEditing('password')} />
+        <Row
+          label="Senha"
+          value={<span className="text-muted">{me.hasPassword === false ? 'Nenhuma senha (entra pelo Google)' : '••••••••'}</span>}
+          onEdit={() => setEditing('password')}
+          action={me.hasPassword === false ? 'Definir' : 'Editar'}
+        />
       </div>
 
       {editing && <EditAccountDialog field={editing} onClose={() => setEditing(null)} />}
@@ -196,28 +201,55 @@ function AccountSection() {
   );
 }
 
-function Row({ label, value, onEdit }: { label: string; value: ReactNode; onEdit: () => void }) {
+function Row({ label, value, onEdit, action = 'Editar' }: { label: string; value: ReactNode; onEdit: () => void; action?: string }) {
   return (
     <div className="flex items-center gap-4 py-2.5">
       <span className="font-medium">{label}</span>
       <span className="ml-auto truncate text-sm text-soft">{value}</span>
       <Button variant="ghost" onClick={onEdit} className="shrink-0 border border-edge px-4">
-        Editar
+        {action}
       </Button>
     </div>
   );
 }
 
-/** Troca nome de usuário, email ou senha. Sempre pede a senha atual. */
+/** Troca nome de usuário, email ou senha. Pede a senha atual ou um código enviado por email
+ * (conta do Google sem senha só tem o código). */
 function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | 'password'; onClose: () => void }) {
   const me = useLine((s) => s.me)!;
   const [value, setValue] = useState(field === 'username' ? me.username : field === 'email' ? (me.email ?? '') : '');
   const [confirm, setConfirm] = useState('');
   const [current, setCurrent] = useState('');
+  const noPassword = me.hasPassword === false;
+  const [useCode, setUseCode] = useState(noPassword);
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
-  const title = field === 'username' ? 'Alterar nome de usuário' : field === 'email' ? 'Alterar email' : 'Alterar senha';
+  const title =
+    field === 'username'
+      ? 'Alterar nome de usuário'
+      : field === 'email'
+        ? 'Alterar email'
+        : noPassword
+          ? 'Definir senha'
+          : 'Alterar senha';
+  const proof = useCode ? { code: code.trim() } : { currentPassword: current };
+
+  async function sendCode() {
+    setError('');
+    setSending(true);
+    try {
+      await api.sendEmailCode();
+      setCodeSent(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function save() {
     setError('');
@@ -225,12 +257,12 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
     setBusy(true);
     try {
       if (field === 'password') {
-        const { token } = await api.changePassword(current, value);
+        const { token } = await api.changePassword(proof, value);
         replaceToken(token);
         setDone(true);
       } else {
         const patch = field === 'username' ? { username: value.trim() } : { email: value.trim() || null };
-        actions.setMe(await api.updateAccount({ ...patch, currentPassword: current }));
+        actions.setMe(await api.updateAccount({ ...patch, ...proof }));
         onClose();
       }
     } catch (err) {
@@ -253,7 +285,7 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
         <h3 className="text-xl font-bold">{title}</h3>
         {done ? (
           <>
-            <p className="text-sm text-soft">Senha alterada.</p>
+            <p className="text-sm text-soft">{noPassword ? 'Senha definida. Agora você também entra com ela.' : 'Senha alterada.'}</p>
             <div className="flex justify-end">
               <Button type="button" onClick={onClose}>
                 Fechar
@@ -282,15 +314,55 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
                 />
               </Field>
             )}
-            <Field label="Senha atual">
-              <Input required type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-            </Field>
+            {useCode ? (
+              <div className="space-y-2">
+                <p className="text-sm text-soft">
+                  {codeSent
+                    ? `Enviamos um código de 6 caracteres para ${me.email ? maskEmail(me.email) : 'seu email'}. Ele vale por 15 minutos.`
+                    : 'Para confirmar que é você, vamos mandar um código de 6 caracteres para o seu email.'}
+                </p>
+                {codeSent && (
+                  <Field label="Código do email">
+                    <Input
+                      required
+                      autoFocus
+                      value={code}
+                      maxLength={6}
+                      onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                      autoComplete="one-time-code"
+                      className="font-mono tracking-[0.3em] uppercase"
+                    />
+                  </Field>
+                )}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                  <button type="button" onClick={() => void sendCode()} disabled={sending} className="text-accent hover:underline disabled:opacity-60">
+                    {sending ? 'Enviando…' : codeSent ? 'Reenviar código' : 'Enviar código'}
+                  </button>
+                  {!noPassword && (
+                    <button type="button" onClick={() => setUseCode(false)} className="text-soft hover:underline">
+                      Usar a senha atual
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <Field label="Senha atual">
+                  <Input required type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+                </Field>
+                {me.email && (
+                  <button type="button" onClick={() => setUseCode(true)} className="text-sm text-accent hover:underline">
+                    Esqueceu a senha? Receber código por email
+                  </button>
+                )}
+              </div>
+            )}
             <ErrorText>{error}</ErrorText>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || (useCode && code.trim().length !== 6)}>
                 {busy ? 'Salvando…' : 'Salvar'}
               </Button>
             </div>

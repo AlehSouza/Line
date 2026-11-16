@@ -68,6 +68,8 @@ export interface SelfUser extends PublicUser {
   statusUntil?: string | null;
   createdAt: string;
   email?: string | null;
+  /** false em conta criada pelo Google que ainda não definiu senha. */
+  hasPassword?: boolean;
 }
 
 export interface Server {

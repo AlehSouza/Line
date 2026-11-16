@@ -211,13 +211,16 @@ export function Button({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+/** `group`: vira um div em vez de label. Use quando há vários botões dentro (ex.: SwatchRow),
+ * senão clicar num espaço vazio "clica" no primeiro botão (o Padrão). */
+export function Field({ label, hint, group, children }: { label: string; hint?: string; group?: boolean; children: ReactNode }) {
+  const Tag = group ? 'div' : 'label';
   return (
-    <label className="block space-y-1.5">
-      <span className="text-xs font-bold tracking-wide text-muted uppercase">{label}</span>
+    <Tag className="block space-y-1.5">
+      <span className="block text-xs font-bold tracking-wide text-muted uppercase">{label}</span>
       {children}
       {hint && <span className="block text-xs text-muted">{hint}</span>}
-    </label>
+    </Tag>
   );
 }
 

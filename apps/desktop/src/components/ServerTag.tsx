@@ -405,7 +405,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
           </div>
         </Field>
 
-        <Field label="Cores da tag">
+        <Field label="Cores da tag" group>
           <div className="space-y-3">
             {(
               [
