@@ -4,7 +4,8 @@ use crate::gateway::VoiceFilter;
 use crate::model::*;
 use crate::perms::{self, has};
 use crate::store::{
-    ChannelPatch, FriendRequest, ProfilePatch, Q, RolePatch, SearchFilter, SearchScope, ServerPatch,
+    ChannelAccess, ChannelPatch, FriendRequest, ProfilePatch, Q, RolePatch, SearchFilter,
+    SearchScope, ServerPatch,
 };
 use crate::validate::{self, body};
 use crate::{App, VERSION, auth};
@@ -104,6 +105,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         )
         .route("/servers/{id}/join", post(join_public))
         .route("/servers/{id}/channels", post(create_channel))
+        .route("/servers/{id}/layout", put(set_layout))
         .route("/servers/{id}/roles", get(list_roles).post(create_role))
         .route("/servers/{id}/roles/order", put(reorder_roles))
         .route(
@@ -1783,6 +1785,127 @@ fn to_category(app: &App, q: &Q, category: &Category, event: &str) {
     }
 }
 
+/// Arrastar e soltar na lista de canais: nova ordem das categorias e dos canais (e a
+/// categoria de cada canal). Quem não enxerga um canal/categoria não o manda; os que
+/// ficaram de fora mantêm o lugar e os mandados se reorganizam nos lugares que ocupavam.
+async fn set_layout(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_CHANNELS)?;
+    let input = body::<validate::ChannelLayout>(&b)?;
+    if input.category_ids.len() > 500 || input.channels.len() > 1000 {
+        return Err(validation("Canais demais"));
+    }
+
+    let cats = q.categories(&id);
+    let mut seen = std::collections::HashSet::new();
+    let wanted_cats: Vec<String> = input
+        .category_ids
+        .into_iter()
+        .filter(|c| {
+            cats.iter().any(|k| &k.id == c) && q.can_see_category(&me, c) && seen.insert(c.clone())
+        })
+        .collect();
+    let mut next_cat = wanted_cats.iter();
+    let cat_order: Vec<String> = cats
+        .iter()
+        .map(|k| {
+            if wanted_cats.contains(&k.id) {
+                next_cat.next().cloned().unwrap_or_else(|| k.id.clone())
+            } else {
+                k.id.clone()
+            }
+        })
+        .collect();
+
+    let chans: Vec<Channel> = q
+        .channels(&id)
+        .into_iter()
+        .filter(|c| c.kind != "thread")
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let wanted: Vec<(String, Option<String>)> = input
+        .channels
+        .into_iter()
+        .filter(|c| {
+            chans.iter().any(|k| k.id == c.id)
+                && c.category_id
+                    .as_ref()
+                    .is_none_or(|cat| cats.iter().any(|k| &k.id == cat))
+                && q.can_access(&me, &c.id)
+                && seen.insert(c.id.clone())
+        })
+        .map(|c| (c.id, c.category_id))
+        .collect();
+    let mut next = wanted.iter();
+    let order: Vec<(String, Option<String>)> = chans
+        .iter()
+        .map(|k| {
+            if wanted.iter().any(|(w, _)| *w == k.id) {
+                next.next()
+                    .cloned()
+                    .unwrap_or_else(|| (k.id.clone(), k.category_id.clone()))
+            } else {
+                (k.id.clone(), k.category_id.clone())
+            }
+        })
+        .collect();
+
+    // Quem via cada canal que muda de categoria (categoria privada muda quem vê).
+    let members = q.member_ids(&id);
+    let moved: Vec<(String, Vec<String>)> = order
+        .iter()
+        .filter(|(cid, cat)| chans.iter().any(|k| &k.id == cid && &k.category_id != cat))
+        .map(|(cid, _)| {
+            let before = members
+                .iter()
+                .filter(|u| q.can_access(u, cid))
+                .cloned()
+                .collect();
+            (cid.clone(), before)
+        })
+        .collect();
+
+    q.set_layout(&cat_order, &order);
+
+    for (i, cid) in cat_order.iter().enumerate() {
+        if let Some(k) = cats.iter().find(|k| &k.id == cid)
+            && k.position != i as i64
+            && let Some(fresh) = q.category(cid)
+        {
+            to_category(&app, &q, &fresh, "category:update");
+        }
+    }
+    for (i, (cid, cat)) in order.iter().enumerate() {
+        let Some(old) = chans.iter().find(|k| &k.id == cid) else {
+            continue;
+        };
+        if old.position == i as i64 && &old.category_id == cat {
+            continue;
+        }
+        let Some(fresh) = q.channel(cid) else {
+            continue;
+        };
+        if let Some((_, before)) = moved.iter().find(|(m, _)| m == cid) {
+            let lost: Vec<String> = before
+                .iter()
+                .filter(|u| !q.can_access(u, cid))
+                .cloned()
+                .collect();
+            let gained: Vec<String> = members
+                .iter()
+                .filter(|u| !before.contains(u) && q.can_access(u, cid))
+                .cloned()
+                .collect();
+            for t in q.threads_of(cid).iter().map(|t| &t.id).chain([cid]) {
+                app.to_users(&lost, "channel:delete", &json!({ "id": t, "serverId": id }));
+            }
+            app.to_users(&gained, "channel:create", &fresh);
+        }
+        app.to_channel(&q, cid, "channel:update", &fresh);
+    }
+    no_content()
+}
+
 async fn rename_category(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
     let category = q.category(&id).ok_or_else(|| not_found("Categoria"))?;
@@ -1894,10 +2017,51 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     {
         return Err(not_found("Categoria"));
     }
-    let moving = p
-        .category_id
-        .as_ref()
-        .is_some_and(|c| *c != channel.category_id);
+    // Quem vê / quem interage: só canal de texto ou voz do servidor (não thread).
+    let access = match &p.access {
+        Some(a) if channel.kind == "text" || channel.kind == "voice" => {
+            let clean_users = |ids: &[String]| {
+                let mut v: Vec<String> = ids
+                    .iter()
+                    .filter(|u| q.is_member(&server_id, u))
+                    .cloned()
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+            let clean_roles = |ids: &[String], allow_everyone: bool| {
+                let mut v: Vec<String> = ids
+                    .iter()
+                    .filter(|r| {
+                        (allow_everyone || **r != server_id)
+                            && q.role(r).is_some_and(|role| role.server_id == server_id)
+                    })
+                    .cloned()
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            };
+            Some(ChannelAccess {
+                private: a
+                    .is_private
+                    .then(|| (clean_users(&a.member_ids), clean_roles(&a.role_ids, false))),
+                interact: a.interact_restricted.then(|| {
+                    (
+                        clean_users(&a.interact_member_ids),
+                        clean_roles(&a.interact_role_ids, true),
+                    )
+                }),
+            })
+        }
+        Some(_) => return Err(bad_request("Esse canal não tem permissões próprias")),
+        None => None,
+    };
+    let moving = access.is_some()
+        || p.category_id
+            .as_ref()
+            .is_some_and(|c| *c != channel.category_id);
     let before = moving.then(|| q.member_ids(&server_id)).unwrap_or_default();
     let before: Vec<String> = before
         .into_iter()
@@ -1912,6 +2076,10 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
             position: p.position.map(i64::from),
         },
     );
+    let updated = match &access {
+        Some(a) => q.set_channel_access(&updated.id, a),
+        None => updated,
+    };
     if moving {
         // Mudou de categoria: quem perdeu acesso (categoria privada) recebe a remoção,
         // quem ganhou recebe o canal como novo.
@@ -2013,7 +2181,8 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     }
     let mut input = body::<validate::SendMessage>(&b)?.check()?;
     if let Some(server_id) = &channel.server_id {
-        let p = q.permissions(server_id, &me);
+        let _ = server_id;
+        let p = q.channel_permissions(&me, &channel.id);
         if !has(p, perms::SEND_MESSAGES) {
             return Err(forbidden(
                 "Você não tem permissão para enviar mensagens aqui",
@@ -2094,7 +2263,11 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
         if !matches!(channel.kind.as_str(), "text" | "thread") {
             return Err(bad_request("Use o /play num canal de texto"));
         }
-        if !has(q.permissions(&server_id, &me), perms::SEND_MESSAGES) {
+        let _ = &server_id;
+        if !has(
+            q.channel_permissions(&me, &channel.id),
+            perms::SEND_MESSAGES,
+        ) {
             return Err(forbidden(
                 "Você não tem permissão para enviar mensagens aqui",
             ));
@@ -2338,11 +2511,10 @@ async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
     }
-    if channel
-        .server_id
-        .as_deref()
-        .is_some_and(|s| !has(q.permissions(s, &me), perms::SEND_MESSAGES))
-    {
+    if !has(
+        q.channel_permissions(&me, &channel.id),
+        perms::SEND_MESSAGES,
+    ) {
         return Err(forbidden(
             "Você não tem permissão para enviar mensagens aqui",
         ));
@@ -2445,11 +2617,10 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             "Threads só podem ser criadas em canais de texto",
         ));
     }
-    if parent
-        .server_id
-        .as_deref()
-        .is_some_and(|s| !has(q.permissions(s, &me), perms::CREATE_THREADS))
-    {
+    if !has(
+        q.channel_permissions(&me, &parent.id),
+        perms::CREATE_THREADS,
+    ) {
         return Err(forbidden("Você não tem permissão para criar threads"));
     }
     let input = body::<validate::CreateThread>(&b)?.check()?;

@@ -13,7 +13,7 @@ import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
 import { BotTag, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
-import { actions, dmTitle, mentionsToText, permsOf, textToMentions, useCan, useLine } from '@/lib/store';
+import { actions, dmTitle, mentionsToText, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 import { EmojiButton } from './EmojiField';
@@ -243,7 +243,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
   const canManageMessages = useCan(channel.serverId, Perm.ManageMessages);
-  const canCreateThreads = useCan(channel.serverId, Perm.CreateThreads);
+  const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.CreateThreads));
   // Apelido e cor do cargo mais alto de quem escreveu (só em servidor).
   const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
   const serverRoles = useLine((s) => (channel.serverId ? s.roles[channel.serverId] : undefined));
@@ -1005,7 +1005,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
   const slash = useRef<SlashPickerHandle>(null);
   const [searching, setSearching] = useState(0);
   const [caret, setCaret] = useState(0);
-  const myPerms = useLine((s) => permsOf(s, channel.serverId, s.me?.id));
+  const myPerms = useLine((s) => channelPermsOf(s, channel.id, s.me?.id));
   const canSend = hasPerm(myPerms, Perm.SendMessages);
   const canAttach = hasPerm(myPerms, Perm.AttachFiles);
   const pendingRef = useRef(pending);

@@ -88,6 +88,17 @@ export const updateChannelSchema = z.object({
   topic: z.string().max(1024).optional(),
   categoryId: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
+  /** Quem vê (canal privado) e quem interage (manda mensagem / fala). Manda tudo de uma vez. */
+  access: z
+    .object({
+      isPrivate: z.boolean(),
+      memberIds: z.array(z.string()).max(500),
+      roleIds: z.array(z.string()).max(250),
+      interactRestricted: z.boolean(),
+      interactMemberIds: z.array(z.string()).max(500),
+      interactRoleIds: z.array(z.string()).max(250),
+    })
+    .optional(),
 });
 
 export const createCategorySchema = z.object({

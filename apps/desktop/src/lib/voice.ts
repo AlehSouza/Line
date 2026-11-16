@@ -7,13 +7,12 @@ import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './
 import { api } from './api';
 import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
-import { permsOf, useLine } from './store';
+import { channelPermsOf, useLine } from './store';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
   const s = useLine.getState();
-  const serverId = channelId ? s.channels[channelId]?.serverId : null;
-  return hasPerm(permsOf(s, serverId, s.me?.id), flag);
+  return hasPerm(channelPermsOf(s, channelId, s.me?.id), flag);
 }
 
 type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

@@ -493,11 +493,38 @@ pub struct UpdateChannel {
     #[serde(default, deserialize_with = "nullable")]
     pub category_id: Option<Option<String>>,
     pub position: Option<u32>,
+    /// Quem vê e quem interage (manda tudo de uma vez).
+    pub access: Option<ChannelAccessInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelAccessInput {
+    #[serde(default)]
+    pub is_private: bool,
+    #[serde(default)]
+    pub member_ids: Vec<String>,
+    #[serde(default)]
+    pub role_ids: Vec<String>,
+    #[serde(default)]
+    pub interact_restricted: bool,
+    #[serde(default)]
+    pub interact_member_ids: Vec<String>,
+    #[serde(default)]
+    pub interact_role_ids: Vec<String>,
 }
 
 impl UpdateChannel {
     pub fn check(mut self) -> ApiResult<Self> {
         self.name = self.name.as_deref().map(channel_name).transpose()?;
+        if let Some(a) = &self.access
+            && (a.member_ids.len() > 500
+                || a.interact_member_ids.len() > 500
+                || a.role_ids.len() > 250
+                || a.interact_role_ids.len() > 250)
+        {
+            return Err(validation("Membros demais no canal"));
+        }
         if let Some(t) = &self.topic {
             text(t, 0, 1024, "O tópico")?;
         }
@@ -675,6 +702,23 @@ impl UpdateRole {
         }
         Ok(self)
     }
+}
+
+/// Ordem das categorias e dos canais (e a categoria de cada canal), como a pessoa arrumou.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelLayout {
+    #[serde(default)]
+    pub category_ids: Vec<String>,
+    #[serde(default)]
+    pub channels: Vec<LayoutChannel>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutChannel {
+    pub id: String,
+    pub category_id: Option<String>,
 }
 
 #[derive(Deserialize)]

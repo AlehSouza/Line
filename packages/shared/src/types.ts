@@ -115,6 +115,13 @@ export interface Channel {
   position: number;
   /** Canal privado: só o dono do servidor e os membros escolhidos enxergam. */
   isPrivate?: boolean;
+  /** Canal privado: pessoas e cargos que enxergam. */
+  memberIds?: string[];
+  roleIds?: string[];
+  /** Só quem está em interactMemberIds / interactRoleIds manda mensagem (texto) ou fala (voz). */
+  interactRestricted?: boolean;
+  interactMemberIds?: string[];
+  interactRoleIds?: string[];
   /** Só para dm / group_dm. */
   recipients?: PublicUser[];
   /** Dono da DM em grupo ou quem criou a thread. */

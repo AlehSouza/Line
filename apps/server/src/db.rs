@@ -361,6 +361,17 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE users ADD COLUMN deactivated_at TEXT;
 "#,
+    // Quem pode interagir no canal (mandar mensagem / falar na voz) quando o canal restringe
+    // isso. `kind` = 'role' ou 'user'. Os outros só leem / só escutam.
+    r#"
+  ALTER TABLE channels ADD COLUMN interact_restricted INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE channel_interact (
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    target_id  TEXT NOT NULL,
+    PRIMARY KEY (channel_id, kind, target_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

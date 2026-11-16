@@ -176,6 +176,7 @@ struct ChannelRow {
     parent_id: Option<String>,
     thread_message_id: Option<String>,
     is_private: bool,
+    interact_restricted: bool,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -192,6 +193,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         parent_id: r.get("parent_id")?,
         thread_message_id: r.get("thread_message_id")?,
         is_private: r.get::<_, i64>("is_private")? != 0,
+        interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
     })
 }
 
@@ -267,6 +269,14 @@ pub struct ChannelPatch {
     pub topic: Option<String>,
     pub category_id: Option<Option<String>>,
     pub position: Option<i64>,
+}
+
+/// Quem vê e quem interage num canal de servidor (edição pelo modal "Editar canal").
+pub struct ChannelAccess {
+    /// Some = canal privado com essas pessoas / cargos.
+    pub private: Option<(Vec<String>, Vec<String>)>,
+    /// Some = só essas pessoas / cargos mandam mensagem (texto) ou falam (voz).
+    pub interact: Option<(Vec<String>, Vec<String>)>,
 }
 
 pub enum SearchScope {
@@ -1141,6 +1151,22 @@ impl Q<'_> {
         )
     }
 
+    /// Grava a ordem (posição = índice) das categorias e dos canais e a categoria de cada canal.
+    pub fn set_layout(&self, categories: &[String], channels: &[(String, Option<String>)]) {
+        for (i, id) in categories.iter().enumerate() {
+            ok(self.c.execute(
+                "UPDATE categories SET position = ? WHERE id = ?",
+                params![i as i64, id],
+            ));
+        }
+        for (i, (id, cat)) in channels.iter().enumerate() {
+            ok(self.c.execute(
+                "UPDATE channels SET position = ?, category_id = ? WHERE id = ?",
+                params![i as i64, cat, id],
+            ));
+        }
+    }
+
     pub fn rename_category(&self, id: &str, name: &str) -> Category {
         ok(self
             .c
@@ -1157,7 +1183,39 @@ impl Q<'_> {
     fn to_channel(&self, row: ChannelRow) -> Channel {
         let is_dm = row.kind == "dm" || row.kind == "group_dm";
         let is_thread = row.kind == "thread";
+        let in_server = row.server_id.is_some() && !is_thread;
+        let private = (in_server && row.is_private).then(|| {
+            (
+                self.ids(
+                    "SELECT user_id FROM channel_recipients WHERE channel_id = ?",
+                    [&row.id],
+                ),
+                self.ids(
+                    "SELECT role_id FROM channel_roles WHERE channel_id = ?",
+                    [&row.id],
+                ),
+            )
+        });
+        let interact = (in_server && row.interact_restricted).then(|| {
+            (
+                self.ids(
+                    "SELECT target_id FROM channel_interact WHERE channel_id = ? AND kind = 'user'",
+                    [&row.id],
+                ),
+                self.ids(
+                    "SELECT target_id FROM channel_interact WHERE channel_id = ? AND kind = 'role'",
+                    [&row.id],
+                ),
+            )
+        });
+        let (member_ids, role_ids) = private.unzip();
+        let (interact_member_ids, interact_role_ids) = interact.unzip();
         Channel {
+            member_ids,
+            role_ids,
+            interact_restricted: row.interact_restricted,
+            interact_member_ids,
+            interact_role_ids,
             recipients: is_dm.then(|| self.recipients(&row.id)),
             message_count: is_thread.then(|| self.message_count(&row.id)),
             owner_id: (is_dm || is_thread).then_some(row.owner_id),
@@ -1267,6 +1325,87 @@ impl Q<'_> {
             "UPDATE servers SET suspended_at = ? WHERE id = ?",
             params![at, id],
         ));
+    }
+
+    /// Troca quem vê (privado) e quem interage no canal. Só para canais de servidor.
+    pub fn set_channel_access(&self, id: &str, access: &ChannelAccess) -> Channel {
+        ok(self.c.execute(
+            "UPDATE channels SET is_private = ?, interact_restricted = ? WHERE id = ?",
+            params![
+                access.private.is_some() as i64,
+                access.interact.is_some() as i64,
+                id
+            ],
+        ));
+        ok(self
+            .c
+            .execute("DELETE FROM channel_recipients WHERE channel_id = ?", [id]));
+        ok(self
+            .c
+            .execute("DELETE FROM channel_roles WHERE channel_id = ?", [id]));
+        ok(self
+            .c
+            .execute("DELETE FROM channel_interact WHERE channel_id = ?", [id]));
+        if let Some((users, roles)) = &access.private {
+            for u in users {
+                ok(self.c.execute(
+                    "INSERT OR IGNORE INTO channel_recipients (channel_id, user_id) VALUES (?, ?)",
+                    params![id, u],
+                ));
+            }
+            for r in roles {
+                ok(self.c.execute(
+                    "INSERT OR IGNORE INTO channel_roles (channel_id, role_id) VALUES (?, ?)",
+                    params![id, r],
+                ));
+            }
+        }
+        if let Some((users, roles)) = &access.interact {
+            for (kind, list) in [("user", users), ("role", roles)] {
+                for t in list {
+                    ok(self.c.execute(
+                        "INSERT OR IGNORE INTO channel_interact (channel_id, kind, target_id) VALUES (?, ?, ?)",
+                        params![id, kind, t],
+                    ));
+                }
+            }
+        }
+        self.channel(id).unwrap()
+    }
+
+    /// Permissões de alguém dentro de um canal: as do servidor, menos mandar mensagem /
+    /// falar quando o canal restringe isso e a pessoa (ou um cargo dela) não está na lista.
+    /// Dono e administradores podem tudo. Threads seguem o canal pai. Fora de servidor = tudo.
+    pub fn channel_permissions(&self, user_id: &str, channel_id: &str) -> i64 {
+        let row: Option<(Option<String>, String, bool)> = ok(self
+            .c
+            .query_row(
+                "SELECT r.server_id, r.id, r.interact_restricted FROM channels r
+                 WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
+                [channel_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+            )
+            .optional());
+        let Some((Some(server_id), root, restricted)) = row else {
+            return perms::ALL;
+        };
+        let p = self.permissions(&server_id, user_id);
+        if !restricted || perms::has(p, perms::ADMINISTRATOR) {
+            return p;
+        }
+        let allowed = ok(self
+            .c
+            .query_row(
+                "SELECT 1 WHERE EXISTS (SELECT 1 FROM channel_interact WHERE channel_id = ?1 AND kind = 'user' AND target_id = ?2)
+                    OR EXISTS (SELECT 1 FROM channel_interact ci JOIN member_roles mr ON mr.role_id = ci.target_id
+                               WHERE ci.channel_id = ?1 AND ci.kind = 'role' AND mr.user_id = ?2)
+                    OR EXISTS (SELECT 1 FROM channel_interact WHERE channel_id = ?1 AND kind = 'role' AND target_id = ?3)",
+                params![root, user_id, server_id],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some();
+        if allowed { p } else { p & !perms::INTERACT }
     }
 
     pub fn delete_channel(&self, id: &str) {
