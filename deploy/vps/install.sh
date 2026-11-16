@@ -9,7 +9,7 @@
 set -euo pipefail
 
 DOMAIN="${1:?Informe o domínio, ex.: sudo bash install.sh line-xande.duckdns.org}"
-REF="${2:-claude/project-thread-dqswre}"
+REF="${2:-main}"
 REPO="https://github.com/AlehSouza/Line.git"
 SRC=/opt/line/src
 TURN_MIN=49160

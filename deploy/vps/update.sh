@@ -9,7 +9,7 @@
 set -euo pipefail
 
 REPO="https://github.com/AlehSouza/Line.git"
-REF="${LINE_REF:-claude/project-thread-dqswre}"
+REF="${LINE_REF:-main}"
 SRC=/opt/line/src
 LOG=/root/line-install.log
 DOMAIN="$(cat /etc/line/domain 2>/dev/null || echo useline.tech)"

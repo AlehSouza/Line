@@ -13,7 +13,7 @@ Um comando instala o servidor do Line com HTTPS (Caddy) e TURN (coturn) numa VPS
 ## Instalar / atualizar
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/AlehSouza/Line/claude/project-thread-dqswre/deploy/vps/install.sh
+curl -fsSLO https://raw.githubusercontent.com/AlehSouza/Line/main/deploy/vps/install.sh
 sudo bash install.sh line-xande.duckdns.org
 ```
 
