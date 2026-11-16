@@ -254,7 +254,12 @@ function connectSocket() {
     actions.upsertServer(srv);
     void syncVoice();
   });
-  s.on('server:update', (srv) => actions.upsertServer(srv));
+  s.on('server:update', (srv) => {
+    const was = !!useLine.getState().servers[srv.id]?.suspended;
+    actions.upsertServer(srv);
+    // Suspenso ou reativado: recarrega canais, membros e o canal aberto.
+    if (was !== !!srv.suspended) refreshServer(srv.id);
+  });
   s.on('server:delete', ({ id }) => actions.removeServer(id));
   s.on('member:add', (m) => {
     actions.upsertMember(m);
@@ -295,7 +300,7 @@ function refreshServer(serverId: string) {
       .then(() => {
         // Se perdi acesso ao canal aberto, volta para o primeiro que ainda vejo.
         const st = useLine.getState();
-        if (st.view.kind === 'server' && st.view.serverId === serverId && st.view.channelId && !st.channels[st.view.channelId])
+        if (st.view.kind === 'server' && st.view.serverId === serverId && (!st.view.channelId || !st.channels[st.view.channelId]))
           actions.goServer(serverId, firstTextChannel(st, serverId));
       })
       .catch(() => {});
