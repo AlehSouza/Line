@@ -13,6 +13,7 @@ import type {
   SelfUser,
   Server,
   ServerDetail,
+  TagStyle,
   UpdateChannelInput,
   UpdateProfileInput,
   UpdateServerInput,
@@ -180,6 +181,9 @@ export const api = {
   musicSettings: (serverId: string) => request<{ idleMessage: string; defaultIdleMessage: string }>('GET', `/servers/${enc(serverId)}/music/settings`),
   updateMusicSettings: (serverId: string, patch: { idleMessage: string }) =>
     request<{ idleMessage: string; defaultIdleMessage: string }>('PATCH', `/servers/${enc(serverId)}/music/settings`, patch),
+  agentReplies: (serverId: string) => request<{ q: string; a: string }[]>('GET', `/servers/${enc(serverId)}/agent/replies`),
+  setAgentReplies: (serverId: string, list: { q: string; a: string }[]) =>
+    request<{ q: string; a: string }[]>('PUT', `/servers/${enc(serverId)}/agent/replies`, list),
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),
@@ -271,6 +275,7 @@ export type ServerCardInfo =
       bannerUrl: string | null;
       tag: string;
       tagIcon: string;
+      tagStyle?: TagStyle | null;
       memberCount: number;
       onlineCount: number;
       createdAt: string;

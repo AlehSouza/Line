@@ -70,7 +70,7 @@ export function MentionPicker({
       .filter(({ u, name }) => match(name, u.username, u.displayName))
       .sort((a, b) => a.name.localeCompare(b.name))
       .slice(0, 8)
-      .map(({ u, name }) => ({ kind: 'user', id: u.id, label: name, sub: u.username, insert: `${mentionTag(state, serverId, u.username)} ` }));
+      .map(({ u, name }) => ({ kind: 'user', id: u.id, label: name, sub: u.bot ? 'Agente' : u.username, insert: `${mentionTag(state, serverId, u.username)} ` }));
     if (!serverId) return users;
     const perms = permsOf(state, serverId, meId);
     const canAll = hasPerm(perms, Perm.MentionEveryone);

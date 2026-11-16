@@ -31,6 +31,8 @@ pub struct BotStyle {
     pub name_color: Option<String>,
     pub tag_color: Option<String>,
     pub tag_text: String,
+    /// Cor do anel de quando o agente "fala" na chamada (tocando música).
+    pub ring_color: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -41,6 +43,8 @@ pub struct UserTag {
     /// Nome de um ícone do Lucide; None = foto do servidor (`icon_url`).
     pub icon: Option<String>,
     pub icon_url: Option<String>,
+    /// Cores e estilo do ícone (bg, fg, border, iconColor, iconStyle); null = padrão.
+    pub style: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -65,6 +69,8 @@ pub struct Server {
     pub tag: String,
     /// Ícone da tag: '' = foto do servidor; senão nome de um ícone do Lucide.
     pub tag_icon: String,
+    /// Aparência da tag (bg, fg, border, iconColor, iconStyle); null = padrão.
+    pub tag_style: serde_json::Value,
     pub icon_url: Option<String>,
     pub banner_url: Option<String>,
     pub owner_id: String,

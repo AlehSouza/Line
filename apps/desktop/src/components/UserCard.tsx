@@ -230,8 +230,9 @@ export function UserCard({
             <span className="truncate">{user.displayName}</span>
             <UserTagBadge user={user} />
           </p>
+          {/* Agente: o nome de usuário dele é um código interno, não aparece em lugar nenhum. */}
           <p className="truncate text-sm text-soft">
-            {user.username}
+            {user.bot ? 'Agente do servidor' : user.username}
             {user.pronouns && <span className="text-muted"> • {user.pronouns}</span>}
           </p>
           {user.customStatus && <p className="mt-1.5 text-sm text-soft">{user.customStatus}</p>}

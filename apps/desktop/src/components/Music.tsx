@@ -12,7 +12,7 @@ import { showError, toast } from './Dialogs';
 import { ImageCropper } from './ImageCropper';
 import { ProfileCard } from './ProfileEditor';
 import { VoiceUserMenu } from './VoiceUserMenu';
-import { Avatar, Button, cx, ErrorText, Field, Slider } from './ui';
+import { Avatar, Button, cx, ErrorText, Field, Slider, SwatchRow } from './ui';
 import { EmojiInput, EmojiTextarea } from './EmojiField';
 import { permsOf } from '@/lib/store';
 
@@ -406,7 +406,8 @@ function Playlist({ m, dj }: { m: LiveMusic; dj: boolean }) {
   useLine((s) => s.members);
   const st = useLine.getState();
   return (
-    <div className="max-h-[450px] space-y-0.5 overflow-y-auto scroll-smooth pr-0.5">
+    // No máximo 5 faixas à mostra (o resto rola), para não esconder a lista de quem está na call.
+    <div className="max-h-[208px] space-y-0.5 overflow-y-auto scroll-smooth pr-0.5">
       {m.tracks.map((t, i) => {
         if (i < m.index) return null;
         const current = i === m.index;
@@ -600,7 +601,12 @@ export function MusicBotInVoice({ channelId, serverId }: { channelId: string; se
     >
       <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
         <Avatar name={bot.displayName} color={bot.avatarColor} src={bot.avatarUrl} size={24} />
-        {!live.paused && <span className="pointer-events-none absolute -inset-[3px] animate-pulse rounded-full border-2 border-accent" />}
+        {!live.paused && (
+          <span
+            className="pointer-events-none absolute -inset-[3px] animate-pulse rounded-full border-2 border-accent"
+            style={bot.botStyle?.ringColor ? { borderColor: bot.botStyle.ringColor } : undefined}
+          />
+        )}
       </span>
       <span className="flex-1 truncate" style={{ color: bot.botStyle?.nameColor ?? undefined }}>
         {displayNameIn(useLine.getState(), serverId, bot.id)}
@@ -634,7 +640,7 @@ export function BotTag({ user, style: given }: { user?: Pick<PublicUser, 'id' | 
   );
 }
 
-// ---------- Configurações do servidor → Integrações → Música ----------
+// ---------- Configurações do servidor → Agente → Personalizar ----------
 
 type Img = { id: string | null; url: string | null; uploading?: boolean };
 
@@ -648,6 +654,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   const [nameColor, setNameColor] = useState<string | null>(null);
   const [tagColor, setTagColor] = useState<string | null>(null);
   const [tagText, setTagText] = useState<'BOT' | 'B'>('BOT');
+  const [ringColor, setRingColor] = useState<string | null>(null);
+  const [status, setStatus] = useState<'online' | 'idle' | 'dnd' | 'invisible'>('online');
+  const [customStatus, setCustomStatus] = useState('');
   const [avatar, setAvatar] = useState<Img>({ id: null, url: null });
   const [banner, setBanner] = useState<Img>({ id: null, url: null });
   const [changed, setChanged] = useState<{ avatar?: boolean; banner?: boolean }>({});
@@ -677,6 +686,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         setNameColor(b.botStyle?.nameColor ?? null);
         setTagColor(b.botStyle?.tagColor ?? null);
         setTagText(b.botStyle?.tagText ?? 'BOT');
+        setRingColor(b.botStyle?.ringColor ?? null);
+        setStatus(b.presence === 'offline' ? 'invisible' : b.presence === 'idle' || b.presence === 'dnd' ? b.presence : 'online');
+        setCustomStatus(b.customStatus ?? '');
         setAvatar({ id: null, url: b.avatarUrl ?? null });
         setBanner({ id: null, url: b.bannerUrl ?? null });
       })
@@ -716,6 +728,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         botNameColor: nameColor,
         botTagColor: tagColor,
         botTagText: tagText,
+        botRingColor: ringColor,
+        status,
+        customStatus: customStatus.trim() || null,
         ...(changed.avatar ? { avatarId: avatar.id } : {}),
         ...(changed.banner ? { bannerId: banner.id } : {}),
       });
@@ -724,7 +739,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
       actions.upsertUsers([b]);
       setBot(b);
       setChanged({});
-      toast('Bot salvo.');
+      toast('Agente salvo.');
     } catch (e) {
       showError(e);
     } finally {
@@ -735,9 +750,9 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   const uploading = avatar.uploading || banner.uploading;
   return (
     <div className="max-w-4xl">
-      <h2 className="text-xl font-bold">Música</h2>
+      <h2 className="text-xl font-bold">Personalizar agente</h2>
       <p className="mt-1 mb-6 text-sm text-soft">
-        O bot entra no canal de voz quando alguém digita <code className="rounded bg-raise px-1">/play [link ou nome da música]</code> num canal de texto. Quem
+        Tudo sobre o agente do servidor: perfil, status, cores e música. Ele entra no canal de voz quando alguém digita <code className="rounded bg-raise px-1">/play [link ou nome da música]</code> num canal de texto. Quem
         começou a tocar controla tudo; os outros votam para pular, voltar ou pausar.
       </p>
       {!bot ? (
@@ -745,7 +760,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
       ) : (
         <div className="flex flex-col gap-8 lg:flex-row">
           <div className="min-w-0 flex-1 space-y-5">
-            <Field label="Nome do bot">
+            <Field label="Nome do agente">
               <EmojiInput value={name} onChange={(e) => setName(e.target.value)} maxLength={32} />
             </Field>
             <Field label="Pronomes">
@@ -762,6 +777,33 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 rows={3}
                 className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
               />
+            </Field>
+            <Field label="Status" hint="Como o agente aparece na lista de membros e no cartão.">
+              <div className="space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  {(
+                    [
+                      ['online', 'Online', 'bg-online'],
+                      ['idle', 'Ausente', 'bg-idle'],
+                      ['dnd', 'Não perturbar', 'bg-danger'],
+                      ['invisible', 'Invisível', 'bg-muted'],
+                    ] as const
+                  ).map(([v, label, dot]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setStatus(v)}
+                      className={cx(
+                        'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm',
+                        status === v ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
+                      )}
+                    >
+                      <span className={cx('h-2.5 w-2.5 rounded-full', dot)} /> {label}
+                    </button>
+                  ))}
+                </div>
+                <EmojiInput value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} maxLength={128} placeholder="Status personalizado (ex.: Tocando as melhores 🎶)" />
+              </div>
             </Field>
             <Field label="Mensagem quando a fila acaba" hint="O bot fica na call e manda isso no chat onde a música foi pedida. Vazio usa a padrão.">
               <EmojiInput value={idle} onChange={(e) => setIdle(e.target.value)} maxLength={300} placeholder={idleDefault} />
@@ -796,6 +838,10 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                   <SwatchRow value={tagColor} onChange={setTagColor} noneLabel="Padrão" />
                 </div>
                 <div>
+                  <p className="mb-1.5 text-xs text-muted">Cor da borda de fala (quando o agente está tocando na call)</p>
+                  <SwatchRow value={ringColor} onChange={setRingColor} noneLabel="Padrão" />
+                </div>
+                <div>
                   <p className="mb-1.5 text-xs text-muted">Texto da etiqueta</p>
                   <div className="flex gap-2">
                     {(['BOT', 'B'] as const).map((t) => (
@@ -826,7 +872,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
             <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Prévia</p>
             <ProfileCard
               name={name || 'Line Música'}
-              username={bot.username}
+              username="Agente do servidor"
               pronouns={pronouns}
               thought={thought}
               bio={bio}
@@ -868,37 +914,99 @@ export function MusicSettings({ serverId }: { serverId: string }) {
   );
 }
 
-const SWATCHES = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf', '#ffffff'];
+// ---------- Configurações do servidor → Agente → Respostas inteligentes ----------
 
-/** Cores prontas + "nenhuma" (volta ao padrão) + uma cor livre. */
-function SwatchRow({ value, onChange, noneLabel }: { value: string | null; onChange: (c: string | null) => void; noneLabel: string }) {
-  const custom = value && !SWATCHES.includes(value);
+/** Perguntas e respostas cadastradas pelo dono: quem marcar o agente com uma pergunta parecida recebe a resposta. */
+export function SmartReplies({ serverId }: { serverId: string }) {
+  const [items, setItems] = useState<{ q: string; a: string }[] | null>(null);
+  const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const bot = useServerBot(serverId);
+  const handle = `@${bot?.displayName ?? 'agente'}`;
+
+  useEffect(() => {
+    api
+      .agentReplies(serverId)
+      .then((l) => {
+        setItems(l);
+        setSaved(JSON.stringify(l));
+      })
+      .catch((e) => setError((e as Error).message));
+  }, [serverId]);
+
+  async function save() {
+    if (!items) return;
+    setBusy(true);
+    try {
+      const l = await api.setAgentReplies(serverId, items);
+      setItems(l);
+      setSaved(JSON.stringify(l));
+      toast('Respostas salvas.');
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const set = (i: number, patch: Partial<{ q: string; a: string }>) => setItems((l) => l && l.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  const dirty = !!items && JSON.stringify(items) !== saved;
+
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
-        onClick={() => onChange(null)}
-        className={cx('rounded-full border px-2.5 py-1 text-xs', value === null ? 'border-accent text-fg' : 'border-edge text-soft hover:bg-raise')}
-      >
-        {noneLabel}
-      </button>
-      {SWATCHES.map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          className={cx('h-7 w-7 rounded-full border border-edge ring-offset-2 ring-offset-side', value === c && 'ring-2 ring-fg')}
-          style={{ background: c }}
-          aria-label={c}
-        />
-      ))}
-      <label
-        title="Outra cor"
-        className={cx('relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-edge ring-offset-2 ring-offset-side', custom && 'ring-2 ring-fg')}
-        style={{ background: custom ? value : 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
-      >
-        <input type="color" value={value ?? '#7c6af2'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
-      </label>
+    <div className="max-w-3xl">
+      <h2 className="text-xl font-bold">Respostas inteligentes</h2>
+      <p className="mt-1 mb-6 text-sm text-soft">
+        Cadastre perguntas e o que o agente deve responder. Quando alguém marcar o agente com uma pergunta parecida (ex.:{' '}
+        <code className="rounded bg-raise px-1">{handle} qual o dia da próxima RAID?</code>), ele responde no chat com o texto que você colocou.
+      </p>
+      {!items ? (
+        error ? <ErrorText>{error}</ErrorText> : <p className="text-sm text-muted">Carregando…</p>
+      ) : (
+        <div className="space-y-3">
+          {items.length === 0 && <p className="rounded-lg border border-dashed border-edge px-4 py-6 text-center text-sm text-muted">Nenhuma resposta ainda.</p>}
+          {items.map((it, i) => (
+            <div key={i} className="space-y-2 rounded-xl border border-edge bg-rail p-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold tracking-wide text-muted uppercase">Pergunta</span>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  title="Apagar"
+                  onClick={() => setItems((l) => l && l.filter((_, j) => j !== i))}
+                  className="rounded p-1 text-muted hover:bg-hover hover:text-danger"
+                >
+                  <L.Trash2 size={15} />
+                </button>
+              </div>
+              <EmojiInput value={it.q} onChange={(e) => set(i, { q: e.target.value })} maxLength={200} placeholder="qual o dia da próxima RAID?" />
+              <span className="block text-xs font-bold tracking-wide text-muted uppercase">Resposta</span>
+              <EmojiTextarea
+                value={it.a}
+                onChange={(e) => set(i, { a: e.target.value })}
+                maxLength={2000}
+                rows={2}
+                placeholder="A próxima RAID é sábado às 21h!"
+                className="w-full resize-y rounded-lg border border-edge bg-side px-3 py-2 text-sm outline-none focus:border-accent"
+              />
+            </div>
+          ))}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              variant="ghost"
+              disabled={items.length >= 100}
+              onClick={() => setItems((l) => [...(l ?? []), { q: '', a: '' }])}
+              className="gap-1.5"
+            >
+              <L.Plus size={15} /> Adicionar resposta
+            </Button>
+            <span className="flex-1" />
+            <Button disabled={busy || !dirty} onClick={save} className="px-6">
+              {busy ? 'Salvando…' : 'Salvar'}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

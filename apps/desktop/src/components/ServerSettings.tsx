@@ -8,10 +8,10 @@ import { ServerOverview } from './Modals';
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
-import { MusicSettings } from './Music';
+import { MusicSettings, SmartReplies } from './Music';
 import { ServerTagSettings } from './ServerTag';
 
-type Section = 'overview' | 'tag' | 'roles' | 'members' | 'music';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'music' | 'replies';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -44,7 +44,8 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
     { id: 'tag', label: 'Tag do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
-    { id: 'music', label: 'Música', show: canServer },
+    { id: 'music', label: 'Personalizar', show: canServer },
+    { id: 'replies', label: 'Respostas inteligentes', show: canServer },
   ];
   const visible = nav.filter((n) => n.show);
   const [section, setSection] = useState<Section>(initial && visible.some((n) => n.id === initial) ? initial : (visible[0]?.id ?? 'members'));
@@ -71,7 +72,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
           <nav className="flex flex-col gap-0.5">
             {visible.map((n) => (
               <Fragment key={n.id}>
-              {n.id === 'music' && <p className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Integrações</p>}
+              {n.id === 'music' && <p className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Agente</p>}
               <button
                 onClick={() => {
                   setSection(n.id);
@@ -104,6 +105,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
           )}
           {section === 'members' && canMembers && <MembersSection serverId={serverId} />}
           {section === 'music' && canServer && <MusicSettings serverId={serverId} />}
+          {section === 'replies' && canServer && <SmartReplies serverId={serverId} />}
         </main>
 
         <button
@@ -665,7 +667,7 @@ function RoleMembers({ serverId, role }: { serverId: string; role: Role }) {
         <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={32} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{name(userId)}</span>
-          <span className="block truncate text-xs text-muted">{u.username}</span>
+          <span className="block truncate text-xs text-muted">{u.bot ? 'Agente' : u.username}</span>
         </span>
         {action}
       </div>
@@ -775,7 +777,7 @@ function MembersSection({ serverId }: { serverId: string }) {
                 <p className="flex items-center gap-1.5 truncate font-semibold">
                   {displayNameIn(st, serverId, m.userId)}
                   {isOwner && <span className="rounded bg-sun/20 px-1.5 text-[10px] font-bold text-sun uppercase">Dono</span>}
-                  <span className="text-xs font-normal text-muted">{u.username}</span>
+                  <span className="text-xs font-normal text-muted">{u.bot ? 'Agente' : u.username}</span>
                 </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   {m.roleIds.map((rid) => {
