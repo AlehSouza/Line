@@ -28,8 +28,10 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const [drag, setDrag] = useState<{ kind: 'channel' | 'category'; id: string } | null>(null);
   const [over, setOver] = useState<{ kind: 'channel' | 'category' | 'loose'; id: string; pos: 'above' | 'below' } | null>(null);
 
+  const suspended = !!server?.suspended;
   const { categories, byCategory, loose, threads } = useMemo(() => {
-    const all = Object.values(allChannels).filter((c) => c.serverId === serverId);
+    // Servidor suspenso: nenhum canal nem categoria na lista.
+    const all = suspended ? [] : Object.values(allChannels).filter((c) => c.serverId === serverId);
     const threads: Record<string, Channel[]> = {};
     for (const t of all) if (t.type === 'thread' && t.parentId) (threads[t.parentId] ??= []).push(t);
     // Threads mais ativas primeiro.
@@ -39,7 +41,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       .filter((c) => c.type !== 'thread')
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const categories = Object.values(allCategories)
-      .filter((c) => c.serverId === serverId)
+      .filter((c) => !suspended && c.serverId === serverId)
       .sort((a, b) => a.position - b.position);
     const byCategory: Record<string, Channel[]> = {};
     const loose: Channel[] = [];
@@ -48,7 +50,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       else loose.push(c);
     }
     return { categories, byCategory, loose, threads };
-  }, [allChannels, allCategories, serverId]);
+  }, [allChannels, allCategories, serverId, suspended]);
 
   if (!server) return null;
   const isOwner = me?.id === server.ownerId;
