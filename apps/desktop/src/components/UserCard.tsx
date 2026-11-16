@@ -2,7 +2,7 @@
 
 import { mobile } from '@/lib/mobile';
 
-import { hasPerm, Perm, type FavoriteSong, type PublicUser, type Server, type UserStatus } from '@line/shared';
+import { hasPerm, Perm, type FavoriteSong, type PublicUser, type Role, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
@@ -499,29 +499,52 @@ export function MemberRoles({ userId, serverId: fixed }: { userId: string; serve
             >
               <Icons.Plus size={13} />
             </button>
-            {picker && (
-              <div className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
-                {assignable
-                  .sort((a, b) => b.position - a.position)
-                  .map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setPicker(false);
-                        void toggle(r.id, true);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-soft hover:bg-hover hover:text-fg"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
-                      <span className="truncate">{r.name}</span>
-                    </button>
-                  ))}
-              </div>
-            )}
+            {picker && <RolePicker roles={assignable} onPick={(id) => {
+              setPicker(false);
+              void toggle(id, true);
+            }} onClose={() => setPicker(false)} />}
           </span>
         )}
       </div>
       <ErrorText>{error}</ErrorText>
+    </div>
+  );
+}
+
+/** Lista de cargos para dar, com busca "Cargo" no topo. */
+function RolePicker({ roles, onPick, onClose }: { roles: Role[]; onPick: (id: string) => void; onClose: () => void }) {
+  const [text, setText] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const down = (e: MouseEvent) => !box.current?.contains(e.target as Node) && onClose();
+    window.addEventListener('mousedown', down);
+    return () => window.removeEventListener('mousedown', down);
+  }, [onClose]);
+  const q = text.trim().toLowerCase();
+  const list = [...roles].sort((a, b) => b.position - a.position).filter((r) => !q || r.name.toLowerCase().includes(q));
+  return (
+    <div ref={box} className="absolute top-full left-0 z-20 mt-1.5 w-60 rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && list[0] && onPick(list[0].id)}
+        placeholder="Cargo"
+        className="mb-1 w-full rounded-md border border-accent bg-side px-2.5 py-2 text-sm outline-none placeholder:text-muted"
+      />
+      <div className="max-h-56 overflow-y-auto">
+        {list.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => onPick(r.id)}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-soft hover:bg-hover hover:text-fg"
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
+            <span className="truncate">{r.name}</span>
+          </button>
+        ))}
+        {!list.length && <p className="px-2.5 py-2 text-sm text-muted">Nenhum cargo encontrado.</p>}
+      </div>
     </div>
   );
 }
