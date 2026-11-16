@@ -185,7 +185,51 @@ impl App {
         q.public_user(&id)
     }
 
-    fn bot_say(&self, q: &Q, server_id: &str, text_channel_id: &str, content: &str, requires: &[String]) {
+    /// Respostas inteligentes: mensagem que menciona o agente (`@usuario` ou `@Nome`) e parece com
+    /// uma pergunta cadastrada pelo dono recebe a resposta configurada. Usa o `q` já aberto.
+    pub fn smart_reply(&self, q: &Q, server_id: &str, channel_id: &str, author_id: &str, content: &str) {
+        let list = q.bot_replies(server_id);
+        let Some(items) = list.as_array().filter(|l| !l.is_empty()) else { return };
+        let (bot_id, _) = q.music_bot(server_id);
+        if bot_id == author_id {
+            return;
+        }
+        let Some(bot) = q.public_user(&bot_id) else { return };
+        let lower = content.to_lowercase();
+        let handles = [format!("@{}", bot.username.to_lowercase()), format!("@{}", bot.display_name.to_lowercase())];
+        let Some(handle) = handles.iter().find(|h| lower.contains(h.as_str())) else { return };
+        let asked = normalize_words(&lower.replace(handle.as_str(), " "));
+        if asked.is_empty() {
+            return;
+        }
+        let joined = asked.join(" ");
+        let mut best: Option<(f64, &str)> = None;
+        for item in items {
+            let (Some(question), Some(answer)) = (item.get("q").and_then(|v| v.as_str()), item.get("a").and_then(|v| v.as_str())) else {
+                continue;
+            };
+            let words = normalize_words(&question.to_lowercase().replace(handle.as_str(), " "));
+            if words.is_empty() || answer.trim().is_empty() {
+                continue;
+            }
+            // Pergunta inteira dentro da mensagem vale mais; senão, a parte das palavras dela que apareceu.
+            let score = if joined.contains(&words.join(" ")) {
+                2.0
+            } else {
+                let important: Vec<&String> = words.iter().filter(|w| w.chars().count() > 2).collect();
+                let pool = if important.is_empty() { words.iter().collect() } else { important };
+                pool.iter().filter(|w| asked.contains(w)).count() as f64 / pool.len() as f64
+            };
+            if score >= 0.6 && best.is_none_or(|(b, _)| score > b) {
+                best = Some((score, answer));
+            }
+        }
+        if let Some((_, answer)) = best {
+            self.bot_say(q, server_id, channel_id, answer.trim(), &[]);
+        }
+    }
+
+    pub(crate) fn bot_say(&self, q: &Q, server_id: &str, text_channel_id: &str, content: &str, requires: &[String]) {
         if q.channel(text_channel_id).is_none() {
             return;
         }
@@ -784,4 +828,22 @@ pub fn play_items(
         }
     }
     Ok(())
+}
+
+/// Palavras sem acento e sem pontuação, para comparar perguntas.
+fn normalize_words(s: &str) -> Vec<String> {
+    let plain: String = s
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            c if c.is_alphanumeric() => c,
+            _ => ' ',
+        })
+        .collect();
+    plain.split_whitespace().map(String::from).collect()
 }

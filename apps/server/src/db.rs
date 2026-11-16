@@ -317,6 +317,13 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE members ADD COLUMN rail_position INTEGER;
 "#,
+    // Aparência da tag (JSON: bg, fg, border, iconColor, iconStyle), respostas inteligentes do
+    // agente (JSON [{q, a}]) e cor do anel de fala do agente.
+    r#"
+  ALTER TABLE servers ADD COLUMN tag_style TEXT NOT NULL DEFAULT '';
+  ALTER TABLE servers ADD COLUMN bot_replies TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE users ADD COLUMN bot_ring_color TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

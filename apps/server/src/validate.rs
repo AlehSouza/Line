@@ -73,6 +73,26 @@ fn display_name(raw: &str) -> ApiResult<String> {
     Ok(s)
 }
 
+/// Aparência da tag: só as chaves conhecidas, cores válidas e iconStyle outline|solid.
+fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    let Some(obj) = v.as_object() else {
+        return Ok(serde_json::Value::Null);
+    };
+    for key in ["bg", "fg", "border", "iconColor"] {
+        if let Some(c) = obj.get(key).and_then(|c| c.as_str()).filter(|c| !c.is_empty()) {
+            out.insert(key.into(), color(c)?.into());
+        }
+    }
+    if let Some(s) = obj.get("iconStyle").and_then(|s| s.as_str()) {
+        if !matches!(s, "outline" | "solid") {
+            return Err(validation("Estilo do ícone inválido"));
+        }
+        out.insert("iconStyle".into(), s.into());
+    }
+    Ok(if out.is_empty() { serde_json::Value::Null } else { out.into() })
+}
+
 fn color(raw: &str) -> ApiResult<String> {
     if !COLOR_RE.is_match(raw) {
         return Err(validation("Cor inválida"));
@@ -284,6 +304,8 @@ pub struct UpdateProfile {
     #[serde(default, deserialize_with = "nullable")]
     pub bot_tag_color: Option<Option<String>>,
     pub bot_tag_text: Option<String>,
+    #[serde(default, deserialize_with = "nullable")]
+    pub bot_ring_color: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -313,7 +335,7 @@ impl UpdateProfile {
         if let Some(Some(t)) = &self.thought {
             text(t, 0, 80, "O pensamento")?;
         }
-        for c in [&mut self.bot_name_color, &mut self.bot_tag_color].into_iter().flatten().flatten() {
+        for c in [&mut self.bot_name_color, &mut self.bot_tag_color, &mut self.bot_ring_color].into_iter().flatten().flatten() {
             *c = color(c)?;
         }
         if let Some(t) = &self.bot_tag_text
@@ -359,6 +381,8 @@ pub struct UpdateServer {
     pub icon_color: Option<String>,
     pub tag: Option<String>,
     pub tag_icon: Option<String>,
+    /// Aparência da tag: objeto com bg, fg, border, iconColor (cores #rrggbb ou null) e iconStyle.
+    pub tag_style: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "nullable")]
     pub icon_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
@@ -382,6 +406,9 @@ impl UpdateServer {
             && (i.len() > 40 || !i.chars().all(|c| c.is_ascii_alphanumeric()))
         {
             return Err(validation("Ícone da tag inválido"));
+        }
+        if let Some(v) = &self.tag_style {
+            self.tag_style = Some(tag_style(v)?);
         }
         Ok(self)
     }

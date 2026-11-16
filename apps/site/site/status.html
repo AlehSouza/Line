@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status do Line</title>
+<meta name="description" content="Status dos servidores do Line em tempo real.">
+<link rel="icon" type="image/png" href="/site/favicon.png">
+<style>
+@font-face { font-family: 'Geist'; src: url('/site/fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+:root {
+  --rail: #0a0a0c; --side: #111114; --main: #16161a; --raise: #1d1d22; --edge: #2b2b32;
+  --fg: #ededf0; --soft: #b5b5bf; --muted: #84848f;
+  --accent: #7c6af2; --online: #3fbf7f; --sun: #f5c451; --danger: #f2555a;
+  --font: 'Geist', 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--rail); color: var(--fg); font-family: var(--font); line-height: 1.5;
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+  background-image: radial-gradient(70% 420px at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 75%);
+  background-repeat: no-repeat;
+}
+a { color: inherit; text-decoration: none; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 0 20px 60px; }
+header { display: flex; align-items: center; gap: 10px; height: 68px; }
+header img { width: 28px; height: 28px; }
+header b { font-size: 18px; }
+header .back { margin-left: auto; color: var(--soft); font-size: 14px; font-weight: 600; }
+header .back:hover { color: var(--fg); }
+.hero { margin: 28px 0 22px; padding: 22px 24px; border: 1px solid var(--edge); border-radius: 16px; background: var(--side); display: flex; align-items: center; gap: 16px; }
+.big-dot { width: 18px; height: 18px; border-radius: 50%; flex: none; background: var(--muted); }
+.hero h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+.hero p { margin: 2px 0 0; color: var(--soft); font-size: 14px; }
+.list { border: 1px solid var(--edge); border-radius: 16px; background: var(--side); overflow: hidden; }
+.row { display: flex; align-items: center; gap: 12px; padding: 15px 20px; border-top: 1px solid var(--edge); }
+.row:first-child { border-top: 0; }
+.row .name { font-weight: 600; }
+.row .desc { color: var(--muted); font-size: 13px; }
+.row .info { flex: 1; min-width: 0; }
+.row .state { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.row .ms { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--muted); }
+.ok .dot, .ok.big-dot { background: var(--online); box-shadow: 0 0 0 4px color-mix(in srgb, var(--online) 18%, transparent); }
+.slow .dot, .slow.big-dot { background: var(--sun); box-shadow: 0 0 0 4px color-mix(in srgb, var(--sun) 18%, transparent); }
+.down .dot, .down.big-dot { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 18%, transparent); }
+.ok .state { color: var(--online); } .slow .state { color: var(--sun); } .down .state { color: var(--danger); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 22px 0; }
+.stat { border: 1px solid var(--edge); border-radius: 14px; background: var(--side); padding: 14px 16px; }
+.stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 12.5px; }
+.foot { margin-top: 18px; color: var(--muted); font-size: 13px; text-align: center; }
+@media (max-width: 600px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .row { padding: 13px 16px; flex-wrap: wrap; }
+  .row .ms { order: 3; width: 100%; padding-left: 22px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="/site/icon.png" alt="">
+    <b>Line</b>
+    <a class="back" href="/">← Voltar ao site</a>
+  </header>
+
+  <section class="hero" id="hero">
+    <span class="big-dot" id="hero-dot"></span>
+    <div>
+      <h1 id="hero-title">Verificando…</h1>
+      <p id="hero-sub">Testando cada parte do Line agora.</p>
+    </div>
+  </section>
+
+  <div class="list" id="list"></div>
+
+  <div class="stats">
+    <div class="stat"><b id="s-online">–</b><span>pessoas online</span></div>
+    <div class="stat"><b id="s-call">–</b><span>em chamada</span></div>
+    <div class="stat"><b id="s-music">–</b><span>músicas tocando</span></div>
+    <div class="stat"><b id="s-up">–</b><span>servidor no ar há</span></div>
+  </div>
+
+  <p class="foot" id="foot">Atualiza sozinho a cada 30 segundos.</p>
+</div>
+
+<script>
+const CHECKS = [
+  { id: 'api', name: 'Servidor principal', desc: 'Login, mensagens e servidores (API)' },
+  { id: 'ws', name: 'Tempo real', desc: 'Mensagens chegando na hora, presença e chamadas' },
+  { id: 'app', name: 'App web', desc: 'useline.tech/app' },
+  { id: 'updates', name: 'Downloads e atualizações', desc: 'Instaladores e atualização automática do app' },
+  { id: 'db', name: 'Banco de dados', desc: 'Leitura e gravação dos dados' },
+];
+
+const list = document.getElementById('list');
+for (const c of CHECKS) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.id = 'row-' + c.id;
+  row.innerHTML = '<span class="dot"></span><div class="info"><div class="name"></div><div class="desc"></div></div><span class="ms"></span><span class="state">…</span>';
+  row.querySelector('.name').textContent = c.name;
+  row.querySelector('.desc').textContent = c.desc;
+  list.appendChild(row);
+}
+
+function setRow(id, state, ms, text) {
+  const row = document.getElementById('row-' + id);
+  row.classList.remove('ok', 'slow', 'down');
+  row.classList.add(state);
+  row.querySelector('.state').textContent = text || { ok: 'Funcionando', slow: 'Lento', down: 'Fora do ar' }[state];
+  row.querySelector('.ms').textContent = ms != null ? Math.round(ms) + ' ms' : '';
+}
+
+async function timed(url, opts) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 8000);
+  const start = performance.now();
+  try {
+    const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal, ...opts });
+    return { res, ms: performance.now() - start };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+const level = (ms) => (ms > 1500 ? 'slow' : 'ok');
+
+function checkSocket() {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      try { ws.close(); } catch {}
+      resolve({ ok, ms: performance.now() - start });
+    };
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(proto + '//' + location.host + '/socket.io/?EIO=4&transport=websocket');
+    ws.onmessage = (e) => finish(String(e.data).startsWith('0'));
+    ws.onerror = () => finish(false);
+    setTimeout(() => finish(false), 8000);
+  });
+}
+
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'min';
+  return m + ' min';
+}
+
+async function run() {
+  const results = {};
+  await Promise.all([
+    (async () => {
+      try {
+        const { res, ms } = await timed('/api/status');
+        if (!res.ok) throw new Error();
+        const s = await res.json();
+        setRow('api', level(ms), ms);
+        results.api = level(ms);
+        const db = s.ok ? (s.dbMs > 500 ? 'slow' : 'ok') : 'down';
+        setRow('db', db, s.dbMs);
+        results.db = db;
+        document.getElementById('s-online').textContent = s.online;
+        document.getElementById('s-call').textContent = s.inCall;
+        document.getElementById('s-music').textContent = s.musicPlaying;
+        document.getElementById('s-up').textContent = duration(s.uptimeSeconds);
+        document.getElementById('foot').textContent = 'Versão do servidor ' + s.version + ' · atualiza sozinho a cada 30 segundos.';
+      } catch {
+        setRow('api', 'down');
+        setRow('db', 'down', null, 'Sem resposta');
+        results.api = results.db = 'down';
+      }
+    })(),
+    (async () => {
+      const r = await checkSocket();
+      const st = r.ok ? level(r.ms) : 'down';
+      setRow('ws', st, r.ok ? r.ms : null);
+      results.ws = st;
+    })(),
+    (async () => {
+      try {
+        const { res, ms } = await timed('/app/', { method: 'HEAD' });
+        const st = res.ok ? level(ms) : 'down';
+        setRow('app', st, ms);
+        results.app = st;
+      } catch {
+        setRow('app', 'down');
+        results.app = 'down';
+      }
+    })(),
+    (async () => {
+      try {
+        const { res, ms } = await timed('/updates/latest.json');
+        const st = res.ok ? level(ms) : 'down';
+        let text;
+        if (res.ok) {
+          const j = await res.json().catch(() => null);
+          if (j && j.version) text = 'Versão ' + j.version;
+        }
+        setRow('updates', st, ms, text);
+        results.updates = st;
+      } catch {
+        setRow('updates', 'down');
+        results.updates = 'down';
+      }
+    })(),
+  ]);
+
+  const states = Object.values(results);
+  const down = states.filter((s) => s === 'down').length;
+  const slow = states.filter((s) => s === 'slow').length;
+  const dot = document.getElementById('hero-dot');
+  dot.className = 'big-dot ' + (down ? 'down' : slow ? 'slow' : 'ok');
+  document.getElementById('hero-title').textContent = down
+    ? (down === states.length ? 'O Line está fora do ar' : 'Parte do Line está com problemas')
+    : slow ? 'O Line está lento agora' : 'Tudo funcionando';
+  document.getElementById('hero-sub').textContent = 'Última verificação às ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '.';
+}
+
+run();
+setInterval(run, 30000);
+</script>
+</body>
+</html>

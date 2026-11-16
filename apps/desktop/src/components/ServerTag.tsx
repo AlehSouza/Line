@@ -1,15 +1,15 @@
 'use client';
 
-import type { PublicUser } from '@line/shared';
+import type { PublicUser, TagStyle } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { api, fileUrl, type ServerCardInfo } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { mobile } from '@/lib/mobile';
 import { showError, toast } from './Dialogs';
-import { Button, cx, DefaultServerIcon, ErrorText, Field, Input } from './ui';
+import { Button, cx, DefaultServerIcon, ErrorText, Field, Input, SwatchRow } from './ui';
 
 /** Ícones do Lucide que dá para escolher para a tag (os que não existirem na versão instalada somem). */
 const TAG_ICONS = [
@@ -25,10 +25,42 @@ function lucide(name: string | null | undefined): LucideIcon | null {
   return icon ?? null;
 }
 
+/** Cores da badge (fundo, texto e borda) escolhidas pelo dono do servidor; vazio = padrão. */
+export function tagBadgeStyle(style: TagStyle | null | undefined): CSSProperties | undefined {
+  if (!style) return undefined;
+  return {
+    background: style.bg,
+    color: style.fg,
+    boxShadow: style.border ? `inset 0 0 0 1px ${style.border}` : undefined,
+  };
+}
+
 /** O ícone da tag: um ícone do Lucide escolhido, ou a foto do servidor (ou o ícone padrão do Line). */
-export function TagIcon({ icon, iconUrl, size = 12 }: { icon?: string | null; iconUrl?: string | null; size?: number }) {
+export function TagIcon({
+  icon,
+  iconUrl,
+  size = 12,
+  style,
+}: {
+  icon?: string | null;
+  iconUrl?: string | null;
+  size?: number;
+  /** Cor do ícone e sólido/contorno. */
+  style?: TagStyle | null;
+}) {
   const Icon = lucide(icon);
-  if (Icon) return <Icon size={size} strokeWidth={2.5} className="shrink-0" />;
+  if (Icon) {
+    const solid = style?.iconStyle === 'solid';
+    return (
+      <Icon
+        size={size}
+        strokeWidth={2.5}
+        className="shrink-0"
+        style={style?.iconColor ? { color: style.iconColor } : undefined}
+        fill={solid ? 'currentColor' : 'none'}
+      />
+    );
+  }
   return (
     <span className="shrink-0 overflow-hidden rounded-[4px]" style={{ width: size, height: size }}>
       {iconUrl ? (
@@ -61,8 +93,9 @@ export function UserTagBadge({ user }: { user: Pick<PublicUser, 'id' | 'tag'> })
         }}
         onContextMenu={(e) => e.stopPropagation()}
         className="inline-flex shrink-0 cursor-pointer items-center gap-1 self-center rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft hover:bg-hover hover:text-fg"
+        style={tagBadgeStyle(tag.style ?? server?.tagStyle)}
       >
-        <TagIcon icon={tag.icon} iconUrl={tag.iconUrl ?? server?.iconUrl} />
+        <TagIcon icon={tag.icon} iconUrl={tag.iconUrl ?? server?.iconUrl} style={tag.style ?? server?.tagStyle} />
         {tag.text}
       </span>
       {at && <ServerCardPopover serverId={tag.serverId} at={at} onClose={() => setAt(null)} />}
@@ -142,8 +175,11 @@ function ServerCardPopover({ serverId, at, onClose }: { serverId: string; at: { 
               <p className="mt-2 flex min-w-0 items-center gap-2 text-lg leading-tight font-bold">
                 <span className="truncate">{full.name}</span>
                 {full.tag && (
-                  <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft">
-                    <TagIcon icon={full.tagIcon} iconUrl={full.iconUrl} />
+                  <span
+                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
+                    style={tagBadgeStyle(full.tagStyle)}
+                  >
+                    <TagIcon icon={full.tagIcon} iconUrl={full.iconUrl} style={full.tagStyle} />
                     {full.tag}
                   </span>
                 )}
@@ -200,14 +236,25 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
   const [tag, setTag] = useState(server?.tag ?? '');
   const [icon, setIcon] = useState(server?.tagIcon ?? '');
+  const [style, setStyle] = useState<TagStyle>(server?.tagStyle ?? {});
   const [busy, setBusy] = useState(false);
   if (!server) return null;
-  const dirty = tag !== (server.tag ?? '') || icon !== (server.tagIcon ?? '');
+  const dirty =
+    tag !== (server.tag ?? '') || icon !== (server.tagIcon ?? '') || JSON.stringify(style) !== JSON.stringify(server.tagStyle ?? {});
+  const setColor = (key: 'bg' | 'fg' | 'border' | 'iconColor') => (c: string | null) =>
+    setStyle((st) => {
+      const next = { ...st };
+      if (c) next[key] = c;
+      else delete next[key];
+      return next;
+    });
 
   async function save() {
     setBusy(true);
     try {
-      actions.upsertServer(await api.updateServer(serverId, { tag, tagIcon: icon }));
+      const saved = await api.updateServer(serverId, { tag, tagIcon: icon, tagStyle: Object.keys(style).length ? style : null });
+      actions.upsertServer(saved);
+      setStyle(saved.tagStyle ?? {});
       toast('Tag do servidor salva.');
     } catch (e) {
       showError(e);
@@ -227,8 +274,8 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
         <span className="text-xs font-bold tracking-wide text-muted uppercase">Prévia</span>
         <span className="ml-2 font-semibold">Seu nome</span>
         {tag ? (
-          <span className="inline-flex items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft">
-            <TagIcon icon={icon} iconUrl={server.iconUrl} />
+          <span className="inline-flex items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft" style={tagBadgeStyle(style)}>
+            <TagIcon icon={icon} iconUrl={server.iconUrl} style={style} />
             {tag}
           </span>
         ) : (
@@ -276,6 +323,47 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                 </button>
               );
             })}
+          </div>
+        </Field>
+
+        <Field label="Estilo do ícone" hint="Vale para os ícones; a foto do servidor fica igual.">
+          <div className="flex gap-2">
+            {(
+              [
+                ['outline', 'Contorno'],
+                ['solid', 'Sólido'],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setStyle((st) => ({ ...st, iconStyle: v }))}
+                className={cx(
+                  'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm',
+                  (style.iconStyle ?? 'outline') === v ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
+                )}
+              >
+                <L.Star size={15} fill={v === 'solid' ? 'currentColor' : 'none'} /> {label}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Cores da tag">
+          <div className="space-y-3">
+            {(
+              [
+                ['bg', 'Fundo'],
+                ['fg', 'Texto'],
+                ['border', 'Borda'],
+                ['iconColor', 'Ícone'],
+              ] as const
+            ).map(([key, label]) => (
+              <div key={key}>
+                <p className="mb-1.5 text-xs text-muted">{label}</p>
+                <SwatchRow value={style[key] ?? null} onChange={setColor(key)} noneLabel="Padrão" />
+              </div>
+            ))}
           </div>
         </Field>
 

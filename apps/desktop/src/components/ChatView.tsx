@@ -522,7 +522,7 @@ function MessageRow({
             label: 'Mencionar autor',
             icon: <Icons.AtSign size={15} />,
             onClick: () =>
-              window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${message.author.username} ` })),
+              window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${message.author.bot ? message.author.displayName : message.author.username} ` })),
           },
           'sep',
           !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(plain) },

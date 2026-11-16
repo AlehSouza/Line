@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { api } from '@/lib/api';
-import { actions, permsOf, useLine } from '@/lib/store';
+import { actions, displayNameIn, permsOf, useLine } from '@/lib/store';
 import { hasPerm, Perm } from '@line/shared';
 import { joinVoice } from '@/lib/voice';
 import { cx, Icons } from './ui';
@@ -250,7 +250,7 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
     user && {
       label: 'Mencionar',
       icon: <Icons.AtSign size={15} />,
-      onClick: () => window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${user.username} ` })),
+      onClick: () => window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${isBot ? displayNameIn(s, serverId, user.id) : user.username} ` })),
     },
     !isMe && !isBot && { label: 'Mensagem', icon: <Icons.Message size={15} />, onClick: openDm },
     !isMe && !isBot && {

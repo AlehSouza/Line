@@ -124,6 +124,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/channels/{id}/polls", post(create_poll))
         .route("/channels/{id}/music/play", post(music_play))
         .route("/servers/{id}/music/bot", get(get_music_bot).patch(update_music_bot))
+        .route("/servers/{id}/agent/replies", get(get_bot_replies).put(set_bot_replies))
         .route("/servers/{id}/music/settings", get(get_music_settings).patch(update_music_settings))
         .route("/messages/{id}/poll/votes", post(vote_poll))
         .route(
@@ -160,11 +161,13 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .allow_headers(AllowHeaders::mirror_request())
         .allow_credentials(true);
 
+    STARTED.get_or_init(std::time::Instant::now);
     Router::new()
         .route(
             "/api/health",
             get(|| async { Json(json!({ "ok": true, "name": "line", "version": VERSION })) }),
         )
+        .route("/api/status", get(public_status))
         .nest("/api", api.merge(crate::admin::router()))
         .fallback(web_fallback)
         .with_state(app)
@@ -836,7 +839,7 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let q = app.store.q();
     require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
-    let before_tag = q.server(&id).map(|s| (s.tag, s.tag_icon, s.icon_url)).unwrap_or_default();
+    let before_tag = q.server(&id).map(|s| (s.tag, s.tag_icon, s.tag_style, s.icon_url)).unwrap_or_default();
     for img in [&p.icon_id, &p.banner_id].into_iter().flatten().flatten() {
         if !q.own_image(&me, img) {
             return Err(bad_request("Imagem inválida"));
@@ -851,12 +854,13 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             icon_color: p.icon_color,
             tag: p.tag,
             tag_icon: p.tag_icon,
+            tag_style: p.tag_style.map(|v| if v.is_null() { String::new() } else { v.to_string() }),
             icon_id: p.icon_id,
             banner_id: p.banner_id,
         },
     );
     app.server_updated(&q, &server);
-    if before_tag != (server.tag.clone(), server.tag_icon.clone(), server.icon_url.clone()) {
+    if before_tag != (server.tag.clone(), server.tag_icon.clone(), server.tag_style.clone(), server.icon_url.clone()) {
         // Quem exibe a tag precisa aparecer com a nova (ou sem nenhuma).
         for user_id in q.tag_users(&id) {
             if let Some(public) = q.public_user(&user_id) {
@@ -1314,6 +1318,7 @@ async fn server_card(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
         "bannerUrl": server.banner_url,
         "tag": server.tag,
         "tagIcon": server.tag_icon,
+        "tagStyle": server.tag_style,
         "memberCount": server.member_count,
         "onlineCount": online,
         "createdAt": server.created_at,
@@ -1448,6 +1453,9 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if channel.kind == "thread" {
         refresh_thread_starter(&app, &q, &channel);
     }
+    if let Some(server_id) = &channel.server_id {
+        app.smart_reply(&q, server_id, &channel.id, &me, &input.content);
+    }
     created(message)
 }
 
@@ -1512,6 +1520,29 @@ fn log_music(app: &App, me: &str, channel_id: &str) {
     q.log_activity("music_play", me, server_id.as_deref());
 }
 
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Página useline.tech/status: só números gerais (sem nomes), cada trava pega e solta sozinha.
+async fn public_status(State(app): S) -> Res {
+    let started = *STARTED.get_or_init(std::time::Instant::now);
+    let online = crate::store::lock(&app.store.presence).online_ids().len();
+    let in_call = crate::store::lock(&app.voice).all().len();
+    let playing = crate::store::lock(&app.music).playing_count();
+    let t = std::time::Instant::now();
+    let db_ok = app.store.q().ids("SELECT id FROM servers LIMIT 1", []).len() <= 1;
+    // (consulta mínima: se o banco travar, esta resposta nem chega e a página mostra fora do ar)
+    let db_ms = t.elapsed().as_secs_f64() * 1000.0;
+    ok(json!({
+        "ok": db_ok,
+        "version": VERSION,
+        "uptimeSeconds": started.elapsed().as_secs(),
+        "online": online,
+        "inCall": in_call,
+        "musicPlaying": playing,
+        "dbMs": (db_ms * 10.0).round() / 10.0,
+    }))
+}
+
 async fn get_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     require_member(&q, &id, &me)?;
@@ -1536,8 +1567,8 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             display_name: p.display_name,
             bio: p.bio,
             avatar_color: p.avatar_color,
-            custom_status: None,
-            status: None,
+            custom_status: p.custom_status,
+            status: p.status,
             status_until: None,
             pronouns: p.pronouns,
             thought: p.thought,
@@ -1547,11 +1578,48 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             bot_name_color: p.bot_name_color,
             bot_tag_color: p.bot_tag_color,
             bot_tag_text: p.bot_tag_text,
+            bot_ring_color: p.bot_ring_color,
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;
     app.to_server(&id, "user:update", &bot);
     ok(bot)
+}
+
+async fn get_bot_replies(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    ok(q.bot_replies(&id))
+}
+
+/// Respostas inteligentes do agente (Configurações do servidor → Agente → Respostas inteligentes).
+/// Troca a lista inteira: até 100 itens [{q, a}].
+async fn set_bot_replies(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let v: serde_json::Value = serde_json::from_slice(&b).map_err(|_| bad_request("Corpo inválido"))?;
+    let items = v.as_array().ok_or_else(|| validation("Lista inválida"))?;
+    if items.len() > 100 {
+        return Err(validation("No máximo 100 respostas"));
+    }
+    let mut clean = vec![];
+    for item in items {
+        let question = item.get("q").and_then(|x| x.as_str()).unwrap_or("").trim();
+        let answer = item.get("a").and_then(|x| x.as_str()).unwrap_or("").trim();
+        if question.is_empty() && answer.is_empty() {
+            continue;
+        }
+        if question.is_empty() || answer.is_empty() {
+            return Err(validation("Preencha a pergunta e a resposta"));
+        }
+        if question.chars().count() > 200 || answer.chars().count() > 2000 {
+            return Err(validation("Pergunta até 200 letras e resposta até 2000"));
+        }
+        clean.push(json!({ "q": question, "a": answer }));
+    }
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    let list = serde_json::Value::Array(clean);
+    q.set_bot_replies(&id, &list);
+    ok(list)
 }
 
 fn music_settings_json(q: &Q, server_id: &str) -> serde_json::Value {

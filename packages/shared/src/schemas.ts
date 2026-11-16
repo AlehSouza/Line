@@ -36,6 +36,7 @@ export const updateProfileSchema = z.object({
   botNameColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   botTagColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   botTagText: z.enum(['BOT', 'B']).optional(),
+  botRingColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 });
 
 export const createServerSchema = z.object({
@@ -48,6 +49,16 @@ export const updateServerSchema = createServerSchema.partial().extend({
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   tag: z.string().max(4).optional(),
   tagIcon: z.string().max(40).optional(),
+  tagStyle: z
+    .object({
+      bg: z.string().optional(),
+      fg: z.string().optional(),
+      border: z.string().optional(),
+      iconColor: z.string().optional(),
+      iconStyle: z.enum(['outline', 'solid']).optional(),
+    })
+    .nullable()
+    .optional(),
   iconId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
 });

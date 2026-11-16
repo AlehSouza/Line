@@ -561,3 +561,38 @@ export function Slider({
     />
   );
 }
+
+const SWATCHES = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf', '#ffffff'];
+
+/** Cores prontas + "nenhuma" (volta ao padrão) + uma cor livre. */
+export function SwatchRow({ value, onChange, noneLabel }: { value: string | null; onChange: (c: string | null) => void; noneLabel: string }) {
+  const custom = value && !SWATCHES.includes(value);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(null)}
+        className={cx('rounded-full border px-2.5 py-1 text-xs', value === null ? 'border-accent text-fg' : 'border-edge text-soft hover:bg-raise')}
+      >
+        {noneLabel}
+      </button>
+      {SWATCHES.map((c) => (
+        <button
+          key={c}
+          type="button"
+          onClick={() => onChange(c)}
+          className={cx('h-7 w-7 rounded-full border border-edge ring-offset-2 ring-offset-side', value === c && 'ring-2 ring-fg')}
+          style={{ background: c }}
+          aria-label={c}
+        />
+      ))}
+      <label
+        title="Outra cor"
+        className={cx('relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-edge ring-offset-2 ring-offset-side', custom && 'ring-2 ring-fg')}
+        style={{ background: custom ? value : 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)' }}
+      >
+        <input type="color" value={value ?? '#7c6af2'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" />
+      </label>
+    </div>
+  );
+}

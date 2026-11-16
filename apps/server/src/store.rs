@@ -71,6 +71,7 @@ pub struct UserRow {
     pub bot_name_color: Option<String>,
     pub bot_tag_color: Option<String>,
     pub bot_tag_text: String,
+    pub bot_ring_color: Option<String>,
 }
 
 impl UserRow {
@@ -96,11 +97,12 @@ impl UserRow {
             bot_name_color: r.get("bot_name_color").unwrap_or(None),
             bot_tag_color: r.get("bot_tag_color").unwrap_or(None),
             bot_tag_text: r.get("bot_tag_text").unwrap_or_else(|_| "BOT".into()),
+            bot_ring_color: r.get("bot_ring_color").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color";
 const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
@@ -129,6 +131,11 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         icon_color: r.get("icon_color")?,
         tag: r.get("tag").unwrap_or_default(),
         tag_icon: r.get("tag_icon").unwrap_or_default(),
+        tag_style: r
+            .get::<_, String>("tag_style")
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or(serde_json::Value::Null),
         icon_url: image_url(r, "icon_id", "icon_filename"),
         banner_url: image_url(r, "banner_id", "banner_filename"),
         owner_id: r.get("owner_id")?,
@@ -220,6 +227,7 @@ pub struct ProfilePatch {
     pub bot_name_color: Option<Option<String>>,
     pub bot_tag_color: Option<Option<String>>,
     pub bot_tag_text: Option<String>,
+    pub bot_ring_color: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -230,6 +238,7 @@ pub struct ServerPatch {
     pub icon_color: Option<String>,
     pub tag: Option<String>,
     pub tag_icon: Option<String>,
+    pub tag_style: Option<String>,
     pub icon_id: Option<Option<String>>,
     pub banner_id: Option<Option<String>>,
 }
@@ -326,8 +335,17 @@ impl Q<'_> {
     }
 
     pub fn to_public_user(&self, row: &UserRow) -> PublicUser {
-        // O bot de música está sempre online.
-        let presence = if row.bot_server_id.is_some() { "online" } else { self.presence_of(&row.id, &row.status) };
+        // O agente (bot de música) fica online, a não ser que o dono escolha outro status para ele.
+        let presence = if row.bot_server_id.is_some() {
+            match row.status.as_str() {
+                "idle" => "idle",
+                "dnd" => "dnd",
+                "invisible" => "offline",
+                _ => "online",
+            }
+        } else {
+            self.presence_of(&row.id, &row.status)
+        };
         PublicUser {
             id: row.id.clone(),
             username: row.username.clone(),
@@ -351,6 +369,7 @@ impl Q<'_> {
                 name_color: row.bot_name_color.clone(),
                 tag_color: row.bot_tag_color.clone(),
                 tag_text: row.bot_tag_text.clone(),
+                ring_color: row.bot_ring_color.clone(),
             }),
         }
     }
@@ -366,6 +385,7 @@ impl Q<'_> {
             text: s.tag,
             icon: (!s.tag_icon.is_empty()).then_some(s.tag_icon),
             icon_url: s.icon_url,
+            style: s.tag_style,
         })
     }
 
@@ -590,6 +610,20 @@ impl Q<'_> {
         .unwrap_or_default()
     }
 
+    /// Respostas inteligentes do agente: lista JSON [{"q": pergunta, "a": resposta}].
+    pub fn bot_replies(&self, server_id: &str) -> serde_json::Value {
+        ok(self
+            .c
+            .query_row("SELECT bot_replies FROM servers WHERE id = ?", [server_id], |r| r.get::<_, String>(0))
+            .optional())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!([]))
+    }
+
+    pub fn set_bot_replies(&self, server_id: &str, list: &serde_json::Value) {
+        ok(self.c.execute("UPDATE servers SET bot_replies = ? WHERE id = ?", params![list.to_string(), server_id]));
+    }
+
     pub fn set_music_idle_message(&self, server_id: &str, message: &str) {
         ok(self.c.execute("UPDATE servers SET music_idle_message = ? WHERE id = ?", params![message, server_id]));
     }
@@ -646,6 +680,9 @@ impl Q<'_> {
         }
         if let Some(v) = patch.bot_tag_text {
             set("bot_tag_text", v.into());
+        }
+        if let Some(v) = patch.bot_ring_color {
+            set("bot_ring_color", opt(v));
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());
@@ -776,6 +813,9 @@ impl Q<'_> {
         ));
         if let Some(v) = patch.tag_icon {
             ok(self.c.execute("UPDATE servers SET tag_icon = ? WHERE id = ?", params![v, id]));
+        }
+        if let Some(v) = patch.tag_style {
+            ok(self.c.execute("UPDATE servers SET tag_style = ? WHERE id = ?", params![v, id]));
         }
         if let Some(v) = patch.icon_id {
             ok(self.c.execute("UPDATE servers SET icon_id = ? WHERE id = ?", params![v, id]));
