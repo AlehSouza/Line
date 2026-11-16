@@ -169,7 +169,7 @@ export const muteChannel = (channelId: string, minutes: number | null) => setCha
 export const unmuteChannel = (channelId: string) => setChannelNotify(channelId, { muted: false, muteUntil: null });
 
 /** Preferência geral (padrão: ligada). */
-export const pref = (n: NotifySettings, k: 'desktop' | 'sounds' | 'badge' | 'flash' | 'preview' | 'friendRequests') => n[k] !== false;
+export const pref = (n: NotifySettings, k: 'desktop' | 'sounds' | 'badge' | 'flash' | 'preview' | 'avatar' | 'quickReply' | 'friendRequests') => n[k] !== false;
 
 // ---------- lido / não lido ----------
 

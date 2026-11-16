@@ -374,7 +374,7 @@ export function NotificationsSection() {
   const dnd = useLine((s) => s.me?.status === 'dnd');
   const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]!).filter(Boolean)));
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => (typeof Notification === 'undefined' ? 'none' : Notification.permission));
-  const set = (k: 'desktop' | 'sounds' | 'badge' | 'flash' | 'preview', v: boolean) => updateNotify((x) => ({ ...x, [k]: v }));
+  const set = (k: 'desktop' | 'sounds' | 'badge' | 'flash' | 'preview' | 'avatar' | 'quickReply', v: boolean) => updateNotify((x) => ({ ...x, [k]: v }));
   const desktopApp = typeof window !== 'undefined' && !!window.line?.isDesktop;
   const [editing, setEditing] = useState<string | null>(null);
 
@@ -403,6 +403,17 @@ export function NotificationsSection() {
             }}
           />
           <SwitchRow title="Mostrar o conteúdo da mensagem" hint="Desligado, a notificação só diz quem mandou." on={pref(n, 'preview')} onChange={(v) => set('preview', v)} />
+          {desktopApp && window.line?.platform === 'win32' && (
+            <>
+              <SwitchRow title="Mostrar a foto de quem mandou" hint="A foto aparece redonda ao lado do nome, na notificação do Windows." on={pref(n, 'avatar')} onChange={(v) => set('avatar', v)} />
+              <SwitchRow
+                title="Resposta rápida"
+                hint='Mostra a caixa "Digite uma resposta" e o botão Enviar na notificação, para responder sem abrir o Line.'
+                on={pref(n, 'quickReply')}
+                onChange={(v) => set('quickReply', v)}
+              />
+            </>
+          )}
           <SwitchRow
             title="Sons de notificação"
             hint={

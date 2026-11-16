@@ -41,7 +41,7 @@ export function GameArt({ cover, icon, size = 48 }: { cover?: string | null; ico
     <span className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-raise" style={{ width: size, height: size }}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className={cx('h-full w-full', cover ? 'object-cover' : 'object-contain p-1')} />
+        <img src={src} alt="" className={cx('h-full w-full', cover ? 'object-cover' : 'object-contain')} />
       ) : (
         <Icons.Gamepad size={Math.round(size * 0.45)} className="text-muted" />
       )}
@@ -147,7 +147,7 @@ export function ActivitySection({ serverId }: { serverId: string }) {
                   )}
                 </span>
               </span>
-              <GameArt cover={a.cover} icon={a.icon} size={52} />
+              <GameArt cover={a.cover} icon={a.icon} size={50} />
             </button>
           );
         })}

@@ -13,6 +13,8 @@
     platform: ua.includes('Windows') ? 'win32' : ua.includes('Mac') ? 'darwin' : 'linux',
     /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
     nativeScreen: __LINE_NATIVE_SCREEN__,
+    /** Notificação nativa (Windows). Resolve false quando não deu, para cair na do navegador. */
+    notify: (opts) => invoke('notify_show', opts).then((v) => v === true),
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),
     /** Contagem no ícone da barra de tarefas/dock. No Windows desenhamos a pílula vermelha ("9+"). */

@@ -136,7 +136,7 @@ export function GameShareCard({ data }: { data: GameShare }) {
         <div className={cx('break-words whitespace-pre-wrap text-soft', big ? 'text-4xl leading-tight' : 'text-[15px] leading-relaxed')}>{data.text}</div>
       )}
       <div className="max-w-md">
-        <GameBanner cover={data.cover} size={64}>
+        <GameBanner cover={data.cover} size={50}>
           {user && (
             <span className="flex items-center gap-1.5 text-sm font-semibold">
               <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={18} />
@@ -252,7 +252,7 @@ export function ActivityHoverCard({
         </button>
       </div>
 
-      <GameBanner cover={a.cover} icon={a.icon} size={84}>
+      <GameBanner cover={a.cover} icon={a.icon} size={50}>
         <p className="mb-1 truncate text-[17px] font-semibold">{a.name}</p>
         <PlayedLine weekSecs={week} fallback={a.playing ? 'Jogando agora' : `Jogou ${ago(a.lastPlayed)}`} />
       </GameBanner>

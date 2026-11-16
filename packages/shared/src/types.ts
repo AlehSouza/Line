@@ -371,6 +371,10 @@ export interface NotifySettings {
   flash?: boolean;
   /** Mostrar o texto da mensagem na notificação (padrão: sim). */
   preview?: boolean;
+  /** Mostrar a foto de quem mandou na notificação (padrão: sim). */
+  avatar?: boolean;
+  /** Caixa "Digite uma resposta" na notificação do Windows (padrão: sim). */
+  quickReply?: boolean;
   /** Notificar novas solicitações de amizade (padrão: sim). */
   friendRequests?: boolean;
   servers?: Record<string, ServerNotify>;

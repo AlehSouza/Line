@@ -22,6 +22,8 @@ mod games {
 }
 #[cfg(windows)]
 mod loopback;
+#[cfg(windows)]
+mod toast;
 #[cfg(target_os = "linux")]
 mod rtc;
 #[cfg(windows)]
@@ -404,6 +406,49 @@ async fn run_update_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Notificação nativa (Windows): nome e ícone do Line, foto de quem mandou e resposta rápida.
+/// Devolve false quando não dá (outros sistemas ou erro), e a interface usa a do navegador.
+#[tauri::command]
+#[allow(unused_variables)]
+fn notify_show(
+    app: tauri::AppHandle,
+    title: String,
+    body: String,
+    tag: String,
+    data: String,
+    avatar: Option<String>,
+    avatar_key: Option<String>,
+    reply: bool,
+) -> bool {
+    #[cfg(windows)]
+    {
+        use base64::Engine;
+        let avatar = avatar.and_then(|b64| {
+            let bytes = base64::engine::general_purpose::STANDARD.decode(b64.rsplit(',').next()?).ok()?;
+            let key: String = avatar_key.unwrap_or_default().chars().filter(|c| c.is_ascii_alphanumeric()).take(80).collect();
+            let dir = std::env::temp_dir().join("line-notificacoes");
+            std::fs::create_dir_all(&dir).ok()?;
+            let path = dir.join(format!("{}.png", if key.is_empty() { "avatar" } else { &key }));
+            std::fs::write(&path, bytes).ok()?;
+            Some(path)
+        });
+        let handle = app.clone();
+        let t = toast::Toast { title, body, tag, data, avatar, reply };
+        return toast::show(t, move |action, data, reply| {
+            if action == "open" {
+                show_main(&handle);
+            }
+            if let Some(w) = handle.get_webview_window(MAIN) {
+                let payload = serde_json::json!({ "action": action, "data": data, "reply": reply });
+                let _ = w.eval(format!("window.lineToast && window.lineToast({payload})"));
+            }
+        })
+        .map_err(|e| tracing::warn!("notificação nativa: {e}"))
+        .is_ok();
+    }
+    false
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
@@ -654,6 +699,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             request_attention,
             set_badge,
+            notify_show,
             window_minimize,
             window_toggle_maximize,
             window_is_maximized,
@@ -702,6 +748,8 @@ pub fn run() {
             games::game_running
         ])
         .setup(|app| {
+            #[cfg(windows)]
+            toast::register(include_bytes!("../icons/128x128@2x.png"));
             #[cfg(target_os = "linux")]
             app.manage(rtc::Rtc::new());
             let handle = app.handle().clone();

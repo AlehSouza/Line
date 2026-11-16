@@ -3,11 +3,11 @@
 import { loadIgnored } from './ignored';
 import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/shared';
 import { io, type Socket } from 'socket.io-client';
-import { api, configureApi, DEFAULT_SERVER_URL } from './api';
+import { api, configureApi, DEFAULT_SERVER_URL, fileUrl } from './api';
 import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
 import { bindVoiceSocket, syncVoice, unbindVoice } from './voice';
 import { bindMusicSocket, syncMusic } from './music';
-import { handleIncoming, loadNotifyState, onRemoteAck } from './notify';
+import { handleIncoming, loadNotifyState, onRemoteAck, pref } from './notify';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
 const previewContent = (c: string) =>
@@ -387,22 +387,85 @@ function notify(message: Message, desktop: boolean) {
   } else if (channel?.type === 'group_dm') {
     title = `${message.author.displayName} em ${dmTitle(channel, state.me?.id, state.users)}`;
   }
-  if (!desktop || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  if (!desktop) return;
   const full = (message.content && previewContent(mentionsToText(message.content, serverId))) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
-  const body = state.notify.preview === false ? 'Nova mensagem' : full;
-  // Sem o som do sistema: o Line toca o próprio (e respeita a opção "Sons").
-  const n = new Notification(title, { body: body.slice(0, 200), silent: true });
-  n.onclick = () => {
-    window.focus();
-    void (async () => {
-      if (serverId && !channel) await ensureServerLoaded(serverId).catch(() => {});
-      const ch = useLine.getState().channels[message.channelId];
-      if (ch?.type === 'thread' && ch.parentId && ch.serverId) {
-        actions.goServer(ch.serverId, ch.parentId);
-        actions.openThread(ch.id);
-      } else if (serverId) actions.goServer(serverId, message.channelId);
-      else actions.goHome(message.channelId);
-    })();
+  const body = (state.notify.preview === false ? 'Nova mensagem' : full).slice(0, 200);
+  const data = `${message.channelId}:${serverId ?? ''}`;
+  void (async () => {
+    // Windows: notificação nativa com o nome e o ícone do Line (sem "tauri.localhost"),
+    // foto redonda de quem mandou e resposta rápida, no estilo do Teams.
+    if (window.line?.notify && window.line.platform === 'win32') {
+      const avatar = pref(state.notify, 'avatar') ? await avatarPng(message.author).catch(() => null) : null;
+      const shown = await window.line.notify({
+        title,
+        body,
+        tag: message.channelId,
+        data,
+        avatar,
+        avatarKey: `${message.author.id}${(message.author.avatarUrl ?? '').replace(/[^a-z0-9]/gi, '').slice(-16)}`,
+        reply: pref(state.notify, 'quickReply'),
+      });
+      if (shown) return;
+    }
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    // Sem o som do sistema: o Line toca o próprio (e respeita a opção "Sons").
+    const n = new Notification(title, { body, silent: true });
+    n.onclick = () => {
+      window.focus();
+      openFromNotification(data);
+    };
+  })();
+}
+
+/** Abre a conversa de uma notificação ("canal:servidor"). */
+function openFromNotification(data: string) {
+  const [channelId = '', serverId = ''] = data.split(':');
+  void (async () => {
+    if (serverId && !useLine.getState().channels[channelId]) await ensureServerLoaded(serverId).catch(() => {});
+    const ch = useLine.getState().channels[channelId];
+    if (ch?.type === 'thread' && ch.parentId && ch.serverId) {
+      actions.goServer(ch.serverId, ch.parentId);
+      actions.openThread(ch.id);
+    } else if (serverId) actions.goServer(serverId, channelId);
+    else actions.goHome(channelId);
+  })();
+}
+
+/** Foto de quem mandou como PNG (data URL) para a notificação; sem foto, a inicial na cor da pessoa. */
+async function avatarPng(user: Message['author']): Promise<string> {
+  const S = 96;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  if (user.avatarUrl) {
+    const blob = await fetch(fileUrl(user.avatarUrl)).then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))));
+    const img = await createImageBitmap(blob);
+    const k = Math.max(S / img.width, S / img.height);
+    const w = img.width * k;
+    const h = img.height * k;
+    g.drawImage(img, (S - w) / 2, (S - h) / 2, w, h);
+  } else {
+    g.fillStyle = user.avatarColor || '#5865f2';
+    g.fillRect(0, 0, S, S);
+    g.fillStyle = '#fff';
+    g.font = 'bold 44px "Segoe UI", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText((user.displayName || user.username || '?').trim().charAt(0).toUpperCase(), S / 2, S / 2 + 2);
+  }
+  return c.toDataURL('image/png');
+}
+
+if (typeof window !== 'undefined') {
+  // Clique ou "Enviar" na notificação nativa do Windows (vem do Rust).
+  (window as unknown as { lineToast?: (e: { action: string; data: string; reply?: string | null }) => void }).lineToast = (e) => {
+    const [channelId = ''] = e.data.split(':');
+    if (e.action === 'reply') {
+      const text = e.reply?.trim();
+      if (text && channelId) void api.sendMessage(channelId, text).catch(() => {});
+      return;
+    }
+    openFromNotification(e.data);
   };
 }
 
@@ -439,6 +502,7 @@ declare global {
       version?: string;
       platform: string;
       requestAttention: () => void;
+      notify?: (opts: { title: string; body: string; tag: string; data: string; avatar: string | null; avatarKey: string; reply: boolean }) => Promise<boolean>;
       setBadge: (count: number) => void;
       window?: {
         minimize: () => void;
