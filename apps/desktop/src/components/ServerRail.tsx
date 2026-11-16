@@ -75,6 +75,16 @@ export function ServerRail() {
             draggable: true,
             onDragStart: (e) => {
               e.dataTransfer.effectAllowed = 'move';
+              // Imagem de arraste: só o ícone, recortado com os cantos arredondados (sem virar quadrado).
+              const btn = e.currentTarget.querySelector('button');
+              if (btn) {
+                const ghost = btn.cloneNode(true) as HTMLElement;
+                Object.assign(ghost.style, { position: 'fixed', top: '-200px', left: '-200px', overflow: 'hidden', borderRadius: '14px' });
+                ghost.querySelectorAll('span.absolute').forEach((el) => el.remove());
+                document.body.appendChild(ghost);
+                e.dataTransfer.setDragImage(ghost, 24, 24);
+                window.setTimeout(() => ghost.remove(), 0);
+              }
               setDrag(server.id);
             },
             onDragEnd: () => {
