@@ -43,7 +43,7 @@ export function Modals() {
     case 'profile':
       return <ProfileModal onClose={close} />;
     case 'settings':
-      return <SettingsModal onClose={close} initial={modal.section} />;
+      return <SettingsModal key={modal.section ?? 'account'} onClose={close} initial={modal.section} />;
     case 'create-poll':
       return <CreatePollModal channelId={modal.channelId} onClose={close} />;
     case 'new-dm':

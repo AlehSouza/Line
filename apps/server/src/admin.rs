@@ -1,12 +1,12 @@
 //! Painel administrador (backoffice.useline.tech, projeto apps/admin): estatísticas, usuários, servidores, denúncias e
 //! bug reports. Tudo em /api/admin/*, só para as contas em ADMIN_USERS, com limite de pedidos.
 //! Também fica aqui o envio de denúncias e bug reports pelo app (POST /api/reports).
+use crate::App;
 use crate::errors::*;
 use crate::gateway::VoiceFilter;
 use crate::ids::now_iso;
 use crate::routes::{Me, client_ip, remove_from_server};
 use crate::store::{BAN_FOREVER, NewReport, lock};
-use crate::App;
 use axum::body::Bytes;
 use axum::extract::{FromRequestParts, Path, Query, State};
 use axum::http::StatusCode;
@@ -27,7 +27,11 @@ fn ok<T: serde::Serialize>(v: T) -> Res {
 }
 
 fn too_many() -> ApiError {
-    ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Muitos pedidos. Espere um pouco e tente de novo.")
+    ApiError::new(
+        StatusCode::TOO_MANY_REQUESTS,
+        "RATE_LIMITED",
+        "Muitos pedidos. Espere um pouco e tente de novo.",
+    )
 }
 
 /// Conta admin autenticada. Quem não é admin recebe 403, e todo pedido conta no limite por IP.
@@ -56,7 +60,10 @@ pub fn router() -> Router<Arc<App>> {
         .route("/admin/gate", get(gate))
         .route("/admin/logout", post(panel_logout))
         .route("/admin/admins", get(list_admins))
-        .route("/admin/admins/{id}", axum::routing::put(add_admin).delete(remove_admin))
+        .route(
+            "/admin/admins/{id}",
+            axum::routing::put(add_admin).delete(remove_admin),
+        )
         .route("/admin/me", get(admin_me))
         .route("/admin/stats", get(stats))
         .route("/admin/users", get(users))
@@ -66,6 +73,10 @@ pub fn router() -> Router<Arc<App>> {
         .route("/admin/users/{id}/messages", delete(delete_user_messages))
         .route("/admin/servers", get(servers))
         .route("/admin/servers/{id}", get(server).delete(delete_server))
+        .route(
+            "/admin/servers/{id}/suspend",
+            axum::routing::put(suspend_server).delete(unsuspend_server),
+        )
         .route("/admin/messages/{id}", delete(delete_message))
         .route("/admin/reports", get(reports))
         .route("/admin/reports/{id}", patch(update_report))
@@ -125,9 +136,13 @@ async fn panel_login(State(app): S, headers: axum::http::HeaderMap, b: Bytes) ->
     if !app.admin_requests.allow(&ip) {
         return Err(too_many());
     }
-    let input: PanelLogin = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let input: PanelLogin =
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     let user_id = if let Some(code) = input.google_code.as_deref().filter(|c| !c.is_empty()) {
-        let google = app.google.as_ref().ok_or_else(|| validation("Login com Google indisponível."))?;
+        let google = app
+            .google
+            .as_ref()
+            .ok_or_else(|| validation("Login com Google indisponível."))?;
         google
             .take_code(code.trim(), None, true)
             .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?
@@ -190,7 +205,9 @@ fn require_owner(app: &App, me: &str) -> ApiResult<()> {
     if app.is_owner(me) {
         Ok(())
     } else {
-        Err(forbidden("Só o dono do painel pode mudar os administradores"))
+        Err(forbidden(
+            "Só o dono do painel pode mudar os administradores",
+        ))
     }
 }
 
@@ -199,7 +216,10 @@ async fn add_admin(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> R
     require_owner(&app, &me)?;
     let q = app.store.q();
     let name = id.trim().trim_start_matches('@');
-    let row = q.user_row(name).or_else(|| q.user_by_username(name)).ok_or_else(|| not_found("Usuário"))?;
+    let row = q
+        .user_row(name)
+        .or_else(|| q.user_by_username(name))
+        .ok_or_else(|| not_found("Usuário"))?;
     if row.bot_server_id.is_some() || q.ban_of(&row.id).is_some() {
         return Err(bad_request("Essa conta não pode ser admin"));
     }
@@ -231,13 +251,19 @@ async fn stats(State(app): S, Admin(_): Admin) -> Res {
     // Quem está em chamada agora, agrupado por canal.
     let mut calls: HashMap<String, Vec<String>> = HashMap::new();
     for v in &voice {
-        calls.entry(v.state.channel_id.clone()).or_default().push(v.state.user_id.clone());
+        calls
+            .entry(v.state.channel_id.clone())
+            .or_default()
+            .push(v.state.user_id.clone());
     }
     let live: Vec<Value> = calls
         .into_iter()
         .map(|(channel_id, users)| {
             let channel = q.channel(&channel_id);
-            let server = channel.as_ref().and_then(|c| c.server_id.as_deref()).and_then(|s| q.server(s));
+            let server = channel
+                .as_ref()
+                .and_then(|c| c.server_id.as_deref())
+                .and_then(|s| q.server(s));
             json!({
                 "channelId": channel_id,
                 "channelName": channel.as_ref().map(|c| c.name.clone()),
@@ -281,8 +307,14 @@ async fn users(State(app): S, Admin(_): Admin, Query(qs): Query<HashMap<String, 
 
 async fn user(State(app): S, Admin(_): Admin, Path(id): Path<String>) -> Res {
     let online = lock(&app.store.presence).online_ids().contains(&id);
-    let in_call = lock(&app.voice).get(&id).map(|v| v.state.channel_id.clone());
-    let mut u = app.store.q().admin_user(&id).ok_or_else(|| not_found("Usuário"))?;
+    let in_call = lock(&app.voice)
+        .get(&id)
+        .map(|v| v.state.channel_id.clone());
+    let mut u = app
+        .store
+        .q()
+        .admin_user(&id)
+        .ok_or_else(|| not_found("Usuário"))?;
     u["online"] = json!(online);
     u["inCall"] = json!(in_call);
     u["admin"] = json!(app.is_admin(&id));
@@ -292,7 +324,9 @@ async fn user(State(app): S, Admin(_): Admin, Path(id): Path<String>) -> Res {
 /// Não deixa o admin suspender/apagar a si mesmo, outro admin ou um bot.
 fn target_user(app: &App, me: &str, id: &str) -> ApiResult<()> {
     if id == me || app.is_admin(id) {
-        return Err(forbidden("Não dá para fazer isso com uma conta de administrador"));
+        return Err(forbidden(
+            "Não dá para fazer isso com uma conta de administrador",
+        ));
     }
     let q = app.store.q();
     let row = q.user_row(id).ok_or_else(|| not_found("Usuário"))?;
@@ -303,9 +337,15 @@ fn target_user(app: &App, me: &str, id: &str) -> ApiResult<()> {
 }
 
 /// Tira a pessoa de tudo que está aberto agora: voz, conexões em tempo real e sessões.
-fn kick_out(app: &App, id: &str) {
+pub(crate) fn kick_out(app: &App, id: &str) {
     let q = app.store.q();
-    app.drop_voice(&q, VoiceFilter { user_id: Some(id), ..Default::default() });
+    app.drop_voice(
+        &q,
+        VoiceFilter {
+            user_id: Some(id),
+            ..Default::default()
+        },
+    );
     q.revoke_sessions(id);
     drop(q);
     app.disconnect_user(id);
@@ -324,15 +364,20 @@ async fn ban_user(State(app): S, Admin(me): Admin, Path(id): Path<String>, b: By
     let input: BanInput = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     let reason: String = input.reason.trim().chars().take(500).collect();
     let until = match input.days.filter(|d| *d > 0.0) {
-        Some(d) => (chrono::Utc::now() + chrono::Duration::minutes((d.min(3650.0) * 24.0 * 60.0) as i64))
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string(),
+        Some(d) => (chrono::Utc::now()
+            + chrono::Duration::minutes((d.min(3650.0) * 24.0 * 60.0) as i64))
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string(),
         None => BAN_FOREVER.to_string(),
     };
     {
         let q = app.store.q();
         q.set_ban(&id, Some(&until), &reason);
-        let label = if until == BAN_FOREVER { "para sempre".to_string() } else { format!("até {until}") };
+        let label = if until == BAN_FOREVER {
+            "para sempre".to_string()
+        } else {
+            format!("até {until}")
+        };
         q.log_admin(&me, "ban", &id, &format!("{label}; {reason}"));
     }
     kick_out(&app, &id);
@@ -348,7 +393,10 @@ async fn unban_user(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> 
 }
 
 async fn logout_user(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
-    app.store.q().user_row(&id).ok_or_else(|| not_found("Usuário"))?;
+    app.store
+        .q()
+        .user_row(&id)
+        .ok_or_else(|| not_found("Usuário"))?;
     kick_out(&app, &id);
     app.store.q().log_admin(&me, "logout", &id, "");
     Ok(StatusCode::NO_CONTENT.into_response())
@@ -360,7 +408,12 @@ fn wipe_messages(app: &App, id: &str) -> usize {
     let list = q.message_ids_by_author(id);
     let n = q.delete_messages_by_author(id);
     for (message_id, channel_id) in &list {
-        app.to_channel(&q, channel_id, "message:delete", &json!({ "id": message_id, "channelId": channel_id }));
+        app.to_channel(
+            &q,
+            channel_id,
+            "message:delete",
+            &json!({ "id": message_id, "channelId": channel_id }),
+        );
     }
     n
 }
@@ -368,7 +421,9 @@ fn wipe_messages(app: &App, id: &str) -> usize {
 async fn delete_user_messages(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
     target_user(&app, &me, &id)?;
     let n = wipe_messages(&app, &id);
-    app.store.q().log_admin(&me, "delete_messages", &id, &format!("{n} mensagens"));
+    app.store
+        .q()
+        .log_admin(&me, "delete_messages", &id, &format!("{n} mensagens"));
     app.sweep_uploads();
     ok(json!({ "deleted": n }))
 }
@@ -383,9 +438,17 @@ struct DeleteUserInput {
 /// pessoais e fica suspensa para sempre.
 async fn delete_user(State(app): S, Admin(me): Admin, Path(id): Path<String>, b: Bytes) -> Res {
     target_user(&app, &me, &id)?;
-    let input: DeleteUserInput = if b.is_empty() { Default::default() } else { serde_json::from_slice(&b).unwrap_or_default() };
+    let input: DeleteUserInput = if b.is_empty() {
+        Default::default()
+    } else {
+        serde_json::from_slice(&b).unwrap_or_default()
+    };
     kick_out(&app, &id);
-    let n = if input.delete_messages { wipe_messages(&app, &id) } else { 0 };
+    let n = if input.delete_messages {
+        wipe_messages(&app, &id)
+    } else {
+        0
+    };
     {
         let q = app.store.q();
         for server_id in q.server_ids_of(&id) {
@@ -404,17 +467,30 @@ async fn delete_user(State(app): S, Admin(me): Admin, Path(id): Path<String>, b:
 }
 
 async fn servers(State(app): S, Admin(_): Admin, Query(qs): Query<HashMap<String, String>>) -> Res {
-    ok(app.store.q().admin_servers(qs.get("q").map(|s| s.as_str()).unwrap_or(""), qs_offset(&qs)))
+    ok(app.store.q().admin_servers(
+        qs.get("q").map(|s| s.as_str()).unwrap_or(""),
+        qs_offset(&qs),
+    ))
 }
 
 async fn server(State(app): S, Admin(_): Admin, Path(id): Path<String>) -> Res {
-    ok(app.store.q().admin_server(&id).ok_or_else(|| not_found("Servidor"))?)
+    ok(app
+        .store
+        .q()
+        .admin_server(&id)
+        .ok_or_else(|| not_found("Servidor"))?)
 }
 
 async fn delete_server(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let server = q.server(&id).ok_or_else(|| not_found("Servidor"))?;
-    app.drop_voice(&q, VoiceFilter { server_id: Some(&server.id), ..Default::default() });
+    app.drop_voice(
+        &q,
+        VoiceFilter {
+            server_id: Some(&server.id),
+            ..Default::default()
+        },
+    );
     app.to_server(&server.id, "server:delete", &json!({ "id": server.id }));
     app.close_server_room(&server.id);
     q.delete_server(&server.id);
@@ -424,14 +500,54 @@ async fn delete_server(State(app): S, Admin(me): Admin, Path(id): Path<String>) 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
+/// Suspende o servidor: guarda tudo, mas derruba a voz e bloqueia mensagens/voz para todos.
+async fn suspend_server(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let server = q.server(&id).ok_or_else(|| not_found("Servidor"))?;
+    app.drop_voice(
+        &q,
+        VoiceFilter {
+            server_id: Some(&server.id),
+            ..Default::default()
+        },
+    );
+    q.set_server_suspended(&server.id, true);
+    q.log_admin(&me, "suspend_server", &server.id, &server.name);
+    if let Some(s) = q.server(&server.id) {
+        app.server_updated(&q, &s);
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+async fn unsuspend_server(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let server = q.server(&id).ok_or_else(|| not_found("Servidor"))?;
+    q.set_server_suspended(&server.id, false);
+    q.log_admin(&me, "unsuspend_server", &server.id, &server.name);
+    if let Some(s) = q.server(&server.id) {
+        app.server_updated(&q, &s);
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn delete_message(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let message = q.message(&id).ok_or_else(|| not_found("Mensagem"))?;
     let files = q.attachment_ids_of_message(&message.id);
     q.delete_message(&message.id);
     app.remove_upload_files(&files);
-    app.to_channel(&q, &message.channel_id, "message:delete", &json!({ "id": message.id, "channelId": message.channel_id }));
-    q.log_admin(&me, "delete_message", &message.id, &message.content.chars().take(200).collect::<String>());
+    app.to_channel(
+        &q,
+        &message.channel_id,
+        "message:delete",
+        &json!({ "id": message.id, "channelId": message.channel_id }),
+    );
+    q.log_admin(
+        &me,
+        "delete_message",
+        &message.id,
+        &message.content.chars().take(200).collect::<String>(),
+    );
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -450,11 +566,14 @@ struct ReportPatch {
 }
 
 async fn update_report(State(app): S, Admin(me): Admin, Path(id): Path<String>, b: Bytes) -> Res {
-    let input: ReportPatch = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let input: ReportPatch =
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     if !matches!(input.status.as_str(), "open" | "resolved" | "dismissed") {
         return Err(validation("Status inválido"));
     }
-    let note = input.note.map(|n| n.trim().chars().take(1000).collect::<String>());
+    let note = input
+        .note
+        .map(|n| n.trim().chars().take(1000).collect::<String>());
     let q = app.store.q();
     if !q.update_report(&id, &input.status, note.as_deref(), &me) {
         return Err(not_found("Denúncia"));
@@ -495,7 +614,8 @@ fn clip(s: &str, n: usize) -> String {
 
 /// Denúncia de usuário/mensagem ou bug report/sugestão. Até 10 por hora e 30 por dia por conta.
 async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
-    let input: ReportInput = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let input: ReportInput =
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message") {
         return Err(validation("Tipo inválido"));
     }
@@ -517,7 +637,8 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         ));
     }
     let q = app.store.q();
-    let (mut target, mut channel_id, mut server_id, mut content) = (input.target_user_id.clone(), None, None, None);
+    let (mut target, mut channel_id, mut server_id, mut content) =
+        (input.target_user_id.clone(), None, None, None);
     let mut message_id = None;
     let mut snapshot: Option<Value> = None;
     let mut evidence: Vec<crate::model::Attachment> = vec![];
@@ -557,7 +678,10 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
             message_id = Some(m.id);
         }
         "user" => {
-            let t = target.as_deref().and_then(|id| q.user_row(id)).ok_or_else(|| not_found("Usuário"))?;
+            let t = target
+                .as_deref()
+                .and_then(|id| q.user_row(id))
+                .ok_or_else(|| not_found("Usuário"))?;
             if t.id == me {
                 return Err(bad_request("Você não pode denunciar a si mesmo"));
             }
@@ -579,7 +703,11 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         details: &details,
         platform: &clip(&input.platform, 60),
         version: &clip(&input.version, 40),
-        images: if matches!(input.kind.as_str(), "bug" | "idea" | "user") { &input.images } else { &[] },
+        images: if matches!(input.kind.as_str(), "bug" | "idea" | "user") {
+            &input.images
+        } else {
+            &[]
+        },
     });
     // Prova que não some: cópia dos arquivos da mensagem (até 10 e 100 MB), que ficam mesmo se
     // a mensagem for apagada.
@@ -593,11 +721,21 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
             }
             let new = crate::ids::new_id();
             if std::fs::copy(app.uploads_dir.join(&a.id), app.uploads_dir.join(&new)).is_ok() {
-                q.create_attachment(&new, target.as_deref().unwrap_or(&me), &a.filename, &a.content_type, a.size);
+                q.create_attachment(
+                    &new,
+                    target.as_deref().unwrap_or(&me),
+                    &a.filename,
+                    &a.content_type,
+                    a.size,
+                );
                 copies.push(new);
             }
         }
         q.set_report_evidence(&id, &snap.to_string(), &copies);
     }
-    Ok((StatusCode::CREATED, Json(json!({ "id": id, "createdAt": now_iso() }))).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({ "id": id, "createdAt": now_iso() })),
+    )
+        .into_response())
 }

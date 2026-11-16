@@ -590,6 +590,7 @@ async function openMic() {
     rawMic = await navigator.mediaDevices.getUserMedia({ audio: { ...audio, deviceId: undefined }, video: false });
   }
   mic = rawMic;
+  rememberDevice('audioinput', rawMic.getAudioTracks()[0]?.getSettings().deviceId);
   watchMicEnded(rawMic);
   if (noiseSuppression) {
     try {
@@ -638,12 +639,15 @@ export async function setNoiseSuppression(on: boolean) {
 }
 
 export async function setInputDevice(deviceId: string | null) {
+  rememberDevice('audioinput', deviceId);
   setV({ inputId: deviceId });
   savePrefs();
   await reopenMic();
 }
 
 export function setOutputDevice(deviceId: string | null) {
+  rememberDevice('audiooutput', getV().outputId ?? 'default');
+  rememberDevice('audiooutput', deviceId ?? 'default');
   setV({ outputId: deviceId });
   savePrefs();
   for (const el of audioEls.values()) applySink(el);
@@ -713,6 +717,7 @@ export async function toggleCamera() {
       stopStream(stream);
       return;
     }
+    rememberDevice('videoinput', stream.getVideoTracks()[0]?.getSettings().deviceId);
     setV({ camera: stream });
     addStreamToPeers(stream);
     socket?.emit('voice:state', { cameraStreamId: stream.id });
@@ -905,6 +910,7 @@ export async function switchCamera(deviceId: string) {
   }
   const old = camera.getVideoTracks()[0];
   const track = fresh.getVideoTracks()[0];
+  rememberDevice('videoinput', track?.getSettings().deviceId);
   if (old) camera.removeTrack(old);
   camera.addTrack(track);
   for (const { pc } of peers.values()) {
@@ -1389,6 +1395,78 @@ export function participants(states: Record<string, VoiceState>, channelId: stri
 // (Media Session, que ajuda o Android a manter a aba viva) e, ao voltar, religar tudo sozinho.
 
 let micLostInBackground = false;
+
+// ---------- dispositivo removido (fone bluetooth desligou, câmera desplugada…) ----------
+
+/** Dispositivos usados, do mais antigo ao mais recente, para voltar ao anterior quando um some. */
+const usedDevices: Record<'audioinput' | 'audiooutput' | 'videoinput', string[]> = { audioinput: [], audiooutput: [], videoinput: [] };
+
+function rememberDevice(kind: keyof typeof usedDevices, id: string | undefined | null) {
+  if (!id) return;
+  const list = usedDevices[kind].filter((x) => x !== id);
+  list.push(id);
+  usedDevices[kind] = list.slice(-10);
+}
+
+/** O anterior ainda conectado (ou null = padrão do sistema). */
+function previousDevice(kind: keyof typeof usedDevices, gone: string, present: Set<string>): string | null {
+  const list = usedDevices[kind].filter((id) => id !== gone && id !== 'default' && present.has(id));
+  return list[list.length - 1] ?? null;
+}
+
+let deviceCheck: ReturnType<typeof setTimeout> | null = null;
+
+async function onDeviceChange() {
+  let devices: MediaDeviceInfo[];
+  try {
+    devices = await navigator.mediaDevices.enumerateDevices();
+  } catch {
+    return;
+  }
+  const ids = (kind: MediaDeviceKind) => new Set(devices.filter((d) => d.kind === kind).map((d) => d.deviceId));
+  const inputs = ids('audioinput');
+  const outputs = ids('audiooutput');
+  const cams = ids('videoinput');
+  const { inputId, outputId, channelId, camera } = getV();
+
+  // Microfone escolhido sumiu: volta para o anterior (ou o padrão) sem sair da chamada.
+  const micTrack = rawMic?.getAudioTracks()[0];
+  const micDevice = micTrack?.getSettings().deviceId;
+  if (inputId && !inputs.has(inputId)) {
+    const next = previousDevice('audioinput', inputId, inputs);
+    setV({ inputId: next });
+    savePrefs();
+    if (channelId) await reopenMic();
+  } else if (channelId && micTrack && (micTrack.readyState === 'ended' || (micDevice && !inputs.has(micDevice)))) {
+    await reopenMic();
+  }
+
+  // Saída escolhida sumiu: toca no anterior (ou no padrão).
+  if (outputId && !outputs.has(outputId)) {
+    const next = previousDevice('audiooutput', outputId, outputs);
+    setV({ outputId: next });
+    savePrefs();
+    for (const el of audioEls.values()) applySink(el);
+    applyCtxSink();
+  }
+
+  // Câmera em uso sumiu: troca para a anterior ou qualquer outra; sem nenhuma, desliga.
+  const camTrack = camera?.getVideoTracks()[0];
+  const camDevice = camTrack?.getSettings().deviceId;
+  if (camera && camTrack && (camTrack.readyState === 'ended' || (camDevice && !cams.has(camDevice)))) {
+    const next = previousDevice('videoinput', camDevice ?? '', cams) ?? [...cams].find((id) => id && id !== camDevice) ?? null;
+    if (next) await switchCamera(next);
+    else if (getV().camera === camera) await toggleCamera();
+  }
+}
+
+if (typeof navigator !== 'undefined' && navigator.mediaDevices?.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    // O sistema manda vários avisos seguidos: espera assentar.
+    if (deviceCheck) clearTimeout(deviceCheck);
+    deviceCheck = setTimeout(() => void onDeviceChange(), 400);
+  });
+}
 
 function watchMicEnded(stream: MediaStream) {
   const track = stream.getAudioTracks()[0];

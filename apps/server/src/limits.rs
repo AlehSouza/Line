@@ -12,7 +12,11 @@ pub struct ByteQuota {
 
 impl ByteQuota {
     pub fn new(max: u64, window: Duration) -> Self {
-        Self { map: Mutex::default(), max, window }
+        Self {
+            map: Mutex::default(),
+            max,
+            window,
+        }
     }
 
     /// Quanto `key` já usou dentro da janela.
@@ -24,12 +28,16 @@ impl ByteQuota {
             v.retain(|(t, _)| now.duration_since(*t) < window);
             !v.is_empty()
         });
-        map.get(key).map(|v| v.iter().map(|(_, n)| n).sum()).unwrap_or(0)
+        map.get(key)
+            .map(|v| v.iter().map(|(_, n)| n).sum())
+            .unwrap_or(0)
     }
 
     pub fn add(&self, key: &str, bytes: u64) {
         let mut map = self.map.lock().unwrap_or_else(|e| e.into_inner());
-        map.entry(key.to_string()).or_default().push((Instant::now(), bytes));
+        map.entry(key.to_string())
+            .or_default()
+            .push((Instant::now(), bytes));
     }
 }
 

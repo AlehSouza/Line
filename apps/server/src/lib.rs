@@ -2,15 +2,16 @@
 //!
 //! Usado de dois jeitos: como binário (`line-server`) e embutido no app desktop (Tauri),
 //! que sobe o servidor junto com a janela.
+pub mod activity;
 pub mod admin;
 pub mod auth;
 pub mod captcha;
-pub mod gifs;
-pub mod google;
-pub mod embeds;
 pub mod db;
+pub mod embeds;
 pub mod errors;
 pub mod gateway;
+pub mod gifs;
+pub mod google;
 pub mod ids;
 pub mod limits;
 pub mod mail;
@@ -72,6 +73,9 @@ pub struct App {
     /// (cada um pode ocupar até 50 MB de memória).
     pub media_requests: captcha::SignupLimiter,
     pub media_slots: tokio::sync::Semaphore,
+    /// Jogo aberto agora de cada pessoa (memória) e capas da IGDB (IGDB_CLIENT_ID/SECRET).
+    pub playing: activity::Playing,
+    pub igdb: Option<activity::Igdb>,
     /// Contas com acesso ao painel administrador (ADMIN_USERS: ids das contas, separados por vírgula).
     pub admins: Vec<String>,
     /// Pedidos ao painel admin por IP e denúncias/bug reports por usuário.
@@ -96,7 +100,9 @@ impl TurnConfig {
             .map(|u| u.trim().to_string())
             .filter(|u| !u.is_empty())
             .collect();
-        let secret = std::env::var("TURN_SECRET").ok().filter(|s| !s.is_empty())?;
+        let secret = std::env::var("TURN_SECRET")
+            .ok()
+            .filter(|s| !s.is_empty())?;
         (!urls.is_empty()).then_some(Self { urls, secret })
     }
 }
@@ -149,7 +155,9 @@ impl Config {
                 .unwrap_or_else(|_| data_dir.join("line.db").to_string_lossy().into_owned()),
             data_dir,
             jwt_secret: std::env::var("JWT_SECRET").ok(),
-            web: std::env::var("WEB_DIR").ok().map(|d| WebSource::Dir(d.into())),
+            web: std::env::var("WEB_DIR")
+                .ok()
+                .map(|d| WebSource::Dir(d.into())),
             turn: TurnConfig::from_env(),
         }
     }
@@ -195,7 +203,13 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
     let listener = tokio::net::TcpListener::bind((config.host.as_str(), config.port)).await?;
     let addr = listener.local_addr()?;
 
-    let (app, io, router) = build(conn, &secret, config.data_dir.join("uploads"), config.web.clone(), config.turn.clone());
+    let (app, io, router) = build(
+        conn,
+        &secret,
+        config.data_dir.join("uploads"),
+        config.web.clone(),
+        config.turn.clone(),
+    );
     app.sweep_uploads();
     // Status com duração: a cada 30 s volta para Disponível quem já venceu.
     let weak = Arc::downgrade(&app);
@@ -264,9 +278,14 @@ pub fn build(
         login_fails_ip: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(15 * 60)),
         login_fails_user: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(15 * 60)),
         google: google::Google::from_env(),
-        upload_quota: limits::ByteQuota::new(UPLOAD_QUOTA, std::time::Duration::from_secs(24 * 60 * 60)),
+        upload_quota: limits::ByteQuota::new(
+            UPLOAD_QUOTA,
+            std::time::Duration::from_secs(24 * 60 * 60),
+        ),
         media_requests: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(10 * 60)),
         media_slots: tokio::sync::Semaphore::new(4),
+        playing: activity::Playing::default(),
+        igdb: activity::Igdb::from_env(),
         admins: std::env::var("ADMIN_USERS")
             .unwrap_or_default()
             .split(',')

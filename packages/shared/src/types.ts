@@ -92,6 +92,8 @@ export interface Server {
   inviteCode: string;
   memberCount: number;
   createdAt: string;
+  /** Suspenso pela equipe do Line: sem mensagens nem voz, só o aviso "Servidor suspenso.". */
+  suspended?: boolean;
 }
 
 export interface Category {

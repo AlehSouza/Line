@@ -1170,11 +1170,15 @@ export function VoiceSettingsPanel() {
   const noise = useVoice((v) => v.noiseSuppression);
   const [devices, setDevices] = useState<Awaited<ReturnType<typeof listAudioDevices>> | null>(null);
   useEffect(() => {
-    listAudioDevices().then(setDevices).catch(() => setDevices({ inputs: [], outputs: [] }));
+    const load = () => void listAudioDevices().then(setDevices).catch(() => setDevices({ inputs: [], outputs: [] }));
+    load();
+    navigator.mediaDevices?.addEventListener?.('devicechange', load);
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', load);
   }, []);
 
   return (
     <div className="space-y-4">
+        <NoiseToggle on={noise} />
         <div>
           <span className="mb-1.5 block text-xs font-bold tracking-wide text-muted uppercase">Microfone</span>
           <Select
@@ -1191,7 +1195,6 @@ export function VoiceSettingsPanel() {
             options={[{ value: '', label: 'Padrão do sistema' }, ...(devices?.outputs ?? []).map((d) => ({ value: d.id, label: d.label }))]}
           />
         </div>
-        <NoiseToggle on={noise} />
     </div>
   );
 }

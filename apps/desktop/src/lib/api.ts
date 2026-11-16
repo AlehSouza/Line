@@ -76,6 +76,34 @@ export function fileUrl(path: string) {
   return /^https?:/.test(path) ? path : `${baseUrl}${path}`;
 }
 
+/** Jogo de alguém na Atividade (jogando agora ou nas últimas 24 h). */
+export interface ServerActivity {
+  userId: string;
+  playing: boolean;
+  name: string;
+  since?: string;
+  lastPlayed?: string;
+  icon?: string | null;
+  cover?: string | null;
+  totalSecs?: number | null;
+}
+
+export interface MyGame {
+  name: string;
+  icon?: string | null;
+  cover?: string | null;
+  firstPlayed: string;
+  lastPlayed: string;
+  totalSecs: number;
+  hidden: boolean;
+}
+
+export interface ActivitySettings {
+  share: boolean;
+  scope: 'all' | 'small' | 'none';
+  hiddenServers: string[];
+}
+
 /** Resposta inteligente do agente: pergunta, texto e até 4 imagens/vídeos. */
 export interface AgentReply {
   q: string;
@@ -180,6 +208,10 @@ export const api = {
     request<{ token: string }>('POST', '/users/@me/password', { ...proof, newPassword }),
   /** Manda um código de 6 caracteres para o email da conta (confirma sem a senha atual). */
   sendEmailCode: () => request<void>('POST', '/users/@me/code'),
+  /** Desativa a conta (volta ao entrar de novo). */
+  deactivateAccount: (proof: { password?: string; code?: string }) => request<void>('POST', '/users/@me/deactivate', proof),
+  /** Exclui a conta para sempre. */
+  deleteAccount: (proof: { password?: string; code?: string }) => request<void>('POST', '/users/@me/delete', proof),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
@@ -194,6 +226,11 @@ export const api = {
   musicSettings: (serverId: string) => request<{ idleMessage: string; defaultIdleMessage: string }>('GET', `/servers/${enc(serverId)}/music/settings`),
   updateMusicSettings: (serverId: string, patch: { idleMessage: string }) =>
     request<{ idleMessage: string; defaultIdleMessage: string }>('PATCH', `/servers/${enc(serverId)}/music/settings`, patch),
+  serverActivities: (serverId: string) => request<ServerActivity[]>('GET', `/servers/${enc(serverId)}/activities`),
+  myGames: () => request<{ current: string | null; games: MyGame[]; covers: boolean }>('GET', '/users/@me/games'),
+  updateMyGame: (patch: { name: string; hidden?: boolean; remove?: boolean }) => request<{ games: MyGame[] }>('PATCH', '/users/@me/games', patch),
+  activitySettings: () => request<ActivitySettings>('GET', '/users/@me/activity-settings'),
+  setActivitySettings: (s: ActivitySettings) => request<ActivitySettings>('PUT', '/users/@me/activity-settings', s),
   agentReplies: (serverId: string) => request<AgentReply[]>('GET', `/servers/${enc(serverId)}/agent/replies`),
   setAgentReplies: (serverId: string, list: AgentReply[]) => request<AgentReply[]>('PUT', `/servers/${enc(serverId)}/agent/replies`, list),
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
 import { dmTitle, useLine } from '@/lib/store';
-import { cx, DefaultServerIcon, Logo } from './ui';
+import { goBack, goForward, startHistory, useNav } from '@/lib/history';
+import { cx, DefaultServerIcon } from './ui';
 
 /**
  * Barra de título própria (a do Windows fica escondida), no mesmo tom do app.
@@ -23,6 +24,40 @@ export function TitleBar() {
   const inServer = useLine((s) => s.view.kind === 'server');
   const iconUrl = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconUrl : undefined));
 
+  const canBack = useNav((h) => h.back.length > 0);
+  const canForward = useNav((h) => h.forward.length > 0);
+
+  // Voltar/Avançar: Alt+← / Alt+→ e os botões laterais do mouse.
+  useEffect(() => {
+    if (!window.line?.window) return;
+    startHistory();
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goBack();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goForward();
+      }
+    };
+    const onMouse = (e: MouseEvent) => {
+      if (e.button === 3) {
+        e.preventDefault();
+        goBack();
+      } else if (e.button === 4) {
+        e.preventDefault();
+        goForward();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mouseup', onMouse);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mouseup', onMouse);
+    };
+  }, []);
+
   useEffect(() => {
     const w = window.line?.window;
     if (!w) return;
@@ -38,10 +73,13 @@ export function TitleBar() {
 
   return (
     <div data-tauri-drag-region className="relative flex h-8 shrink-0 items-center bg-rail text-[13px] select-none">
-      <div data-tauri-drag-region className="flex items-center gap-2 pl-3">
-        <span className="pointer-events-none">
-          <Logo size={16} />
-        </span>
+      <div data-tauri-drag-region className="flex h-full items-center gap-0.5 pl-2">
+        <NavButton title="Voltar (Alt+←)" disabled={!canBack} onClick={goBack}>
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </NavButton>
+        <NavButton title="Avançar (Alt+→)" disabled={!canForward} onClick={goForward}>
+          <path d="M5 12h14M12 5l7 7-7 7" />
+        </NavButton>
       </div>
       <div data-tauri-drag-region className="pointer-events-none absolute inset-x-40 flex items-center justify-center gap-2 font-semibold text-soft">
         {iconUrl ? (
@@ -86,6 +124,21 @@ function WinButton({ title, danger, onClick, children }: { title: string; danger
       className={cx('flex h-full w-11 items-center justify-center text-muted', danger ? 'hover:bg-[#e81123] hover:text-white' : 'hover:bg-hover hover:text-fg')}
     >
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1">
+        {children}
+      </svg>
+    </button>
+  );
+}
+
+function NavButton({ title, disabled, onClick, children }: { title: string; disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      className="flex h-6 w-7 items-center justify-center rounded text-soft transition-colors hover:bg-hover hover:text-fg disabled:pointer-events-none disabled:opacity-35"
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         {children}
       </svg>
     </button>

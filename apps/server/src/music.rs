@@ -3,10 +3,10 @@
 //! oficial do YouTube em sincronia. Fica só em memória, como a voz.
 //!
 //! Travas: banco (`store.q()`) → voz → música, sempre nessa ordem.
+use crate::App;
 use crate::model::PublicUser;
 use crate::perms::{self, has};
 use crate::store::{Q, lock};
-use crate::App;
 use regex::Regex;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -46,7 +46,11 @@ pub struct Session {
 
 impl Session {
     fn position_ms(&self, now: u64) -> u64 {
-        if self.paused { self.offset_ms } else { self.offset_ms + now.saturating_sub(self.started_at_ms) }
+        if self.paused {
+            self.offset_ms
+        } else {
+            self.offset_ms + now.saturating_sub(self.started_at_ms)
+        }
     }
     fn current(&self) -> Option<&Track> {
         self.tracks.get(self.index)
@@ -68,7 +72,10 @@ pub struct MusicRegistry {
 impl MusicRegistry {
     /// Quantos canais têm música tocando agora (painel admin).
     pub fn playing_count(&self) -> usize {
-        self.sessions.values().filter(|s| !s.paused && s.current().is_some()).count()
+        self.sessions
+            .values()
+            .filter(|s| !s.paused && s.current().is_some())
+            .count()
     }
 }
 
@@ -104,7 +111,11 @@ pub const DEFAULT_IDLE_MESSAGE: &str = "Esperando a próxima banger 😈";
 
 /// Pessoas (não bots) no canal de voz.
 fn listeners(app: &App, channel_id: &str) -> Vec<String> {
-    lock(&app.voice).in_channel(channel_id).into_iter().map(|v| v.user_id).collect()
+    lock(&app.voice)
+        .in_channel(channel_id)
+        .into_iter()
+        .map(|v| v.user_id)
+        .collect()
 }
 
 fn state_json(s: &Session, listeners: usize) -> Value {
@@ -131,8 +142,16 @@ fn state_json(s: &Session, listeners: usize) -> Value {
 impl App {
     fn emit_music(&self, q: &Q, channel_id: &str) {
         let n = listeners(self, channel_id).len();
-        let state = lock(&self.music).sessions.get(channel_id).map(|s| state_json(s, n));
-        self.to_channel(q, channel_id, "music:state", &json!({ "channelId": channel_id, "state": state }));
+        let state = lock(&self.music)
+            .sessions
+            .get(channel_id)
+            .map(|s| state_json(s, n));
+        self.to_channel(
+            q,
+            channel_id,
+            "music:state",
+            &json!({ "channelId": channel_id, "state": state }),
+        );
     }
 
     /// Sessões que o usuário enxerga (ao conectar / sincronizar).
@@ -187,17 +206,33 @@ impl App {
 
     /// Respostas inteligentes: mensagem que menciona o agente (`@usuario` ou `@Nome`) e parece com
     /// uma pergunta cadastrada pelo dono recebe a resposta configurada. Usa o `q` já aberto.
-    pub fn smart_reply(&self, q: &Q, server_id: &str, channel_id: &str, author_id: &str, content: &str) {
+    pub fn smart_reply(
+        &self,
+        q: &Q,
+        server_id: &str,
+        channel_id: &str,
+        author_id: &str,
+        content: &str,
+    ) {
         let list = q.bot_replies(server_id);
-        let Some(items) = list.as_array().filter(|l| !l.is_empty()) else { return };
+        let Some(items) = list.as_array().filter(|l| !l.is_empty()) else {
+            return;
+        };
         let (bot_id, _) = q.music_bot(server_id);
         if bot_id == author_id {
             return;
         }
-        let Some(bot) = q.public_user(&bot_id) else { return };
+        let Some(bot) = q.public_user(&bot_id) else {
+            return;
+        };
         let lower = content.to_lowercase();
-        let handles = [format!("@{}", bot.username.to_lowercase()), format!("@{}", bot.display_name.to_lowercase())];
-        let Some(handle) = handles.iter().find(|h| lower.contains(h.as_str())) else { return };
+        let handles = [
+            format!("@{}", bot.username.to_lowercase()),
+            format!("@{}", bot.display_name.to_lowercase()),
+        ];
+        let Some(handle) = handles.iter().find(|h| lower.contains(h.as_str())) else {
+            return;
+        };
         let asked = normalize_words(&lower.replace(handle.as_str(), " "));
         if asked.is_empty() {
             return;
@@ -205,11 +240,17 @@ impl App {
         let joined = asked.join(" ");
         let mut best: Option<(f64, &str, &serde_json::Value)> = None;
         for item in items {
-            let (Some(question), Some(answer)) = (item.get("q").and_then(|v| v.as_str()), item.get("a").and_then(|v| v.as_str())) else {
+            let (Some(question), Some(answer)) = (
+                item.get("q").and_then(|v| v.as_str()),
+                item.get("a").and_then(|v| v.as_str()),
+            ) else {
                 continue;
             };
             let words = normalize_words(&question.to_lowercase().replace(handle.as_str(), " "));
-            let has_media = item.get("media").and_then(|m| m.as_array()).is_some_and(|m| !m.is_empty());
+            let has_media = item
+                .get("media")
+                .and_then(|m| m.as_array())
+                .is_some_and(|m| !m.is_empty());
             if words.is_empty() || (answer.trim().is_empty() && !has_media) {
                 continue;
             }
@@ -217,8 +258,13 @@ impl App {
             let score = if joined.contains(&words.join(" ")) {
                 2.0
             } else {
-                let important: Vec<&String> = words.iter().filter(|w| w.chars().count() > 2).collect();
-                let pool = if important.is_empty() { words.iter().collect() } else { important };
+                let important: Vec<&String> =
+                    words.iter().filter(|w| w.chars().count() > 2).collect();
+                let pool = if important.is_empty() {
+                    words.iter().collect()
+                } else {
+                    important
+                };
                 pool.iter().filter(|w| asked.contains(w)).count() as f64 / pool.len() as f64
             };
             if score >= 0.6 && best.is_none_or(|(b, _, _)| score > b) {
@@ -229,10 +275,26 @@ impl App {
             // Cada resposta leva uma cópia das mídias (apagar a mensagem não apaga o original).
             let mut ids = vec![];
             if let Some(bot) = self.music_bot(q, server_id) {
-                for m in item.get("media").and_then(|m| m.as_array()).into_iter().flatten() {
-                    let Some(src) = m.get("id").and_then(|x| x.as_str()).and_then(|id| q.attachment(id)) else { continue };
+                for m in item
+                    .get("media")
+                    .and_then(|m| m.as_array())
+                    .into_iter()
+                    .flatten()
+                {
+                    let Some(src) = m
+                        .get("id")
+                        .and_then(|x| x.as_str())
+                        .and_then(|id| q.attachment(id))
+                    else {
+                        continue;
+                    };
                     let new_id = crate::ids::new_id();
-                    if std::fs::copy(self.uploads_dir.join(&src.id), self.uploads_dir.join(&new_id)).is_ok() {
+                    if std::fs::copy(
+                        self.uploads_dir.join(&src.id),
+                        self.uploads_dir.join(&new_id),
+                    )
+                    .is_ok()
+                    {
                         q.clone_attachment(&src, &new_id, &bot.id);
                         ids.push(new_id);
                     }
@@ -242,21 +304,39 @@ impl App {
         }
     }
 
-    pub(crate) fn bot_say(&self, q: &Q, server_id: &str, text_channel_id: &str, content: &str, requires: &[String]) {
+    pub(crate) fn bot_say(
+        &self,
+        q: &Q,
+        server_id: &str,
+        text_channel_id: &str,
+        content: &str,
+        requires: &[String],
+    ) {
         if q.channel(text_channel_id).is_none() {
             return;
         }
-        let Some(bot) = self.music_bot(q, server_id) else { return };
+        let Some(bot) = self.music_bot(q, server_id) else {
+            return;
+        };
         let message = q.create_message(text_channel_id, &bot.id, content, &[], requires);
         self.to_channel(q, text_channel_id, "message:create", &message);
     }
 
     /// Mensagem do agente com anexos (ids já criados em nome dele).
-    fn bot_say_with(&self, q: &Q, server_id: &str, text_channel_id: &str, content: &str, attachment_ids: &[String]) {
+    fn bot_say_with(
+        &self,
+        q: &Q,
+        server_id: &str,
+        text_channel_id: &str,
+        content: &str,
+        attachment_ids: &[String],
+    ) {
         if q.channel(text_channel_id).is_none() {
             return;
         }
-        let Some(bot) = self.music_bot(q, server_id) else { return };
+        let Some(bot) = self.music_bot(q, server_id) else {
+            return;
+        };
         let message = q.create_message(text_channel_id, &bot.id, content, attachment_ids, &[]);
         self.to_channel(q, text_channel_id, "message:create", &message);
     }
@@ -270,7 +350,9 @@ impl App {
                 Some((s.server_id.clone(), s.text_channel_id.clone(), t.clone()))
             })
         };
-        let Some((server_id, text, t)) = info else { return };
+        let Some((server_id, text, t)) = info else {
+            return;
+        };
         let title = t.title.replace('\n', " ");
         let author = t.author.replace('\n', " ");
         let content = format!(
@@ -296,7 +378,9 @@ fn schedule(app: &Arc<App>, channel_id: &str) {
             (!s.paused).then(|| (s.generation, d.saturating_sub(s.position_ms(now_ms()))))
         })
     };
-    let Some((generation, remaining)) = plan else { return };
+    let Some((generation, remaining)) = plan else {
+        return;
+    };
     let app = app.clone();
     let channel_id = channel_id.to_string();
     tokio::spawn(async move {
@@ -317,7 +401,9 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
     }
     let out = {
         let mut m = lock(&app.music);
-        let Some(s) = m.sessions.get_mut(channel_id) else { return false };
+        let Some(s) = m.sessions.get_mut(channel_id) else {
+            return false;
+        };
         let now = now_ms();
         // Fila acabou: o bot continua no canal, parado depois da última faixa, esperando o próximo /play.
         let idle = |s: &mut Session| {
@@ -341,15 +427,27 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
         let out = match op {
             Op::Next => next(s),
             Op::Timer(g) => {
-                if g == s.generation { next(s) } else { Out::Nothing }
+                if g == s.generation {
+                    next(s)
+                } else {
+                    Out::Nothing
+                }
             }
             Op::Ended(u) => {
                 let dur = s.current().and_then(|t| t.duration);
                 let near_end = dur.is_none_or(|d| s.position_ms(now) + 8000 >= d * 1000);
-                if u == current_uid && near_end { next(s) } else { Out::Nothing }
+                if u == current_uid && near_end {
+                    next(s)
+                } else {
+                    Out::Nothing
+                }
             }
             Op::Failed(u) => {
-                if u == current_uid { next(s) } else { Out::Nothing }
+                if u == current_uid {
+                    next(s)
+                } else {
+                    Out::Nothing
+                }
             }
             Op::Prev => {
                 if s.position_ms(now) > 5000 || s.index == 0 {
@@ -414,7 +512,9 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
             Op::Duration(u, secs) => {
                 let idx = s.index;
                 match s.tracks.get_mut(idx) {
-                    Some(t) if t.uid == u && t.duration.is_none() && secs > 0 && secs < 24 * 3600 => {
+                    Some(t)
+                        if t.uid == u && t.duration.is_none() && secs > 0 && secs < 24 * 3600 =>
+                    {
                         t.duration = Some(secs);
                         s.generation += 1;
                         Out::Same
@@ -433,10 +533,17 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
         Out::Ended => app.emit_music(q, channel_id),
         Out::Idle => {
             app.emit_music(q, channel_id);
-            let target = lock(&app.music).sessions.get(channel_id).map(|s| (s.server_id.clone(), s.text_channel_id.clone()));
+            let target = lock(&app.music)
+                .sessions
+                .get(channel_id)
+                .map(|s| (s.server_id.clone(), s.text_channel_id.clone()));
             if let Some((server_id, text)) = target {
                 let custom = q.music_idle_message(&server_id);
-                let msg = if custom.trim().is_empty() { DEFAULT_IDLE_MESSAGE.to_string() } else { custom };
+                let msg = if custom.trim().is_empty() {
+                    DEFAULT_IDLE_MESSAGE.to_string()
+                } else {
+                    custom
+                };
                 app.bot_say(q, &server_id, &text, &msg, &[]);
             }
         }
@@ -456,7 +563,9 @@ pub fn apply(app: &Arc<App>, q: &Q, channel_id: &str, op: Op) -> bool {
 fn is_dj(app: &App, q: &Q, channel_id: &str, user_id: &str) -> bool {
     let (dj, server) = {
         let m = lock(&app.music);
-        let Some(s) = m.sessions.get(channel_id) else { return false };
+        let Some(s) = m.sessions.get(channel_id) else {
+            return false;
+        };
         (s.dj_id.clone(), s.server_id.clone())
     };
     dj == user_id || has(q.permissions(&server, user_id), perms::MANAGE_SERVER)
@@ -465,7 +574,9 @@ fn is_dj(app: &App, q: &Q, channel_id: &str, user_id: &str) -> bool {
 /// Controle vindo do app (`music:control`). Quem deu o /play (ou gerencia o servidor) manda direto;
 /// os outros que estão ouvindo votam em pular / voltar / pausar e vale a maioria.
 pub fn control(app: &Arc<App>, me: &str, d: &Value) {
-    let Some(channel_id) = d.get("channelId").and_then(|c| c.as_str()) else { return };
+    let Some(channel_id) = d.get("channelId").and_then(|c| c.as_str()) else {
+        return;
+    };
     let action = d.get("action").and_then(|c| c.as_str()).unwrap_or("");
     let q = app.store.q();
     if !q.can_access(me, channel_id) || !lock(&app.music).sessions.contains_key(channel_id) {
@@ -474,7 +585,12 @@ pub fn control(app: &Arc<App>, me: &str, d: &Value) {
     let dj = is_dj(app, &q, channel_id, me);
     let people = listeners(app, channel_id);
     let listening = people.iter().any(|u| u == me);
-    let uid_arg = || d.get("uid").and_then(|u| u.as_str()).unwrap_or("").to_string();
+    let uid_arg = || {
+        d.get("uid")
+            .and_then(|u| u.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     let vote_kind: Option<&'static str> = match action {
         "skip" => Some("skip"),
         "prev" => Some("prev"),
@@ -496,7 +612,9 @@ pub fn control(app: &Arc<App>, me: &str, d: &Value) {
         }
         let passed = {
             let mut m = lock(&app.music);
-            let Some(s) = m.sessions.get_mut(channel_id) else { return };
+            let Some(s) = m.sessions.get_mut(channel_id) else {
+                return;
+            };
             let set = s.votes.entry(kind).or_default();
             if !set.remove(me) {
                 set.insert(me.to_string());
@@ -547,7 +665,11 @@ pub fn report(app: &Arc<App>, me: &str, d: &Value) {
     ) else {
         return;
     };
-    let u = d.get("uid").and_then(|c| c.as_str()).unwrap_or("").to_string();
+    let u = d
+        .get("uid")
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
     let q = app.store.q();
     if !listeners(app, channel_id).iter().any(|x| x == me) {
         return;
@@ -566,7 +688,8 @@ pub fn report(app: &Arc<App>, me: &str, d: &Value) {
 
 /// Título, canal e duração do vídeo (oEmbed oficial + página do vídeo para a duração).
 pub async fn fetch_meta(video_id: &str) -> Option<(String, String, Option<u64>)> {
-    static LEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""lengthSeconds":"(\d+)""#).unwrap());
+    static LEN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#""lengthSeconds":"(\d+)""#).unwrap());
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36")
         .timeout(Duration::from_secs(8))
@@ -585,7 +708,12 @@ pub async fn fetch_meta(video_id: &str) -> Option<(String, String, Option<u64>)>
     let v: Value = oembed.json().await.ok()?;
     let title = v["title"].as_str()?.to_string();
     let author = v["author_name"].as_str().unwrap_or("").to_string();
-    let duration = match client.get(&watch).header("Accept-Language", "pt-BR,pt;q=0.9").send().await {
+    let duration = match client
+        .get(&watch)
+        .header("Accept-Language", "pt-BR,pt;q=0.9")
+        .send()
+        .await
+    {
         Ok(r) => r
             .text()
             .await
@@ -599,7 +727,8 @@ pub async fn fetch_meta(video_id: &str) -> Option<(String, String, Option<u64>)>
 
 /// `/play <nome>`: primeiro vídeo da busca do YouTube (página pública de resultados, sem chave de API).
 pub async fn search(query: &str) -> Option<String> {
-    static FIRST: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""videoRenderer":\{"videoId":"([\w-]{11})""#).unwrap());
+    static FIRST: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r#""videoRenderer":\{"videoId":"([\w-]{11})""#).unwrap());
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36")
         .timeout(Duration::from_secs(8))
@@ -618,7 +747,10 @@ pub async fn search(query: &str) -> Option<String> {
         .await
         .ok()?;
     static ANY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"/watch\?v=([\w-]{11})"#).unwrap());
-    FIRST.captures(&html).or_else(|| ANY.captures(&html)).map(|c| c[1].to_string())
+    FIRST
+        .captures(&html)
+        .or_else(|| ANY.captures(&html))
+        .map(|c| c[1].to_string())
 }
 
 /// Vídeo já com título/canal/duração, pronto para entrar na fila.
@@ -768,7 +900,10 @@ pub fn play_items(
     }
     let q = app.store.q();
     let text = q.channel(text_channel_id).ok_or("Canal não encontrado")?;
-    let server_id = text.server_id.clone().ok_or("O bot de música só funciona em servidores")?;
+    let server_id = text
+        .server_id
+        .clone()
+        .ok_or("O bot de música só funciona em servidores")?;
     let voice = lock(&app.voice).get(me).map(|v| v.state.clone());
     let Some(voice) = voice.filter(|v| v.server_id.as_deref() == Some(server_id.as_str())) else {
         return Err("Entre em um canal de voz deste servidor para usar o /play".into());
@@ -782,7 +917,14 @@ pub fn play_items(
     let title = items[0].title.clone();
     let mut tracks: Vec<Track> = items
         .into_iter()
-        .map(|i| Track { uid: uid(), video_id: i.video_id, title: i.title, author: i.author, duration: i.duration, added_by: me.to_string() })
+        .map(|i| Track {
+            uid: uid(),
+            video_id: i.video_id,
+            title: i.title,
+            author: i.author,
+            duration: i.duration,
+            added_by: me.to_string(),
+        })
         .collect();
     let queued_at = {
         let mut m = lock(&app.music);
@@ -834,19 +976,31 @@ pub fn play_items(
             app.announce(&q, &voice.channel_id);
             schedule(app, &voice.channel_id);
             if is_playlist && count > 1 {
-                let msg = format!("**{added_by_name}** carregou uma playlist: mais {} músicas na fila.", count - 1);
+                let msg = format!(
+                    "**{added_by_name}** carregou uma playlist: mais {} músicas na fila.",
+                    count - 1
+                );
                 app.bot_say(&q, &server_id, &text.id, &msg, &[]);
             }
         }
         Some(pos) if is_playlist => {
             app.emit_music(&q, &voice.channel_id);
-            let added = lock(&app.music).sessions.get(&voice.channel_id).map(|s| s.tracks.len() - s.index - pos).unwrap_or(count);
-            let msg = format!("**{added_by_name}** adicionou {added} músicas da playlist à fila (a partir da posição {pos}).");
+            let added = lock(&app.music)
+                .sessions
+                .get(&voice.channel_id)
+                .map(|s| s.tracks.len() - s.index - pos)
+                .unwrap_or(count);
+            let msg = format!(
+                "**{added_by_name}** adicionou {added} músicas da playlist à fila (a partir da posição {pos})."
+            );
             app.bot_say(&q, &server_id, &text.id, &msg, &[]);
         }
         Some(pos) => {
             app.emit_music(&q, &voice.channel_id);
-            let msg = format!("**{added_by_name}** adicionou **{}** à fila (posição {pos}).", title.replace('*', ""));
+            let msg = format!(
+                "**{added_by_name}** adicionou **{}** à fila (posição {pos}).",
+                title.replace('*', "")
+            );
             app.bot_say(&q, &server_id, &text.id, &msg, &[]);
         }
     }

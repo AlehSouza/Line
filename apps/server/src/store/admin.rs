@@ -76,7 +76,11 @@ impl Q<'_> {
             for (id_key, url_key) in [("avatarId", "avatarUrl"), ("iconId", "iconUrl")] {
                 if let Some(id) = row.get(id_key).and_then(|v| v.as_str()).map(String::from) {
                     let url = self.profile_image_url(&id);
-                    row[url_key] = if url.is_empty() { Value::Null } else { json!(url) };
+                    row[url_key] = if url.is_empty() {
+                        Value::Null
+                    } else {
+                        json!(url)
+                    };
                 }
             }
         }
@@ -89,16 +93,24 @@ impl Q<'_> {
 
     /// (data, quantidade) dos últimos `days` dias, sem buracos.
     fn per_day(&self, table_sql: &str, days: i64) -> Vec<Value> {
-        let since = (chrono::Utc::now() - chrono::Duration::days(days + 1)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let sql = format!("SELECT {DAY_BR} AS d, COUNT(*) FROM ({table_sql}) WHERE created_at >= ? GROUP BY d");
+        let since = (chrono::Utc::now() - chrono::Duration::days(days + 1))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
+        let sql = format!(
+            "SELECT {DAY_BR} AS d, COUNT(*) FROM ({table_sql}) WHERE created_at >= ? GROUP BY d"
+        );
         let mut st = ok(self.c.prepare(&sql));
-        let got: std::collections::HashMap<String, i64> =
-            ok(ok(st.query_map([since], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))).collect());
+        let got: std::collections::HashMap<String, i64> = ok(ok(st.query_map([since], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        }))
+        .collect());
         let today = (chrono::Utc::now() - chrono::Duration::hours(3)).date_naive();
         (0..days)
             .rev()
             .map(|i| {
-                let d = (today - chrono::Duration::days(i)).format("%Y-%m-%d").to_string();
+                let d = (today - chrono::Duration::days(i))
+                    .format("%Y-%m-%d")
+                    .to_string();
                 json!({ "date": d, "count": got.get(&d).copied().unwrap_or(0) })
             })
             .collect()
@@ -109,13 +121,20 @@ impl Q<'_> {
     pub fn admin_flag(&self, id: &str) -> bool {
         ok(self
             .c
-            .query_row("SELECT is_admin FROM users WHERE id = ? AND bot_server_id IS NULL", [id], |r| r.get::<_, i64>(0))
+            .query_row(
+                "SELECT is_admin FROM users WHERE id = ? AND bot_server_id IS NULL",
+                [id],
+                |r| r.get::<_, i64>(0),
+            )
             .optional())
             == Some(1)
     }
 
     pub fn set_admin_flag(&self, id: &str, on: bool) -> bool {
-        ok(self.c.execute("UPDATE users SET is_admin = ? WHERE id = ? AND bot_server_id IS NULL", params![on as i64, id])) == 1
+        ok(self.c.execute(
+            "UPDATE users SET is_admin = ? WHERE id = ? AND bot_server_id IS NULL",
+            params![on as i64, id],
+        )) == 1
     }
 
     /// Admins adicionados pelo painel e os donos (ADMIN_USERS).
@@ -140,9 +159,16 @@ impl Q<'_> {
     pub fn session_gate(&self, id: &str) -> Option<(u64, Option<String>)> {
         ok(self
             .c
-            .query_row("SELECT sessions_after, banned_until FROM users WHERE id = ?", [id], |r| {
-                Ok((r.get::<_, i64>(0)?.max(0) as u64, r.get::<_, Option<String>>(1)?))
-            })
+            .query_row(
+                "SELECT sessions_after, banned_until FROM users WHERE id = ?",
+                [id],
+                |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?.max(0) as u64,
+                        r.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
             .optional())
         .map(|(after, until)| (after, until.filter(|u| u.as_str() > now_iso().as_str())))
     }
@@ -151,9 +177,15 @@ impl Q<'_> {
     pub fn ban_of(&self, id: &str) -> Option<(String, String)> {
         let (until, reason): (Option<String>, Option<String>) = ok(self
             .c
-            .query_row("SELECT banned_until, ban_reason FROM users WHERE id = ?", [id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT banned_until, ban_reason FROM users WHERE id = ?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional())?;
-        until.filter(|u| u.as_str() > now_iso().as_str()).map(|u| (u, reason.unwrap_or_default()))
+        until
+            .filter(|u| u.as_str() > now_iso().as_str())
+            .map(|u| (u, reason.unwrap_or_default()))
     }
 
     pub fn set_ban(&self, id: &str, until: Option<&str>, reason: &str) {
@@ -188,7 +220,10 @@ impl Q<'_> {
 
     /// Cópia completa da mensagem denunciada (JSON) e os anexos copiados como prova.
     pub fn set_report_evidence(&self, report_id: &str, snapshot: &str, attachment_ids: &[String]) {
-        ok(self.c.execute("UPDATE reports SET message_snapshot = ? WHERE id = ?", params![snapshot, report_id]));
+        ok(self.c.execute(
+            "UPDATE reports SET message_snapshot = ? WHERE id = ?",
+            params![snapshot, report_id],
+        ));
         for a in attachment_ids {
             ok(self.c.execute(
                 "INSERT OR IGNORE INTO report_attachments (report_id, attachment_id) VALUES (?, ?)",
@@ -210,7 +245,12 @@ impl Q<'_> {
         .collect())
     }
 
-    pub fn admin_reports(&self, kind: Option<&str>, status: Option<&str>, offset: i64) -> Vec<Value> {
+    pub fn admin_reports(
+        &self,
+        kind: Option<&str>,
+        status: Option<&str>,
+        offset: i64,
+    ) -> Vec<Value> {
         let mut sql = String::from(
             "SELECT r.*, ru.username AS reporter_username, ru.display_name AS reporter_name,
                     tu.username AS target_username, tu.display_name AS target_name, tu.banned_until AS target_banned_until,
@@ -247,7 +287,13 @@ impl Q<'_> {
         list
     }
 
-    pub fn update_report(&self, id: &str, status: &str, note: Option<&str>, admin_id: &str) -> bool {
+    pub fn update_report(
+        &self,
+        id: &str,
+        status: &str,
+        note: Option<&str>,
+        admin_id: &str,
+    ) -> bool {
         let resolved = (status != "open").then(now_iso);
         ok(self.c.execute(
             "UPDATE reports SET status = ?, note = COALESCE(?, note), resolved_at = ?, resolved_by = ? WHERE id = ?",
@@ -256,7 +302,9 @@ impl Q<'_> {
     }
 
     pub fn reports_today(&self, reporter_id: &str) -> i64 {
-        let since = (chrono::Utc::now() - chrono::Duration::hours(24)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let since = (chrono::Utc::now() - chrono::Duration::hours(24))
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .to_string();
         self.count(
             "SELECT COUNT(*) FROM reports WHERE reporter_id = ? AND created_at > ?",
             vec![Sql::Text(reporter_id.into()), Sql::Text(since)],
@@ -291,7 +339,11 @@ impl Q<'_> {
     // ---------- estatísticas ----------
 
     pub fn admin_stats(&self) -> Value {
-        let ago = |h: i64| (chrono::Utc::now() - chrono::Duration::hours(h)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+        let ago = |h: i64| {
+            (chrono::Utc::now() - chrono::Duration::hours(h))
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string()
+        };
         let since = |sql: &str, h: i64| self.count(sql, vec![Sql::Text(ago(h))]);
         let people = "SELECT created_at FROM users WHERE bot_server_id IS NULL";
         let msgs = "SELECT m.created_at FROM messages m JOIN users u ON u.id = m.author_id WHERE u.bot_server_id IS NULL";
@@ -364,7 +416,13 @@ impl Q<'_> {
 
     // ---------- usuários ----------
 
-    pub fn admin_users(&self, query: &str, filter: &str, online: &[String], offset: i64) -> Vec<Value> {
+    pub fn admin_users(
+        &self,
+        query: &str,
+        filter: &str,
+        online: &[String],
+        offset: i64,
+    ) -> Vec<Value> {
         let mut sql = String::from(
             "SELECT u.id, u.username, u.display_name, u.email, u.email_verified, u.avatar_color, u.avatar_id,
                     u.created_at, u.banned_until, u.ban_reason, u.status, u.bot_server_id,
@@ -379,7 +437,12 @@ impl Q<'_> {
         if !q.is_empty() {
             sql.push_str(" AND (lower(u.username) LIKE ? OR lower(u.display_name) LIKE ? OR lower(COALESCE(u.email, '')) LIKE ? OR u.id = ?)");
             let like = format!("%{}%", q.replace('%', ""));
-            p.extend([Sql::Text(like.clone()), Sql::Text(like.clone()), Sql::Text(like), Sql::Text(query.trim().into())]);
+            p.extend([
+                Sql::Text(like.clone()),
+                Sql::Text(like.clone()),
+                Sql::Text(like),
+                Sql::Text(query.trim().into()),
+            ]);
         }
         match filter {
             "banned" => {
@@ -391,7 +454,10 @@ impl Q<'_> {
                 if online.is_empty() {
                     return vec![];
                 }
-                sql.push_str(&format!(" AND u.id IN ({})", vec!["?"; online.len()].join(",")));
+                sql.push_str(&format!(
+                    " AND u.id IN ({})",
+                    vec!["?"; online.len()].join(",")
+                ));
                 p.extend(online.iter().map(|id| Sql::Text(id.clone())));
             }
             _ => sql.push_str(" AND u.bot_server_id IS NULL"),
@@ -431,7 +497,7 @@ impl Q<'_> {
         );
         let reports = self.rows(
             "SELECT r.id, r.kind, r.reason, r.details, r.status, r.created_at, r.message_content, ru.username AS reporter_username
-             FROM reports r LEFT JOIN users ru ON ru.id = r.reporter_id WHERE r.target_user_id = ? ORDER BY r.created_at DESC LIMIT 25",
+             FROM reports r LEFT JOIN users ru ON ru.id = r.reporter_id WHERE r.target_user_id = ? ORDER BY r.created_at DESC LIMIT 500",
             vec![Sql::Text(id.into())],
         );
         let obj = user.as_object_mut()?;
@@ -443,16 +509,29 @@ impl Q<'_> {
 
     /// Mensagens do usuário (id, canal) para apagar e avisar os canais.
     pub fn message_ids_by_author(&self, user_id: &str) -> Vec<(String, String)> {
-        let mut st = ok(self.c.prepare("SELECT id, channel_id FROM messages WHERE author_id = ?"));
+        let mut st = ok(self
+            .c
+            .prepare("SELECT id, channel_id FROM messages WHERE author_id = ?"));
         ok(ok(st.query_map([user_id], |r| Ok((r.get(0)?, r.get(1)?)))).collect())
     }
 
     pub fn delete_messages_by_author(&self, user_id: &str) -> usize {
-        ok(self.c.execute("DELETE FROM messages WHERE author_id = ?", [user_id]))
+        ok(self
+            .c
+            .execute("DELETE FROM messages WHERE author_id = ?", [user_id]))
     }
 
     /// "Apagar conta" pelo admin: tira os dados pessoais, troca o nome e suspende para sempre.
     /// A linha continua existindo porque mensagens e servidores apontam para ela.
+    /// Desativa (Some) ou reativa (None) a conta. Desativada: sai de todas as sessões e volta ao logar.
+    pub fn set_deactivated(&self, id: &str, deactivated: bool) {
+        let at = deactivated.then(now_iso);
+        ok(self.c.execute(
+            "UPDATE users SET deactivated_at = ? WHERE id = ?",
+            params![at, id],
+        ));
+    }
+
     pub fn anonymize_user(&self, id: &str) {
         let short: String = id.chars().rev().take(8).collect();
         ok(self.c.execute(
@@ -462,14 +541,17 @@ impl Q<'_> {
              WHERE id = ?",
             params![format!("apagado_{short}"), BAN_FOREVER, id],
         ));
-        ok(self.c.execute("DELETE FROM friendships WHERE requester_id = ?1 OR addressee_id = ?1", [id]));
+        ok(self.c.execute(
+            "DELETE FROM friendships WHERE requester_id = ?1 OR addressee_id = ?1",
+            [id],
+        ));
     }
 
     // ---------- servidores ----------
 
     pub fn admin_servers(&self, query: &str, offset: i64) -> Vec<Value> {
         let mut sql = String::from(
-            "SELECT s.id, s.name, s.description, s.icon_color, s.icon_id, s.is_public, s.created_at, s.owner_id, s.tag,
+            "SELECT s.id, s.name, s.description, s.icon_color, s.icon_id, s.is_public, s.created_at, s.owner_id, s.tag, s.suspended_at,
                     u.username AS owner_username, u.display_name AS owner_name,
                     (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
                     (SELECT COUNT(*) FROM channels c WHERE c.server_id = s.id AND c.type <> 'thread') AS channel_count,
@@ -481,7 +563,11 @@ impl Q<'_> {
         if !q.is_empty() {
             sql.push_str(" AND (lower(s.name) LIKE ? OR s.id = ? OR lower(u.username) LIKE ?)");
             let like = format!("%{}%", q.replace('%', ""));
-            p.extend([Sql::Text(like.clone()), Sql::Text(query.trim().into()), Sql::Text(like)]);
+            p.extend([
+                Sql::Text(like.clone()),
+                Sql::Text(query.trim().into()),
+                Sql::Text(like),
+            ]);
         }
         sql.push_str(" ORDER BY s.created_at DESC LIMIT 50 OFFSET ?");
         p.push(Sql::Integer(offset.max(0)));
@@ -489,7 +575,10 @@ impl Q<'_> {
     }
 
     pub fn admin_server(&self, id: &str) -> Option<Value> {
-        let mut server = self.admin_servers(id, 0).into_iter().find(|s| s["id"] == id)?;
+        let mut server = self
+            .admin_servers(id, 0)
+            .into_iter()
+            .find(|s| s["id"] == id)?;
         let members = self.rows(
             "SELECT u.id, u.username, u.display_name, u.avatar_color, u.avatar_id, u.banned_until, m.joined_at
              FROM members m JOIN users u ON u.id = m.user_id WHERE m.server_id = ? ORDER BY m.joined_at LIMIT 200",

@@ -52,7 +52,11 @@ impl PresenceTracker {
 
     /// Quem tem alguma conexão aberta agora (o painel admin conta como online).
     pub fn online_ids(&self) -> Vec<String> {
-        self.entries.iter().filter(|(_, e)| !e.sockets.is_empty()).map(|(id, _)| id.clone()).collect()
+        self.entries
+            .iter()
+            .filter(|(_, e)| !e.sockets.is_empty())
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     pub fn resolve(&self, user_id: &str, status: &str) -> &'static str {

@@ -9,6 +9,7 @@ import { openContextMenu, userMenu } from './ContextMenu';
 import { Avatar, cx, ListSkeleton } from './ui';
 import { BotTag, MusicPlayer } from './Music';
 import { UserTagBadge } from './ServerTag';
+import { ActivitySection } from './Activity';
 
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
@@ -92,7 +93,10 @@ export function MemberList({ serverId }: { serverId: string }) {
       {!members ? (
         <ListSkeleton count={8} avatar />
       ) : (
-        sections.map((g) => section(g.key, g.label, g.list))
+        <>
+          <ActivitySection serverId={serverId} />
+          {sections.map((g) => section(g.key, g.label, g.list))}
+        </>
       )}
     </div>
   );

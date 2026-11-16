@@ -78,8 +78,8 @@ export function UserCard({
   const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
   /** Cor do cartão (nome, borda do avatar e anel do status). */
   const nameColor = user.botStyle?.nameColor ?? roleColor ?? 'var(--color-fg)';
-  // Borda sólida na cor do perfil escolhida pela pessoa (sem mistura/transparência).
-  const ring = user.avatarColor;
+  // Anel em volta do avatar e da bolinha: cor escura do tema (o fundo do cartão), como um recorte.
+  const ring = `color-mix(in srgb, ${user.avatarColor} 22%, var(--color-rail))`;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
 
   async function run(fn: () => Promise<void>) {
@@ -204,7 +204,7 @@ export function UserCard({
 
         <div className="px-4 pb-4">
           {/* Avatar + balão de pensamento */}
-          <div className="-mt-12 flex items-start gap-2">
+          <div className="relative z-[5] -mt-12 flex items-start gap-2">
             {/* Borda de 4px na cor do fundo do cartão (recorte), sem sombra; flex evita o vão da linha de texto. */}
             <span className="flex shrink-0 rounded-full border-4" style={{ borderColor: ring, background: ring }}>
               <Avatar

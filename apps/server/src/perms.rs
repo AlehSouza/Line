@@ -28,8 +28,15 @@ pub const MOVE_MEMBERS: i64 = 1 << 18;
 pub const ALL: i64 = (1 << 19) - 1;
 
 /// O que o @everyone de um servidor novo pode fazer.
-pub const DEFAULT_EVERYONE: i64 =
-    VIEW_CHANNELS | CREATE_INVITE | SEND_MESSAGES | ATTACH_FILES | CREATE_THREADS | CONNECT | SPEAK | VIDEO | CHANGE_NICKNAME;
+pub const DEFAULT_EVERYONE: i64 = VIEW_CHANNELS
+    | CREATE_INVITE
+    | SEND_MESSAGES
+    | ATTACH_FILES
+    | CREATE_THREADS
+    | CONNECT
+    | SPEAK
+    | VIDEO
+    | CHANGE_NICKNAME;
 
 pub fn has(perms: i64, flag: i64) -> bool {
     perms & flag == flag

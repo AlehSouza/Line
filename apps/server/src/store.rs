@@ -12,6 +12,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 
+pub mod activity;
 pub mod admin;
 pub use admin::{BAN_FOREVER, NewReport};
 
@@ -103,7 +104,8 @@ impl UserRow {
 }
 
 const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color";
-const SERVER_SELECT: &str = "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
+const SERVER_SELECT: &str =
+    "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
   (SELECT filename FROM attachments a WHERE a.id = s.banner_id) AS banner_filename
   FROM servers s";
@@ -143,6 +145,11 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
         invite_code: r.get("invite_code")?,
         member_count: r.get("member_count")?,
         created_at: r.get("created_at")?,
+        suspended: r
+            .get::<_, Option<String>>("suspended_at")
+            .ok()
+            .flatten()
+            .is_some(),
     })
 }
 
@@ -204,7 +211,9 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
 fn url_segment(name: &str) -> String {
     name.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()
@@ -359,12 +368,25 @@ impl Q<'_> {
                 row.custom_status.clone()
             },
             presence,
-            avatar_url: row.avatar_id.as_deref().map(|id| self.profile_image_url(id)),
-            banner_url: row.banner_id.as_deref().map(|id| self.profile_image_url(id)),
+            avatar_url: row
+                .avatar_id
+                .as_deref()
+                .map(|id| self.profile_image_url(id)),
+            banner_url: row
+                .banner_id
+                .as_deref()
+                .map(|id| self.profile_image_url(id)),
             pronouns: row.pronouns.clone(),
-            thought: if presence == "offline" { None } else { row.thought.clone() },
+            thought: if presence == "offline" {
+                None
+            } else {
+                row.thought.clone()
+            },
             bot: row.bot_server_id.is_some(),
-            tag: row.tag_server_id.as_deref().and_then(|s| self.user_tag(&row.id, s)),
+            tag: row
+                .tag_server_id
+                .as_deref()
+                .and_then(|s| self.user_tag(&row.id, s)),
             bot_style: row.bot_server_id.as_ref().map(|_| BotStyle {
                 name_color: row.bot_name_color.clone(),
                 tag_color: row.bot_tag_color.clone(),
@@ -395,7 +417,9 @@ impl Q<'_> {
     }
 
     pub(crate) fn profile_image_url(&self, attachment_id: &str) -> String {
-        self.attachment(attachment_id).map(|a| a.url).unwrap_or_default()
+        self.attachment(attachment_id)
+            .map(|a| a.url)
+            .unwrap_or_default()
     }
 
     /// Imagem enviada por esta pessoa que pode virar foto ou banner do perfil.
@@ -425,7 +449,10 @@ impl Q<'_> {
     }
 
     pub fn set_username(&self, id: &str, username: &str) {
-        ok(self.c.execute("UPDATE users SET username = ? WHERE id = ?", params![username, id]));
+        ok(self.c.execute(
+            "UPDATE users SET username = ? WHERE id = ?",
+            params![username, id],
+        ));
     }
 
     pub fn set_email(&self, id: &str, email: Option<&str>) {
@@ -436,45 +463,74 @@ impl Q<'_> {
     }
 
     pub fn email_verified(&self, id: &str) -> bool {
-        ok(self.c.query_row("SELECT email_verified FROM users WHERE id = ?", [id], |r| r.get::<_, i64>(0)).optional())
-            .is_some_and(|v| v != 0)
+        ok(self
+            .c
+            .query_row("SELECT email_verified FROM users WHERE id = ?", [id], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional())
+        .is_some_and(|v| v != 0)
     }
 
     pub fn set_email_verified(&self, id: &str) {
-        ok(self.c.execute("UPDATE users SET email_verified = 1 WHERE id = ?", [id]));
+        ok(self
+            .c
+            .execute("UPDATE users SET email_verified = 1 WHERE id = ?", [id]));
     }
 
     /// Momento (unix, segundos) a partir do qual os tokens valem. None = conta não existe.
     pub fn sessions_after(&self, id: &str) -> Option<u64> {
-        ok(self.c.query_row("SELECT sessions_after FROM users WHERE id = ?", [id], |r| r.get::<_, i64>(0)).optional())
-            .map(|v| v.max(0) as u64)
+        ok(self
+            .c
+            .query_row("SELECT sessions_after FROM users WHERE id = ?", [id], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional())
+        .map(|v| v.max(0) as u64)
     }
 
     /// Derruba todas as sessões abertas da conta (tokens emitidos até agora).
     pub fn revoke_sessions(&self, id: &str) {
         let now = jsonwebtoken::get_current_timestamp() as i64;
-        ok(self.c.execute("UPDATE users SET sessions_after = ? WHERE id = ?", params![now, id]));
+        ok(self.c.execute(
+            "UPDATE users SET sessions_after = ? WHERE id = ?",
+            params![now, id],
+        ));
     }
 
     pub fn set_password_hash(&self, id: &str, hash: &str) {
-        ok(self.c.execute("UPDATE users SET password_hash = ? WHERE id = ?", params![hash, id]));
+        ok(self.c.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            params![hash, id],
+        ));
     }
 
     pub fn user_by_google(&self, google_id: &str) -> Option<UserRow> {
         ok(self
             .c
-            .query_row("SELECT * FROM users WHERE google_id = ?", [google_id], UserRow::from_row)
+            .query_row(
+                "SELECT * FROM users WHERE google_id = ?",
+                [google_id],
+                UserRow::from_row,
+            )
             .optional())
     }
 
     pub fn set_google_id(&self, id: &str, google_id: &str) {
-        ok(self.c.execute("UPDATE users SET google_id = ? WHERE id = ?", params![google_id, id]));
+        ok(self.c.execute(
+            "UPDATE users SET google_id = ? WHERE id = ?",
+            params![google_id, id],
+        ));
     }
 
     pub fn user_by_email(&self, email: &str) -> Option<UserRow> {
         ok(self
             .c
-            .query_row("SELECT * FROM users WHERE email = ?", [email], UserRow::from_row)
+            .query_row(
+                "SELECT * FROM users WHERE email = ?",
+                [email],
+                UserRow::from_row,
+            )
             .optional())
     }
 
@@ -504,7 +560,9 @@ impl Q<'_> {
             "UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL",
             params![now, user_id],
         ));
-        ok(self.c.execute("DELETE FROM password_resets WHERE expires_at < ?", [&now]));
+        ok(self
+            .c
+            .execute("DELETE FROM password_resets WHERE expires_at < ?", [&now]));
         ok(self.c.execute(
             "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
             params![token_hash, user_id, now, expires],
@@ -570,7 +628,13 @@ impl Q<'_> {
         .is_some()
     }
 
-    pub fn create_user(&self, username: &str, email: Option<&str>, display_name: &str, password_hash: &str) -> SelfUser {
+    pub fn create_user(
+        &self,
+        username: &str,
+        email: Option<&str>,
+        display_name: &str,
+        password_hash: &str,
+    ) -> SelfUser {
         let id = new_id();
         ok(self.c.execute(
             "INSERT INTO users (id, username, email, display_name, password_hash, avatar_color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -583,7 +647,11 @@ impl Q<'_> {
     pub fn music_bot(&self, server_id: &str) -> (String, bool) {
         let existing: Option<String> = ok(self
             .c
-            .query_row("SELECT id FROM users WHERE bot_server_id = ?", [server_id], |r| r.get(0))
+            .query_row(
+                "SELECT id FROM users WHERE bot_server_id = ?",
+                [server_id],
+                |r| r.get(0),
+            )
             .optional());
         let id = existing.unwrap_or_else(|| {
             let id = new_id();
@@ -606,7 +674,11 @@ impl Q<'_> {
     pub fn music_idle_message(&self, server_id: &str) -> String {
         ok(self
             .c
-            .query_row("SELECT music_idle_message FROM servers WHERE id = ?", [server_id], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT music_idle_message FROM servers WHERE id = ?",
+                [server_id],
+                |r| r.get::<_, String>(0),
+            )
             .optional())
         .unwrap_or_default()
     }
@@ -615,18 +687,28 @@ impl Q<'_> {
     pub fn bot_replies(&self, server_id: &str) -> serde_json::Value {
         ok(self
             .c
-            .query_row("SELECT bot_replies FROM servers WHERE id = ?", [server_id], |r| r.get::<_, String>(0))
+            .query_row(
+                "SELECT bot_replies FROM servers WHERE id = ?",
+                [server_id],
+                |r| r.get::<_, String>(0),
+            )
             .optional())
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!([]))
     }
 
     pub fn set_bot_replies(&self, server_id: &str, list: &serde_json::Value) {
-        ok(self.c.execute("UPDATE servers SET bot_replies = ? WHERE id = ?", params![list.to_string(), server_id]));
+        ok(self.c.execute(
+            "UPDATE servers SET bot_replies = ? WHERE id = ?",
+            params![list.to_string(), server_id],
+        ));
     }
 
     pub fn set_music_idle_message(&self, server_id: &str, message: &str) {
-        ok(self.c.execute("UPDATE servers SET music_idle_message = ? WHERE id = ?", params![message, server_id]));
+        ok(self.c.execute(
+            "UPDATE servers SET music_idle_message = ? WHERE id = ?",
+            params![message, server_id],
+        ));
     }
 
     pub fn update_user(&self, id: &str, patch: ProfilePatch) -> SelfUser {
@@ -655,12 +737,19 @@ impl Q<'_> {
         }
         if let Some(v) = patch.status {
             set("status", v.into());
-            set("status_until", patch.status_until.map(Value::from).unwrap_or(Value::Null));
+            set(
+                "status_until",
+                patch.status_until.map(Value::from).unwrap_or(Value::Null),
+            );
         }
         if let Some(v) = patch.pronouns {
             set("pronouns", v.into());
         }
-        let opt = |v: Option<String>| v.filter(|s| !s.is_empty()).map(Value::from).unwrap_or(Value::Null);
+        let opt = |v: Option<String>| {
+            v.filter(|s| !s.is_empty())
+                .map(Value::from)
+                .unwrap_or(Value::Null)
+        };
         if let Some(v) = patch.thought {
             set("thought", opt(v));
         }
@@ -744,7 +833,9 @@ impl Q<'_> {
             )));
             ok(ok(st.query_map([user_id], server_from_row)).collect())
         };
-        list.into_iter().map(|s| self.for_viewer(s, user_id)).collect()
+        list.into_iter()
+            .map(|s| self.for_viewer(s, user_id))
+            .collect()
     }
 
     /// Esconde o código de convite de quem não tem "Criar convite".
@@ -763,13 +854,19 @@ impl Q<'_> {
         let like = format!("%{query}%");
         let mut st = ok(self.c.prepare_cached(&format!(
             "{SERVER_SELECT}
-             WHERE s.is_public = 1
+             WHERE s.is_public = 1 AND s.suspended_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM members m WHERE m.server_id = s.id AND m.user_id = ?1)
                AND (s.name LIKE ?2 OR s.description LIKE ?2)
              ORDER BY member_count DESC, s.created_at DESC LIMIT 50"
         )));
-        let list: Vec<Server> = ok(ok(st.query_map(params![user_id, like], server_from_row)).collect());
-        list.into_iter().map(|s| Server { invite_code: String::new(), ..s }).collect()
+        let list: Vec<Server> =
+            ok(ok(st.query_map(params![user_id, like], server_from_row)).collect());
+        list.into_iter()
+            .map(|s| Server {
+                invite_code: String::new(),
+                ..s
+            })
+            .collect()
     }
 
     pub fn create_server(
@@ -813,16 +910,28 @@ impl Q<'_> {
             ],
         ));
         if let Some(v) = patch.tag_icon {
-            ok(self.c.execute("UPDATE servers SET tag_icon = ? WHERE id = ?", params![v, id]));
+            ok(self.c.execute(
+                "UPDATE servers SET tag_icon = ? WHERE id = ?",
+                params![v, id],
+            ));
         }
         if let Some(v) = patch.tag_style {
-            ok(self.c.execute("UPDATE servers SET tag_style = ? WHERE id = ?", params![v, id]));
+            ok(self.c.execute(
+                "UPDATE servers SET tag_style = ? WHERE id = ?",
+                params![v, id],
+            ));
         }
         if let Some(v) = patch.icon_id {
-            ok(self.c.execute("UPDATE servers SET icon_id = ? WHERE id = ?", params![v, id]));
+            ok(self.c.execute(
+                "UPDATE servers SET icon_id = ? WHERE id = ?",
+                params![v, id],
+            ));
         }
         if let Some(v) = patch.banner_id {
-            ok(self.c.execute("UPDATE servers SET banner_id = ? WHERE id = ?", params![v, id]));
+            ok(self.c.execute(
+                "UPDATE servers SET banner_id = ? WHERE id = ?",
+                params![v, id],
+            ));
         }
         self.server(id).unwrap()
     }
@@ -856,7 +965,10 @@ impl Q<'_> {
     /// Grava a ordem dos servidores na barra lateral desta pessoa (os que faltarem vão para o fim).
     pub fn reorder_my_servers(&self, user_id: &str, server_ids: &[String]) {
         self.tx(|| {
-            ok(self.c.execute("UPDATE members SET rail_position = NULL WHERE user_id = ?", [user_id]));
+            ok(self.c.execute(
+                "UPDATE members SET rail_position = NULL WHERE user_id = ?",
+                [user_id],
+            ));
             for (i, id) in server_ids.iter().enumerate() {
                 ok(self.c.execute(
                     "UPDATE members SET rail_position = ? WHERE user_id = ? AND server_id = ?",
@@ -961,7 +1073,12 @@ impl Q<'_> {
     }
 
     /// `private_roles`: Some(lista) cria uma categoria visível só para esses cargos (e dono/admin).
-    pub fn create_category_ex(&self, server_id: &str, name: &str, private_roles: Option<&[String]>) -> Category {
+    pub fn create_category_ex(
+        &self,
+        server_id: &str,
+        name: &str,
+        private_roles: Option<&[String]>,
+    ) -> Category {
         let id = new_id();
         let n: i64 = ok(self.c.query_row(
             "SELECT COUNT(*) FROM categories WHERE server_id = ?",
@@ -992,7 +1109,10 @@ impl Q<'_> {
         if !self.is_member(&cat.server_id, user_id) {
             return false;
         }
-        if perms::has(self.permissions(&cat.server_id, user_id), perms::ADMINISTRATOR) {
+        if perms::has(
+            self.permissions(&cat.server_id, user_id),
+            perms::ADMINISTRATOR,
+        ) {
             return true;
         }
         ok(self
@@ -1011,10 +1131,13 @@ impl Q<'_> {
     pub fn category_audience(&self, category_id: &str) -> Option<Vec<String>> {
         let cat = self.category(category_id).filter(|c| c.is_private)?;
         Some(
-            self.ids("SELECT user_id FROM members WHERE server_id = ?", [cat.server_id.as_str()])
-                .into_iter()
-                .filter(|u| self.can_see_category(u, category_id))
-                .collect(),
+            self.ids(
+                "SELECT user_id FROM members WHERE server_id = ?",
+                [cat.server_id.as_str()],
+            )
+            .into_iter()
+            .filter(|u| self.can_see_category(u, category_id))
+            .collect(),
         )
     }
 
@@ -1137,6 +1260,15 @@ impl Q<'_> {
         self.channel(id).unwrap()
     }
 
+    /// Suspende (Some(agora)) ou reativa (None) um servidor. Os dados ficam guardados.
+    pub fn set_server_suspended(&self, id: &str, suspended: bool) {
+        let at = suspended.then(now_iso);
+        ok(self.c.execute(
+            "UPDATE servers SET suspended_at = ? WHERE id = ?",
+            params![at, id],
+        ));
+    }
+
     pub fn delete_channel(&self, id: &str) {
         ok(self.c.execute("DELETE FROM channels WHERE id = ?", [id]));
     }
@@ -1151,7 +1283,15 @@ impl Q<'_> {
                 "SELECT r.server_id, r.id, r.is_private, r.type, r.category_id FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?, r.get(4)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                        r.get(3)?,
+                        r.get(4)?,
+                    ))
+                },
             )
             .optional());
         match row {
@@ -1210,14 +1350,21 @@ impl Q<'_> {
             )
             .optional())?;
         let everyone = self.everyone_permissions(&server_id);
-        if !is_private && !category_private && perms::has(everyone, perms::VIEW_CHANNELS) && perms::has(everyone, interact_perm(&kind)) {
+        if !is_private
+            && !category_private
+            && perms::has(everyone, perms::VIEW_CHANNELS)
+            && perms::has(everyone, interact_perm(&kind))
+        {
             return None;
         }
         Some(
-            self.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id.as_str()])
-                .into_iter()
-                .filter(|u| self.can_access(u, channel_id))
-                .collect(),
+            self.ids(
+                "SELECT user_id FROM members WHERE server_id = ?",
+                [server_id.as_str()],
+            )
+            .into_iter()
+            .filter(|u| self.can_access(u, channel_id))
+            .collect(),
         )
     }
 
@@ -1269,7 +1416,15 @@ impl Q<'_> {
     }
 
     /// Novo cargo entra logo acima do @everyone (posição 1); os outros sobem uma casa.
-    pub fn create_role(&self, server_id: &str, name: &str, color: Option<&str>, permissions: i64, mentionable: bool, hoist: bool) -> Role {
+    pub fn create_role(
+        &self,
+        server_id: &str,
+        name: &str,
+        color: Option<&str>,
+        permissions: i64,
+        mentionable: bool,
+        hoist: bool,
+    ) -> Role {
         let id = new_id();
         self.tx(|| {
             ok(self.c.execute(
@@ -1349,27 +1504,47 @@ impl Q<'_> {
     }
 
     pub fn member_ids(&self, server_id: &str) -> Vec<String> {
-        self.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id])
+        self.ids(
+            "SELECT user_id FROM members WHERE server_id = ?",
+            [server_id],
+        )
     }
 
     pub fn role_member_ids(&self, role_id: &str) -> Vec<String> {
-        self.ids("SELECT user_id FROM member_roles WHERE role_id = ?", [role_id])
+        self.ids(
+            "SELECT user_id FROM member_roles WHERE role_id = ?",
+            [role_id],
+        )
     }
 
     pub fn everyone_permissions(&self, server_id: &str) -> i64 {
         ok(self
             .c
-            .query_row("SELECT permissions FROM roles WHERE id = ?", [server_id], |r| r.get(0))
+            .query_row(
+                "SELECT permissions FROM roles WHERE id = ?",
+                [server_id],
+                |r| r.get(0),
+            )
             .optional())
         .unwrap_or(perms::DEFAULT_EVERYONE)
     }
 
     /// Permissões da pessoa no servidor (0 se não for membro).
     pub fn permissions(&self, server_id: &str, user_id: &str) -> i64 {
-        let owner: Option<String> = ok(self
+        let row: Option<(String, Option<String>)> = ok(self
             .c
-            .query_row("SELECT owner_id FROM servers WHERE id = ?", [server_id], |r| r.get(0))
+            .query_row(
+                "SELECT owner_id, suspended_at FROM servers WHERE id = ?",
+                [server_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional());
+        let owner = match row {
+            // Suspenso pelo admin: ninguém (nem o dono) tem permissão nenhuma.
+            Some((_, Some(_))) => return 0,
+            Some((o, None)) => Some(o),
+            None => None,
+        };
         if owner.as_deref() == Some(user_id) {
             return perms::ALL;
         }
@@ -1387,12 +1562,19 @@ impl Q<'_> {
         for x in list {
             p |= x;
         }
-        if perms::has(p, perms::ADMINISTRATOR) { perms::ALL } else { p & perms::ALL }
+        if perms::has(p, perms::ADMINISTRATOR) {
+            perms::ALL
+        } else {
+            p & perms::ALL
+        }
     }
 
     /// Posição do cargo mais alto da pessoa (dono = acima de tudo).
     pub fn top_position(&self, server_id: &str, user_id: &str) -> i64 {
-        if self.server(server_id).is_some_and(|s| s.owner_id == user_id) {
+        if self
+            .server(server_id)
+            .is_some_and(|s| s.owner_id == user_id)
+        {
             return i64::MAX;
         }
         ok(self.c.query_row(
@@ -1417,7 +1599,9 @@ impl Q<'_> {
                 .any(|w| matches!(w, "@everyone" | "@here" | "@todos" | "@aqui"));
         let mut roles: Vec<String> = Vec::new();
         for part in content.split("<@&").skip(1) {
-            let Some((id, _)) = part.split_once('>') else { continue };
+            let Some((id, _)) = part.split_once('>') else {
+                continue;
+            };
             if roles.iter().any(|r| r == id) || id == server_id {
                 continue;
             }
@@ -1558,7 +1742,10 @@ impl Q<'_> {
         let now = now_iso();
         rows.into_iter()
             .map(|(u, mut m)| {
-                if m.pinned_until.as_deref().is_some_and(|until| until <= now.as_str()) {
+                if m.pinned_until
+                    .as_deref()
+                    .is_some_and(|until| until <= now.as_str())
+                {
                     (m.pinned_at, m.pinned_until, m.pinned_by) = (None, None, None);
                 }
                 m.author = self.to_public_user(&u);
@@ -1631,12 +1818,18 @@ impl Q<'_> {
     /// Mensagens em volta de uma (para pular até ela): 25 antes e até 500 depois.
     pub fn messages_around(&self, channel_id: &str, around: &str) -> Vec<Message> {
         let mut before = self.message_rows(
-            &format!("{} WHERE m.channel_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT 25", message_select()),
+            &format!(
+                "{} WHERE m.channel_id = ? AND m.id < ? ORDER BY m.id DESC LIMIT 25",
+                message_select()
+            ),
             params![channel_id, around],
         );
         before.reverse();
         let after = self.message_rows(
-            &format!("{} WHERE m.channel_id = ? AND m.id >= ? ORDER BY m.id ASC LIMIT 500", message_select()),
+            &format!(
+                "{} WHERE m.channel_id = ? AND m.id >= ? ORDER BY m.id ASC LIMIT 500",
+                message_select()
+            ),
             params![channel_id, around],
         );
         before.extend(after);
@@ -1644,7 +1837,12 @@ impl Q<'_> {
     }
 
     /// Busca nas mensagens de um servidor (canais e threads) ou de uma conversa.
-    pub fn search_messages(&self, scope: &SearchScope, f: &SearchFilter, offset: i64) -> Vec<Message> {
+    pub fn search_messages(
+        &self,
+        scope: &SearchScope,
+        f: &SearchFilter,
+        offset: i64,
+    ) -> Vec<Message> {
         let mut sql = format!("{} WHERE ", message_select());
         let mut args: Vec<String> = Vec::new();
         match scope {
@@ -1660,7 +1858,14 @@ impl Q<'_> {
                 args.push(id.clone());
             }
         }
-        let like = |t: &str| format!("%{}%", t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        let like = |t: &str| {
+            format!(
+                "%{}%",
+                t.replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            )
+        };
         for word in f.text.split_whitespace().take(8) {
             sql.push_str(" AND m.content LIKE ? ESCAPE '\\'");
             args.push(like(word));
@@ -1691,7 +1896,10 @@ impl Q<'_> {
             ),
             _ => {}
         }
-        sql.push_str(&format!(" ORDER BY m.id DESC LIMIT 25 OFFSET {}", offset.max(0)));
+        sql.push_str(&format!(
+            " ORDER BY m.id DESC LIMIT 25 OFFSET {}",
+            offset.max(0)
+        ));
         self.message_rows(&sql, rusqlite::params_from_iter(args))
     }
 
@@ -1725,7 +1933,14 @@ impl Q<'_> {
 
     // ---------- anexos ----------
 
-    pub fn create_attachment(&self, id: &str, uploader_id: &str, filename: &str, content_type: &str, size: i64) -> Attachment {
+    pub fn create_attachment(
+        &self,
+        id: &str,
+        uploader_id: &str,
+        filename: &str,
+        content_type: &str,
+        size: i64,
+    ) -> Attachment {
         ok(self.c.execute(
             "INSERT INTO attachments (id, uploader_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             params![id, uploader_id, filename, content_type, size, now_iso()],
@@ -1734,7 +1949,14 @@ impl Q<'_> {
     }
 
     pub fn attachment(&self, id: &str) -> Option<Attachment> {
-        ok(self.c.query_row("SELECT * FROM attachments WHERE id = ?", [id], attachment_from_row).optional())
+        ok(self
+            .c
+            .query_row(
+                "SELECT * FROM attachments WHERE id = ?",
+                [id],
+                attachment_from_row,
+            )
+            .optional())
     }
 
     /// Anexos enviados por `user_id` e ainda soltos (prontos para entrar numa mensagem).
@@ -1755,7 +1977,9 @@ impl Q<'_> {
     }
 
     fn attachments_of(&self, message_id: &str) -> Vec<Attachment> {
-        let mut st = ok(self.c.prepare_cached("SELECT * FROM attachments WHERE message_id = ? ORDER BY position, id"));
+        let mut st = ok(self.c.prepare_cached(
+            "SELECT * FROM attachments WHERE message_id = ? ORDER BY position, id",
+        ));
         ok(ok(st.query_map([message_id], attachment_from_row)).collect())
     }
 
@@ -1774,7 +1998,8 @@ impl Q<'_> {
 
     /// Anexos enviados mas nunca colocados numa mensagem.
     pub fn prune_unused_attachments(&self) {
-        let cutoff = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let cutoff = (chrono::Utc::now() - chrono::Duration::days(1))
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         ok(self.c.execute(
             "DELETE FROM attachments WHERE message_id IS NULL AND created_at < ?
              AND id NOT IN (SELECT avatar_id FROM users WHERE avatar_id IS NOT NULL)
@@ -1799,7 +2024,9 @@ impl Q<'_> {
                 |r| r.get(0),
             )
             .optional());
-        ok_row.filter(|u| kept || u == me).and_then(|_| self.attachment(id))
+        ok_row
+            .filter(|u| kept || u == me)
+            .and_then(|_| self.attachment(id))
     }
 
     /// Copia um anexo (o arquivo é copiado por quem chama) para uma linha nova de `uploader`.
@@ -1808,7 +2035,10 @@ impl Q<'_> {
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
-        self.ids("SELECT id FROM attachments WHERE message_id = ?", [message_id])
+        self.ids(
+            "SELECT id FROM attachments WHERE message_id = ?",
+            [message_id],
+        )
     }
 
     // ---------- enquetes ----------
@@ -1829,12 +2059,21 @@ impl Q<'_> {
     fn poll_of(&self, message_id: &str) -> Option<Poll> {
         let (question, multi): (String, i64) = ok(self
             .c
-            .query_row("SELECT question, multi FROM polls WHERE message_id = ?", [message_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT question, multi FROM polls WHERE message_id = ?",
+                [message_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .optional())?;
         let opts: Vec<(String, String)> = ok(self
             .c
-            .prepare_cached("SELECT id, text FROM poll_options WHERE message_id = ? ORDER BY position")
-            .and_then(|mut st| st.query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()));
+            .prepare_cached(
+                "SELECT id, text FROM poll_options WHERE message_id = ? ORDER BY position",
+            )
+            .and_then(|mut st| {
+                st.query_map([message_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect()
+            }));
         let options = opts
             .into_iter()
             .map(|(id, text)| {
@@ -1842,10 +2081,18 @@ impl Q<'_> {
                     .c
                     .prepare_cached("SELECT user_id FROM poll_votes WHERE option_id = ?")
                     .and_then(|mut st| st.query_map([&id], |r| r.get(0))?.collect()));
-                PollOption { id, text, voter_ids }
+                PollOption {
+                    id,
+                    text,
+                    voter_ids,
+                }
             })
             .collect();
-        Some(Poll { question, multi: multi != 0, options })
+        Some(Poll {
+            question,
+            multi: multi != 0,
+            options,
+        })
     }
 
     /// Marca ou desmarca o voto. Em enquete de escolha única, trocar de opção tira o voto anterior.
@@ -1860,7 +2107,10 @@ impl Q<'_> {
             )
             .optional());
         let Some(multi) = multi else { return false };
-        let removed = ok(self.c.execute("DELETE FROM poll_votes WHERE option_id = ? AND user_id = ?", [option_id, user_id]));
+        let removed = ok(self.c.execute(
+            "DELETE FROM poll_votes WHERE option_id = ? AND user_id = ?",
+            [option_id, user_id],
+        ));
         if removed == 0 {
             if multi == 0 {
                 ok(self.c.execute(
@@ -1868,7 +2118,10 @@ impl Q<'_> {
                     [user_id, message_id],
                 ));
             }
-            ok(self.c.execute("INSERT INTO poll_votes (option_id, user_id) VALUES (?, ?)", [option_id, user_id]));
+            ok(self.c.execute(
+                "INSERT INTO poll_votes (option_id, user_id) VALUES (?, ?)",
+                [option_id, user_id],
+            ));
         }
         true
     }
@@ -1886,7 +2139,10 @@ impl Q<'_> {
         for (emoji, user_id) in rows {
             match out.iter_mut().find(|r| r.emoji == emoji) {
                 Some(r) => r.user_ids.push(user_id),
-                None => out.push(Reaction { emoji, user_ids: vec![user_id] }),
+                None => out.push(Reaction {
+                    emoji,
+                    user_ids: vec![user_id],
+                }),
             }
         }
         out
@@ -1927,7 +2183,11 @@ impl Q<'_> {
     // ---------- threads ----------
 
     fn message_count(&self, channel_id: &str) -> i64 {
-        ok(self.c.query_row("SELECT COUNT(*) FROM messages WHERE channel_id = ?", [channel_id], |r| r.get(0)))
+        ok(self.c.query_row(
+            "SELECT COUNT(*) FROM messages WHERE channel_id = ?",
+            [channel_id],
+            |r| r.get(0),
+        ))
     }
 
     fn thread_of_message(&self, message_id: &str) -> Option<ThreadSummary> {
@@ -1951,18 +2211,38 @@ impl Q<'_> {
             [&id],
             |r| r.get(0),
         ));
-        Some(ThreadSummary { message_count: self.message_count(&id), id, name, last_message_at, participant_ids, participant_count })
+        Some(ThreadSummary {
+            message_count: self.message_count(&id),
+            id,
+            name,
+            last_message_at,
+            participant_ids,
+            participant_count,
+        })
     }
 
     pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {
-        self.channel_rows("SELECT * FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1", [message_id]).pop()
+        self.channel_rows(
+            "SELECT * FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1",
+            [message_id],
+        )
+        .pop()
     }
 
     pub fn threads_of(&self, parent_id: &str) -> Vec<Channel> {
-        self.channel_rows("SELECT * FROM channels WHERE parent_id = ? ORDER BY id", [parent_id])
+        self.channel_rows(
+            "SELECT * FROM channels WHERE parent_id = ? ORDER BY id",
+            [parent_id],
+        )
     }
 
-    pub fn create_thread(&self, parent: &Channel, owner_id: &str, name: &str, message_id: Option<&str>) -> Channel {
+    pub fn create_thread(
+        &self,
+        parent: &Channel,
+        owner_id: &str,
+        name: &str,
+        message_id: Option<&str>,
+    ) -> Channel {
         let id = new_id();
         ok(self.c.execute(
             "INSERT INTO channels (id, type, server_id, name, owner_id, parent_id, thread_message_id, created_at)

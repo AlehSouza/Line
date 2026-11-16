@@ -331,6 +331,36 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE messages ADD COLUMN pinned_by TEXT;
   CREATE INDEX messages_pinned ON messages(channel_id, pinned_at) WHERE pinned_at IS NOT NULL;
 "#,
+    // Atividade de jogos: histórico por pessoa, privacidade e capas (cache da IGDB, nome em minúsculas).
+    r#"
+  CREATE TABLE user_games (
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    icon         TEXT,
+    first_played TEXT NOT NULL,
+    last_played  TEXT NOT NULL,
+    total_secs   INTEGER NOT NULL DEFAULT 0,
+    hidden       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, name)
+  );
+  CREATE TABLE activity_settings (
+    user_id        TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    share          INTEGER NOT NULL DEFAULT 1,
+    scope          TEXT NOT NULL DEFAULT 'all',
+    hidden_servers TEXT NOT NULL DEFAULT '[]'
+  );
+  CREATE TABLE game_covers (
+    name       TEXT PRIMARY KEY,
+    cover      TEXT,
+    fetched_at TEXT NOT NULL
+  );
+"#,
+    r#"
+  ALTER TABLE servers ADD COLUMN suspended_at TEXT;
+"#,
+    r#"
+  ALTER TABLE users ADD COLUMN deactivated_at TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
