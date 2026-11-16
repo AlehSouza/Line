@@ -6,7 +6,6 @@ import { useLine } from '@/lib/store';
 import { toast } from './Dialogs';
 import { Button, cx, ErrorText, Field, Icons, Modal } from './ui';
 
-const MAX_IMAGES = 5;
 
 const REASONS = ['Spam ou golpe', 'Assédio ou ofensa', 'Conteúdo impróprio', 'Discurso de ódio', 'Se passando por outra pessoa', 'Outro'];
 
@@ -58,6 +57,9 @@ export function ReportModal({
   };
 
   const isReport = !!target;
+  // Prints: até 5 no bug/melhoria e 3 na denúncia de usuário (a de mensagem já leva a cópia dela).
+  const withImages = !target || !target.messageId;
+  const MAX_IMAGES = target ? 3 : 5;
   const title = !target ? 'Reportar' : target.messageId ? 'Denunciar mensagem' : `Denunciar ${user?.displayName ?? 'usuário'}`;
   const canSend = isReport ? !!reason : details.trim().length >= 5;
 
@@ -66,7 +68,7 @@ export function ReportModal({
     setError('');
     try {
       const uploaded = [];
-      for (const img of target ? [] : images) uploaded.push((await api.uploadAttachment(img.file, img.file.name || 'imagem.png')).id);
+      for (const img of withImages ? images : []) uploaded.push((await api.uploadAttachment(img.file, img.file.name || 'imagem.png')).id);
       await api.report({
         kind: !target ? kind : target.messageId ? 'message' : 'user',
         targetUserId: target?.userId,
@@ -164,7 +166,7 @@ export function ReportModal({
             className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm text-fg outline-none placeholder:text-muted focus:border-accent"
           />
         </Field>
-        {!isReport && (
+        {withImages && (
           <div
             onPaste={(e) => addImages(e.clipboardData.files)}
             onDragOver={(e) => e.preventDefault()}
@@ -174,7 +176,7 @@ export function ReportModal({
             }}
           >
             <div className="mb-2 flex items-center justify-between">
-              <span className="text-xs font-bold tracking-wide text-muted uppercase">Imagens (opcional)</span>
+              <span className="text-xs font-bold tracking-wide text-muted uppercase">{isReport ? 'Prints (opcional)' : 'Imagens (opcional)'}</span>
               <span className="text-xs text-muted">
                 {images.length}/{MAX_IMAGES}
               </span>

@@ -499,8 +499,10 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message") {
         return Err(validation("Tipo inválido"));
     }
-    if input.images.len() > 5 {
-        return Err(validation("Mande no máximo 5 imagens."));
+    // Prints: até 5 no bug report/sugestão e 3 na denúncia de usuário.
+    let max_images = if input.kind == "user" { 3 } else { 5 };
+    if input.images.len() > max_images {
+        return Err(validation(format!("Mande no máximo {max_images} imagens.")));
     }
     let details = clip(&input.details, 4000);
     let reason = clip(&input.reason, 100);
@@ -577,7 +579,7 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         details: &details,
         platform: &clip(&input.platform, 60),
         version: &clip(&input.version, 40),
-        images: if matches!(input.kind.as_str(), "bug" | "idea") { &input.images } else { &[] },
+        images: if matches!(input.kind.as_str(), "bug" | "idea" | "user") { &input.images } else { &[] },
     });
     // Prova que não some: cópia dos arquivos da mensagem (até 10 e 100 MB), que ficam mesmo se
     // a mensagem for apagada.
