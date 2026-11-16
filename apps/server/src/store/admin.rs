@@ -523,6 +523,15 @@ impl Q<'_> {
 
     /// "Apagar conta" pelo admin: tira os dados pessoais, troca o nome e suspende para sempre.
     /// A linha continua existindo porque mensagens e servidores apontam para ela.
+    /// Desativa (Some) ou reativa (None) a conta. Desativada: sai de todas as sessões e volta ao logar.
+    pub fn set_deactivated(&self, id: &str, deactivated: bool) {
+        let at = deactivated.then(now_iso);
+        ok(self.c.execute(
+            "UPDATE users SET deactivated_at = ? WHERE id = ?",
+            params![at, id],
+        ));
+    }
+
     pub fn anonymize_user(&self, id: &str) {
         let short: String = id.chars().rev().take(8).collect();
         ok(self.c.execute(

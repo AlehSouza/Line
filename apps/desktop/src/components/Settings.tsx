@@ -166,6 +166,7 @@ function AccountSection() {
   const me = useLine((s) => s.me)!;
   const [showEmail, setShowEmail] = useState(false);
   const [editing, setEditing] = useState<'username' | 'email' | 'password' | 'reset-link' | null>(null);
+  const [danger, setDanger] = useState<'deactivate' | 'delete' | null>(null);
 
   return (
     <div className="space-y-10">
@@ -202,11 +203,136 @@ function AccountSection() {
         />
       </div>
 
+      <hr className="border-edge" />
+
+      <div id="conta-perigo" className="space-y-1">
+        <h2 className="mb-4 text-xl font-bold">Zona perigosa</h2>
+        <div className="flex items-center gap-4 py-2.5">
+          <div className="min-w-0">
+            <div className="font-medium">Desative sua conta</div>
+            <div className="text-sm text-muted">Desative temporariamente sua conta.</div>
+          </div>
+          <Button variant="ghost" onClick={() => setDanger('deactivate')} className="ml-auto shrink-0 border border-edge px-4 text-danger hover:text-danger">
+            Desativar conta
+          </Button>
+        </div>
+        <div className="flex items-center gap-4 py-2.5">
+          <div className="min-w-0">
+            <div className="font-medium">Encerrar sua conta</div>
+            <div className="text-sm text-muted">Encerre sua conta permanentemente.</div>
+          </div>
+          <Button variant="danger" onClick={() => setDanger('delete')} className="ml-auto shrink-0 px-4">
+            Excluir conta
+          </Button>
+        </div>
+      </div>
+
+      {danger && <DangerDialog kind={danger} onClose={() => setDanger(null)} />}
+
       {editing === 'reset-link' ? (
         <ResetLinkDialog onClose={() => setEditing(null)} />
       ) : (
         editing && <EditAccountDialog field={editing} onClose={() => setEditing(null)} onForgot={() => setEditing('reset-link')} />
       )}
+    </div>
+  );
+}
+
+/** Desativar (volta ao entrar de novo) ou excluir a conta. Confirma com a senha ou com código do email. */
+function DangerDialog({ kind, onClose }: { kind: 'deactivate' | 'delete'; onClose: () => void }) {
+  const me = useLine((s) => s.me)!;
+  const noPassword = me.hasPassword === false;
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const del = kind === 'delete';
+
+  async function sendCode() {
+    setError('');
+    setSending(true);
+    try {
+      await api.sendEmailCode();
+      setCodeSent(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function go() {
+    setError('');
+    setBusy(true);
+    try {
+      const proof = noPassword ? { code: code.trim() } : { password };
+      if (del) await api.deleteAccount(proof);
+      else await api.deactivateAccount(proof);
+      onClose();
+      logout();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
+      <form
+        onMouseDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void go();
+        }}
+        className="w-full max-w-sm space-y-4 rounded-2xl border border-edge bg-side p-6 shadow-2xl"
+      >
+        <h3 className="text-xl font-bold">{del ? 'Excluir conta' : 'Desativar conta'}</h3>
+        <p className="text-sm text-soft">
+          {del
+            ? 'Sua conta será apagada para sempre: perfil, amigos e acesso aos servidores. Isso não dá para desfazer.'
+            : 'Você sai de todos os aparelhos e some como offline. Para reativar, é só entrar de novo com sua conta.'}
+        </p>
+        {noPassword ? (
+          <div className="space-y-2">
+            <p className="text-sm text-soft">
+              {codeSent
+                ? `Enviamos um código para ${me.email ? maskEmail(me.email) : 'seu email'}. Ele vale por 15 minutos.`
+                : 'Para confirmar que é você, vamos mandar um código para o seu email.'}
+            </p>
+            {codeSent && (
+              <Field label="Código do email">
+                <Input
+                  required
+                  autoFocus
+                  value={code}
+                  maxLength={6}
+                  onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                  autoComplete="one-time-code"
+                  className="font-mono tracking-[0.3em] uppercase"
+                />
+              </Field>
+            )}
+            <button type="button" onClick={() => void sendCode()} disabled={sending} className="text-sm text-accent hover:underline disabled:opacity-60">
+              {sending ? 'Enviando…' : codeSent ? 'Reenviar código' : 'Enviar código'}
+            </button>
+          </div>
+        ) : (
+          <Field label="Senha">
+            <Input required autoFocus type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+          </Field>
+        )}
+        {error && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" variant="danger" disabled={busy || (noPassword && !code.trim())}>
+            {busy ? 'Aguarde…' : del ? 'Excluir conta' : 'Desativar conta'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }

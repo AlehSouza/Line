@@ -73,6 +73,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me", get(get_me).patch(update_me))
         .route("/users/@me/servers/order", put(reorder_my_servers))
         .route("/users/@me/account", patch(update_account))
+        .route("/users/@me/deactivate", post(deactivate_me))
+        .route("/users/@me/delete", post(delete_me))
         .route("/users/@me/password", post(change_password))
         .route("/users/@me/code", post(send_email_code))
         .route("/users/@me/password/link", post(send_reset_link))
@@ -401,6 +403,7 @@ async fn login(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
     let input = body::<validate::Login>(&b)?.check()?;
     let user_id = check_login(&app, &headers, &input.username, input.password).await?;
     suspended(&app, &user_id)?;
+    app.store.q().set_deactivated(&user_id, false);
     let user = app.store.q().self_user(&user_id).ok_or_else(unauthorized)?;
     ok(AuthResponse {
         token: app.tokens.sign(&user_id),
@@ -640,6 +643,7 @@ async fn google_finish(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
         )
         .ok_or_else(|| validation("Esse login expirou. Tente entrar com o Google de novo."))?;
     suspended(&app, &user_id)?;
+    app.store.q().set_deactivated(&user_id, false);
     let user = app
         .store
         .q()
@@ -979,6 +983,64 @@ async fn check_identity(
         return Err(wrong());
     }
     Ok(Some(hash))
+}
+
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ConfirmInput {
+    password: String,
+    code: String,
+}
+
+/// Confere senha (ou código do email, para conta do Google) e gasta o código.
+async fn confirm_me(app: &App, me: &str, b: &Bytes) -> ApiResult<()> {
+    let input: ConfirmInput = serde_json::from_slice(b).unwrap_or_default();
+    if let Some(hash) = check_identity(app, me, input.password, &input.code).await?
+        && !app.store.q().consume_password_reset(&hash)
+    {
+        return Err(validation("Código incorreto ou expirado. Peça um novo."));
+    }
+    Ok(())
+}
+
+/// "Desativar conta": sai de tudo agora; ao entrar de novo a conta volta ao normal.
+async fn deactivate_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    confirm_me(&app, &me, &b).await?;
+    app.store.q().set_deactivated(&me, true);
+    crate::admin::kick_out(&app, &me);
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// "Excluir conta": permanente. Quem é dono de servidor precisa transferir ou apagar antes.
+async fn delete_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    {
+        let q = app.store.q();
+        let owned: Vec<String> = q
+            .server_ids_of(&me)
+            .into_iter()
+            .filter_map(|id| q.server(&id).filter(|s| s.owner_id == me).map(|s| s.name))
+            .collect();
+        if !owned.is_empty() {
+            return Err(validation(&format!(
+                "Você é dono de {}. Transfira ou apague antes de excluir a conta.",
+                owned.join(", ")
+            )));
+        }
+    }
+    confirm_me(&app, &me, &b).await?;
+    crate::admin::kick_out(&app, &me);
+    {
+        let q = app.store.q();
+        for server_id in q.server_ids_of(&me) {
+            remove_from_server(&app, &q, &server_id, &me);
+        }
+        q.anonymize_user(&me);
+        if let Some(user) = q.public_user(&me) {
+            app.to_users(&q.audience_of(&me), "user:update", &user);
+        }
+    }
+    app.sweep_uploads();
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 async fn update_account(State(app): S, Me(me): Me, b: Bytes) -> Res {

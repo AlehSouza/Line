@@ -337,7 +337,7 @@ fn target_user(app: &App, me: &str, id: &str) -> ApiResult<()> {
 }
 
 /// Tira a pessoa de tudo que está aberto agora: voz, conexões em tempo real e sessões.
-fn kick_out(app: &App, id: &str) {
+pub(crate) fn kick_out(app: &App, id: &str) {
     let q = app.store.q();
     app.drop_voice(
         &q,

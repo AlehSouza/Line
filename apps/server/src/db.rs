@@ -358,6 +358,9 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE servers ADD COLUMN suspended_at TEXT;
 "#,
+    r#"
+  ALTER TABLE users ADD COLUMN deactivated_at TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

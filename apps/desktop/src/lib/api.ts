@@ -208,6 +208,10 @@ export const api = {
     request<{ token: string }>('POST', '/users/@me/password', { ...proof, newPassword }),
   /** Manda um código de 6 caracteres para o email da conta (confirma sem a senha atual). */
   sendEmailCode: () => request<void>('POST', '/users/@me/code'),
+  /** Desativa a conta (volta ao entrar de novo). */
+  deactivateAccount: (proof: { password?: string; code?: string }) => request<void>('POST', '/users/@me/deactivate', proof),
+  /** Exclui a conta para sempre. */
+  deleteAccount: (proof: { password?: string; code?: string }) => request<void>('POST', '/users/@me/delete', proof),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
