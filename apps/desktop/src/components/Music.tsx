@@ -3,7 +3,7 @@
 import type { PublicUser } from '@line/shared';
 import * as L from 'lucide-react';
 import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
-import { api } from '@/lib/api';
+import { api, fileUrl, type AgentReply } from '@/lib/api';
 import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, useMusic, type LiveMusic } from '@/lib/music';
 import { actions, displayNameIn, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
@@ -105,6 +105,7 @@ const COMMANDS = [
   { name: 'pular', args: '', desc: 'Pula para a próxima música da fila.' },
   { name: 'voltar', args: '', desc: 'Volta para a música anterior.' },
   { name: 'stop', args: '', desc: 'Para a música e tira o bot do canal.' },
+  { name: 'hoje', args: '[cidade]', desc: 'O agente conta a data, se é feriado, a previsão do tempo e uma curiosidade do dia.' },
 ];
 
 /** Lista de comandos do bot que aparece ao digitar "/" no começo da mensagem. */
@@ -918,7 +919,8 @@ export function MusicSettings({ serverId }: { serverId: string }) {
 
 /** Perguntas e respostas cadastradas pelo dono: quem marcar o agente com uma pergunta parecida recebe a resposta. */
 export function SmartReplies({ serverId }: { serverId: string }) {
-  const [items, setItems] = useState<{ q: string; a: string }[] | null>(null);
+  const [items, setItems] = useState<AgentReply[] | null>(null);
+  const [uploading, setUploading] = useState<number | null>(null);
   const [saved, setSaved] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -950,7 +952,25 @@ export function SmartReplies({ serverId }: { serverId: string }) {
     }
   }
 
-  const set = (i: number, patch: Partial<{ q: string; a: string }>) => setItems((l) => l && l.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  async function addMedia(i: number, files: FileList | null) {
+    const list = Array.from(files ?? []).filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+    if (!list.length) return;
+    const room = 4 - (items?.[i]?.media?.length ?? 0);
+    if (list.length > room) toast('No máximo 4 imagens ou vídeos por resposta.');
+    setUploading(i);
+    try {
+      for (const f of list.slice(0, Math.max(0, room))) {
+        const a = await api.uploadAttachment(f, f.name);
+        setItems((l) => l && l.map((it, j) => (j === i ? { ...it, media: [...(it.media ?? []), a] } : it)));
+      }
+    } catch (e) {
+      showError(e);
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  const set = (i: number, patch: Partial<AgentReply>) => setItems((l) => l && l.map((it, j) => (j === i ? { ...it, ...patch } : it)));
   const dirty = !!items && JSON.stringify(items) !== saved;
 
   return (
@@ -989,6 +1009,51 @@ export function SmartReplies({ serverId }: { serverId: string }) {
                 placeholder="A próxima RAID é sábado às 21h!"
                 className="w-full resize-y rounded-lg border border-edge bg-side px-3 py-2 text-sm outline-none focus:border-accent"
               />
+              <div className="flex flex-wrap items-center gap-2">
+                {(it.media ?? []).map((m) => (
+                  <div key={m.id} className="group relative size-16 overflow-hidden rounded-lg border border-edge bg-side">
+                    {m.contentType.startsWith('video/') ? (
+                      <video src={fileUrl(m.url)} muted className="size-full object-cover" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={fileUrl(m.url)} alt="" className="size-full object-cover" />
+                    )}
+                    {m.contentType.startsWith('video/') && (
+                      <L.Play size={16} className="pointer-events-none absolute inset-0 m-auto text-white drop-shadow" />
+                    )}
+                    <button
+                      type="button"
+                      title="Tirar"
+                      onClick={() => set(i, { media: (it.media ?? []).filter((x) => x.id !== m.id) })}
+                      className="absolute top-0.5 right-0.5 rounded-full bg-black/70 p-0.5 text-white"
+                    >
+                      <L.X size={12} />
+                    </button>
+                  </div>
+                ))}
+                {(it.media?.length ?? 0) < 4 && (
+                  <label
+                    title="Adicionar imagem ou vídeo"
+                    className={cx(
+                      'flex size-16 cursor-pointer items-center justify-center rounded-lg border border-dashed border-edge text-muted hover:bg-hover hover:text-fg',
+                      uploading === i && 'pointer-events-none opacity-60',
+                    )}
+                  >
+                    {uploading === i ? <L.Loader2 size={18} className="animate-spin" /> : <L.ImagePlus size={20} />}
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        void addMedia(i, e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
+                <span className="text-xs text-muted">Imagens ou vídeos enviados junto com a resposta (até 4).</span>
+              </div>
             </div>
           ))}
           <div className="flex items-center gap-2 pt-1">

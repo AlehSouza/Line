@@ -76,6 +76,13 @@ export function fileUrl(path: string) {
   return /^https?:/.test(path) ? path : `${baseUrl}${path}`;
 }
 
+/** Resposta inteligente do agente: pergunta, texto e até 4 imagens/vídeos. */
+export interface AgentReply {
+  q: string;
+  a: string;
+  media?: { id: string; filename: string; contentType: string; url: string }[];
+}
+
 /** Envia um arquivo cru (sem multipart) e acompanha o progresso. */
 function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fraction: number) => void) {
   return new Promise<Attachment>((resolve, reject) => {
@@ -187,9 +194,8 @@ export const api = {
   musicSettings: (serverId: string) => request<{ idleMessage: string; defaultIdleMessage: string }>('GET', `/servers/${enc(serverId)}/music/settings`),
   updateMusicSettings: (serverId: string, patch: { idleMessage: string }) =>
     request<{ idleMessage: string; defaultIdleMessage: string }>('PATCH', `/servers/${enc(serverId)}/music/settings`, patch),
-  agentReplies: (serverId: string) => request<{ q: string; a: string }[]>('GET', `/servers/${enc(serverId)}/agent/replies`),
-  setAgentReplies: (serverId: string, list: { q: string; a: string }[]) =>
-    request<{ q: string; a: string }[]>('PUT', `/servers/${enc(serverId)}/agent/replies`, list),
+  agentReplies: (serverId: string) => request<AgentReply[]>('GET', `/servers/${enc(serverId)}/agent/replies`),
+  setAgentReplies: (serverId: string, list: AgentReply[]) => request<AgentReply[]>('PUT', `/servers/${enc(serverId)}/agent/replies`, list),
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),

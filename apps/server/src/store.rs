@@ -1781,9 +1781,30 @@ impl Q<'_> {
              AND id NOT IN (SELECT banner_id FROM users WHERE banner_id IS NOT NULL)
              AND id NOT IN (SELECT icon_id FROM servers WHERE icon_id IS NOT NULL)
              AND id NOT IN (SELECT banner_id FROM servers WHERE banner_id IS NOT NULL)
-             AND id NOT IN (SELECT attachment_id FROM report_attachments)",
+             AND id NOT IN (SELECT attachment_id FROM report_attachments)
+             AND id NOT IN (SELECT json_extract(m.value, '$.id') FROM servers s, json_each(s.bot_replies) r, json_each(r.value, '$.media') m)",
             [cutoff],
         ));
+    }
+
+    /// Imagem/vídeo solto (fora de mensagem) que pode ir numa resposta inteligente: enviado por
+    /// `me`, ou já salvo antes nas respostas (`kept`).
+    pub fn loose_media(&self, id: &str, me: &str, kept: bool) -> Option<Attachment> {
+        let ok_row: Option<String> = ok(self
+            .c
+            .query_row(
+                "SELECT uploader_id FROM attachments WHERE id = ? AND message_id IS NULL
+                 AND (content_type LIKE 'image/%' OR content_type LIKE 'video/%') AND content_type != 'image/svg+xml'",
+                [id],
+                |r| r.get(0),
+            )
+            .optional());
+        ok_row.filter(|u| kept || u == me).and_then(|_| self.attachment(id))
+    }
+
+    /// Copia um anexo (o arquivo é copiado por quem chama) para uma linha nova de `uploader`.
+    pub fn clone_attachment(&self, src: &Attachment, new_id: &str, uploader: &str) -> Attachment {
+        self.create_attachment(new_id, uploader, &src.filename, &src.content_type, src.size)
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {
