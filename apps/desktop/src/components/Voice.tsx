@@ -110,6 +110,7 @@ function Video({
       muted
       onLoadedMetadata={report}
       onResize={report}
+      onPlaying={report}
       className={cx('h-full w-full bg-black', contain ? 'object-contain' : 'object-cover', mirror && '-scale-x-100')}
     />
   );
@@ -582,8 +583,9 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
         ) : focused ? (
           <>
             {/* Tela em destaque: espaço acima para o ícone de quem está assistindo. */}
+            {/* Antes de saber a proporção da tela (aberta pelo chat, sem miniatura), usa 16:9 em vez de ocupar a largura toda. */}
             {/* Pessoa em destaque: sempre 16:9, com ou sem câmera, para o quadro não mudar de tamanho. */}
-            <FitBox aspect={focused.kind === 'screen' ? aspect : 16 / 9} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
+            <FitBox aspect={focused.kind === 'screen' ? (aspect ?? 16 / 9) : 16 / 9} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
             </FitBox>
             {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
@@ -1449,7 +1451,21 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
                 <span className="truncate text-sm font-semibold">{game.name}</span>
               </div>
             )}
-            <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
+            <div
+              // Clicar na miniatura também abre a transmissão, igual ao botão.
+              onClick={
+                !isMe && inSameCall
+                  ? () => {
+                      setWatching(userId, true);
+                      setAt(null);
+                    }
+                  : undefined
+              }
+              className={cx(
+                'relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black',
+                !isMe && inSameCall && 'cursor-pointer',
+              )}
+            >
               {thumb ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={thumb} alt="" draggable={false} className="h-full w-full object-contain" />
