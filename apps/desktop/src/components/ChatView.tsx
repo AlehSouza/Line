@@ -696,6 +696,24 @@ function MessageRow({
               <Icons.Edit size={16} />
             </button>
           )}
+          {!mine && !message.author.bot && (
+            <button
+              title="Denunciar mensagem"
+              onClick={() =>
+                actions.openModal({
+                  kind: 'report',
+                  target: {
+                    userId: message.author.id,
+                    messageId: message.id,
+                    preview: (message.content ? mentionsToText(message.content, serverId) : '') || message.attachments[0]?.filename,
+                  },
+                })
+              }
+              className="p-1.5 text-muted hover:text-danger"
+            >
+              <Icons.Flag size={16} />
+            </button>
+          )}
           {canDelete && (
             <button
               title="Apagar"
