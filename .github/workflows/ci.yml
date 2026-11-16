@@ -71,7 +71,7 @@ jobs:
           IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME || 'AlexandreSouza.LineChateVoz' }}
           PUBLISHER: ${{ vars.MSSTORE_PUBLISHER || 'CN=0B1640DA-C2DE-40D6-9091-7568BF2908F8' }}
           PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME || 'Alexandre Souza' }}
-          DISPLAY_NAME: ${{ vars.MSSTORE_DISPLAY_NAME || 'Line: Chat e Voz' }}
+          DISPLAY_NAME: "${{ vars.MSSTORE_DISPLAY_NAME || 'Line: Chat e Voz' }}"
         run: >
           apps/desktop/scripts/make-msix.ps1 -Version "0.1.${{ github.run_number }}"
           -IdentityName $env:IDENTITY_NAME -Publisher $env:PUBLISHER -PublisherName $env:PUBLISHER_NAME -DisplayName $env:DISPLAY_NAME
