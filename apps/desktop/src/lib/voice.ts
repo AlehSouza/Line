@@ -7,7 +7,7 @@ import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './
 import { api } from './api';
 import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
-import { permsOf, useLine } from './store';
+import { actions, permsOf, useLine } from './store';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -47,11 +47,13 @@ export interface ScreenQuality {
   fps: Fps;
 }
 
+// Teto de cada pessoa que assiste. Movimento rápido (jogo, rolar a tela) é o que mais pede bits:
+// com teto baixo o codificador sobe a quantização e a imagem vira blocos.
 export const RESOLUTIONS: Record<Resolution, { label: string; width: number; height: number; kbps: Record<Fps, number> }> = {
-  '720': { label: '720p', width: 1280, height: 720, kbps: { 30: 2500, 60: 4000 } },
-  '1080': { label: '1080p', width: 1920, height: 1080, kbps: { 30: 6000, 60: 9000 } },
-  '1440': { label: '1440p', width: 2560, height: 1440, kbps: { 30: 10000, 60: 15000 } },
-  '2160': { label: '4K', width: 3840, height: 2160, kbps: { 30: 16000, 60: 25000 } },
+  '720': { label: '720p', width: 1280, height: 720, kbps: { 30: 4000, 60: 6000 } },
+  '1080': { label: '1080p', width: 1920, height: 1080, kbps: { 30: 8000, 60: 12000 } },
+  '1440': { label: '1440p', width: 2560, height: 1440, kbps: { 30: 14000, 60: 20000 } },
+  '2160': { label: '4K', width: 3840, height: 2160, kbps: { 30: 25000, 60: 35000 } },
 };
 
 // ---------- preferências (ficam salvas no PC) ----------
@@ -245,6 +247,11 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     setV({ states: Object.fromEntries(list.map((v) => [v.userId, v])) });
     // Reconectou: se eu estava num canal, o servidor me tirou. Entra de novo.
     const { channelId } = getV();
+    // Página recarregada (F5) ou app reiniciado pela atualização: volta para a chamada de antes.
+    if (!channelId && !resumeTried) {
+      resumeTried = true;
+      resumeVoice(list);
+    }
     if (channelId && !list.some((v) => v.userId === myId)) {
       cleanupPeers();
       void rejoin(channelId);
@@ -352,6 +359,88 @@ export function setChannelStatus(channelId: string, status: string) {
   socket?.emit('voice:status', { channelId, status });
 }
 
+// ---------- voltar para a chamada depois de recarregar ou atualizar ----------
+
+const RESUME_KEY = 'line.voice.resume';
+/** Sem sinal de vida por mais que isso, a chamada salva é antiga: não volta sozinho. */
+const RESUME_WINDOW = 60_000;
+let resumeTried = false;
+
+interface VoiceResume {
+  channelId: string;
+  serverId: string | null;
+  watching: string[];
+  until: number;
+}
+
+/**
+ * F5/Ctrl+Shift+R: fica no sessionStorage, que é só desta aba/janela (outra aba aberta não
+ * entra na chamada no lugar desta). Atualização do app: o processo reinicia e o sessionStorage
+ * some, então vai para o localStorage com prazo maior (ver keepVoiceForUpdate).
+ */
+function saveResume(store: 'session' | 'local' = 'session', windowMs = RESUME_WINDOW) {
+  const { channelId, connecting, watching } = getV();
+  if (!channelId || connecting) return;
+  const data: VoiceResume = {
+    channelId,
+    serverId: useLine.getState().channels[channelId]?.serverId ?? null,
+    watching: Object.keys(watching).filter((id) => watching[id]),
+    until: Date.now() + windowMs,
+  };
+  try {
+    (store === 'local' ? localStorage : sessionStorage).setItem(RESUME_KEY, JSON.stringify(data));
+  } catch {
+    // sem armazenamento: só não volta sozinho
+  }
+}
+
+function readResume(store: Storage): VoiceResume | null {
+  try {
+    const data = JSON.parse(store.getItem(RESUME_KEY) ?? 'null') as VoiceResume | null;
+    store.removeItem(RESUME_KEY);
+    return data?.channelId && data.until > Date.now() ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearResume() {
+  try {
+    sessionStorage.removeItem(RESUME_KEY);
+    localStorage.removeItem(RESUME_KEY);
+  } catch {
+    // nada
+  }
+}
+
+/** Antes de instalar uma atualização: guarda a chamada atual para depois de reiniciar (baixar + instalar). */
+export function keepVoiceForUpdate() {
+  saveResume('local', 10 * 60_000);
+}
+
+if (typeof window !== 'undefined') {
+  // Mantém o registro vivo enquanto estou numa chamada; ao recarregar, ele ainda está no prazo.
+  setInterval(() => saveResume(), 10_000);
+  window.addEventListener('pagehide', () => saveResume());
+  window.addEventListener('beforeunload', () => saveResume());
+}
+
+function resumeVoice(list: VoiceState[]) {
+  const fromReload = typeof sessionStorage !== 'undefined' ? readResume(sessionStorage) : null;
+  const fromUpdate = typeof localStorage !== 'undefined' ? readResume(localStorage) : null;
+  const data = fromReload ?? fromUpdate;
+  if (!data) return;
+  // Só volta a assistir quem ainda está transmitindo.
+  const live = new Set(list.filter((v) => v.screenStreamId).map((v) => v.userId));
+  const watching = Object.fromEntries((data.watching ?? []).filter((id) => live.has(id)).map((id) => [id, true]));
+  if (Object.keys(watching).length) setV((v) => ({ watching: { ...v.watching, ...watching } }));
+  const { channelId, serverId } = data;
+  // Abre a chamada na tela (servidor ou DM) e entra.
+  if (serverId) actions.goServer(serverId, channelId);
+  else actions.goHome(channelId);
+  void joinVoice(channelId);
+}
+
 // ---------- entrar / sair ----------
 
 export async function joinVoice(channelId: string) {
@@ -407,6 +496,7 @@ async function rejoin(channelId: string) {
 }
 
 export async function leaveVoice(notify = true) {
+  clearResume();
   if (getV().channelId && !getV().connecting) playCallSound('left');
   if (notify) socket?.emit('voice:leave');
   if (cameraOpening) cameraCancelled = true;
@@ -737,6 +827,9 @@ let screenGen = 0;
 /** Abre a captura (seletor do Line ou do navegador) sem mexer na chamada. */
 async function openScreen(source: { id: string; audio: boolean } | undefined, gen: number) {
   const { resolution, fps } = getV().screenQuality;
+  // Descobre antes quais codecs a placa de vídeo codifica: a escolha do codec é feita na hora de
+  // adicionar a tela na conexão, sem tempo para perguntar.
+  await detectHardwareCodecs(resolution, fps);
   const ended = () => {
     if (gen === screenGen) stopScreen();
   };
@@ -1137,7 +1230,7 @@ async function onSignal(from: string, signal: VoiceSignal) {
       const collision = desc.type === 'offer' && (peer.makingOffer || pc.signalingState !== 'stable');
       peer.ignoreOffer = !peer.polite && collision;
       if (peer.ignoreOffer) return;
-      await pc.setRemoteDescription(desc);
+      await pc.setRemoteDescription(desc.sdp ? { type: desc.type, sdp: tuneScreenSdp(desc.sdp, from) } : desc);
       if (desc.type === 'offer') {
         await pc.setLocalDescription();
         if (pc.localDescription) send(from, { type: 'description', description: pc.localDescription.toJSON() });
@@ -1210,24 +1303,106 @@ function downscale(resolution: Resolution) {
   return Math.max(1, screenSize.width / r.width, screenSize.height / r.height);
 }
 
+/** Codecs que a placa de vídeo codifica nesta qualidade (mediaCapabilities: powerEfficient). */
+let hwCodecs = new Set<string>();
+let hwKey = '';
+
+async function detectHardwareCodecs(resolution: Resolution, fps: Fps) {
+  const key = `${resolution}@${fps}`;
+  if (hwKey === key) return;
+  const caps = (navigator as Navigator & { mediaCapabilities?: MediaCapabilities }).mediaCapabilities;
+  const found = new Set<string>();
+  if (caps?.encodingInfo) {
+    const r = RESOLUTIONS[resolution];
+    await Promise.all(
+      ['video/AV1', 'video/H264', 'video/VP9'].map(async (contentType) => {
+        try {
+          const info = await Promise.race([
+            caps.encodingInfo({
+              type: 'webrtc',
+              video: { contentType, width: r.width, height: r.height, bitrate: r.kbps[fps] * 1000, framerate: fps },
+            } as MediaEncodingConfiguration),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
+          ]);
+          if (info?.supported && info.powerEfficient) found.add(contentType.toLowerCase());
+        } catch {
+          // navegador sem suporte a essa pergunta: trata como codificação por software
+        }
+      }),
+    );
+  }
+  hwCodecs = found;
+  hwKey = key;
+}
+
 /**
- * Em 60fps (jogos) e acima de 1080p, prefere H.264, que a placa de vídeo codifica: o VP8 em
- * software disputa a CPU com o jogo e acaba derrubando fps e qualidade. Se o outro lado não
- * aceitar H.264, a negociação cai para o próximo da lista.
+ * Ordem dos codecs da tela. Primeiro o que a placa de vídeo codifica (AV1, depois H.264, depois VP9):
+ * não disputa a CPU com o jogo, então a qualidade não cai quando o Line fica em segundo plano.
+ * Sem placa: em 60fps e acima de 1080p, H.264 (o mais leve em software); em 30fps (texto, código),
+ * VP9, que deixa letras e bordas bem mais nítidas que o VP8 na mesma taxa. Se o outro lado não
+ * aceitar, a negociação cai para o próximo da lista.
  */
 function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolution, fps: Fps) {
-  if ((fps < 60 && (resolution === '720' || resolution === '1080')) || !transceiver.setCodecPreferences) return;
+  if (!transceiver.setCodecPreferences) return;
   const codecs = RTCRtpSender.getCapabilities?.('video')?.codecs;
   if (!codecs) return;
+  const heavy = fps >= 60 || (resolution !== '720' && resolution !== '1080');
+  const software = heavy ? ['video/h264', 'video/vp9', 'video/vp8'] : ['video/vp9', 'video/vp8', 'video/h264'];
+  const order = [...['video/av1', 'video/h264', 'video/vp9'].filter((m) => hwCodecs.has(m)), ...software];
   const rank = (c: { mimeType: string }) => {
-    const m = c.mimeType.toLowerCase();
-    return m === 'video/h264' ? 0 : m === 'video/vp9' ? 1 : m === 'video/av1' ? 2 : 3;
+    const i = order.indexOf(c.mimeType.toLowerCase());
+    // rtx/red/ulpfec e AV1 por software ficam no fim, na ordem original
+    return i < 0 ? order.length : i;
   };
   try {
     transceiver.setCodecPreferences([...codecs].sort((a, b) => rank(a) - rank(b)));
   } catch {
     // navegador não deixou escolher: fica com o padrão
   }
+}
+
+/**
+ * Sem isto o WebRTC começa a estimar a banda em ~300 kbps e sobe aos poucos, e em qualquer perda
+ * despenca: os primeiros segundos e os movimentos rápidos saem em blocos. Na descrição do outro
+ * lado (que vale para o meu envio) marca a taxa inicial e o mínimo da conexão para a qualidade
+ * escolhida. Só no Chromium/WebView2/WebKit (libwebrtc); o adaptador do Linux ignora.
+ */
+function tuneScreenSdp(sdp: string, peerId: string) {
+  if (!getV().screen || !watchers.has(peerId)) return sdp;
+  if ((window as unknown as { __lineRtc?: { adapter?: boolean } }).__lineRtc?.adapter) return sdp;
+  const { resolution, fps } = getV().screenQuality;
+  const cap = RESOLUTIONS[resolution].kbps[fps];
+  // Começo alto mas sem passar de 8 Mbps (upload mais fraco não engasga logo no início).
+  const extra = `x-google-start-bitrate=${Math.round(Math.min(cap * 0.6, 8000))};x-google-min-bitrate=${Math.round(Math.min(cap * 0.15, 2500))}`;
+  const eol = sdp.includes('\r\n') ? '\r\n' : '\n';
+  // Separa por m= e mexe só nas seções de vídeo.
+  const sections = sdp.split(new RegExp(`${eol}(?=m=)`));
+  return sections
+    .map((section) => {
+      if (!section.startsWith('m=video')) return section;
+      const lines = section.split(eol);
+      const pts = new Set<string>();
+      for (const l of lines) {
+        const rtp = /^a=rtpmap:(\d+) (VP8|VP9|AV1|H264)\//i.exec(l);
+        if (rtp) pts.add(rtp[1]);
+      }
+      const out: string[] = [];
+      for (const line of lines) {
+        const fmtp = /^a=fmtp:(\d+) (.*)$/.exec(line);
+        if (fmtp && pts.has(fmtp[1])) {
+          out.push(fmtp[2].includes('x-google-') ? line : `${line};${extra}`);
+          continue;
+        }
+        out.push(line);
+        // VP8 costuma vir sem a=fmtp: cria a linha logo depois do rtpmap.
+        const rtp = /^a=rtpmap:(\d+) /.exec(line);
+        if (rtp && pts.has(rtp[1]) && !lines.some((l) => l.startsWith(`a=fmtp:${rtp[1]} `))) {
+          out.push(`a=fmtp:${rtp[1]} ${extra}`);
+        }
+      }
+      return out.join(eol);
+    })
+    .join(eol);
 }
 
 async function tuneScreenSender(sender: RTCRtpSender, fps: Fps, retry = true) {
