@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { keepVoiceForUpdate } from '@/lib/voice';
 
 const CHECK_EVERY = 30 * 60 * 1000;
 
@@ -24,6 +25,7 @@ export function UpdateBanner() {
 
   const install = async () => {
     setState('installing');
+    keepVoiceForUpdate();
     try {
       await window.line?.updates?.install();
     } catch (err) {
@@ -62,6 +64,7 @@ export function UpdateBanner() {
  */
 export async function updateApp() {
   const updates = typeof window !== 'undefined' ? window.line?.updates : undefined;
+  keepVoiceForUpdate();
   if (!updates) return window.location.reload();
   try {
     if (!(await updates.check())) return window.location.reload();

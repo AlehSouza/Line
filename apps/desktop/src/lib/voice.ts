@@ -7,7 +7,7 @@ import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './
 import { api } from './api';
 import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
-import { permsOf, useLine } from './store';
+import { actions, permsOf, useLine } from './store';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -247,6 +247,11 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     setV({ states: Object.fromEntries(list.map((v) => [v.userId, v])) });
     // Reconectou: se eu estava num canal, o servidor me tirou. Entra de novo.
     const { channelId } = getV();
+    // Página recarregada (F5) ou app reiniciado pela atualização: volta para a chamada de antes.
+    if (!channelId && !resumeTried) {
+      resumeTried = true;
+      resumeVoice(list);
+    }
     if (channelId && !list.some((v) => v.userId === myId)) {
       cleanupPeers();
       void rejoin(channelId);
@@ -354,6 +359,88 @@ export function setChannelStatus(channelId: string, status: string) {
   socket?.emit('voice:status', { channelId, status });
 }
 
+// ---------- voltar para a chamada depois de recarregar ou atualizar ----------
+
+const RESUME_KEY = 'line.voice.resume';
+/** Sem sinal de vida por mais que isso, a chamada salva é antiga: não volta sozinho. */
+const RESUME_WINDOW = 60_000;
+let resumeTried = false;
+
+interface VoiceResume {
+  channelId: string;
+  serverId: string | null;
+  watching: string[];
+  until: number;
+}
+
+/**
+ * F5/Ctrl+Shift+R: fica no sessionStorage, que é só desta aba/janela (outra aba aberta não
+ * entra na chamada no lugar desta). Atualização do app: o processo reinicia e o sessionStorage
+ * some, então vai para o localStorage com prazo maior (ver keepVoiceForUpdate).
+ */
+function saveResume(store: 'session' | 'local' = 'session', windowMs = RESUME_WINDOW) {
+  const { channelId, connecting, watching } = getV();
+  if (!channelId || connecting) return;
+  const data: VoiceResume = {
+    channelId,
+    serverId: useLine.getState().channels[channelId]?.serverId ?? null,
+    watching: Object.keys(watching).filter((id) => watching[id]),
+    until: Date.now() + windowMs,
+  };
+  try {
+    (store === 'local' ? localStorage : sessionStorage).setItem(RESUME_KEY, JSON.stringify(data));
+  } catch {
+    // sem armazenamento: só não volta sozinho
+  }
+}
+
+function readResume(store: Storage): VoiceResume | null {
+  try {
+    const data = JSON.parse(store.getItem(RESUME_KEY) ?? 'null') as VoiceResume | null;
+    store.removeItem(RESUME_KEY);
+    return data?.channelId && data.until > Date.now() ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearResume() {
+  try {
+    sessionStorage.removeItem(RESUME_KEY);
+    localStorage.removeItem(RESUME_KEY);
+  } catch {
+    // nada
+  }
+}
+
+/** Antes de instalar uma atualização: guarda a chamada atual para depois de reiniciar (baixar + instalar). */
+export function keepVoiceForUpdate() {
+  saveResume('local', 10 * 60_000);
+}
+
+if (typeof window !== 'undefined') {
+  // Mantém o registro vivo enquanto estou numa chamada; ao recarregar, ele ainda está no prazo.
+  setInterval(() => saveResume(), 10_000);
+  window.addEventListener('pagehide', () => saveResume());
+  window.addEventListener('beforeunload', () => saveResume());
+}
+
+function resumeVoice(list: VoiceState[]) {
+  const fromReload = typeof sessionStorage !== 'undefined' ? readResume(sessionStorage) : null;
+  const fromUpdate = typeof localStorage !== 'undefined' ? readResume(localStorage) : null;
+  const data = fromReload ?? fromUpdate;
+  if (!data) return;
+  // Só volta a assistir quem ainda está transmitindo.
+  const live = new Set(list.filter((v) => v.screenStreamId).map((v) => v.userId));
+  const watching = Object.fromEntries((data.watching ?? []).filter((id) => live.has(id)).map((id) => [id, true]));
+  if (Object.keys(watching).length) setV((v) => ({ watching: { ...v.watching, ...watching } }));
+  const { channelId, serverId } = data;
+  // Abre a chamada na tela (servidor ou DM) e entra.
+  if (serverId) actions.goServer(serverId, channelId);
+  else actions.goHome(channelId);
+  void joinVoice(channelId);
+}
+
 // ---------- entrar / sair ----------
 
 export async function joinVoice(channelId: string) {
@@ -409,6 +496,7 @@ async function rejoin(channelId: string) {
 }
 
 export async function leaveVoice(notify = true) {
+  clearResume();
   if (getV().channelId && !getV().connecting) playCallSound('left');
   if (notify) socket?.emit('voice:leave');
   if (cameraOpening) cameraCancelled = true;
