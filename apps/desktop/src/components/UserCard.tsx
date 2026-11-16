@@ -392,6 +392,7 @@ export function UserMention({
   const label = useLine((s) =>
     userId && ((serverId && s.members[serverId]?.[userId]) || s.users[userId]?.bot) ? `@${displayNameIn(s, serverId, userId)}` : null,
   );
+  const mentioned = useLine((s) => (userId ? (s.me?.id === userId ? s.me : s.users[userId]) : undefined));
   if (!userId) return <span className={className}>{children}</span>;
   return (
     <span
@@ -404,7 +405,7 @@ export function UserMention({
         actions.openModal({ kind: 'user', userId, at: { x: r.right, y: r.top + 40 } });
       }}
     >
-      {label ?? children}
+      <StyledName user={mentioned}>{label ?? children}</StyledName>
     </span>
   );
 }
