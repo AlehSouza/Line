@@ -78,8 +78,8 @@ export function UserCard({
   const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
   /** Cor do cartão (nome, borda do avatar e anel do status). */
   const nameColor = user.botStyle?.nameColor ?? roleColor ?? 'var(--color-fg)';
-  // Mesma cor do topo do fundo do cartão: a borda parece um recorte do avatar no cartão.
-  const ring = `color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail))`;
+  // Borda sólida na cor do perfil escolhida pela pessoa (sem mistura/transparência).
+  const ring = user.avatarColor;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
 
   async function run(fn: () => Promise<void>) {
