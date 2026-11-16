@@ -707,10 +707,10 @@ function MessageRow({
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
         )}
-        {message.thread && <ThreadChip thread={message.thread} />}
         {!!message.reactions?.length && (
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
+        {message.thread && <ThreadChip thread={message.thread} />}
       </div>
 
       {reactAnchor && (
