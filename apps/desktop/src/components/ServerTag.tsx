@@ -46,32 +46,74 @@ export function UserTagBadge({ user }: { user: Pick<PublicUser, 'id' | 'tag'> })
   const live = useLine((s) => s.users[user.id]?.tag);
   const tag = live === undefined ? user.tag : live;
   const server = useLine((s) => (tag ? s.servers[tag.serverId] : undefined));
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keep = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  // Fecha sozinho quando o mouse sai da tag e do cartão (o atraso dá tempo de atravessar o vão entre os dois).
+  const leave = () => {
+    keep();
+    timer.current = setTimeout(() => setAnchor(null), 350);
+  };
+  useEffect(() => keep, []);
   if (!tag) return null;
   return (
     <>
       {/* span com role=button: a tag fica dentro de outros botões (linha da call, nome no chat). */}
       <span
+        ref={ref}
         role="button"
         tabIndex={0}
         title={server ? `Tag do servidor ${server.name}` : 'Tag de servidor'}
         onClick={(e) => {
           e.stopPropagation();
-          setAt({ x: e.clientX, y: e.clientY });
+          keep();
+          setAnchor(e.currentTarget.getBoundingClientRect());
         }}
+        onMouseEnter={() => anchor && keep()}
+        onMouseLeave={() => anchor && leave()}
         onContextMenu={(e) => e.stopPropagation()}
         className="inline-flex shrink-0 cursor-pointer items-center gap-1 self-center rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft hover:bg-hover hover:text-fg"
       >
         <TagIcon icon={tag.icon} iconUrl={tag.iconUrl ?? server?.iconUrl} />
         {tag.text}
       </span>
-      {at && <ServerCardPopover serverId={tag.serverId} at={at} onClose={() => setAt(null)} />}
+      {anchor && (
+        <ServerCardPopover
+          serverId={tag.serverId}
+          anchor={anchor}
+          tagEl={ref.current}
+          onEnter={keep}
+          onLeave={leave}
+          onClose={() => {
+            keep();
+            setAnchor(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
-/** Cartão do servidor perto do clique. Servidor privado (e eu fora dele): só foto e capa acinzentadas. */
-function ServerCardPopover({ serverId, at, onClose }: { serverId: string; at: { x: number; y: number }; onClose: () => void }) {
+/** Cartão do servidor logo abaixo da tag (acima, se não couber). Servidor privado (e eu fora dele): só foto e capa acinzentadas. */
+function ServerCardPopover({
+  serverId,
+  anchor,
+  tagEl,
+  onEnter,
+  onLeave,
+  onClose,
+}: {
+  serverId: string;
+  anchor: DOMRect;
+  tagEl: HTMLElement | null;
+  onEnter: () => void;
+  onLeave: () => void;
+  onClose: () => void;
+}) {
   const [info, setInfo] = useState<ServerCardInfo | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -85,28 +127,42 @@ function ServerCardPopover({ serverId, at, onClose }: { serverId: string; at: { 
 
   useLayoutEffect(() => {
     const h = box.current?.offsetHeight ?? 320;
-    const left = Math.max(8, Math.min(at.x + 12, window.innerWidth - W - 8));
-    const top = Math.max(8, Math.min(at.y - 40, window.innerHeight - h - 8));
+    const gap = 6;
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - W - 8));
+    const below = anchor.bottom + gap;
+    const above = anchor.top - gap - h;
+    const top = below + h <= window.innerHeight - 8 || above < 8 ? Math.max(8, Math.min(below, window.innerHeight - h - 8)) : above;
     setPos({ left, top });
-  }, [at, info, error]);
+  }, [anchor, info, error]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // Clique fora do cartão e da tag fecha.
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (box.current?.contains(t) || tagEl?.contains(t)) return;
+      onClose();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    document.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown, true);
+    };
+  }, [onClose, tagEl]);
 
   const isPrivate = info?.private;
   const full = info && !info.private ? info : null;
 
   return createPortal(
     // Portal ainda propaga eventos pela árvore do React: não deixa o clique chegar na linha/nome por trás.
-    <div className="fixed inset-0 z-50" onMouseDown={onClose} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
       <div
         ref={box}
         role="dialog"
-        onMouseDown={(e) => e.stopPropagation()}
-        className="fixed overflow-hidden rounded-2xl border border-edge bg-side shadow-2xl"
+        onMouseEnter={onEnter}
+        onMouseLeave={onLeave}
+        className="fixed z-50 overflow-hidden rounded-2xl border border-edge bg-side shadow-2xl"
         style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 0 }}
       >
         <div className={cx('h-[110px] bg-raise', isPrivate && 'opacity-60 grayscale')}>
