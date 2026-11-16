@@ -521,6 +521,30 @@ tbody tr.click:hover {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.ctx {
+  margin: 10px 0 0;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ctx-title {
+  padding: 6px 12px;
+  background: var(--rail);
+}
+.ctx-row {
+  padding: 6px 12px;
+  border-left: 3px solid transparent;
+  opacity: 0.7;
+}
+.ctx-row.hit {
+  opacity: 1;
+  border-left-color: var(--danger);
+  background: rgba(242, 85, 90, 0.08);
+}
+.ctx-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .details {
   margin: 8px 0 0;
   white-space: pre-wrap;

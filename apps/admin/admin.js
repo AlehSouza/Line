@@ -795,35 +795,48 @@ function snapshotView(r) {
   }
   if (!m) return r.messageContent ? h('div', { class: 'quote' }, r.messageContent) : null;
   const where = m.server ? `${m.server.name} · #${m.channel?.name || '?'}` : 'Conversa privada';
-  const main = h(
-    'div',
-    { class: 'quote' },
-    h('div', { class: 'muted small', style: 'margin-bottom:4px' }, h('b', { style: 'color:var(--fg)' }, m.author?.displayName || '?'), ` @${m.author?.username || '?'} · ${where} · ${date(m.createdAt)}`, m.editedAt ? ` (editada ${date(m.editedAt)})` : '', ` · id ${m.id}`),
-    m.content || h('span', { class: 'muted' }, '(sem texto)'),
-    m.attachments?.length ? h('div', { class: 'muted small', style: 'margin-top:4px' }, `Anexos: ${m.attachments.map((a) => a.filename).join(', ')}`) : null,
-  );
   const before = m.before || [];
   const after = m.after || [];
-  if (!before.length && !after.length) return main;
+  const files = (x) => (x.attachments?.length ? h('div', { class: 'muted small' }, `📎 ${x.attachments.map((a) => a.filename).join(', ')}`) : null);
+  if (!before.length && !after.length) {
+    return h(
+      'div',
+      { class: 'quote' },
+      h('div', { class: 'muted small', style: 'margin-bottom:4px' }, h('b', { style: 'color:var(--fg)' }, m.author?.displayName || '?'), ` @${m.author?.username || '?'} · ${where} · ${date(m.createdAt)}`, m.editedAt ? ` (editada ${date(m.editedAt)})` : '', ` · id ${m.id}`),
+      msgText(m.content),
+      files(m),
+    );
+  }
   // Contexto guardado na hora da denúncia: até 5 antes e 5 depois, com a denunciada destacada.
-  const line = (x) =>
+  const row = (x, hit) =>
     h(
       'div',
-      { style: 'padding:4px 0;opacity:.75' },
-      h('div', { class: 'muted small' }, h('b', { style: 'color:var(--fg)' }, x.author?.displayName || '?'), ` @${x.author?.username || '?'} · ${date(x.createdAt)}`, x.editedAt ? ' (editada)' : ''),
-      x.content || h('span', { class: 'muted' }, '(sem texto)'),
-      x.attachments?.length ? h('div', { class: 'muted small' }, `Anexos: ${x.attachments.map((a) => a.filename).join(', ')}`) : null,
+      { class: hit ? 'ctx-row hit' : 'ctx-row' },
+      h(
+        'div',
+        { class: 'ctx-head' },
+        h('b', {}, x.author?.displayName || '?'),
+        h('span', { class: 'muted small' }, ` @${x.author?.username || '?'} · ${date(x.createdAt)}${x.editedAt ? ' (editada)' : ''}`),
+        hit ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'denunciada') : null,
+      ),
+      h('div', { class: 'ctx-text' }, msgText(x.content)),
+      files(x),
     );
-  main.style.borderLeft = '3px solid var(--danger, #e5484d)';
-  main.style.opacity = '1';
   return h(
     'div',
-    { style: 'margin-top:8px' },
-    h('div', { class: 'muted small' }, `Contexto: ${before.length} antes e ${after.length} depois`),
-    before.map(line),
-    main,
-    after.map(line),
+    { class: 'ctx' },
+    h('div', { class: 'muted small ctx-title' }, `Conversa em ${where} (${before.length} antes, ${after.length} depois)`),
+    before.map((x) => row(x, false)),
+    row(m, true),
+    after.map((x) => row(x, false)),
   );
+}
+
+/** Texto da mensagem: **negrito** e cartões de música ([[musica:...]]) legíveis. */
+function msgText(text) {
+  const t = (text || '').replace(/\[\[musica:[^\]]*\]\]\s*/g, '🎵 ').trim();
+  if (!t) return h('span', { class: 'muted' }, '(sem texto)');
+  return t.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part) => (part.startsWith('**') && part.endsWith('**') && part.length > 4 ? h('b', {}, part.slice(2, -2)) : part));
 }
 
 function reportCard(r, reload) {
@@ -845,7 +858,7 @@ function reportCard(r, reload) {
     r.targetUserId &&
       h('div', { style: 'margin-top:8px' }, 'Contra ', h('button', { class: 'linkish', onclick: () => openUser(r.targetUserId) }, `${r.targetName || '?'} (@${r.targetUsername || '?'})`), banned(r.targetBannedUntil) ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'suspenso') : null, where ? h('span', { class: 'muted' }, ` em ${where}`) : null),
     snapshotView(r),
-    r.details && h('p', { class: 'details' }, r.details),
+    r.details && h('p', { class: 'details' }, r.kind === 'message' || r.kind === 'user' ? h('span', { class: 'muted small' }, 'Relato de quem denunciou: ') : null, r.details),
     r.images?.length ? h('div', { class: 'shots' }, r.images.map((img) => (img.contentType || '').startsWith('image/') ? h('a', { href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${FILES}${img.url}`, alt: img.filename, loading: 'lazy' })) : h('a', { class: 'pill', href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, img.filename))) : null,
     (r.platform || r.version) && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, [r.platform, r.version && `versão ${r.version}`].filter(Boolean).join(' · ')),
     r.note && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, `Anotação: ${r.note}`),
