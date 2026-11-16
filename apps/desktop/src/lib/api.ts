@@ -22,6 +22,8 @@ import type {
   ProfileGame,
   UserProfile,
   FavoriteSong,
+  NotifySettings,
+  ReadState,
 } from '@line/shared';
 
 /**
@@ -245,6 +247,16 @@ export const api = {
   serverActivities: (serverId: string) => request<ServerActivity[]>('GET', `/servers/${enc(serverId)}/activities`),
   myGames: () => request<{ current: string | null; games: MyGame[]; covers: boolean }>('GET', '/users/@me/games'),
   updateMyGame: (patch: { name: string; hidden?: boolean; remove?: boolean }) => request<{ games: MyGame[] }>('PATCH', '/users/@me/games', patch),
+  notifySettings: () => request<NotifySettings>('GET', '/users/@me/notification-settings'),
+  setNotifySettings: (s: NotifySettings) => request<NotifySettings>('PUT', '/users/@me/notification-settings', s),
+  readStates: () => request<ReadState[]>('GET', '/users/@me/read-states'),
+  ack: (channelId: string, messageId?: string) => request<unknown>('POST', `/channels/${enc(channelId)}/ack`, { messageId }),
+  ackServer: (serverId: string) => request<unknown>('POST', `/servers/${enc(serverId)}/ack`),
+  recentMentions: (o: { server?: string; everyone: boolean; roles: boolean; before?: string }) =>
+    request<Message[]>(
+      'GET',
+      `/users/@me/mentions?everyone=${o.everyone ? 1 : 0}&roles=${o.roles ? 1 : 0}${o.server ? `&server=${enc(o.server)}` : ''}${o.before ? `&before=${enc(o.before)}` : ''}`,
+    ),
   activitySettings: () => request<ActivitySettings>('GET', '/users/@me/activity-settings'),
   setActivitySettings: (s: ActivitySettings) => request<ActivitySettings>('PUT', '/users/@me/activity-settings', s),
   agentReplies: (serverId: string) => request<AgentReply[]>('GET', `/servers/${enc(serverId)}/agent/replies`),

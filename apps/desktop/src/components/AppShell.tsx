@@ -1,5 +1,6 @@
 'use client';
 
+import { totalMentions } from '@/lib/notify';
 import { useEffect } from 'react';
 import { mobile, useMobile } from '@/lib/mobile';
 import { ensureServerLoaded } from '@/lib/session';
@@ -23,7 +24,8 @@ export function AppShell() {
   const thread = useLine((s) =>
     s.threadId ? s.channels[s.threadId] : s.threadDraft && s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId ? s.threadDraft : undefined,
   );
-  const unreadTotal = useLine((s) => Object.values(s.unread).reduce((a, b) => a + b, 0));
+  const unreadTotal = useLine((s) => totalMentions(s));
+  const showBadge = useLine((s) => s.notify.badge !== false);
   const channel = useLine((s) =>
     view.kind === 'server' && view.channelId ? s.channels[view.channelId] : view.kind === 'home' && view.dmId ? s.channels[view.dmId] : undefined,
   );
@@ -52,9 +54,9 @@ export function AppShell() {
   const membersOpen = useMobile((m) => m.members);
 
   useEffect(() => {
-    window.line?.setBadge(unreadTotal);
+    window.line?.setBadge(showBadge ? unreadTotal : 0);
     document.title = unreadTotal ? `(${unreadTotal}) Line` : 'Line';
-  }, [unreadTotal]);
+  }, [unreadTotal, showBadge]);
 
   const suspended = useLine((s) => view.kind === 'server' && !!s.servers[view.serverId]?.suspended);
 

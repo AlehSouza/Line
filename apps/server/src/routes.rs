@@ -203,7 +203,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .nest(
             "/api",
             api.merge(crate::admin::router())
-                .merge(crate::profile::router()),
+                .merge(crate::profile::router())
+                .merge(crate::notify::router()),
         )
         .fallback(web_fallback)
         .with_state(app)
@@ -2222,6 +2223,8 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
         &input.attachment_ids,
         &input.requires,
     );
+    // Quem manda a mensagem leu o canal até ela.
+    q.ack(&me, &channel.id, &message.id);
     app.to_channel(&q, &channel.id, "message:create", &message);
     if channel.kind == "thread" {
         refresh_thread_starter(&app, &q, &channel);

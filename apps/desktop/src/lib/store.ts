@@ -1,6 +1,6 @@
 'use client';
 
-import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, type Friend, type Member, type Message, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
+import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, type Friend, type Member, type Message, type NotifySettings, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
 import { create } from 'zustand';
 
 export type View =
@@ -15,10 +15,11 @@ export type Modal =
   | { kind: 'edit-category'; categoryId: string }
   | { kind: 'edit-channel'; channelId: string }
   | { kind: 'server-settings'; serverId: string; section?: 'overview' | 'roles' }
+  | { kind: 'notify-settings'; serverId: string }
   | { kind: 'nickname'; serverId: string; userId: string }
   | { kind: 'invite'; serverId: string }
   | { kind: 'profile' }
-  | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' | 'games' | 'activity' }
+  | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' | 'games' | 'activity' | 'notifications' }
   | { kind: 'create-poll'; channelId: string }
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
@@ -67,6 +68,13 @@ export interface LineState {
   friends: Record<string, Friend>;
   messages: Record<string, MessageBucket>;
   unread: Record<string, number>;
+  /** Menções não lidas por canal: diretas (ou DM), @everyone/@here e de cargo. */
+  mentionCounts: Record<string, MentionCount>;
+  /** Até onde li e qual a última mensagem de cada canal. */
+  readMarks: Record<string, { read: string; last: string }>;
+  /** Servidor e canal pai de cada canal que eu vejo (inclusive de servidores ainda não abertos). */
+  channelInfo: Record<string, { serverId: string | null; parentId: string | null }>;
+  notify: NotifySettings;
   typing: Record<string, Record<string, { name: string; until: number }>>;
   lastChannelByServer: Record<string, string>;
 
@@ -95,6 +103,10 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   friends: {},
   messages: {},
   unread: {},
+  mentionCounts: {},
+  readMarks: {},
+  channelInfo: {},
+  notify: {},
   typing: {},
   lastChannelByServer: {},
   view: { kind: 'home', dmId: null },
@@ -114,6 +126,14 @@ const set = useLine.setState;
 const get = useLine.getState;
 
 // ---------- helpers de atualização (chamados pela API e pelo socket) ----------
+
+export type MentionCount = { d: number; e: number; r: number };
+
+/** Chamado a cada markRead (lib/notify avisa o servidor que li). */
+let readHook: ((channelId: string) => void) | null = null;
+export function setReadHook(fn: (channelId: string) => void) {
+  readHook = fn;
+}
 
 export const actions = {
   reset(keepUrl = true) {
@@ -342,11 +362,22 @@ export const actions = {
   },
 
   markRead(channelId: string) {
-    if (!get().unread[channelId]) return;
+    readHook?.(channelId);
+    const s0 = get();
+    if (!s0.unread[channelId] && !s0.mentionCounts[channelId]) return;
     set((s) => {
       const unread = { ...s.unread };
+      const mentionCounts = { ...s.mentionCounts };
       delete unread[channelId];
-      return { unread };
+      delete mentionCounts[channelId];
+      return { unread, mentionCounts };
+    });
+  },
+
+  addMention(channelId: string, kind: 'd' | 'e' | 'r') {
+    set((s) => {
+      const c = s.mentionCounts[channelId] ?? { d: 0, e: 0, r: 0 };
+      return { mentionCounts: { ...s.mentionCounts, [channelId]: { ...c, [kind]: c[kind] + 1 } } };
     });
   },
 

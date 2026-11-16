@@ -400,6 +400,19 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE user_games ADD COLUMN week_start TEXT;
   ALTER TABLE user_games ADD COLUMN week_secs INTEGER NOT NULL DEFAULT 0;
 "#,
+    // Notificações: configurações (JSON do app) e até onde cada pessoa leu cada canal.
+    r#"
+  CREATE TABLE user_settings (
+    user_id       TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    notifications TEXT NOT NULL DEFAULT '{}'
+  );
+  CREATE TABLE read_states (
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id   TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    last_read_id TEXT NOT NULL,
+    PRIMARY KEY (user_id, channel_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -13,17 +13,29 @@ import { openContextMenu, type MenuEntry } from './ContextMenu';
 import { Avatar, cx, DefaultServerIcon, Icons, Logo } from './ui';
 import { useIncomingCount } from './FriendsView';
 import { confirmDialog } from './Dialogs';
+import { infoOf, isServerMuted, markServerRead, serverBadge, unreadDms } from '@/lib/notify';
+import { dmNotifyItems, serverNotifyItems } from './Notifications';
+import { dmTitle } from '@/lib/store';
 
 export function ServerRail() {
   const view = useLine((s) => s.view);
   const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]!).filter(Boolean)));
-  const unread = useLine((s) => s.unread);
   const channels = useLine((s) => s.channels);
   const pendingFriends = useIncomingCount();
-
-  const dmUnread = Object.entries(unread).reduce((n, [cid, c]) => (channels[cid] && !channels[cid]!.serverId ? n + c : n), 0);
-  const serverHasUnread = (serverId: string) =>
-    Object.keys(unread).some((cid) => channels[cid]?.serverId === serverId);
+  // Bolinha e menções de cada servidor (recalcula só quando muda).
+  const badges = useLine(
+    useShallow((s) => {
+      const out: Record<string, string> = {};
+      for (const id of s.serverOrder) {
+        const b = serverBadge(s, id);
+        out[id] = `${b.unread ? 1 : 0}:${b.mentions}`;
+      }
+      return out;
+    }),
+  );
+  const mutedServers = useLine(useShallow((s) => s.serverOrder.filter((id) => isServerMuted(s, id))));
+  // DMs com mensagens não lidas: aparecem acima dos servidores, com a foto redonda da pessoa.
+  const dmBadges = useLine(useShallow((s) => unreadDms(s).map((d) => `${d.id}:${d.count}`)));
   // Quem está em canais de voz, agrupado por servidor (para o indicador e o tooltip).
   const voiceStates = useVoice((v) => v.states);
   // Servidor da call em que ESTE app está conectado (só ele ganha o selo de voz).
@@ -52,7 +64,7 @@ export function ServerRail() {
       <RailItem
         label="Início"
         active={view.kind === 'home'}
-        badge={dmUnread + pendingFriends}
+        badge={pendingFriends}
         onClick={() => actions.goHome(view.kind === 'home' ? view.dmId : null)}
       >
         {/* Acinzentado em repouso; ganha a cor ao passar o mouse (ou na tela inicial). */}
@@ -65,6 +77,11 @@ export function ServerRail() {
           <Logo size={30} />
         </span>
       </RailItem>
+
+      {dmBadges.map((key) => {
+        const [dmId, n] = key.split(':') as [string, string];
+        return <DmRailItem key={dmId} dmId={dmId} count={Number(n)} />;
+      })}
 
       <div className="mx-auto h-0.5 w-8 rounded bg-edge" />
 
@@ -105,7 +122,9 @@ export function ServerRail() {
           dragging={drag === server.id}
           label={server.name}
           active={view.kind === 'server' && view.serverId === server.id}
-          dot={serverHasUnread(server.id)}
+          dot={badges[server.id]?.startsWith('1')}
+          badge={Number(badges[server.id]?.split(':')[1] ?? 0)}
+          muted={mutedServers.includes(server.id)}
           onClick={() => actions.goServer(server.id)}
           onContextMenu={(e) => openContextMenu(e, serverMenu(server.id))}
           voice={!!myVoiceServer && myVoiceServer === server.id}
@@ -140,6 +159,8 @@ function RailItem({
   active,
   badge,
   dot,
+  muted,
+  round,
   color,
   action,
   onClick,
@@ -155,6 +176,10 @@ function RailItem({
   active?: boolean;
   badge?: number;
   dot?: boolean;
+  /** Servidor silenciado: ícone um pouco apagado. */
+  muted?: boolean;
+  /** Redondo (DM), diferente do quadrado arredondado dos servidores. */
+  round?: boolean;
   color?: string;
   action?: boolean;
   onClick: () => void;
@@ -196,7 +221,8 @@ function RailItem({
         onContextMenu={onContextMenu}
         className={cx(
           'relative flex h-12 w-12 items-center justify-center transition-all',
-          'rounded-[14px]', // quadrado com cantos arredondados (~30%), sem virar círculo
+          round ? 'rounded-full' : 'rounded-[14px]', // servidor: quadrado com cantos arredondados (~30%); DM: círculo
+          muted && !active && 'opacity-60 hover:opacity-100',
           action && !active && 'bg-side text-accent hover:bg-accent hover:text-on-accent',
           action && active && 'bg-accent text-on-accent',
           !action && !color && (active ? 'bg-raise' : 'bg-side hover:bg-raise'),
@@ -209,7 +235,7 @@ function RailItem({
             {badge > 99 ? '99+' : badge}
           </span>
         )}
-        {voice && (
+        {voice && !badge && (
           <span
             className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-on-accent ring-4 ring-rail"
           >
@@ -269,7 +295,7 @@ function serverMenu(serverId: string): MenuEntry[] {
   const server = s.servers[serverId];
   if (!server) return [];
   const perms = permsOf(s, serverId, s.me?.id);
-  const unreadIds = Object.keys(s.unread).filter((cid) => s.channels[cid]?.serverId === serverId);
+  const { unread: hasUnread, mentions } = serverBadge(s, serverId);
   const isOwner = s.me?.id === server.ownerId;
   const canSettings =
     hasPerm(perms, Perm.ManageServer) ||
@@ -280,9 +306,11 @@ function serverMenu(serverId: string): MenuEntry[] {
     {
       label: 'Marcar como lido',
       icon: <Icons.Check size={15} />,
-      disabled: !unreadIds.length,
-      onClick: () => unreadIds.forEach((cid) => actions.markRead(cid)),
+      disabled: !hasUnread && !mentions && !Object.keys(s.unread).some((cid) => infoOf(s, cid).serverId === serverId),
+      onClick: () => markServerRead(serverId),
     },
+    'sep',
+    ...serverNotifyItems(serverId),
     'sep',
     hasPerm(perms, Perm.CreateInvite) && {
       label: 'Convidar pessoas',
@@ -321,4 +349,36 @@ function serverMenu(serverId: string): MenuEntry[] {
       },
     },
   ];
+}
+
+/** DM com mensagens não lidas na barra lateral: foto redonda da pessoa (ou do grupo) e o número. */
+function DmRailItem({ dmId, count }: { dmId: string; count: number }) {
+  const dm = useLine((s) => s.channels[dmId]);
+  const me = useLine((s) => s.me);
+  const users = useLine((s) => s.users);
+  if (!dm) return null;
+  const isGroup = dm.type === 'group_dm';
+  const other = (dm.recipients ?? []).find((r) => r.id !== me?.id);
+  const u = other ? (users[other.id] ?? other) : null;
+  const title = dmTitle(dm, me?.id, users);
+  return (
+    <RailItem
+      label={title}
+      round
+      badge={count}
+      onClick={() => {
+        actions.goHome(dmId);
+        mobile.showMain();
+      }}
+      onContextMenu={(e) => openContextMenu(e, dmNotifyItems(dmId))}
+    >
+      <Avatar
+        name={isGroup || !u ? title : u.displayName}
+        color={isGroup || !u ? '#3a3a42' : u.avatarColor}
+        src={isGroup || !u ? null : u.avatarUrl}
+        size={48}
+        className="rounded-full"
+      />
+    </RailItem>
+  );
 }

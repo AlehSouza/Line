@@ -14,6 +14,7 @@ use std::sync::{Mutex, MutexGuard};
 
 pub mod activity;
 pub mod admin;
+pub mod notify;
 pub mod profile;
 pub use admin::{BAN_FOREVER, NewReport};
 
