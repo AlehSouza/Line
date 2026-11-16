@@ -14,6 +14,8 @@ import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 import { StyledName } from '@/lib/nameStyle';
 import { SongPlayer } from './ProfileExtras';
+import { MoreMenu } from './FullProfile';
+import { useIgnored } from '@/lib/ignored';
 
 export { statusOptions } from './StatusPicker';
 
@@ -49,6 +51,7 @@ export function UserCard({
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
   const viewServer = useViewServer();
   const look = useServerLook(viewServer, userId);
+  const ignored = useIgnored((s) => s.ids.includes(userId));
   const [editMenu, setEditMenu] = useState(false);
   const roleColor = useMemberColor(viewServer, userId);
 
@@ -198,49 +201,17 @@ export function UserCard({
                 <Icons.More size={17} />
               </TopButton>
               {menu && (
-                <div className="absolute top-full right-0 z-10 mt-1.5 w-52 rounded-lg border border-edge bg-side p-1 shadow-xl">
-                  {!isMe && state === 'friends' && (
-                    <MenuItem
-                      danger
-                      icon={<Icons.UserMinus size={16} />}
-                      onClick={async () => (await confirmDialog({ title: 'Desfazer amizade', message: `Tirar ${user.displayName} dos seus amigos?`, confirmLabel: 'Desfazer amizade', danger: true })) && run(() => api.removeFriend(userId))}
-                    >
-                      Desfazer amizade
-                    </MenuItem>
-                  )}
-                  {!isMe && state !== 'blocked' && (
-                    <MenuItem
-                      danger
-                      icon={<Icons.Ban size={16} />}
-                      onClick={async () => (await confirmDialog({ title: `Bloquear ${user.displayName}`, message: 'A pessoa não vai poder te mandar pedidos nem mensagens diretas.', confirmLabel: 'Bloquear', danger: true })) && run(async () => actions.upsertFriend(await api.blockUser(userId)))}
-                    >
-                      Bloquear
-                    </MenuItem>
-                  )}
-                  {!isMe && state === 'blocked' && (
-                    <MenuItem
-                      icon={<Icons.Ban size={16} />}
-                      onClick={() =>
-                        run(async () => {
-                          await api.unblockUser(userId);
-                          actions.removeFriend(userId);
-                        })
-                      }
-                    >
-                      Desbloquear
-                    </MenuItem>
-                  )}
-                  <MenuItem
-                    danger
-                    icon={<Icons.Flag size={16} />}
-                    onClick={() => {
-                      onClose();
-                      actions.openModal({ kind: 'report', target: { userId } });
-                    }}
-                  >
-                    Denunciar perfil
-                  </MenuItem>
-                </div>
+                <MoreMenu
+                  user={user}
+                  nickname={null}
+                  main={false}
+                  onMain={() => {}}
+                  onFullProfile={() => actions.openModal({ kind: 'full-profile', userId, serverId: viewServer })}
+                  ignored={ignored}
+                  blocked={state === 'blocked'}
+                  onClose={() => setMenu(false)}
+                  align="right"
+                />
               )}
             </span>
             )}

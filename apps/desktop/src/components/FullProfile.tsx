@@ -349,22 +349,27 @@ function FriendButton({ userId, username, displayName }: { userId: string; usern
 }
 
 /** Menu ⋯ do perfil. */
-function MoreMenu({
+export function MoreMenu({
   user,
   nickname,
   main,
   onMain,
+  onFullProfile,
   ignored,
   blocked,
   onClose,
+  align = 'left',
 }: {
   user: PublicUser;
   nickname: string | null;
   main: boolean;
   onMain: () => void;
+  /** Cartão simples: primeiro item "Ver Perfil Completo". */
+  onFullProfile?: () => void;
   ignored: boolean;
   blocked: boolean;
   onClose: () => void;
+  align?: 'left' | 'right';
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [invite, setInvite] = useState(false);
@@ -389,8 +394,9 @@ function MoreMenu({
   }
 
   return (
-    <div ref={box} className="absolute top-full left-0 z-20 mt-1.5 w-60 rounded-xl border border-edge bg-rail p-1.5 text-sm shadow-2xl">
-      {nickname && (
+    <div ref={box} className={cx('absolute top-full z-20 mt-1.5 w-60 rounded-xl border border-edge bg-rail p-1.5 text-sm shadow-2xl', align === 'left' ? 'left-0' : 'right-0')}>
+      {onFullProfile && <Item onClick={act(onFullProfile)}>Ver Perfil Completo</Item>}
+      {!onFullProfile && nickname && (
         <Item onClick={act(onMain)} sub={main ? nickname : user.displayName}>
           {main ? 'Ver perfil do servidor' : 'Ver perfil principal'}
         </Item>
@@ -409,7 +415,7 @@ function MoreMenu({
             Convidar para o servidor
           </Item>
           {invite && (
-            <div className="absolute top-0 left-full z-30 ml-1 max-h-80 w-56 overflow-y-auto rounded-xl border border-edge bg-rail p-1.5 shadow-2xl">
+            <div className={cx('absolute top-0 z-30 max-h-80 w-56 overflow-y-auto rounded-xl border border-edge bg-rail p-1.5 shadow-2xl', align === 'left' ? 'left-full ml-1' : 'right-full mr-1')}>
               {servers.map((sv) => (
                 <Item key={sv.id} onClick={act(() => sendInvite(sv))}>
                   <span className="flex min-w-0 items-center gap-2">
