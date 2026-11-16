@@ -227,10 +227,10 @@ export function VoiceUserMenu({
         <>
           <div className="px-2.5 py-1.5">
             <p className="mb-1.5 flex justify-between font-medium text-soft">
-              Volume do usuário
+              Volume do agente
               <span className="text-muted">{musicMuted ? 0 : musicVolume}%</span>
             </p>
-            <Slider value={musicMuted ? 0 : musicVolume} onChange={setMusicVolume} className="w-full" label="Volume do usuário" />
+            <Slider value={musicMuted ? 0 : musicVolume} onChange={setMusicVolume} className="w-full" label="Volume do agente" />
           </div>
           <Sep />
           <Item onClick={run(toggleMusicMute, true)} check={musicMuted}>
