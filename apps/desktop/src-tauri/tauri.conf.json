@@ -93,7 +93,7 @@
         "https://useline.tech/updates/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }
