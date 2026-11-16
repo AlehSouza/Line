@@ -18,7 +18,7 @@ export type Modal =
   | { kind: 'nickname'; serverId: string; userId: string }
   | { kind: 'invite'; serverId: string }
   | { kind: 'profile' }
-  | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' }
+  | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' | 'games' | 'activity' }
   | { kind: 'create-poll'; channelId: string }
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }

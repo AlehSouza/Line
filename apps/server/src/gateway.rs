@@ -242,6 +242,7 @@ async fn on_connect(
 
     s.on("typing:start", typing_start);
     s.on("presence:activity", presence_activity);
+    s.on("presence:game", presence_game);
     s.on("voice:join", voice_join);
     s.on("voice:leave", voice_leave);
     s.on("voice:state", voice_state);
@@ -319,6 +320,12 @@ async fn presence_activity(
     if changed {
         app.broadcast_presence(&q, &me);
     }
+}
+
+/// Jogo aberto no app do Windows: `{ name, icon }` ou null.
+async fn presence_game(State(app): State<AppRef>, Extension(UserId(me)): Extension<UserId>, TryData(d): TryData<Value>) {
+    let d = d.ok();
+    app.get().set_game(&me, d.as_ref().filter(|v| !v.is_null()));
 }
 
 async fn voice_join(
@@ -597,5 +604,6 @@ async fn on_disconnect(
     let went_offline = lock(&app.store.presence).disconnect(&me, s.id);
     if went_offline {
         app.broadcast_presence(&q, &me);
+        app.clear_game(&q, &me);
     }
 }

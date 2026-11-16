@@ -12,6 +12,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter};
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 
+pub mod activity;
 pub mod admin;
 pub use admin::{BAN_FOREVER, NewReport};
 

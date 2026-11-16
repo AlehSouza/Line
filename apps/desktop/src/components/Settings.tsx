@@ -7,10 +7,11 @@ import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
+import { ActivityPrivacySection, GamesSection } from './Activity';
 import { showError, toast } from './Dialogs';
 import { getTheme, setTheme, THEMES, type ThemeId } from '@/lib/theme';
 
-type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'blocked';
+type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'blocked' | 'games' | 'activity';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
   { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
@@ -18,6 +19,8 @@ const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] =
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
   { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
+  { id: 'games', label: 'Jogos registrados', icon: <Icons.Gamepad size={18} />, keywords: 'jogos apps registrados jogo atual adicionados atividade' },
+  { id: 'activity', label: 'Privacidade nas atividades', icon: <Icons.Users size={18} />, keywords: 'jogos apps atividade privacidade compartilhar servidores' },
 ];
 
 /** Configurações do usuário em tela cheia: navegação à esquerda, conteúdo à direita. */
@@ -69,6 +72,7 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
           <nav className="flex flex-col gap-0.5">
             {nav.map((n) => (
               <div key={n.id}>
+                {n.id === 'games' && <p className="mt-3 mb-1 px-3 text-xs font-bold tracking-wide text-muted uppercase">Jogos e apps</p>}
                 <button
                   onClick={() => setSection(n.id)}
                   className={cx(
@@ -143,6 +147,8 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               {section === 'appearance' && <AppearanceSection />}
               {section === 'voice' && <VoiceSettingsPanel />}
               {section === 'blocked' && <BlockedSection />}
+              {section === 'games' && <GamesSection />}
+              {section === 'activity' && <ActivityPrivacySection />}
             </div>
           </div>
         </section>

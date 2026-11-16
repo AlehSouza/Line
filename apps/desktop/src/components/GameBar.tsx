@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { detectGame, hasGameDetection, type RunningGame } from '@/lib/nativeScreen';
 import { toggleScreen, useVoice } from '@/lib/voice';
 import { ScreenShareModal } from './Voice';
+import { reportGame } from '@/lib/session';
 import { Icons } from './ui';
 
 /** De quanto em quanto tempo olha se abriu/fechou um jogo. */
@@ -45,6 +46,12 @@ export function GameBar() {
       window.removeEventListener('focus', check);
     };
   }, [enabled]);
+
+  // A Atividade da lista de pessoas mostra o que cada um está jogando.
+  useEffect(() => {
+    if (!enabled) return;
+    reportGame(game ? { name: game.name, icon: game.icon?.startsWith('data:image/png') && game.icon.length < 48_000 ? game.icon : undefined } : null);
+  }, [enabled, game?.name]);
 
   if (!enabled || !game) return null;
   const canStream = inCall && !streaming;

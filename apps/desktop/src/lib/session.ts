@@ -112,6 +112,15 @@ export function replaceToken(token: string) {
   if (socket) connectSocket();
 }
 
+let lastGame: { name: string; icon?: string } | null = null;
+
+/** Conta ao servidor qual jogo está aberto (ou null). Só manda quando muda. */
+export function reportGame(game: { name: string; icon?: string } | null) {
+  if ((game?.name ?? null) === (lastGame?.name ?? null)) return;
+  lastGame = game;
+  socket?.emit('presence:game', game);
+}
+
 export function logout() {
   unbindVoice();
   socket?.disconnect();
@@ -216,10 +225,13 @@ function connectSocket() {
 
   s.on('connect', () => {
     useLine.setState({ connection: 'connected' });
+    // Reconectou: conta de novo o jogo aberto (o servidor esquece quando a conexão cai).
+    if (lastGame) s.emit('presence:game', lastGame);
     void syncVoice();
     void syncMusic();
   });
   s.on('disconnect', () => useLine.setState({ connection: 'disconnected' }));
+  s.on('activity:update', (p) => window.dispatchEvent(new CustomEvent('line:activity', { detail: p })));
   s.on('connect_error', (err) => {
     useLine.setState({ connection: 'disconnected' });
     if (err.message === 'unauthorized') logout();

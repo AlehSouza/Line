@@ -15,7 +15,18 @@ import type {
 } from './types';
 
 /** Eventos que o servidor envia para o cliente via WebSocket (Socket.IO). */
+/** Jogo de agora na Atividade. */
+export interface ActivityGame {
+  name: string;
+  since: string;
+  icon?: string | null;
+  cover?: string | null;
+  totalSecs?: number | null;
+}
+
 export interface ServerToClientEvents {
+  /** Jogo de alguém mudou (só chega para quem pode ver). */
+  'activity:update': (payload: { userId: string; game: ActivityGame | null }) => void;
   ready: (payload: { user: SelfUser }) => void;
   'message:create': (message: Message) => void;
   'message:update': (message: Message) => void;
@@ -66,6 +77,8 @@ export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; e
 export interface ClientToServerEvents {
   'typing:start': (payload: { channelId: string }) => void;
   'presence:activity': (payload: { idle: boolean }) => void;
+  /** Jogo aberto agora (app do Windows) ou null. */
+  'presence:game': (payload: { name: string; icon?: string } | null) => void;
   'voice:join': (payload: { channelId: string; muted?: boolean; deafened?: boolean }, ack: (res: VoiceJoinResult) => void) => void;
   'voice:leave': () => void;
   'voice:state': (patch: Partial<Pick<VoiceState, 'muted' | 'deafened' | 'cameraStreamId' | 'screenStreamId'>>) => void;

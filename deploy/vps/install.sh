@@ -98,6 +98,8 @@ EnvironmentFile=-/etc/line/giphy.env
 EnvironmentFile=-/etc/line/smtp.env
 # GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET: "Entrar com Google".
 EnvironmentFile=-/etc/line/google.env
+# IGDB_CLIENT_ID e IGDB_CLIENT_SECRET (app da Twitch): capas dos jogos na Atividade.
+EnvironmentFile=-/etc/line/igdb.env
 # ADMIN_USERS: ids das contas com acesso ao painel backoffice.useline.tech (separados por vírgula).
 EnvironmentFile=-/etc/line/admin.env
 ExecStart=/opt/line/line-server

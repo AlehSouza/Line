@@ -74,6 +74,9 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/password", post(change_password))
         .route("/users/@me/code", post(send_email_code))
         .route("/users/@me/password/link", post(send_reset_link))
+        .route("/users/@me/games", get(my_games).patch(update_my_game))
+        .route("/users/@me/activity-settings", get(get_activity_settings).put(put_activity_settings))
+        .route("/servers/{id}/activities", get(server_activities))
         .route("/users/{id}", get(get_user))
         .route("/users/{id}/mutual", get(get_mutual))
         .route("/search", get(search))
@@ -621,6 +624,73 @@ async fn reset_password(State(app): S, b: Bytes) -> Res {
 }
 
 // ---------- usuários ----------
+
+// ---------- atividade de jogos ----------
+
+async fn my_games(State(app): S, Me(me): Me) -> Res {
+    let q = app.store.q();
+    let current = crate::store::lock(&app.playing.0).get(&me).map(|(n, _, _)| n.clone());
+    ok(json!({ "current": current, "games": q.user_games(&me), "covers": app.igdb.is_some() }))
+}
+
+#[derive(serde::Deserialize)]
+struct GamePatch {
+    name: String,
+    hidden: Option<bool>,
+    #[serde(default)]
+    remove: bool,
+}
+
+async fn update_my_game(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let p: GamePatch = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let q = app.store.q();
+    if p.remove {
+        q.remove_game(&me, &p.name);
+    } else if let Some(h) = p.hidden {
+        if !q.set_game_hidden(&me, &p.name, h) {
+            return Err(not_found("Jogo"));
+        }
+    }
+    app.broadcast_activity(&q, &me);
+    ok(json!({ "games": q.user_games(&me) }))
+}
+
+fn activity_settings_json(q: &Q, me: &str) -> serde_json::Value {
+    let s = q.activity_settings(me);
+    json!({ "share": s.share, "scope": s.scope, "hiddenServers": s.hidden_servers })
+}
+
+async fn get_activity_settings(State(app): S, Me(me): Me) -> Res {
+    ok(activity_settings_json(&app.store.q(), &me))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivitySettingsInput {
+    share: bool,
+    scope: String,
+    #[serde(default)]
+    hidden_servers: Vec<String>,
+}
+
+async fn put_activity_settings(State(app): S, Me(me): Me, b: Bytes) -> Res {
+    let p: ActivitySettingsInput = serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    if !matches!(p.scope.as_str(), "all" | "small" | "none") {
+        return Err(validation("Opção inválida"));
+    }
+    let q = app.store.q();
+    let mine = q.server_ids_of(&me);
+    let hidden: Vec<String> = p.hidden_servers.into_iter().filter(|s| mine.contains(s)).collect();
+    q.set_activity_settings(&me, &crate::store::activity::ActivitySettings { share: p.share, scope: p.scope, hidden_servers: hidden });
+    app.broadcast_activity(&q, &me);
+    ok(activity_settings_json(&q, &me))
+}
+
+async fn server_activities(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    ok(app.server_activities(&q, &me, &id))
+}
 
 async fn get_me(State(app): S, Me(me): Me) -> Res {
     ok(app.store.q().self_user(&me))

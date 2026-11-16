@@ -2,6 +2,7 @@
 //!
 //! Usado de dois jeitos: como binário (`line-server`) e embutido no app desktop (Tauri),
 //! que sobe o servidor junto com a janela.
+pub mod activity;
 pub mod admin;
 pub mod auth;
 pub mod captcha;
@@ -72,6 +73,9 @@ pub struct App {
     /// (cada um pode ocupar até 50 MB de memória).
     pub media_requests: captcha::SignupLimiter,
     pub media_slots: tokio::sync::Semaphore,
+    /// Jogo aberto agora de cada pessoa (memória) e capas da IGDB (IGDB_CLIENT_ID/SECRET).
+    pub playing: activity::Playing,
+    pub igdb: Option<activity::Igdb>,
     /// Contas com acesso ao painel administrador (ADMIN_USERS: ids das contas, separados por vírgula).
     pub admins: Vec<String>,
     /// Pedidos ao painel admin por IP e denúncias/bug reports por usuário.
@@ -267,6 +271,8 @@ pub fn build(
         upload_quota: limits::ByteQuota::new(UPLOAD_QUOTA, std::time::Duration::from_secs(24 * 60 * 60)),
         media_requests: captcha::SignupLimiter::with(30, std::time::Duration::from_secs(10 * 60)),
         media_slots: tokio::sync::Semaphore::new(4),
+        playing: activity::Playing::default(),
+        igdb: activity::Igdb::from_env(),
         admins: std::env::var("ADMIN_USERS")
             .unwrap_or_default()
             .split(',')
