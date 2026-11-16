@@ -795,12 +795,34 @@ function snapshotView(r) {
   }
   if (!m) return r.messageContent ? h('div', { class: 'quote' }, r.messageContent) : null;
   const where = m.server ? `${m.server.name} · #${m.channel?.name || '?'}` : 'Conversa privada';
-  return h(
+  const main = h(
     'div',
     { class: 'quote' },
     h('div', { class: 'muted small', style: 'margin-bottom:4px' }, h('b', { style: 'color:var(--fg)' }, m.author?.displayName || '?'), ` @${m.author?.username || '?'} · ${where} · ${date(m.createdAt)}`, m.editedAt ? ` (editada ${date(m.editedAt)})` : '', ` · id ${m.id}`),
     m.content || h('span', { class: 'muted' }, '(sem texto)'),
     m.attachments?.length ? h('div', { class: 'muted small', style: 'margin-top:4px' }, `Anexos: ${m.attachments.map((a) => a.filename).join(', ')}`) : null,
+  );
+  const before = m.before || [];
+  const after = m.after || [];
+  if (!before.length && !after.length) return main;
+  // Contexto guardado na hora da denúncia: até 5 antes e 5 depois, com a denunciada destacada.
+  const line = (x) =>
+    h(
+      'div',
+      { style: 'padding:4px 0;opacity:.75' },
+      h('div', { class: 'muted small' }, h('b', { style: 'color:var(--fg)' }, x.author?.displayName || '?'), ` @${x.author?.username || '?'} · ${date(x.createdAt)}`, x.editedAt ? ' (editada)' : ''),
+      x.content || h('span', { class: 'muted' }, '(sem texto)'),
+      x.attachments?.length ? h('div', { class: 'muted small' }, `Anexos: ${x.attachments.map((a) => a.filename).join(', ')}`) : null,
+    );
+  main.style.borderLeft = '3px solid var(--danger, #e5484d)';
+  main.style.opacity = '1';
+  return h(
+    'div',
+    { style: 'margin-top:8px' },
+    h('div', { class: 'muted small' }, `Contexto: ${before.length} antes e ${after.length} depois`),
+    before.map(line),
+    main,
+    after.map(line),
   );
 }
 
