@@ -167,7 +167,7 @@ impl App {
         match playing {
             Some((name, since)) if !q.game_hidden(user_id, &name) => {
                 let info = q.game_info(user_id, &name).unwrap_or(json!({}));
-                json!({ "userId": user_id, "game": { "name": name, "since": since, "icon": info.get("icon"), "cover": info.get("cover"), "totalSecs": info.get("totalSecs") } })
+                json!({ "userId": user_id, "game": { "name": name, "since": since, "icon": info.get("icon"), "cover": info.get("cover"), "totalSecs": info.get("totalSecs"), "weekSecs": info.get("weekSecs") } })
             }
             _ => json!({ "userId": user_id, "game": null }),
         }
@@ -273,7 +273,7 @@ impl App {
                 out.push((
                     true,
                     since.clone(),
-                    json!({ "userId": id, "playing": true, "name": name, "since": since, "icon": info.get("icon"), "cover": info.get("cover"), "totalSecs": info.get("totalSecs") }),
+                    json!({ "userId": id, "playing": true, "name": name, "since": since, "icon": info.get("icon"), "cover": info.get("cover"), "totalSecs": info.get("totalSecs"), "weekSecs": info.get("weekSecs") }),
                 ));
             } else {
                 rest.push(id.clone());

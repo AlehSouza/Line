@@ -395,6 +395,11 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (user_id, target_id)
   );
 "#,
+    // Tempo de jogo na semana (segunda-feira UTC em week_start).
+    r#"
+  ALTER TABLE user_games ADD COLUMN week_start TEXT;
+  ALTER TABLE user_games ADD COLUMN week_secs INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

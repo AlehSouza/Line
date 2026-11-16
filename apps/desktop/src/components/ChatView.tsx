@@ -12,6 +12,7 @@ import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
+import { GameShareCard, gameFromContent } from './GameCard';
 import { BotTag, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
@@ -683,6 +684,8 @@ function MessageRow({
             <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
           ) : musicFromContent(message.content) ? (
             <MusicAnnounceCard data={musicFromContent(message.content)!} serverId={serverId} />
+          ) : gameFromContent(message.content) ? (
+            <GameShareCard data={gameFromContent(message.content)!} />
           ) : gifFromContent(message.content) ? (
             <GifEmbed url={gifFromContent(message.content)!} />
           ) : (
@@ -694,7 +697,7 @@ function MessageRow({
         )}
         {!missingFeatures(message.requires).length && (
           <>
-        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && (
+        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
         <AttachmentList attachments={message.attachments} />
