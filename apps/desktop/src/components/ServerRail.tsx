@@ -9,7 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { actions, permsOf, useLine } from '@/lib/store';
 import { useVoice } from '@/lib/voice';
-import { openContextMenu, type MenuEntry } from './ContextMenu';
+import { openContextMenu, useContextMenuOpen, type MenuEntry } from './ContextMenu';
 import { Avatar, cx, DefaultServerIcon, Icons, Logo } from './ui';
 import { useIncomingCount } from './FriendsView';
 import { confirmDialog } from './Dialogs';
@@ -195,6 +195,8 @@ function RailItem({
   children: React.ReactNode;
 }) {
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null);
+  // Clique direito abre o menu: o tooltip some e só volta quando o mouse sair e entrar de novo.
+  const menuOpen = useContextMenuOpen();
   return (
     <div
       {...drag}
@@ -218,7 +220,10 @@ function RailItem({
       <button
         aria-label={label}
         onClick={onClick}
-        onContextMenu={onContextMenu}
+        onContextMenu={(e) => {
+          setTip(null);
+          onContextMenu?.(e);
+        }}
         className={cx(
           'relative flex h-12 w-12 items-center justify-center transition-all',
           round ? 'rounded-full' : 'rounded-[14px]', // servidor: quadrado com cantos arredondados (~30%); DM: círculo
@@ -244,6 +249,7 @@ function RailItem({
         )}
       </button>
       {tip &&
+        !menuOpen &&
         createPortal(
           <div
             style={{ left: tip.x + 12, top: tip.y }}

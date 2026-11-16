@@ -675,8 +675,16 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
                     "attachments": x.attachments.iter().map(|a| json!({ "filename": a.filename })).collect::<Vec<_>>(),
                 })
             };
-            let before: Vec<Value> = q.messages(&m.channel_id, Some(&m.id), 5).iter().map(brief).collect();
-            let after: Vec<Value> = q.messages_after(&m.channel_id, &m.id, 5).iter().map(brief).collect();
+            let before: Vec<Value> = q
+                .messages(&m.channel_id, Some(&m.id), 5)
+                .iter()
+                .map(brief)
+                .collect();
+            let after: Vec<Value> = q
+                .messages_after(&m.channel_id, &m.id, 5)
+                .iter()
+                .map(brief)
+                .collect();
             snapshot = Some(json!({
                 "before": before,
                 "after": after,

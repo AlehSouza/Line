@@ -3,6 +3,7 @@
 import type { Channel, Message, NotifyLevel } from '@line/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { renderMarkdown } from '@/lib/markdown';
 import {
@@ -371,7 +372,7 @@ function ChannelOverrideRow({ channel }: { channel: Channel }) {
 export function NotificationsSection() {
   const n = useLine((s) => s.notify);
   const dnd = useLine((s) => s.me?.status === 'dnd');
-  const servers = useLine((s) => s.serverOrder.map((id) => s.servers[id]!).filter(Boolean));
+  const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]!).filter(Boolean)));
   const [perm, setPerm] = useState<NotificationPermission | 'none'>(() => (typeof Notification === 'undefined' ? 'none' : Notification.permission));
   const set = (k: 'desktop' | 'sounds' | 'badge' | 'flash' | 'preview', v: boolean) => updateNotify((x) => ({ ...x, [k]: v }));
   const desktopApp = typeof window !== 'undefined' && !!window.line?.isDesktop;
