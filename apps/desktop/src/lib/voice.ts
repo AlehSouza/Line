@@ -853,12 +853,13 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
         height: { ideal: r.height, max: r.height },
         frameRate: { ideal: fps, max: fps },
       },
-      audio: true,
+      // Tira do áudio capturado o som do próprio Line (vozes, sons, música), para os outros não
+      // ouvirem a própria voz de volta. É uma restrição da trilha de áudio: no nível de cima do
+      // pedido o navegador ignorava e o som da chamada ia junto na transmissão.
+      audio: { restrictOwnAudio: true, suppressLocalAudioPlayback: false } as MediaTrackConstraints,
       // Pede o áudio do sistema já marcado no seletor (Chromium/WebView2). No Windows ele vem ao compartilhar a tela inteira.
       systemAudio: 'include',
       windowAudio: 'system',
-      // Tira do áudio capturado o som do próprio Line, para os outros não ouvirem a própria voz de volta.
-      restrictOwnAudio: true,
     } as DisplayMediaStreamOptions);
   }
   const video = stream.getVideoTracks()[0];
