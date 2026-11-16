@@ -157,6 +157,10 @@ export const api = {
   authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean; google?: boolean }>('GET', '/auth/config'),
   googleFinish: (code: string, desktop = false) => request<AuthResponse>('POST', '/auth/google/finish', { code, desktop }),
   forgotPassword: (email: string) => request<void>('POST', '/auth/forgot', { email }),
+  resetInfo: (token: string) =>
+    request<{ username: string; displayName: string; avatarUrl?: string | null; avatarColor: string }>('GET', `/auth/reset/info?token=${enc(token)}`),
+  /** Manda o link de "redefinir senha" para o email da própria conta. */
+  sendResetLink: () => request<{ email: string }>('POST', '/users/@me/password/link'),
   resetPassword: (token: string, newPassword: string) =>
     request<{ username: string }>('POST', '/auth/reset', { token, newPassword }),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/auth/login', { username, password }),

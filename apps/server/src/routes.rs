@@ -64,6 +64,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/forgot", post(forgot_password))
         .route("/auth/reset", post(reset_password))
+        .route("/auth/reset/info", get(reset_info))
         .route("/auth/google/start", get(google_start))
         .route("/auth/google/callback", get(google_callback))
         .route("/auth/google/finish", post(google_finish))
@@ -72,6 +73,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/@me/code", post(send_email_code))
+        .route("/users/@me/password/link", post(send_reset_link))
         .route("/users/{id}", get(get_user))
         .route("/users/{id}/mutual", get(get_mutual))
         .route("/search", get(search))
@@ -533,22 +535,66 @@ async fn forgot_password(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
         q.user_by_email(&input.email).filter(|u| !q.reset_requested_recently(&u.id, 60))
     };
     if let Some(user) = found {
-        use base64::Engine;
-        use rand::RngCore;
-        let mut bytes = [0u8; 32];
-        rand::rng().fill_bytes(&mut bytes);
-        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-        app.store.q().create_password_reset(&user.id, &reset_token_hash(&token), RESET_MINUTES);
-        // Envia em segundo plano: a resposta demora o mesmo com ou sem conta.
-        let app = app.clone();
-        tokio::spawn(async move {
-            if let Some(mailer) = &app.mailer {
-                let link = format!("{}/?reset={token}", mailer.app_url);
-                mailer.send_password_reset(&input.email, &user.display_name, &link).await;
-            }
-        });
+        issue_reset_link(&app, &user.id, input.email.clone(), user.display_name.clone());
     }
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Cria um token de recuperação e manda o link por email em segundo plano.
+fn issue_reset_link(app: &Arc<App>, user_id: &str, email: String, name: String) {
+    use base64::Engine;
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    app.store.q().create_password_reset(user_id, &reset_token_hash(&token), RESET_MINUTES);
+    let app = app.clone();
+    tokio::spawn(async move {
+        if let Some(mailer) = &app.mailer {
+            let link = format!("{}/?reset={token}", mailer.app_url);
+            mailer.send_password_reset(&email, &name, &link).await;
+        }
+    });
+}
+
+/// "Redefinir senha" nas configurações: manda o link para o email da própria conta
+/// (serve também para conta do Google, que não tem senha).
+async fn send_reset_link(State(app): S, Me(me): Me) -> Res {
+    if app.mailer.is_none() {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "RESET_DISABLED", "O envio de email ainda não está disponível."));
+    }
+    let (email, name) = {
+        let q = app.store.q();
+        let user = q.user_row(&me).ok_or_else(|| validation("Conta não encontrada"))?;
+        let Some(email) = user.email.clone().filter(|e| !e.is_empty()) else {
+            return Err(validation("Sua conta não tem email cadastrado."));
+        };
+        if q.reset_requested_recently(&me, 60) {
+            return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Espere um minuto para pedir outro link."));
+        }
+        (email, user.display_name)
+    };
+    issue_reset_link(&app, &me, email.clone(), name);
+    ok(json!({ "email": email }))
+}
+
+/// Dono do link de recuperação, para a página mostrar "Redefinindo senha de ...".
+async fn reset_info(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let token = qs.get("token").map(String::as_str).unwrap_or_default();
+    if token.is_empty() || token.len() > 128 {
+        return Err(validation("Link de recuperação inválido"));
+    }
+    let q = app.store.q();
+    let user = q
+        .password_reset_user(&reset_token_hash(token))
+        .and_then(|id| q.public_user(&id))
+        .ok_or_else(|| validation("Esse link expirou ou já foi usado. Peça um novo."))?;
+    ok(json!({
+        "username": user.username,
+        "displayName": user.display_name,
+        "avatarUrl": user.avatar_url,
+        "avatarColor": user.avatar_color,
+    }))
 }
 
 /// Define a senha nova a partir do token do email (vale uma vez, por 30 minutos).
