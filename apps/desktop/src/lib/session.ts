@@ -1,5 +1,6 @@
 'use client';
 
+import { loadIgnored } from './ignored';
 import type { ClientToServerEvents, Message, ServerToClientEvents } from '@line/shared';
 import { io, type Socket } from 'socket.io-client';
 import { api, configureApi, DEFAULT_SERVER_URL } from './api';
@@ -132,12 +133,31 @@ export function logout() {
   actions.reset();
 }
 
+/** Link de perfil compartilhado (useline.tech/app/?perfil=<id>): abre o perfil e limpa a URL. */
+function openSharedProfile() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const id = url.searchParams.get('perfil');
+  if (!id) return;
+  url.searchParams.delete('perfil');
+  window.history.replaceState(window.history.state, '', url.toString());
+  api.user(id).then(
+    (u) => {
+      actions.upsertUsers([u]);
+      actions.openModal({ kind: 'full-profile', userId: u.id });
+    },
+    () => {},
+  );
+}
+
 async function bootstrap() {
   const [servers, dms, friends] = await Promise.all([api.servers(), api.dms(), api.friends()]);
   actions.setServers(servers);
   actions.setDms(dms);
   actions.setFriends(friends);
+  loadIgnored();
   restoreView();
+  openSharedProfile();
   connectSocket();
   setupIdleDetection();
   if (!typingTicker) typingTicker = setInterval(actions.pruneTyping, 2000);

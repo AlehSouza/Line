@@ -376,6 +376,25 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE messages ADD COLUMN deleted_at TEXT;
 "#,
+    // Perfil completo: estilo do nome, jogo favorito e jogos que a pessoa gosta (JSON), conexões
+    // (JSON [{type, name}]), notas pessoais sobre outras pessoas e usuários ignorados.
+    r#"
+  ALTER TABLE users ADD COLUMN name_style TEXT;
+  ALTER TABLE users ADD COLUMN profile_games TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE users ADD COLUMN connections TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE user_notes (
+    owner_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    note      TEXT NOT NULL,
+    PRIMARY KEY (owner_id, target_id)
+  );
+  CREATE TABLE user_ignores (
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, target_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

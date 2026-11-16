@@ -1,5 +1,6 @@
 'use client';
 
+import { StyledName } from '@/lib/nameStyle';
 import type { PublicUser } from '@line/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
@@ -71,8 +72,10 @@ export function MemberList({ serverId }: { serverId: string }) {
           >
             <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
-              <span className="flex items-center gap-1 truncate text-[15px] font-medium" style={{ color: m.user.botStyle?.nameColor ?? colorOf(m.roleIds) }}>
-                {m.nickname || m.user.displayName}
+              <span className="flex items-center gap-1 truncate text-[15px] font-medium">
+                <StyledName user={m.user} color={m.user.botStyle?.nameColor ?? colorOf(m.roleIds)} className="truncate">
+                  {m.nickname || m.user.displayName}
+                </StyledName>
                 {m.user.bot && <BotTag user={m.user} />}
                 <UserTagBadge user={m.user} />
                 {m.userId === ownerId && (

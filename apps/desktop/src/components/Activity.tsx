@@ -25,7 +25,7 @@ export function ago(iso?: string | null) {
   return `há ${m} ${m === 1 ? 'mês' : 'meses'}`;
 }
 
-function since(iso?: string) {
+export function since(iso?: string) {
   if (!iso) return 'Jogando agora';
   const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
   if (min < 1) return 'Jogando agora';

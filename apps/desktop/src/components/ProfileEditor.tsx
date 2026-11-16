@@ -1,6 +1,11 @@
 'use client';
 
-import { useRef, useState, type ReactNode } from 'react';
+import type { FavoriteSong, ProfileConnection, ProfileGame, UserProfile } from '@line/shared';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { StyledName } from '@/lib/nameStyle';
+import { ActivityList } from './FullProfile';
+import { NameStyleModal } from './NameStyleModal';
+import { ConnectionsEditor, GamesBoard, SongEditor } from './ProfileExtras';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ImageCropper } from './ImageCropper';
@@ -32,7 +37,30 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [crop, setCrop] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null);
+  const [extras, setExtras] = useState<UserProfile | null>(null);
+  const [favorite, setFavorite] = useState<ProfileGame | null>(null);
+  const [liked, setLiked] = useState<ProfileGame[]>([]);
+  const [connections, setConnections] = useState<ProfileConnection[]>([]);
+  const [song, setSong] = useState<FavoriteSong | null>(null);
+  const [extrasChanged, setExtrasChanged] = useState(false);
+  const [nameStyleOpen, setNameStyleOpen] = useState(false);
+  const [tab, setTab] = useState<'games' | 'activity'>('games');
+
+  useEffect(() => {
+    if (!me) return;
+    api.profile(me.id).then((p) => {
+      setExtras(p);
+      setFavorite(p.favoriteGame);
+      setLiked(p.likedGames);
+      setConnections(p.connections);
+      setSong(p.favoriteSong ?? null);
+    }, () => {});
+  }, [me?.id]);
   if (!me) return null;
+  const changeExtras = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setExtrasChanged(true);
+  };
 
   /** Escolheu a imagem: abre o recorte (GIF vai direto para manter a animação). */
   function pick(file: File, kind: 'avatar' | 'banner') {
@@ -78,6 +106,10 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           ...(tagServerId !== (me?.tag?.serverId ?? null) ? { tagServerId } : {}),
         }),
       );
+      if (extrasChanged) {
+        await api.updateProfileExtras({ favoriteGame: favorite, likedGames: liked, connections });
+        setExtrasChanged(false);
+      }
       setSaved(true);
       onSaved?.();
     } catch (e) {
@@ -154,25 +186,51 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           </div>
         </Field>
 
+        <Field label="Estilo do nome exibido" hint="Fonte, efeito e cores do seu nome no Line.">
+          <button
+            type="button"
+            onClick={() => setNameStyleOpen(true)}
+            className="flex h-14 w-full items-center justify-center rounded-lg border border-edge bg-rail text-xl font-bold hover:bg-raise"
+          >
+            <StyledName user={me}>{displayName || me.username}</StyledName>
+          </button>
+        </Field>
+
+        <Field label="Música favorita" hint="Aparece num mini player acima da sua bio. Cole o link do YouTube ou escreva o nome.">
+          <SongEditor song={song} onChange={setSong} />
+        </Field>
+
+        <Field label="Conexões" hint="Suas contas em outros lugares. Aparecem no seu perfil.">
+          <ConnectionsEditor value={connections} onChange={changeExtras(setConnections)} />
+        </Field>
+
         <div>
-          <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Conexões</p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {['Spotify', 'Twitch', 'Steam', 'GitHub'].map((n) => (
+          <div className="mb-3 flex gap-5 border-b border-edge">
+            {(
+              [
+                ['games', 'Jogos'],
+                ['activity', 'Atividade'],
+              ] as const
+            ).map(([id, label]) => (
               <button
-                key={n}
-                disabled
-                title="Em breve"
-                className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-edge px-3 py-2.5 text-sm text-muted"
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={cx('-mb-px border-b-2 pb-2 text-sm font-semibold', tab === id ? 'border-fg text-fg' : 'border-transparent text-soft hover:text-fg')}
               >
-                <Icons.Link size={16} /> {n}
+                {label}
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-xs text-muted">Em breve você vai poder conectar suas contas.</p>
+          {tab === 'games' ? (
+            <GamesBoard favorite={favorite} liked={liked} edit={{ setFavorite: changeExtras(setFavorite), setLiked: changeExtras(setLiked) }} />
+          ) : (
+            <ActivityList profile={extras} />
+          )}
         </div>
-
       </div>
 
+      {nameStyleOpen && <NameStyleModal onClose={() => setNameStyleOpen(false)} />}
       {crop && (
         <ImageCropper
           file={crop.file}
@@ -197,6 +255,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           avatarUrl={avatar.url}
           bannerUrl={banner.url}
           createdAt={me.createdAt}
+          nameStyle={me.nameStyle}
           onAvatarFile={(f) => pick(f, 'avatar')}
           onBannerFile={(f) => pick(f, 'banner')}
         />
@@ -273,6 +332,7 @@ export function ProfileCard({
   avatarUrl,
   bannerUrl,
   createdAt,
+  nameStyle,
   children,
   onAvatarFile,
   onBannerFile,
@@ -287,6 +347,7 @@ export function ProfileCard({
   avatarUrl?: string | null;
   bannerUrl?: string | null;
   createdAt?: string;
+  nameStyle?: import('@line/shared').NameStyle | null;
   children?: ReactNode;
   /** Só no editor: deixa banner e foto clicáveis. */
   onAvatarFile?: (f: File) => void;
@@ -325,7 +386,9 @@ export function ProfileCard({
             </span>
           )}
         </div>
-        <p className="mt-2 text-xl font-bold">{name}</p>
+        <p className="mt-2 text-xl font-bold">
+          <StyledName style={nameStyle ?? null}>{name}</StyledName>
+        </p>
         <p className="text-sm text-soft">
           {username}
           {pronouns && <span className="text-muted"> • {pronouns}</span>}

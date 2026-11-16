@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { api } from '@/lib/api';
-import { actions, displayNameIn, permsOf, useLine } from '@/lib/store';
+import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { hasPerm, Perm } from '@line/shared';
 import { joinVoice } from '@/lib/voice';
 import { cx, Icons } from './ui';
@@ -22,6 +22,8 @@ export type MenuEntry =
       onClick: () => unknown;
       danger?: boolean;
       disabled?: boolean;
+      /** Submenu ao passar o mouse (o item em si não faz nada ao clicar). */
+      submenu?: () => ReactNode;
     }
   | 'sep'
   | null
@@ -198,6 +200,8 @@ function MenuBox({ x, y, items }: { x: number; y: number; items: MenuEntry[] }) 
       {list.map((it, i) =>
         it === 'sep' ? (
           <div key={i} className="mx-1.5 my-1 border-t border-edge" />
+        ) : it.submenu ? (
+          <SubmenuItem key={i} label={it.label} render={it.submenu} />
         ) : (
           <button
             key={i}
@@ -220,6 +224,83 @@ function MenuBox({ x, y, items }: { x: number; y: number; items: MenuEntry[] }) 
         ),
       )}
     </div>
+  );
+}
+
+/** Item com submenu: abre ao lado (à esquerda quando não cabe à direita). */
+function SubmenuItem({ label, render }: { label: string; render: () => ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState<{ left: boolean; top: number }>({ left: false, top: 0 });
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setSide({ left: r.right + 260 > window.innerWidth, top: Math.min(0, window.innerHeight - r.top - 340) });
+    setOpen(true);
+  };
+  return (
+    <div ref={ref} className="relative" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+      <button
+        role="menuitem"
+        onClick={() => (open ? setOpen(false) : show())}
+        className={cx(
+          'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left font-medium',
+          open ? 'bg-accent text-on-accent' : 'text-soft hover:bg-accent hover:text-on-accent',
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <Icons.ChevronRight size={15} className="shrink-0 opacity-80" />
+      </button>
+      {open && (
+        <div
+          className={cx('absolute z-[61] w-60', side.left ? 'right-full pr-1' : 'left-full pl-1')}
+          style={{ top: side.top }}
+        >
+          <div className="max-h-80 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">{render()}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Submenu "Cargos" do membro: todos os cargos com caixinha para dar/tirar. */
+function RolesSubmenu({ serverId, userId }: { serverId: string; userId: string }) {
+  const roles = useLine((s) => s.roles[serverId]);
+  const member = useLine((s) => s.members[serverId]?.[userId]);
+  const myTop = useLine((s) => topPosition(s, serverId, s.me?.id));
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!roles || !member) return null;
+  const list = roles.filter((r) => r.id !== serverId).sort((a, b) => b.position - a.position);
+  if (!list.length) return <p className="px-2.5 py-1.5 text-muted">Nenhum cargo.</p>;
+  return (
+    <>
+      {list.map((r) => {
+        const on = member.roleIds.includes(r.id);
+        const can = r.position < myTop && busy !== r.id;
+        return (
+          <button
+            key={r.id}
+            disabled={!can}
+            onClick={async () => {
+              setBusy(r.id);
+              try {
+                actions.upsertMember(await api.setMemberRole(serverId, userId, r.id, !on));
+              } catch (e) {
+                showError(e);
+              } finally {
+                setBusy(null);
+              }
+            }}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left font-medium text-soft hover:bg-hover hover:text-fg disabled:opacity-40"
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color ?? '#99aab5' }} />
+            <span className="min-w-0 flex-1 truncate">{r.name}</span>
+            <span className={cx('flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded border', on ? 'border-accent bg-accent text-on-accent' : 'border-soft/60')}>
+              {on && <Icons.Check size={13} />}
+            </span>
+          </button>
+        );
+      })}
+    </>
   );
 }
 
@@ -246,7 +327,7 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
     return dm;
   };
   return [
-    { label: 'Perfil', icon: <Icons.User size={15} />, onClick: () => actions.openModal({ kind: 'user', userId, at }) },
+    { label: 'Perfil', icon: <Icons.User size={15} />, onClick: () => actions.openModal({ kind: 'full-profile', userId, serverId }) },
     user && {
       label: 'Mencionar',
       icon: <Icons.AtSign size={15} />,
@@ -269,6 +350,13 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
       label: 'Alterar apelido',
       icon: <Icons.Edit size={15} />,
       onClick: () => actions.openModal({ kind: 'nickname', serverId, userId }),
+    },
+    serverId &&
+      s.members[serverId]?.[userId] &&
+      hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles) && {
+      label: 'Cargos',
+      onClick: () => {},
+      submenu: () => <RolesSubmenu serverId={serverId} userId={userId} />,
     },
     !isBot && 'sep',
     !isBot && id('Copiar ID do usuário', userId),

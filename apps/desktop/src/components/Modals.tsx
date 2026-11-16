@@ -1,5 +1,7 @@
 'use client';
 
+import { FullProfile } from './FullProfile';
+import { NameStyleModal } from './NameStyleModal';
 import { mobile } from '@/lib/mobile';
 
 import { ProfileEditor } from './ProfileEditor';
@@ -50,6 +52,10 @@ export function Modals() {
       return <NewDmModal onClose={close} />;
     case 'user':
       return <UserCard userId={modal.userId} at={modal.at} hover={modal.hover} onClose={close} />;
+    case 'full-profile':
+      return <FullProfile userId={modal.userId} serverId={modal.serverId} onClose={close} />;
+    case 'name-style':
+      return <NameStyleModal onClose={close} />;
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':

@@ -19,6 +19,7 @@ pub mod model;
 pub mod music;
 pub mod perms;
 pub mod presence;
+pub mod profile;
 pub mod routes;
 pub mod store;
 pub mod today;

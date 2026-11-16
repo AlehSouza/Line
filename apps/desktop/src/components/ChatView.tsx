@@ -1,5 +1,7 @@
 'use client';
 
+import { useIgnored } from '@/lib/ignored';
+import { StyledName } from '@/lib/nameStyle';
 import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, userMenu } from './ContextMenu';
@@ -483,6 +485,9 @@ function MessageRow({
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const showThreadAction = canThread && !message.thread;
   const mentionsMe = !mine && messageMentionsMe(message);
+  const ignored = useIgnored((s) => s.ids.includes(message.author.id));
+  const [reveal, setReveal] = useState(false);
+  const authorUser = useLine((s) => s.users[message.author.id]) ?? message.author;
 
   // Ao entrar em edição (botão, menu ou seta para cima), começa do texto atual.
   useEffect(() => {
@@ -518,6 +523,18 @@ function MessageRow({
           <p className="pt-2 text-[15px] text-soft">A mensagem foi excluída.</p>
           {message.thread && <ThreadChip thread={message.thread} />}
         </div>
+      </div>
+    );
+  }
+
+  if (ignored && !reveal) {
+    return (
+      <div className={cx('flex items-center gap-2 px-4 py-1 text-xs text-muted', !grouped && 'mt-3')}>
+        <Icons.EyeOff size={14} />
+        Mensagem de alguém que você ignorou.
+        <button type="button" onClick={() => setReveal(true)} className="font-semibold text-accent hover:underline">
+          Mostrar
+        </button>
       </div>
     );
   }
@@ -609,9 +626,10 @@ function MessageRow({
               onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
               onContextMenu={(e) => openContextMenu(e, userMenu(message.author.id, { x: e.clientX, y: e.clientY }, serverId))}
               className="font-semibold hover:underline"
-              style={{ color: nameColor }}
             >
-              {authorName}
+              <StyledName user={authorUser} color={nameColor}>
+                {authorName}
+              </StyledName>
             </button>
             {message.author.bot && <BotTag user={message.author} />}
             <UserTagBadge user={message.author} />

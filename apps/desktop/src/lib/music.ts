@@ -126,7 +126,7 @@ let loadedChannel: string | null = null;
 let reportedDuration: string | null = null;
 let engineStarted = false;
 
-function loadApi(): Promise<any> {
+export function loadApi(): Promise<any> {
   if (apiPromise) return apiPromise;
   apiPromise = new Promise((resolve) => {
     const w = window as any;

@@ -2,7 +2,7 @@
 
 import { mobile } from '@/lib/mobile';
 
-import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
+import { hasPerm, Perm, type FavoriteSong, type PublicUser, type Role, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
@@ -12,6 +12,8 @@ import { UserTagBadge } from './ServerTag';
 import { EmojiButton } from './EmojiField';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
+import { StyledName } from '@/lib/nameStyle';
+import { SongPlayer } from './ProfileExtras';
 
 export { statusOptions } from './StatusPicker';
 
@@ -42,9 +44,11 @@ export function UserCard({
   const [text, setText] = useState('');
   const dmRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [song, setSong] = useState<FavoriteSong | null>(null);
   const [error, setError] = useState('');
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
-  const roleColor = useMemberColor(useViewServer(), userId);
+  const viewServer = useViewServer();
+  const roleColor = useMemberColor(viewServer, userId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -60,6 +64,11 @@ export function UserCard({
       .catch(() => setMutual({ friends: [], servers: [] }));
   }, [userId, isMe]);
 
+  useEffect(() => {
+    if (other?.bot) return;
+    api.profile(userId).then((p) => setSong(p.favoriteSong ?? null), () => {});
+  }, [userId]);
+
   // Posiciona perto do clique sem sair da tela.
   useLayoutEffect(() => {
     const h = box.current?.offsetHeight ?? 400;
@@ -71,7 +80,7 @@ export function UserCard({
     const left = at.x + 16 + W < vw ? at.x + 16 : Math.max(12, at.x - 16 - W);
     const top = Math.min(Math.max(12, at.y - 40), vh - h - 12);
     setPos({ left, top: Math.max(12, top) });
-  }, [at, mutual, menu]);
+  }, [at, mutual, menu, song]);
 
   if (!user || !me) return null;
   const state = friend?.state;
@@ -206,7 +215,13 @@ export function UserCard({
           {/* Avatar + balão de pensamento */}
           <div className="relative z-[5] -mt-12 flex items-start gap-2">
             {/* Borda de 4px na cor do fundo do cartão (recorte), sem sombra; flex evita o vão da linha de texto. */}
-            <span className="flex shrink-0 rounded-full border-4" style={{ borderColor: ring, background: ring }}>
+            <button
+              type="button"
+              title="Ver perfil completo"
+              onClick={() => actions.openModal({ kind: 'full-profile', userId, serverId: viewServer })}
+              className="flex shrink-0 rounded-full border-4"
+              style={{ borderColor: ring, background: ring }}
+            >
               <Avatar
                 name={user.displayName}
                 color={user.avatarColor}
@@ -217,7 +232,7 @@ export function UserCard({
                 dotSize={20}
                 className="block"
               />
-            </span>
+            </button>
             {user.thought && (
               <span className="relative mt-14 max-w-[190px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
                 <span className="absolute top-1 -left-1.5 h-2.5 w-2.5 rounded-full border border-edge bg-side" />
@@ -226,8 +241,10 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: nameColor }}>
-            <span className="truncate">{user.displayName}</span>
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold">
+            <StyledName user={user} color={nameColor} className="truncate">
+              {user.displayName}
+            </StyledName>
             <UserTagBadge user={user} />
           </p>
           {/* Agente: o nome de usuário dele é um código interno, não aparece em lugar nenhum. */}
@@ -259,6 +276,11 @@ export function UserCard({
             </div>
           )}
 
+          {song && (
+            <div className="mt-3">
+              <SongPlayer song={song} />
+            </div>
+          )}
           {user.bio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
 
           {!isMe && <InVoice userId={userId} onClose={onClose} />}
@@ -430,8 +452,9 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
 }
 
 /** Tags de cargos da pessoa no servidor aberto, com + e x para quem pode gerenciar cargos. */
-function MemberRoles({ userId }: { userId: string }) {
-  const serverId = useViewServer();
+export function MemberRoles({ userId, serverId: fixed }: { userId: string; serverId?: string | null }) {
+  const viewServer = useViewServer();
+  const serverId = fixed !== undefined ? fixed : viewServer;
   const member = useLine((s) => (serverId ? s.members[serverId]?.[userId] : undefined));
   const roles = useLine((s) => (serverId ? s.roles[serverId] : undefined));
   const canRoles = useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles));
@@ -476,29 +499,52 @@ function MemberRoles({ userId }: { userId: string }) {
             >
               <Icons.Plus size={13} />
             </button>
-            {picker && (
-              <div className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
-                {assignable
-                  .sort((a, b) => b.position - a.position)
-                  .map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => {
-                        setPicker(false);
-                        void toggle(r.id, true);
-                      }}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-soft hover:bg-hover hover:text-fg"
-                    >
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
-                      <span className="truncate">{r.name}</span>
-                    </button>
-                  ))}
-              </div>
-            )}
+            {picker && <RolePicker roles={assignable} onPick={(id) => {
+              setPicker(false);
+              void toggle(id, true);
+            }} onClose={() => setPicker(false)} />}
           </span>
         )}
       </div>
       <ErrorText>{error}</ErrorText>
+    </div>
+  );
+}
+
+/** Lista de cargos para dar, com busca "Cargo" no topo. */
+function RolePicker({ roles, onPick, onClose }: { roles: Role[]; onPick: (id: string) => void; onClose: () => void }) {
+  const [text, setText] = useState('');
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const down = (e: MouseEvent) => !box.current?.contains(e.target as Node) && onClose();
+    window.addEventListener('mousedown', down);
+    return () => window.removeEventListener('mousedown', down);
+  }, [onClose]);
+  const q = text.trim().toLowerCase();
+  const list = [...roles].sort((a, b) => b.position - a.position).filter((r) => !q || r.name.toLowerCase().includes(q));
+  return (
+    <div ref={box} className="absolute top-full left-0 z-20 mt-1.5 w-60 rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && list[0] && onPick(list[0].id)}
+        placeholder="Cargo"
+        className="mb-1 w-full rounded-md border border-accent bg-side px-2.5 py-2 text-sm outline-none placeholder:text-muted"
+      />
+      <div className="max-h-56 overflow-y-auto">
+        {list.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => onPick(r.id)}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm font-medium text-soft hover:bg-hover hover:text-fg"
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: r.color ?? DEFAULT_ROLE_COLOR }} />
+            <span className="truncate">{r.name}</span>
+          </button>
+        ))}
+        {!list.length && <p className="px-2.5 py-2 text-sm text-muted">Nenhum cargo encontrado.</p>}
+      </div>
     </div>
   );
 }

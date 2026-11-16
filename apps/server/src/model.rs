@@ -23,6 +23,9 @@ pub struct PublicUser {
     /// Só para bots: aparência do nome e da etiqueta.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bot_style: Option<BotStyle>,
+    /// Estilo do nome exibido: { font, effect, colors }.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_style: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]
