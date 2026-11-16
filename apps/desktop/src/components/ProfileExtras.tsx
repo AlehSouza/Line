@@ -1,6 +1,8 @@
 'use client';
 
-import type { ConnectionType, ProfileConnection, ProfileGame } from '@line/shared';
+import type { ConnectionType, FavoriteSong, ProfileConnection, ProfileGame } from '@line/shared';
+import { thumbOf } from '@/lib/music';
+import { stopSong, toggleSong, useSongPreview } from '@/lib/songPreview';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { Button, cx, Icons, Input, Modal } from './ui';
@@ -282,5 +284,91 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
         </button>
       )}
     </Modal>
+  );
+}
+
+// ---------- música favorita ----------
+
+/** Mini player da música favorita (capa + tocar/pausar a prévia). */
+export function SongPlayer({ song, onRemove }: { song: FavoriteSong; onRemove?: () => void }) {
+  const playing = useSongPreview((s) => s.videoId === song.videoId);
+  const loading = useSongPreview((s) => s.videoId === song.videoId && s.loading);
+  useEffect(() => () => {
+    if (useSongPreview.getState().videoId === song.videoId) stopSong();
+  }, [song.videoId]);
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-edge bg-side/70 p-2">
+      <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-raise">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={thumbOf(song.videoId)} alt="" className={cx('h-full w-full object-cover', playing && 'animate-pulse')} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1 text-[11px] font-semibold text-muted">
+          <Icons.Music size={11} /> Música favorita
+        </span>
+        <span className="block truncate text-sm font-semibold">{song.title}</span>
+        <span className="block truncate text-xs text-soft">{song.author}</span>
+      </span>
+      <button
+        type="button"
+        title={playing ? 'Pausar' : 'Ouvir prévia'}
+        onClick={() => void toggleSong(song.videoId)}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent hover:opacity-90"
+      >
+        {loading ? <Icons.Refresh size={15} className="animate-spin" /> : playing ? <Icons.Pause size={16} /> : <Icons.Play size={16} />}
+      </button>
+      {onRemove && (
+        <button type="button" title="Tirar música" onClick={onRemove} className="text-muted hover:text-danger">
+          <Icons.X size={15} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Campo da música favorita no Editar perfil: cola o link ou escreve o nome. */
+export function SongEditor({ song, onChange }: { song: FavoriteSong | null; onChange: (s: FavoriteSong | null) => void }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function find() {
+    const t = text.trim();
+    if (!t) return;
+    setBusy(true);
+    setError('');
+    try {
+      const r = await api.updateProfileExtras({ favoriteSong: t });
+      onChange(r.favoriteSong ?? null);
+      setText('');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-2">
+      {song && (
+        <SongPlayer
+          song={song}
+          onRemove={() => {
+            api.updateProfileExtras({ favoriteSong: null }).then(() => onChange(null), (e) => setError((e as Error).message));
+          }}
+        />
+      )}
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void find();
+        }}
+      >
+        <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={200} placeholder={song ? 'Trocar: link do YouTube ou nome da música' : 'Link do YouTube ou nome da música'} />
+        <Button type="submit" disabled={busy || !text.trim()}>
+          {busy ? 'Buscando…' : song ? 'Trocar' : 'Adicionar'}
+        </Button>
+      </form>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }

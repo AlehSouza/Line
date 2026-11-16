@@ -8,7 +8,7 @@ import { StyledName } from '@/lib/nameStyle';
 import { actions, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
-import { ConnectionList, GamesBoard } from './ProfileExtras';
+import { ConnectionList, GamesBoard, SongPlayer } from './ProfileExtras';
 import { UserTagBadge } from './ServerTag';
 import { MemberRoles } from './UserCard';
 import { Avatar, Button, cx, DefaultServerIcon, Icons, Logo } from './ui';
@@ -166,6 +166,11 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
               </div>
             )}
 
+            {profile?.favoriteSong && (
+              <div className="mt-5">
+                <SongPlayer song={profile.favoriteSong} />
+              </div>
+            )}
             {user.bio && <p className="mt-5 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
 
             {profile && (

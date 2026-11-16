@@ -120,12 +120,29 @@ fn clean_style(v: &Value) -> ApiResult<Option<Value>> {
 /// `nameStyle` (null = sem estilo). Campos ausentes ficam como estão.
 async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input = body::<Value>(&b)?;
+    // Música favorita: link do YouTube ou nome para buscar (resolvido antes de pegar o banco).
+    let song = match input.get("favoriteSong") {
+        None => None,
+        Some(Value::Null) => Some(Value::Null),
+        Some(v) => {
+            let text = clean_text(Some(v), 200).ok_or_else(|| validation("Música inválida"))?;
+            Some(
+                resolve_song(&text)
+                    .await
+                    .ok_or_else(|| validation("Não achei essa música no YouTube"))?,
+            )
+        }
+    };
     let q = app.store.q();
     let (mut games, _) = q.profile_extras(&me);
     if !games.is_object() {
         games = json!({});
     }
     let mut changed_games = false;
+    if let Some(song) = song {
+        games["song"] = song;
+        changed_games = true;
+    }
     if let Some(f) = input.get("favoriteGame") {
         games["favorite"] = clean_game(f).unwrap_or(Value::Null);
         changed_games = true;
@@ -182,6 +199,7 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
     ok(json!({
         "favoriteGame": games.get("favorite"),
         "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
+        "favoriteSong": games.get("song"),
         "connections": connections,
     }))
 }
@@ -225,6 +243,7 @@ async fn get_profile(
         "ignored": id != me && q.ignored(&me).contains(&id),
         "favoriteGame": games.get("favorite"),
         "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
+        "favoriteSong": games.get("song"),
         "connections": connections,
         "playing": playing.map(|(name, since)| json!({ "name": name, "since": since })),
         "activity": activity,
@@ -279,4 +298,43 @@ async fn search_games(State(app): S, Me(_): Me, Query(qs): Query<HashMap<String,
     }
     let games = igdb.search(text).await;
     ok(json!({ "games": games, "enabled": true }))
+}
+
+/// Id do vídeo num link do YouTube (watch?v=, youtu.be/, shorts/, music.youtube.com).
+fn video_id(text: &str) -> Option<String> {
+    let url = reqwest::Url::parse(text).ok()?;
+    let host = url
+        .host_str()?
+        .trim_start_matches("www.")
+        .trim_start_matches("m.");
+    let id = match host {
+        "youtu.be" => url.path_segments()?.next()?.to_string(),
+        "youtube.com" | "music.youtube.com" => {
+            let mut seg = url.path_segments()?;
+            match seg.next()? {
+                "watch" => url.query_pairs().find(|(k, _)| k == "v")?.1.to_string(),
+                "shorts" | "embed" | "live" => seg.next()?.to_string(),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    (id.len() == 11
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    .then_some(id)
+}
+
+/// `{ videoId, title, author }` de um link ou do primeiro resultado da busca.
+async fn resolve_song(text: &str) -> Option<Value> {
+    let id = match video_id(text) {
+        Some(id) => id,
+        None if text.starts_with("http") => return None,
+        None => crate::music::search(text).await?,
+    };
+    let (title, author, _) = crate::music::fetch_meta(&id).await?;
+    Some(
+        json!({ "videoId": id, "title": title.chars().take(150).collect::<String>(), "author": author.chars().take(100).collect::<String>() }),
+    )
 }

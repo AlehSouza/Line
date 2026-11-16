@@ -1,11 +1,11 @@
 'use client';
 
-import type { ProfileConnection, ProfileGame, UserProfile } from '@line/shared';
+import type { FavoriteSong, ProfileConnection, ProfileGame, UserProfile } from '@line/shared';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyledName } from '@/lib/nameStyle';
 import { ActivityList } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
-import { ConnectionsEditor, GamesBoard } from './ProfileExtras';
+import { ConnectionsEditor, GamesBoard, SongEditor } from './ProfileExtras';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ImageCropper } from './ImageCropper';
@@ -41,6 +41,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const [favorite, setFavorite] = useState<ProfileGame | null>(null);
   const [liked, setLiked] = useState<ProfileGame[]>([]);
   const [connections, setConnections] = useState<ProfileConnection[]>([]);
+  const [song, setSong] = useState<FavoriteSong | null>(null);
   const [extrasChanged, setExtrasChanged] = useState(false);
   const [nameStyleOpen, setNameStyleOpen] = useState(false);
   const [tab, setTab] = useState<'games' | 'activity'>('games');
@@ -52,6 +53,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
       setFavorite(p.favoriteGame);
       setLiked(p.likedGames);
       setConnections(p.connections);
+      setSong(p.favoriteSong ?? null);
     }, () => {});
   }, [me?.id]);
   if (!me) return null;
@@ -192,6 +194,10 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
           >
             <StyledName user={me}>{displayName || me.username}</StyledName>
           </button>
+        </Field>
+
+        <Field label="Música favorita" hint="Aparece num mini player acima da sua bio. Cole o link do YouTube ou escreva o nome.">
+          <SongEditor song={song} onChange={setSong} />
         </Field>
 
         <Field label="Conexões" hint="Suas contas em outros lugares. Aparecem no seu perfil.">

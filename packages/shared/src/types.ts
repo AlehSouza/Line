@@ -39,6 +39,13 @@ export interface NameStyle {
   colors: string[];
 }
 
+/** Música favorita do perfil (vídeo do YouTube). */
+export interface FavoriteSong {
+  videoId: string;
+  title: string;
+  author: string;
+}
+
 /** Jogo do perfil (capa da IGDB quando houver). */
 export interface ProfileGame {
   name: string;
@@ -64,6 +71,7 @@ export interface UserProfile {
   ignored: boolean;
   favoriteGame: ProfileGame | null;
   likedGames: ProfileGame[];
+  favoriteSong?: FavoriteSong | null;
   connections: ProfileConnection[];
   playing: { name: string; since: string } | null;
   activity: { name: string; icon?: string | null; cover?: string | null; lastPlayed: string; totalSecs: number }[];

@@ -2,7 +2,7 @@
 
 import { mobile } from '@/lib/mobile';
 
-import { hasPerm, Perm, type PublicUser, type Server, type UserStatus } from '@line/shared';
+import { hasPerm, Perm, type FavoriteSong, type PublicUser, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
@@ -13,6 +13,7 @@ import { EmojiButton } from './EmojiField';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 import { StyledName } from '@/lib/nameStyle';
+import { SongPlayer } from './ProfileExtras';
 
 export { statusOptions } from './StatusPicker';
 
@@ -43,6 +44,7 @@ export function UserCard({
   const [text, setText] = useState('');
   const dmRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [song, setSong] = useState<FavoriteSong | null>(null);
   const [error, setError] = useState('');
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
   const viewServer = useViewServer();
@@ -62,6 +64,11 @@ export function UserCard({
       .catch(() => setMutual({ friends: [], servers: [] }));
   }, [userId, isMe]);
 
+  useEffect(() => {
+    if (other?.bot) return;
+    api.profile(userId).then((p) => setSong(p.favoriteSong ?? null), () => {});
+  }, [userId]);
+
   // Posiciona perto do clique sem sair da tela.
   useLayoutEffect(() => {
     const h = box.current?.offsetHeight ?? 400;
@@ -73,7 +80,7 @@ export function UserCard({
     const left = at.x + 16 + W < vw ? at.x + 16 : Math.max(12, at.x - 16 - W);
     const top = Math.min(Math.max(12, at.y - 40), vh - h - 12);
     setPos({ left, top: Math.max(12, top) });
-  }, [at, mutual, menu]);
+  }, [at, mutual, menu, song]);
 
   if (!user || !me) return null;
   const state = friend?.state;
@@ -269,6 +276,11 @@ export function UserCard({
             </div>
           )}
 
+          {song && (
+            <div className="mt-3">
+              <SongPlayer song={song} />
+            </div>
+          )}
           {user.bio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
 
           {!isMe && <InVoice userId={userId} onClose={onClose} />}
