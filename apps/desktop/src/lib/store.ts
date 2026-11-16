@@ -1,5 +1,6 @@
 'use client';
 
+import { useShallow } from 'zustand/react/shallow';
 import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, type Friend, type Member, type Message, type NotifySettings, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
 import { create } from 'zustand';
 
@@ -25,6 +26,7 @@ export type Modal =
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
   | { kind: 'full-profile'; userId: string; serverId?: string | null }
   | { kind: 'name-style' }
+  | { kind: 'server-profile'; serverId: string }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
   | { kind: 'image'; url: string; filename: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }
@@ -44,9 +46,10 @@ interface MemberRef {
   nickname: string | null;
   joinedAt: string;
   roleIds: string[];
+  profile?: Member['profile'];
 }
 
-const memberRef = (m: Member): MemberRef => ({ userId: m.user.id, nickname: m.nickname, joinedAt: m.joinedAt, roleIds: m.roleIds ?? [] });
+const memberRef = (m: Member): MemberRef => ({ userId: m.user.id, nickname: m.nickname, joinedAt: m.joinedAt, roleIds: m.roleIds ?? [], profile: m.profile ?? null });
 
 export interface LineState {
   serverUrl: string;
@@ -630,6 +633,16 @@ export function textToMentions(content: string, serverId: string | null | undefi
 export function displayNameIn(s: LineState, serverId: string | null | undefined, userId: string): string {
   const nick = serverId ? s.members[serverId]?.[userId]?.nickname : null;
   return nick || s.users[userId]?.displayName || 'Alguém';
+}
+
+/** Perfil visto neste servidor: apelido, foto, banner e bio do servidor por cima do principal. */
+export function useServerLook(serverId: string | null | undefined, userId: string) {
+  return useLine(
+    useShallow((s) => {
+      const m = serverId ? s.members[serverId]?.[userId] : undefined;
+      return { nickname: m?.nickname ?? null, avatarUrl: m?.profile?.avatarUrl ?? null, bannerUrl: m?.profile?.bannerUrl ?? null, bio: m?.profile?.bio ?? null };
+    }),
+  );
 }
 
 export function useDisplayName(serverId: string | null | undefined, userId: string): string {

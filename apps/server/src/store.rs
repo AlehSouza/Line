@@ -1013,37 +1013,40 @@ impl Q<'_> {
     }
 
     pub fn member(&self, server_id: &str, user_id: &str) -> Option<Member> {
-        let row: Option<(Option<String>, String)> = ok(self
+        let row: Option<(Option<String>, String, Option<String>)> = ok(self
             .c
             .query_row(
-                "SELECT nickname, joined_at FROM members WHERE server_id = ? AND user_id = ?",
+                "SELECT nickname, joined_at, server_profile FROM members WHERE server_id = ? AND user_id = ?",
                 [server_id, user_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional());
-        let (nickname, joined_at) = row?;
+        let (nickname, joined_at, profile) = row?;
         Some(Member {
             server_id: server_id.into(),
             user: self.public_user(user_id)?,
             nickname,
             joined_at,
             role_ids: self.member_role_ids(server_id, user_id),
+            profile: self.member_profile_json(profile.as_deref()),
         })
     }
 
     pub fn members(&self, server_id: &str) -> Vec<Member> {
         let mut st = ok(self.c.prepare_cached(&format!(
-            "SELECT {USER_COLS}, m.nickname, m.joined_at AS member_joined_at FROM members m JOIN users u ON u.id = m.user_id
+            "SELECT {USER_COLS}, m.nickname, m.joined_at AS member_joined_at, m.server_profile FROM members m JOIN users u ON u.id = m.user_id
              WHERE m.server_id = ? ORDER BY u.display_name COLLATE NOCASE"
         )));
-        let rows: Vec<(UserRow, Option<String>, String)> = ok(ok(st.query_map([server_id], |r| {
-            Ok((
-                UserRow::from_row(r)?,
-                r.get("nickname")?,
-                r.get("member_joined_at")?,
-            ))
-        }))
-        .collect());
+        let rows: Vec<(UserRow, Option<String>, String, Option<String>)> =
+            ok(ok(st.query_map([server_id], |r| {
+                Ok((
+                    UserRow::from_row(r)?,
+                    r.get("nickname")?,
+                    r.get("member_joined_at")?,
+                    r.get("server_profile")?,
+                ))
+            }))
+            .collect());
         let mut roles: std::collections::HashMap<String, Vec<String>> = Default::default();
         {
             let mut st = ok(self.c.prepare_cached(
@@ -1057,12 +1060,13 @@ impl Q<'_> {
             }
         }
         rows.into_iter()
-            .map(|(u, nickname, joined_at)| Member {
+            .map(|(u, nickname, joined_at, profile)| Member {
                 server_id: server_id.into(),
                 role_ids: roles.remove(&u.id).unwrap_or_default(),
                 user: self.to_public_user(&u),
                 nickname,
                 joined_at,
+                profile: self.member_profile_json(profile.as_deref()),
             })
             .collect()
     }
@@ -1644,6 +1648,51 @@ impl Q<'_> {
     }
 
     /// Quem tem o cargo (para avisar sobre menções e mostrar em "Gerenciar membros").
+    /// Perfil por servidor guardado (ids) → JSON com URLs para o app.
+    fn member_profile_json(&self, raw: Option<&str>) -> Option<serde_json::Value> {
+        let v: serde_json::Value = serde_json::from_str(raw?).ok()?;
+        let mut out = serde_json::Map::new();
+        if let Some(id) = v.get("avatarId").and_then(|x| x.as_str()) {
+            out.insert("avatarUrl".into(), self.profile_image_url(id).into());
+        }
+        if let Some(id) = v.get("bannerId").and_then(|x| x.as_str()) {
+            out.insert("bannerUrl".into(), self.profile_image_url(id).into());
+        }
+        if let Some(b) = v
+            .get("bio")
+            .and_then(|x| x.as_str())
+            .filter(|b| !b.is_empty())
+        {
+            out.insert("bio".into(), b.into());
+        }
+        (!out.is_empty()).then(|| out.into())
+    }
+
+    /// Perfil por servidor cru (ids), para editar.
+    pub fn member_profile_raw(&self, server_id: &str, user_id: &str) -> serde_json::Value {
+        ok(self
+            .c
+            .query_row(
+                "SELECT server_profile FROM members WHERE server_id = ? AND user_id = ?",
+                [server_id, user_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional())
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+    }
+
+    pub fn set_member_profile(&self, server_id: &str, user_id: &str, v: &serde_json::Value) {
+        let empty = v
+            .as_object()
+            .is_none_or(|o| o.values().all(|x| x.is_null()));
+        ok(self.c.execute(
+            "UPDATE members SET server_profile = ? WHERE server_id = ? AND user_id = ?",
+            params![(!empty).then(|| v.to_string()), server_id, user_id],
+        ));
+    }
+
     pub fn set_nickname(&self, server_id: &str, user_id: &str, nickname: Option<&str>) {
         ok(self.c.execute(
             "UPDATE members SET nickname = ? WHERE server_id = ? AND user_id = ?",

@@ -619,7 +619,7 @@ function MessageRow({
             onClick={(e) => actions.openModal({ kind: 'user', userId: message.author.id, at: { x: e.clientX, y: e.clientY } })}
             onContextMenu={(e) => openContextMenu(e, userMenu(message.author.id, { x: e.clientX, y: e.clientY }, serverId))}
           >
-            <Avatar name={authorName} color={authorColor} src={(useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
+            <Avatar name={authorName} color={authorColor} src={(serverId && useLine.getState().members[serverId]?.[message.author.id]?.profile?.avatarUrl) || (useLine.getState().users[message.author.id] ?? message.author).avatarUrl} size={40} />
           </button>
         )}
       </div>

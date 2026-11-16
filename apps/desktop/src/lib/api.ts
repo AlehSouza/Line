@@ -270,6 +270,8 @@ export const api = {
   joinPublic: (id: string) => request<Server>('POST', `/servers/${enc(id)}/join`),
   resetInvite: (id: string) => request<Server>('POST', `/servers/${enc(id)}/invite/reset`),
   kick: (serverId: string, userId: string) => request<void>('DELETE', `/servers/${enc(serverId)}/members/${enc(userId)}`),
+  setServerProfile: (serverId: string, patch: { avatarId?: string | null; bannerId?: string | null; bio?: string }) =>
+    request<Member>('PUT', `/servers/${enc(serverId)}/profile`, patch),
   setNickname: (serverId: string, userId: string, nickname: string | null) =>
     request<Member>('PATCH', `/servers/${enc(serverId)}/members/${enc(userId)}`, { nickname }),
   createRole: (serverId: string, input: { name?: string; color?: string | null; permissions?: number; mentionable?: boolean; hoist?: boolean }) =>

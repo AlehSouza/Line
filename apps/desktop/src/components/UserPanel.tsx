@@ -5,12 +5,14 @@ import type { UserStatus } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { logout } from '@/lib/session';
-import { actions, useLine } from '@/lib/store';
+import { actions, useLine, useServerLook } from '@/lib/store';
 import { listAudioDevices, setInputDevice, setNoiseSuppression, setOutputDevice, toggleDeafen, toggleMute, useVoice } from '@/lib/voice';
 import { Avatar, cx, Icons, PresenceDot } from './ui';
 
 export function UserPanel() {
   const me = useLine((s) => s.me);
+  const viewServer = useLine((s) => (s.view.kind === 'server' ? s.view.serverId : null));
+  const look = useServerLook(viewServer, me?.id ?? '');
   const muted = useVoice((v) => v.muted);
   const deafened = useVoice((v) => v.deafened);
   const [menu, setMenu] = useState<'input' | 'output' | null>(null);
@@ -32,9 +34,9 @@ export function UserPanel() {
         }}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left transition-colors duration-150 hover:bg-white/[0.06]"
       >
-        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={32} presence={shownPresence} ring="rail" />
+        <Avatar name={me.displayName} color={me.avatarColor} src={look.avatarUrl ?? me.avatarUrl} size={32} presence={shownPresence} ring="rail" />
         <span className="min-w-0">
-          <StyledName user={me} className="block truncate text-sm font-semibold">{me.displayName}</StyledName>
+          <StyledName user={me} className="block truncate text-sm font-semibold">{look.nickname || me.displayName}</StyledName>
           <span className="block truncate text-xs text-muted">{me.customStatus || `@${me.username}`}</span>
         </span>
       </button>

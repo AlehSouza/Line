@@ -70,7 +70,7 @@ export function MemberList({ serverId }: { serverId: string }) {
               m.user.presence === 'offline' && 'opacity-40 hover:opacity-100',
             )}
           >
-            <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.user.avatarUrl} size={32} presence={m.user.presence} />
+            <Avatar name={m.user.displayName} color={m.user.avatarColor} src={m.profile?.avatarUrl ?? m.user.avatarUrl} size={32} presence={m.user.presence} />
             <span className="min-w-0">
               <span className="flex items-center gap-1 truncate text-[15px] font-medium">
                 <StyledName user={m.user} color={m.user.botStyle?.nameColor ?? colorOf(m.roleIds)} className="truncate">

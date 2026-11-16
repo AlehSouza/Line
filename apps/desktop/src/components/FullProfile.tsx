@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { setIgnored, useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
-import { actions, displayNameIn, useLine, useMemberColor } from '@/lib/store';
+import { actions, useServerLook, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
 import { ConnectionList, GamesBoard, SongPlayer } from './ProfileExtras';
@@ -33,6 +33,7 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
   const [tab, setTab] = useState<Tab>('activity');
   const [menu, setMenu] = useState(false);
   const [main, setMain] = useState(false);
+  const look = useServerLook(serverId, userId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -54,7 +55,9 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
 
   if (!user || !me) return null;
   const state = friend?.state;
-  const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
+  const bannerUrl = (!main && look.bannerUrl) || user.bannerUrl;
+  const banner = bannerUrl ? fileUrl(bannerUrl) : null;
+  const bio = (!main && look.bio) || user.bio;
   const ring = `color-mix(in srgb, ${user.avatarColor} 22%, var(--color-rail))`;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
   const serverName = !main && serverId ? displayNameIn(useLine.getState(), serverId, userId) : user.displayName;
@@ -102,7 +105,7 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
           <div className="px-6 pb-6">
             <div className="relative z-[5] -mt-16 flex items-start gap-2">
               <span className="flex shrink-0 rounded-full border-[6px]" style={{ borderColor: ring, background: ring }}>
-                <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={120} presence={presence} dotRingColor={ring} dotSize={26} className="block" />
+                <Avatar name={user.displayName} color={user.avatarColor} src={(!main && look.avatarUrl) || user.avatarUrl} size={120} presence={presence} dotRingColor={ring} dotSize={26} className="block" />
               </span>
               {user.thought && (
                 <span className="relative mt-20 max-w-[200px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
@@ -171,7 +174,7 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
                 <SongPlayer song={profile.favoriteSong} />
               </div>
             )}
-            {user.bio && <p className="mt-5 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
+            {bio && <p className="mt-5 text-sm break-words whitespace-pre-wrap">{bio}</p>}
 
             {profile && (
               <Section title="Membro desde">

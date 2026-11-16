@@ -151,6 +151,9 @@ pub struct Member {
     pub joined_at: String,
     /// Cargos da pessoa (sem o @everyone, que todo mundo tem).
     pub role_ids: Vec<String>,
+    /// Perfil por servidor: { avatarUrl, bannerUrl, bio } (só o que a pessoa trocou).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Serialize)]

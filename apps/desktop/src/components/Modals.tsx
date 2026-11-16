@@ -3,6 +3,7 @@
 import { ServerNotifyModal } from './Notifications';
 import { FullProfile } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
+import { ServerProfileModal } from './ServerProfile';
 import { mobile } from '@/lib/mobile';
 
 import { ProfileEditor } from './ProfileEditor';
@@ -57,6 +58,8 @@ export function Modals() {
       return <UserCard userId={modal.userId} at={modal.at} hover={modal.hover} onClose={close} />;
     case 'full-profile':
       return <FullProfile userId={modal.userId} serverId={modal.serverId} onClose={close} />;
+    case 'server-profile':
+      return <ServerProfileModal serverId={modal.serverId} onClose={close} />;
     case 'name-style':
       return <NameStyleModal onClose={close} />;
     case 'create-thread':

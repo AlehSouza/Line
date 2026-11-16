@@ -212,6 +212,8 @@ export interface Member {
   joinedAt: string;
   /** Cargos da pessoa (sem o @everyone). */
   roleIds: string[];
+  /** Perfil por servidor: só o que a pessoa trocou neste servidor. */
+  profile?: { avatarUrl?: string; bannerUrl?: string; bio?: string } | null;
 }
 
 export interface Role {

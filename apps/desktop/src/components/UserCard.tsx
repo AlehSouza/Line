@@ -5,7 +5,7 @@ import { mobile } from '@/lib/mobile';
 import { hasPerm, Perm, type FavoriteSong, type PublicUser, type Role, type Server, type UserStatus } from '@line/shared';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
-import { actions, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
+import { actions, useServerLook, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
 import { UserTagBadge } from './ServerTag';
@@ -48,6 +48,8 @@ export function UserCard({
   const [error, setError] = useState('');
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
   const viewServer = useViewServer();
+  const look = useServerLook(viewServer, userId);
+  const [editMenu, setEditMenu] = useState(false);
   const roleColor = useMemberColor(viewServer, userId);
 
   useEffect(() => {
@@ -84,7 +86,10 @@ export function UserCard({
 
   if (!user || !me) return null;
   const state = friend?.state;
-  const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
+  const bannerUrl = look.bannerUrl ?? user.bannerUrl;
+  const banner = bannerUrl ? fileUrl(bannerUrl) : null;
+  const shownName = look.nickname || user.displayName;
+  const shownBio = look.bio ?? user.bio;
   /** Cor do cartão (nome, borda do avatar e anel do status). */
   const nameColor = user.botStyle?.nameColor ?? roleColor ?? 'var(--color-fg)';
   // Anel em volta do avatar e da bolinha: cor escura do tema (o fundo do cartão), como um recorte.
@@ -157,15 +162,36 @@ export function UserCard({
               </TopButton>
             )}
             {isMe ? (
-              <TopButton
-                title="Editar perfil"
-                onClick={() => {
-                  onClose();
-                  actions.openModal({ kind: 'settings', section: 'profile' });
-                }}
-              >
-                <Icons.Edit size={17} />
-              </TopButton>
+              <span className="relative">
+                <TopButton
+                  title="Editar perfil"
+                  onClick={() => {
+                    if (viewServer) return setEditMenu((v) => !v);
+                    onClose();
+                    actions.openModal({ kind: 'settings', section: 'profile' });
+                  }}
+                >
+                  <Icons.Edit size={17} />
+                </TopButton>
+                {editMenu && viewServer && (
+                  <div className="absolute top-full right-0 z-10 mt-1.5 w-64 rounded-xl border border-edge bg-rail p-1.5 shadow-2xl">
+                    <button
+                      onClick={() => actions.openModal({ kind: 'server-profile', serverId: viewServer })}
+                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-hover"
+                    >
+                      <span className="block text-sm font-semibold">Editar perfil por servidor</span>
+                      <span className="block text-xs text-muted">Visível apenas para este servidor</span>
+                    </button>
+                    <button
+                      onClick={() => actions.openModal({ kind: 'settings', section: 'profile' })}
+                      className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-hover"
+                    >
+                      <span className="block text-sm font-semibold">Editar o Perfil Principal</span>
+                      <span className="block text-xs text-muted">Perfil padrão e visível para todos</span>
+                    </button>
+                  </div>
+                )}
+              </span>
             ) : user.bot ? null : (
             <span className="relative">
               <TopButton title="Mais" onClick={() => setMenu((v) => !v)}>
@@ -235,7 +261,7 @@ export function UserCard({
               <Avatar
                 name={user.displayName}
                 color={user.avatarColor}
-                src={user.avatarUrl}
+                src={look.avatarUrl ?? user.avatarUrl}
                 size={88}
                 presence={presence}
                 dotRingColor={ring}
@@ -253,7 +279,7 @@ export function UserCard({
 
           <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold">
             <StyledName user={user} color={nameColor} className="truncate">
-              {user.displayName}
+              {shownName}
             </StyledName>
             <UserTagBadge user={user} />
           </p>
@@ -291,7 +317,7 @@ export function UserCard({
               <SongPlayer song={song} />
             </div>
           )}
-          {user.bio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{user.bio}</p>}
+          {shownBio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{shownBio}</p>}
 
           {!isMe && <InVoice userId={userId} onClose={onClose} />}
           <MemberRoles userId={userId} />

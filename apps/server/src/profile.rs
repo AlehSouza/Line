@@ -30,6 +30,7 @@ pub fn router() -> Router<Arc<App>> {
         .route("/users/{id}/note", put(put_note))
         .route("/users/{id}/ignore", put(ignore).delete(unignore))
         .route("/games/search", get(search_games))
+        .route("/servers/{id}/profile", put(put_server_profile))
 }
 
 /// Fontes e efeitos aceitos no estilo do nome (iguais aos de `apps/desktop/src/lib/nameStyle.ts`).
@@ -339,4 +340,49 @@ async fn resolve_song(text: &str) -> Option<Value> {
     Some(
         json!({ "videoId": id, "title": title.chars().take(150).collect::<String>(), "author": author.chars().take(100).collect::<String>() }),
     )
+}
+
+/// PUT /servers/{id}/profile: meu perfil neste servidor `{ avatarId, bannerId, bio }`
+/// (null = usar o do perfil principal; campos ausentes ficam como estão).
+async fn put_server_profile(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<Value>(&b)?;
+    let q = app.store.q();
+    if !q.is_member(&id, &me) {
+        return Err(not_found("Servidor"));
+    }
+    let mut cur = q.member_profile_raw(&id, &me);
+    if !cur.is_object() {
+        cur = json!({});
+    }
+    for key in ["avatarId", "bannerId"] {
+        match input.get(key) {
+            None => {}
+            Some(Value::Null) => cur[key] = Value::Null,
+            Some(v) => {
+                let img = v.as_str().ok_or_else(|| validation("Imagem inválida"))?;
+                if !q.own_image(&me, img) {
+                    return Err(validation("Imagem inválida"));
+                }
+                cur[key] = json!(img);
+            }
+        }
+    }
+    if let Some(bio) = input.get("bio") {
+        let text: String = bio
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .chars()
+            .take(190)
+            .collect();
+        cur["bio"] = if text.is_empty() {
+            Value::Null
+        } else {
+            json!(text)
+        };
+    }
+    q.set_member_profile(&id, &me, &cur);
+    let member = q.member(&id, &me).ok_or_else(|| not_found("Membro"))?;
+    app.to_server(&id, "member:update", &member);
+    ok(member)
 }

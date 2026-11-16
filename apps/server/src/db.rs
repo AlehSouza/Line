@@ -413,6 +413,10 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (user_id, channel_id)
   );
 "#,
+    // Perfil por servidor (JSON: avatarId, bannerId, bio).
+    r#"
+  ALTER TABLE members ADD COLUMN server_profile TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
