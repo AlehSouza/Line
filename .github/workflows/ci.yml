@@ -63,6 +63,22 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      - name: Pacote MSIX da Microsoft Store
+        shell: pwsh
+        env:
+          # Dados da Partner Center (Produto > Identidade do produto), em Settings > Variables.
+          # Sem eles o pacote sai com uma identidade de teste: serve para ver que monta, não para enviar.
+          IDENTITY_NAME: ${{ vars.MSSTORE_IDENTITY_NAME || 'Line.Teste' }}
+          PUBLISHER: ${{ vars.MSSTORE_PUBLISHER || 'CN=Line' }}
+          PUBLISHER_NAME: ${{ vars.MSSTORE_PUBLISHER_NAME || 'Line' }}
+        run: >
+          apps/desktop/scripts/make-msix.ps1 -Version "0.1.${{ github.run_number }}"
+          -IdentityName $env:IDENTITY_NAME -Publisher $env:PUBLISHER -PublisherName $env:PUBLISHER_NAME
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Line-microsoft-store
+          path: target/release/bundle/msix/*.msix
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: Line-instalador-windows

@@ -65,10 +65,27 @@ fn window_close(window: WebviewWindow) {
     let _ = window.close();
 }
 
+/// Instalado pela Microsoft Store (pacote MSIX)? Aí quem atualiza é a Store: a pasta do app
+/// (WindowsApps) é só leitura e as regras da Store proíbem o app de se atualizar sozinho.
+fn from_store() -> bool {
+    cfg!(windows)
+        && std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_ascii_lowercase().contains("\\windowsapps\\"))
+            .unwrap_or(false)
+}
+
+/// Na versão da Store, "atualizar" abre a página de downloads e atualizações da Store.
+fn open_store_updates(app: &tauri::AppHandle) {
+    let _ = app.opener().open_url("ms-windows-store://downloadsandupdates", None::<&str>);
+}
+
 /// Procura versão nova no servidor de atualizações. Devolve a versão, ou nada se já está em dia.
 #[tauri::command]
 async fn update_check(app: tauri::AppHandle) -> Option<String> {
     use tauri_plugin_updater::UpdaterExt;
+    if from_store() {
+        return None;
+    }
     match app.updater().ok()?.check().await {
         Ok(update) => update.map(|u| u.version),
         Err(err) => {
@@ -82,6 +99,10 @@ async fn update_check(app: tauri::AppHandle) -> Option<String> {
 #[tauri::command]
 async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
     use tauri_plugin_updater::UpdaterExt;
+    if from_store() {
+        open_store_updates(&app);
+        return Ok(());
+    }
     let update = app
         .updater()
         .map_err(|e| e.to_string())?
@@ -102,7 +123,7 @@ const SPLASH: &str = "splash";
 /// As três primeiras são as padrão do Tauri. O resto impede o Chromium de frear a página quando
 /// o Line fica atrás de um jogo em tela cheia: sem isso os timers, a cópia dos quadros da tela
 /// e o encoder do WebRTC rodam em prioridade baixa e a transmissão perde fps e qualidade.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion \
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,UseEcoQoSForBackgroundProcess \
     --disable-background-timer-throttling --disable-renderer-backgrounding \
     --disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
 
@@ -132,6 +153,9 @@ fn splash_status(splash: &WebviewWindow, text: &str, pct: Option<f64>) {
 async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool {
     use std::time::Duration;
     use tauri_plugin_updater::UpdaterExt;
+    if from_store() {
+        return false;
+    }
     let updater = match app.updater_builder().timeout(Duration::from_secs(20)).build() {
         Ok(u) => u,
         Err(err) => {
@@ -292,6 +316,10 @@ async fn update_run(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 async fn run_update_window(app: tauri::AppHandle) -> Result<(), String> {
+    if from_store() {
+        open_store_updates(&app);
+        return Ok(());
+    }
     if app.get_webview_window(SPLASH).is_some() {
         return Ok(());
     }
@@ -588,7 +616,7 @@ pub fn run() {
             create_tray(&handle)?;
             // Windows e macOS: antes de abrir o app, uma janelinha procura atualização,
             // baixa e instala. Sem atualização (ou sem internet), segue direto para o app.
-            if cfg!(any(windows, target_os = "macos")) && !cfg!(debug_assertions) {
+            if cfg!(any(windows, target_os = "macos")) && !cfg!(debug_assertions) && !from_store() {
                 let splash = create_splash(&handle)?;
                 tauri::async_runtime::spawn(async move {
                     startup_update(&handle, &splash).await;
