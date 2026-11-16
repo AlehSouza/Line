@@ -810,9 +810,9 @@ impl Q<'_> {
              UNION
              SELECT r2.user_id FROM channel_recipients r1 JOIN channel_recipients r2 ON r1.channel_id = r2.channel_id WHERE r1.user_id = ?1
              UNION
-             SELECT addressee_id FROM friendships WHERE requester_id = ?1
+             SELECT addressee_id FROM friendships WHERE requester_id = ?1 AND status != 'blocked'
              UNION
-             SELECT requester_id FROM friendships WHERE addressee_id = ?1",
+             SELECT requester_id FROM friendships WHERE addressee_id = ?1 AND status != 'blocked'",
             [user_id],
         )
         .into_iter()

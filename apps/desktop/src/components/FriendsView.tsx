@@ -348,6 +348,8 @@ function FriendRow({ friend }: { friend: Friend }) {
 
 function PendingRow({ friend, spam }: { friend: Friend; spam?: boolean }) {
   const { user, state } = friend;
+  const activity = useActivity(user);
+  const request = state === 'incoming' ? 'Pedido recebido' : 'Pedido enviado';
   return (
     <div className="group flex items-center gap-3 border-t border-edge px-2 py-2.5 hover:bg-hover">
       <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={36} presence={user.presence} ring="main" />
@@ -355,8 +357,16 @@ function PendingRow({ friend, spam }: { friend: Friend; spam?: boolean }) {
         <p className="truncate font-semibold">
           {user.displayName} <span className="hidden text-sm font-normal text-muted group-hover:inline">@{user.username}</span>
         </p>
-        <p className="truncate text-sm text-muted">
-          {state === 'incoming' ? 'Pedido de amizade recebido' : 'Pedido de amizade enviado'}
+        <p className="flex min-w-0 items-center gap-1 truncate text-sm text-muted">
+          {activity ? (
+            <>
+              <span className="shrink-0 text-accent">{activity.icon}</span>
+              <span className="truncate">{activity.line}</span>
+            </>
+          ) : (
+            <span className="truncate">{user.customStatus || presenceLabel[user.presence]}</span>
+          )}
+          <span className="shrink-0">· {request}</span>
         </p>
       </div>
       {state === 'incoming' && (
