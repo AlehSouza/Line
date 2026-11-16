@@ -233,13 +233,24 @@ function MenuBox({ x, y, items }: { x: number; y: number; items: MenuEntry[] }) 
 /** Item com submenu: abre ao lado (à esquerda quando não cabe à direita). */
 function SubmenuItem({ label, render }: { label: string; render: () => ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
-  const [side, setSide] = useState<{ left: boolean; top: number }>({ left: false, top: 0 });
+  const [left, setLeft] = useState(false);
+  const [top, setTop] = useState(0);
   const show = () => {
     const r = ref.current?.getBoundingClientRect();
-    if (r) setSide({ left: r.right + 260 > window.innerWidth, top: Math.min(0, window.innerHeight - r.top - 340) });
+    if (r) setLeft(r.right + 250 > window.innerWidth);
+    setTop(0);
     setOpen(true);
   };
+  // Alinha o submenu com o item; só sobe o quanto precisar para caber na tela.
+  useLayoutEffect(() => {
+    if (!open || !panel.current || !ref.current) return;
+    const item = ref.current.getBoundingClientRect();
+    const h = panel.current.offsetHeight;
+    const overflow = item.top + h - (window.innerHeight - 8);
+    setTop(overflow > 0 ? -Math.min(overflow, item.top - 8) : 0);
+  }, [open]);
   return (
     <div ref={ref} className="relative" onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
       <button
@@ -254,10 +265,8 @@ function SubmenuItem({ label, render }: { label: string; render: () => ReactNode
         <Icons.ChevronRight size={15} className="shrink-0 opacity-80" />
       </button>
       {open && (
-        <div
-          className={cx('absolute z-[61] w-60', side.left ? 'right-full pr-1' : 'left-full pl-1')}
-          style={{ top: side.top }}
-        >
+        // O padding faz a ponte entre o item e o submenu: o mouse passa sem fechar.
+        <div ref={panel} className={cx('absolute z-[61] w-60', left ? 'right-full pr-2' : 'left-full pl-2')} style={{ top: top - 6 }}>
           <div className="max-h-80 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">{render()}</div>
         </div>
       )}
