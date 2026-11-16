@@ -1449,7 +1449,21 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
                 <span className="truncate text-sm font-semibold">{game.name}</span>
               </div>
             )}
-            <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black">
+            <div
+              // Clicar na miniatura também abre a transmissão, igual ao botão.
+              onClick={
+                !isMe && inSameCall
+                  ? () => {
+                      setWatching(userId, true);
+                      setAt(null);
+                    }
+                  : undefined
+              }
+              className={cx(
+                'relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black',
+                !isMe && inSameCall && 'cursor-pointer',
+              )}
+            >
               {thumb ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={thumb} alt="" draggable={false} className="h-full w-full object-contain" />
