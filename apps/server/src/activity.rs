@@ -94,50 +94,98 @@ impl Igdb {
 }
 
 impl Igdb {
-    /// Busca jogos pelo nome: até 10 `{ name, cover }`.
-    pub async fn search(&self, text: &str) -> Vec<Value> {
-        let Ok(http) = reqwest::Client::builder()
+    /// Pega o token mostrando o motivo quando a Twitch recusa (credenciais erradas, rede...).
+    async fn token_or_error(&self, http: &reqwest::Client) -> Result<String, String> {
+        if let Some(tok) = self.token(http).await {
+            return Ok(tok);
+        }
+        let res = http
+            .post("https://id.twitch.tv/oauth2/token")
+            .query(&[
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.secret.as_str()),
+                ("grant_type", "client_credentials"),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("sem conexão com a Twitch: {e}"))?;
+        let status = res.status();
+        let body: String = res
+            .text()
+            .await
+            .unwrap_or_default()
+            .chars()
+            .take(200)
+            .collect();
+        Err(format!(
+            "a Twitch recusou as credenciais da IGDB ({status}): {body}"
+        ))
+    }
+
+    /// Busca jogos pelo nome: até 10 `{ name, cover }` (cover pode faltar).
+    pub async fn search(&self, text: &str) -> Result<Vec<Value>, String> {
+        let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(8))
             .build()
-        else {
-            return vec![];
-        };
-        let Some(token) = self.token(&http).await else {
-            return vec![];
-        };
+            .map_err(|e| e.to_string())?;
+        let token = self
+            .token_or_error(&http)
+            .await
+            .inspect_err(|e| tracing::warn!("IGDB: {e}"))?;
         let safe: String = text
             .chars()
             .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
             .take(60)
             .collect();
-        let body = format!(
-            "search \"{safe}\"; fields name,cover.image_id; where cover != null & version_parent = null; limit 10;"
-        );
-        let Ok(res) = http
+        let body = format!("search \"{safe}\"; fields name,cover.image_id; limit 15;");
+        let res = http
             .post("https://api.igdb.com/v4/games")
             .header("Client-ID", &self.client_id)
             .header("Authorization", format!("Bearer {token}"))
+            .header("Accept", "application/json")
             .body(body)
             .send()
             .await
-        else {
-            return vec![];
-        };
-        let v: Value = res.json().await.unwrap_or(Value::Null);
-        v.as_array()
+            .map_err(|e| format!("sem conexão com a IGDB: {e}"))?;
+        let status = res.status();
+        let raw = res.text().await.unwrap_or_default();
+        if !status.is_success() {
+            let msg = format!(
+                "IGDB respondeu {status}: {}",
+                raw.chars().take(200).collect::<String>()
+            );
+            tracing::warn!("{msg}");
+            if status.as_u16() == 401 {
+                // Token vencido ou revogado: pede outro na próxima busca.
+                *self.token.lock().await = None;
+            }
+            return Err(msg);
+        }
+        let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+        let mut list: Vec<Value> = v
+            .as_array()
             .map(|list| {
                 list.iter()
                     .filter_map(|g| {
                         let name = g.get("name")?.as_str()?;
-                        let id = g.get("cover")?.get("image_id")?.as_str()?;
-                        Some(json!({
-                            "name": name,
-                            "cover": format!("https://images.igdb.com/igdb/image/upload/t_cover_big/{id}.jpg"),
-                        }))
+                        let cover = g
+                            .get("cover")
+                            .and_then(|c| c.get("image_id"))
+                            .and_then(|i| i.as_str())
+                            .map(|id| {
+                                format!(
+                                    "https://images.igdb.com/igdb/image/upload/t_cover_big/{id}.jpg"
+                                )
+                            });
+                        Some(json!({ "name": name, "cover": cover }))
                     })
                     .collect()
             })
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Com capa primeiro (são os jogos "de verdade"; sem capa costumam ser mods e versões).
+        list.sort_by_key(|g| g["cover"].is_null());
+        list.truncate(10);
+        Ok(list)
     }
 }
 

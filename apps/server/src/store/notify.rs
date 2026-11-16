@@ -92,7 +92,11 @@ impl Q<'_> {
     }
 
     /// Na primeira vez (antes de existir read state) tudo o que já existe conta como lido.
-    fn seed_read_states(&self, user_id: &str, channels: &[(String, Option<String>, Option<String>)]) {
+    fn seed_read_states(
+        &self,
+        user_id: &str,
+        channels: &[(String, Option<String>, Option<String>)],
+    ) {
         let seeded = ok(self
             .c
             .query_row(
@@ -124,7 +128,10 @@ impl Q<'_> {
             .map(|u| u.username.to_lowercase())
             .unwrap_or_default();
         let needle = format!("@{username}");
-        let my_roles = self.ids("SELECT role_id FROM member_roles WHERE user_id = ?", [user_id]);
+        let my_roles = self.ids(
+            "SELECT role_id FROM member_roles WHERE user_id = ?",
+            [user_id],
+        );
         let mut out = Vec::new();
         for (id, server_id, parent_id) in channels {
             let is_dm = server_id.is_none();
@@ -190,7 +197,10 @@ impl Q<'_> {
             return vec![];
         }
         let my_roles = if roles {
-            self.ids("SELECT role_id FROM member_roles WHERE user_id = ?", [user_id])
+            self.ids(
+                "SELECT role_id FROM member_roles WHERE user_id = ?",
+                [user_id],
+            )
         } else {
             vec![]
         };
@@ -207,7 +217,10 @@ impl Q<'_> {
         args.extend(servers.iter().cloned());
         args.push(format!(
             "%@{}%",
-            username.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+            username
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
         ));
         if everyone {
             sql.push_str(" OR m.mention_everyone = 1");
