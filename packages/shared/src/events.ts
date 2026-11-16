@@ -70,6 +70,14 @@ export interface ServerToClientEvents {
   'voice:status': (payload: { channelId: string; status: string | null }) => void;
   /** Um moderador te moveu para outro canal de voz. */
   'voice:move': (payload: { channelId: string }) => void;
+  /** Alguém do meu canal de voz tocou um efeito sonoro do painel. */
+  'voice:sound': (payload: {
+    userId: string;
+    channelId: string;
+    sound: { id: string; name: string; emoji: string; volume: number; url: string; serverId: string };
+  }) => void;
+  /** Os sons do painel de efeitos sonoros de um servidor mudaram. */
+  'sounds:update': (payload: { serverId: string }) => void;
   /** Bot de música: estado de cada canal de voz que você vê (ao conectar). */
   'music:snapshot': (states: MusicState[]) => void;
   /** Estado do bot de música de um canal mudou (null = parou). */
@@ -93,6 +101,8 @@ export interface ClientToServerEvents {
   /** Moderação de voz (dono do servidor, por enquanto). */
   'voice:moderate': (payload: VoiceModeration) => void;
   /** Pede de novo quem está em cada canal de voz e os status dos canais. */
+  /** Toca um efeito sonoro para todos do canal (só desmutado). */
+  'voice:sound': (payload: { soundId: string }) => void;
   'voice:sync': (ack: (res: { states: VoiceState[]; statuses: Record<string, string> }) => void) => void;
   /** Controles do bot de música: quem deu o /play manda direto, os outros votam. */
   'music:control': (payload: MusicControl) => void;

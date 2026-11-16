@@ -325,6 +325,8 @@ export const Icons = {
   Screen: icon(L.MonitorUp),
   Gamepad: icon(L.Gamepad2),
   Trophy: icon(L.Trophy),
+  Star: icon(L.Star),
+  Soundboard: icon(L.AudioLines),
   Monitor: icon(L.Monitor),
   AppWindow: icon(L.AppWindow),
   Refresh: icon(L.RefreshCw),

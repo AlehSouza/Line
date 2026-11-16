@@ -417,6 +417,22 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE members ADD COLUMN server_profile TEXT;
 "#,
+    // Painel de efeitos sonoros: sons curtos (até 5 s) de cada servidor.
+    r#"
+  CREATE TABLE soundboard_sounds (
+    id            TEXT PRIMARY KEY,
+    server_id     TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    user_id       TEXT REFERENCES users(id) ON DELETE SET NULL,
+    attachment_id TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    emoji         TEXT NOT NULL DEFAULT '',
+    volume        REAL NOT NULL DEFAULT 1,
+    duration      REAL NOT NULL DEFAULT 0,
+    plays         INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+  );
+  CREATE INDEX soundboard_sounds_server ON soundboard_sounds(server_id);
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

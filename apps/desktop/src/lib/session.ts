@@ -7,6 +7,7 @@ import { api, configureApi, DEFAULT_SERVER_URL, fileUrl } from './api';
 import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
 import { bindVoiceSocket, syncVoice, unbindVoice } from './voice';
 import { bindMusicSocket, syncMusic } from './music';
+import { bindSoundsSocket } from './sounds';
 import { handleIncoming, loadNotifyState, onRemoteAck, pref } from './notify';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
@@ -244,6 +245,7 @@ function connectSocket() {
   socket = s;
   bindVoiceSocket(s, useLine.getState().me!.id);
   bindMusicSocket(s);
+  bindSoundsSocket(s);
 
   s.on('connect', () => {
     useLine.setState({ connection: 'connected' });

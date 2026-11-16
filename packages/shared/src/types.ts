@@ -395,3 +395,20 @@ export interface ReadState {
   everyoneMentions: number;
   roleMentions: number;
 }
+
+/** Som do painel de efeitos sonoros de um servidor (WAV de até 5 s). */
+export interface Sound {
+  id: string;
+  serverId: string;
+  name: string;
+  emoji: string;
+  /** 0 a 1. */
+  volume: number;
+  duration: number;
+  /** Quantas vezes já tocou (os mais tocados aparecem primeiro). */
+  plays: number;
+  url: string;
+  userId: string | null;
+  user: PublicUser | null;
+  createdAt: string;
+}

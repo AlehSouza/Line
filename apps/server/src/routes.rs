@@ -169,6 +169,12 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         )
         .route("/attachments/{id}/{name}", get(serve_attachment))
         .route("/voice/ice", get(ice_servers))
+        .route("/soundboard", get(list_my_sounds))
+        .route("/servers/{id}/sounds", post(create_sound))
+        .route(
+            "/servers/{id}/sounds/{sound_id}",
+            patch(update_sound).delete(delete_sound),
+        )
         .route("/dms", get(list_dms).post(open_dm))
         .route("/dms/{id}/leave", post(leave_dm))
         .route("/friends", get(list_friends).post(add_friend))
@@ -3256,4 +3262,157 @@ async fn ice_servers(State(app): S, Me(me): Me) -> Res {
         list.push(json!({ "urls": turn.urls, "username": username, "credential": credential }));
     }
     ok(json!({ "iceServers": list }))
+}
+
+// ----- painel de efeitos sonoros -----
+
+/// Duração máxima de cada som, em segundos (com uma folguinha para arredondamento).
+const MAX_SOUND_SECS: f64 = 5.0;
+const MAX_SOUND_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Duração de um WAV PCM pelo cabeçalho (bytes de áudio / bytes por segundo).
+pub(crate) fn wav_duration(b: &[u8]) -> Option<f64> {
+    if b.len() < 12 || &b[0..4] != b"RIFF" || &b[8..12] != b"WAVE" {
+        return None;
+    }
+    let u32_at = |i: usize| {
+        b.get(i..i + 4)
+            .map(|x| u32::from_le_bytes([x[0], x[1], x[2], x[3]]))
+    };
+    let mut i = 12;
+    let mut byte_rate = None;
+    let mut data = None;
+    while i + 8 <= b.len() {
+        let size = u32_at(i + 4)? as usize;
+        match &b[i..i + 4] {
+            b"fmt " => byte_rate = u32_at(i + 8 + 8),
+            b"data" => data = Some(size.min(b.len() - (i + 8))),
+            _ => {}
+        }
+        i = i.checked_add(8 + size + (size & 1))?;
+    }
+    let rate = byte_rate.filter(|r| *r > 0)? as f64;
+    Some(data? as f64 / rate)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SoundInput {
+    attachment_id: Option<String>,
+    name: String,
+    #[serde(default)]
+    emoji: String,
+    #[serde(default = "one")]
+    volume: f64,
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+impl SoundInput {
+    fn clean(&self) -> ApiResult<(String, String, f64)> {
+        let name: String = self.name.trim().chars().take(32).collect();
+        if name.is_empty() {
+            return Err(validation("Dê um nome para o som"));
+        }
+        let emoji: String = self.emoji.trim().chars().take(16).collect();
+        let volume = if self.volume.is_finite() {
+            self.volume.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        Ok((name, emoji, volume))
+    }
+}
+
+fn can_manage_sound(q: &Q, server_id: &str, me: &str, sound: &crate::store::sounds::Sound) -> bool {
+    sound.user_id.as_deref() == Some(me) || has(q.permissions(server_id, me), perms::MANAGE_SERVER)
+}
+
+async fn list_my_sounds(State(app): S, Me(me): Me) -> Res {
+    ok(app.store.q().my_sounds(&me))
+}
+
+async fn create_sound(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<SoundInput>(&b)?;
+    let (name, emoji, volume) = input.clean()?;
+    let attachment_id = input
+        .attachment_id
+        .clone()
+        .ok_or_else(|| validation("Escolha um arquivo"))?;
+    // Confere tudo e solta o banco antes de ler o arquivo do disco.
+    {
+        let q = app.store.q();
+        require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+        if q.sound_count(&id) >= crate::store::sounds::MAX_SOUNDS {
+            return Err(validation("Este servidor já chegou no limite de sons"));
+        }
+        if !q.loose_wav(&attachment_id, &me) {
+            return Err(validation("Arquivo de som inválido"));
+        }
+    }
+    let path = app.uploads_dir.join(&attachment_id);
+    let size = tokio::fs::metadata(&path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+    if size == 0 || size > MAX_SOUND_BYTES {
+        return Err(validation("Arquivo de som grande demais"));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|_| internal("Não deu para ler o arquivo"))?;
+    let duration = wav_duration(&bytes).ok_or_else(|| validation("Arquivo de som inválido"))?;
+    if duration > MAX_SOUND_SECS + 0.05 {
+        return Err(validation("O som pode ter no máximo 5 segundos"));
+    }
+    if duration < 0.05 {
+        return Err(validation("O som está vazio"));
+    }
+    let q = app.store.q();
+    let sound = q.create_sound(&id, &me, &attachment_id, &name, &emoji, volume, duration);
+    app.to_server(&id, "sounds:update", &json!({ "serverId": id }));
+    created(sound)
+}
+
+async fn update_sound(
+    State(app): S,
+    Me(me): Me,
+    Path((id, sound_id)): Path<(String, String)>,
+    b: Bytes,
+) -> Res {
+    let input = body::<SoundInput>(&b)?;
+    let (name, emoji, volume) = input.clean()?;
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    let sound = q
+        .sound(&sound_id)
+        .filter(|s| s.server_id == id)
+        .ok_or_else(|| not_found("Som"))?;
+    if !can_manage_sound(&q, &id, &me, &sound) {
+        return Err(forbidden("Você não tem permissão para fazer isso"));
+    }
+    q.update_sound(&sound_id, &name, &emoji, volume);
+    app.to_server(&id, "sounds:update", &json!({ "serverId": id }));
+    ok(q.sound(&sound_id))
+}
+
+async fn delete_sound(
+    State(app): S,
+    Me(me): Me,
+    Path((id, sound_id)): Path<(String, String)>,
+) -> Res {
+    let q = app.store.q();
+    require_member(&q, &id, &me)?;
+    let sound = q
+        .sound(&sound_id)
+        .filter(|s| s.server_id == id)
+        .ok_or_else(|| not_found("Som"))?;
+    if !can_manage_sound(&q, &id, &me, &sound) {
+        return Err(forbidden("Você não tem permissão para fazer isso"));
+    }
+    q.delete_sound(&sound_id);
+    app.to_server(&id, "sounds:update", &json!({ "serverId": id }));
+    no_content()
 }

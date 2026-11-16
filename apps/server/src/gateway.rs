@@ -266,6 +266,7 @@ async fn on_connect(
     s.on("voice:status", voice_status);
     s.on("voice:moderate", voice_moderate);
     s.on("voice:sync", voice_sync);
+    s.on("voice:sound", voice_sound);
     s.on("music:control", music_control);
     s.on("music:report", music_report);
     s.on("music:sync", music_sync);
@@ -620,6 +621,57 @@ async fn voice_moderate(
             }
         }
         _ => {}
+    }
+}
+
+/// Efeito sonoro do painel: toca para todos do canal, só para quem está desmutado.
+async fn voice_sound(
+    s: SocketRef,
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
+    let Ok(d) = d else { return };
+    let Some(sound_id) = d.get("soundId").and_then(|c| c.as_str()) else {
+        return;
+    };
+    let q = app.store.q();
+    let Some(sound) = q.sound(sound_id) else {
+        return;
+    };
+    if !q.is_member(&sound.server_id, &me) {
+        return;
+    }
+    let Some(entry) = lock(&app.voice).get(&me).cloned() else {
+        return;
+    };
+    let st = &entry.state;
+    if entry.sid != s.id || st.muted || st.deafened || st.server_muted || st.server_deafened {
+        return;
+    }
+    if !has(q.channel_permissions(&me, &st.channel_id), perms::SPEAK) {
+        return;
+    }
+    let targets: Vec<Sid> = {
+        let mut voice = lock(&app.voice);
+        if !voice.sound_allowed(&me) {
+            return;
+        }
+        voice
+            .all()
+            .into_iter()
+            .filter(|v| v.state.channel_id == st.channel_id)
+            .map(|v| v.sid)
+            .collect()
+    };
+    q.sound_played(&sound.id);
+    let payload = json!({
+        "userId": me,
+        "channelId": st.channel_id,
+        "sound": { "id": sound.id, "name": sound.name, "emoji": sound.emoji, "volume": sound.volume, "url": sound.url, "serverId": sound.server_id },
+    });
+    for sid in targets {
+        app.to_socket(sid, "voice:sound", &payload);
     }
 }
 

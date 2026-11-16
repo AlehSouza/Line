@@ -11,8 +11,9 @@ import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { MusicSettings, SmartReplies } from './Music';
 import { ServerTagSettings } from './ServerTag';
+import { SoundboardSettings } from './Soundboard';
 
-type Section = 'overview' | 'tag' | 'roles' | 'members' | 'music' | 'replies';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'sounds' | 'music' | 'replies';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -45,6 +46,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
     { id: 'tag', label: 'Tag do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
+    { id: 'sounds', label: 'Painel de efeitos sonoros', show: canServer },
     { id: 'music', label: 'Personalizar', show: canServer },
     { id: 'replies', label: 'Respostas inteligentes', show: canServer },
   ];
@@ -73,6 +75,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
           <nav className="flex flex-col gap-0.5">
             {visible.map((n) => (
               <Fragment key={n.id}>
+              {n.id === 'sounds' && <p className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Expressões</p>}
               {n.id === 'music' && <p className="px-3 pt-4 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Agente</p>}
               <button
                 onClick={() => {
@@ -105,6 +108,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
             <RoleEditor serverId={serverId} roleId={editing} onSelect={setEditing} onBack={() => setEditing(null)} />
           )}
           {section === 'members' && canMembers && <MembersSection serverId={serverId} />}
+          {section === 'sounds' && canServer && <SoundboardSettings serverId={serverId} />}
           {section === 'music' && canServer && <MusicSettings serverId={serverId} />}
           {section === 'replies' && canServer && <SmartReplies serverId={serverId} />}
         </main>

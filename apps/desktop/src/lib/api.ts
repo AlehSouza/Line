@@ -24,6 +24,7 @@ import type {
   FavoriteSong,
   NotifySettings,
   ReadState,
+  Sound,
 } from '@line/shared';
 
 /**
@@ -329,6 +330,14 @@ export const api = {
   pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
+
+  /** Sons do painel de efeitos sonoros de todos os meus servidores. */
+  soundboard: () => request<Sound[]>('GET', '/soundboard'),
+  createSound: (serverId: string, input: { attachmentId: string; name: string; emoji: string; volume: number }) =>
+    request<Sound>('POST', `/servers/${enc(serverId)}/sounds`, input),
+  updateSound: (serverId: string, id: string, input: { name: string; emoji: string; volume: number }) =>
+    request<Sound>('PATCH', `/servers/${enc(serverId)}/sounds/${enc(id)}`, input),
+  deleteSound: (serverId: string, id: string) => request<void>('DELETE', `/servers/${enc(serverId)}/sounds/${enc(id)}`),
 
   iceServers: () => request<{ iceServers: RTCIceServer[] }>('GET', '/voice/ice'),
 

@@ -42,6 +42,7 @@ import { Avatar, Button, cx, Icons, Modal, Select, Slider, useAvatarTint } from 
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
+import { SoundboardButton } from './Soundboard';
 import { fileUrl } from '@/lib/api';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
 
@@ -756,6 +757,8 @@ export function VoiceControls({ large }: { large?: boolean }) {
           >
             <Icons.Chevron size={14} />
           </button>
+          <span className="mx-1 h-6 w-px bg-edge max-md:mx-0.5" />
+          <SoundboardButton className={key('off')} size={size} />
           {devMenu === 'camera' && (
             <CameraMenu
               onClose={() => setDevMenu(null)}
@@ -1384,7 +1387,7 @@ export function VoiceBar() {
           <Icons.PhoneOff size={18} />
         </button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={() => (camera ? void toggleCamera() : setModal('camera'))} className={tile(camera)}>
           {camera ? <Icons.Video size={16} /> : <Icons.VideoOff size={16} />}
         </button>
@@ -1396,6 +1399,7 @@ export function VoiceBar() {
           <Icons.Screen size={16} />
           {screen && <span>{RESOLUTIONS[quality.resolution].label}</span>}
         </button>
+        <SoundboardButton className={tile(false)} />
       </div>
       {modal === 'screen' && <ScreenShareModal onClose={() => setModal(null)} />}
       {modal === 'camera' && <CameraModal onClose={() => setModal(null)} />}

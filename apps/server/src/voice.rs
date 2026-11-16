@@ -58,11 +58,25 @@ pub struct VoiceRegistry {
     by_user: HashMap<String, VoiceEntry>,
     /// Status temporário de cada canal de voz; some quando o canal esvazia.
     statuses: HashMap<String, String>,
+    /// Último efeito sonoro de cada pessoa (para ninguém metralhar a chamada).
+    last_sound: HashMap<String, std::time::Instant>,
 }
 
 impl VoiceRegistry {
     pub fn get(&self, user_id: &str) -> Option<&VoiceEntry> {
         self.by_user.get(user_id)
+    }
+
+    /// Pode tocar outro efeito sonoro agora? (um a cada 300 ms por pessoa)
+    pub fn sound_allowed(&mut self, user_id: &str) -> bool {
+        let now = std::time::Instant::now();
+        match self.last_sound.get(user_id) {
+            Some(t) if now.duration_since(*t).as_millis() < 300 => false,
+            _ => {
+                self.last_sound.insert(user_id.to_string(), now);
+                true
+            }
+        }
     }
 
     pub fn join(
