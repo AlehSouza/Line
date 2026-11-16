@@ -374,6 +374,9 @@ export const Icons = {
   Flag: icon(L.Flag),
   Pin: icon(L.Pin),
   PinOff: icon(L.PinOff),
+  Bell: icon(L.Bell),
+  BellOff: icon(L.BellOff),
+  Inbox: icon(L.Inbox),
 };
 
 /** Bloco de carregamento com brilho animado. */

@@ -17,6 +17,7 @@ pub mod limits;
 pub mod mail;
 pub mod model;
 pub mod music;
+pub mod notify;
 pub mod perms;
 pub mod presence;
 pub mod profile;

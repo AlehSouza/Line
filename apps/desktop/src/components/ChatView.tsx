@@ -26,6 +26,7 @@ import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
 import { MobileBack, MobileMembersButton } from './Mobile';
 import { isPinned, openPinMenu, PinnedNote, PinsButton } from './Pins';
+import { InboxButton } from './Notifications';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -74,6 +75,8 @@ export function ChatView({ channel }: { channel: Channel }) {
         <div className="ml-auto flex items-center gap-1">
           {!channel.id.startsWith('draft:') && <PinsButton channel={channel} canPin={isDm || canPin} />}
           {!isDm && <MobileMembersButton />}
+          {/* No navegador não há barra de título: a caixa de entrada fica aqui. */}
+          {typeof window !== 'undefined' && !window.line?.window && <InboxButton size={20} className="rounded-md p-1.5 text-soft hover:bg-hover" />}
         </div>
         {isDm && !inCall && (
           <div className="flex gap-1">

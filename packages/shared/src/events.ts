@@ -4,6 +4,7 @@ import type {
   Friend,
   Member,
   Message,
+  NotifySettings,
   Presence,
   Role,
   PublicUser,
@@ -35,6 +36,10 @@ export interface ServerToClientEvents {
   'presence:update': (payload: { userId: string; presence: Presence; customStatus: string | null }) => void;
   'user:update': (user: PublicUser) => void;
   'self:update': (user: SelfUser) => void;
+  /** Configurações de notificação mudaram (em outro aparelho). */
+  'notify:settings': (settings: NotifySettings) => void;
+  /** Canal marcado como lido (em qualquer aparelho meu). */
+  'read:ack': (p: { channelId: string; messageId: string }) => void;
   'server:create': (server: Server) => void;
   'server:update': (server: Server) => void;
   'server:delete': (payload: { id: string }) => void;

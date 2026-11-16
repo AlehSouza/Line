@@ -5,6 +5,7 @@ import { fileUrl } from '@/lib/api';
 import { dmTitle, useLine } from '@/lib/store';
 import { goBack, goForward, startHistory, useNav } from '@/lib/history';
 import { cx, DefaultServerIcon } from './ui';
+import { InboxButton } from './Notifications';
 
 /**
  * Barra de título própria (a do Windows fica escondida), no mesmo tom do app.
@@ -22,6 +23,7 @@ export function TitleBar() {
     return v.page === 'requests' ? 'Solicitações' : 'Amigos';
   });
   const inServer = useLine((s) => s.view.kind === 'server');
+  const loggedIn = useLine((s) => !!s.token && !!s.me);
   const iconUrl = useLine((s) => (s.view.kind === 'server' ? s.servers[s.view.serverId]?.iconUrl : undefined));
 
   const canBack = useNav((h) => h.back.length > 0);
@@ -95,6 +97,7 @@ export function TitleBar() {
         <span className="truncate">{title}</span>
       </div>
       <div className="ml-auto flex h-full">
+        {loggedIn && <InboxButton className="mr-1 h-full w-10 hover:bg-hover" />}
         <WinButton title="Minimizar" onClick={win.minimize}>
           <path d="M1 5.5h9" />
         </WinButton>

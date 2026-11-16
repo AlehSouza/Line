@@ -11,6 +11,8 @@ import { cx, Icons, ListSkeleton } from './ui';
 import { CollapsedVoiceChannel, VoiceChannelMembers } from './Voice';
 import { CallTimer } from './VoiceInvite';
 import { confirmDialog, showError } from './Dialogs';
+import { isChannelMuted, isMutedAnywhere, isServerMuted, mentionCount, muteServer, serverNotify, unmuteServer } from '@/lib/notify';
+import { channelNotifyItems, MentionBadge, MutedIcon } from './Notifications';
 
 export function ChannelSidebar({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
@@ -18,6 +20,11 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const allChannels = useLine((s) => s.channels);
   const allCategories = useLine((s) => s.categories);
   const unread = useLine((s) => s.unread);
+  // Notificações: silenciados, menções e "ocultar silenciados" (lib/notify).
+  useLine((s) => s.notify);
+  useLine((s) => s.mentionCounts);
+  const st = useLine.getState();
+  const hideMuted = !!serverNotify(st, serverId).hideMuted;
   const activeId = useLine((s) => (s.view.kind === 'server' ? s.view.channelId : null));
   const openThreadId = useLine((s) => s.threadId);
   const loaded = useLine((s) => !!s.loadedServers[serverId]);
@@ -130,7 +137,10 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
 
   const renderChannel = (c: Channel) => {
     const active = c.id === activeId;
-    const hasUnread = !!unread[c.id] && !active;
+    const muted = isChannelMuted(st, c.id);
+    if (muted && hideMuted && !active) return null;
+    const hasUnread = !!unread[c.id] && !active && !isMutedAnywhere(st, c.id);
+    const mentions = active ? 0 : mentionCount(st, c.id);
     const Icon = c.type === 'voice' ? Icons.Speaker : Icons.Hash;
     return (
       <div key={c.id}>
@@ -169,6 +179,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             className={cx(
               'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[15px]',
               active ? 'bg-hover text-fg' : hasUnread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
+              muted && !active && 'opacity-50 hover:opacity-80',
             )}
           >
             <span className="relative shrink-0">
@@ -180,6 +191,8 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               )}
             </span>
             <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-9')}>{c.name}</span>
+            {muted && <MutedIcon className={cx(canChannels && 'group-hover:hidden')} />}
+            {mentions > 0 && <MentionBadge count={mentions} className={cx('ml-auto', canChannels && 'group-hover:hidden')} />}
           </button>
           {hasUnread && <span className="absolute top-1/2 -left-2 h-2 w-1 -translate-y-1/2 rounded-r bg-fg" />}
           {c.type === 'voice' && (
@@ -282,6 +295,22 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 close={() => setMenuOpen(false)}
               >
                 Alterar apelido
+              </MenuItem>
+            )}
+            <MenuItem
+              icon={<Icons.Bell size={16} />}
+              onClick={() => actions.openModal({ kind: 'notify-settings', serverId })}
+              close={() => setMenuOpen(false)}
+            >
+              Configurações de notificação
+            </MenuItem>
+            {isServerMuted(useLine.getState(), serverId) ? (
+              <MenuItem icon={<Icons.Bell size={16} />} onClick={() => unmuteServer(serverId)} close={() => setMenuOpen(false)}>
+                Reativar servidor
+              </MenuItem>
+            ) : (
+              <MenuItem icon={<Icons.BellOff size={16} />} onClick={() => muteServer(serverId, null)} close={() => setMenuOpen(false)}>
+                Silenciar servidor
               </MenuItem>
             )}
             {canChannels && (
@@ -424,9 +453,11 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
     {
       label: 'Marcar como lido',
       icon: <Icons.Check size={15} />,
-      disabled: !s.unread[c.id],
+      disabled: !s.unread[c.id] && !s.mentionCounts[c.id],
       onClick: () => actions.markRead(c.id),
     },
+    c.type !== 'voice' && 'sep',
+    ...(c.type !== 'voice' ? channelNotifyItems(c.id) : []),
     c.type === 'voice' &&
       (inThis
         ? { label: 'Sair da chamada', icon: <Icons.PhoneOff size={15} />, danger: true, onClick: () => leaveVoice() }

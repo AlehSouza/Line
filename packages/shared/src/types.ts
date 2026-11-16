@@ -334,3 +334,58 @@ export interface Poll {
   multi: boolean;
   options: PollOption[];
 }
+
+// ---------- notificações (igual ao Discord) ----------
+
+/** Quando notificar: todas as mensagens, só @menções ou nada. */
+export type NotifyLevel = 'all' | 'mentions' | 'nothing';
+
+/** Ajuste de um canal (ou DM): silenciar com duração e nível próprio (sem = usa o do servidor). */
+export interface ChannelNotify {
+  level?: NotifyLevel;
+  muted?: boolean;
+  /** Até quando fica silenciado (ISO); null/sem = até reativar. */
+  muteUntil?: string | null;
+}
+
+export interface ServerNotify extends ChannelNotify {
+  /** Não conta @everyone/@here como menção. */
+  suppressEveryone?: boolean;
+  /** Não conta menções de cargo. */
+  suppressRoles?: boolean;
+  /** Esconde canais silenciados da lista. */
+  hideMuted?: boolean;
+}
+
+/** Configurações de notificação da pessoa (o servidor só guarda; quem interpreta é o app). */
+export interface NotifySettings {
+  /** Notificações na área de trabalho (padrão: sim). */
+  desktop?: boolean;
+  /** Sons de notificação (padrão: sim). */
+  sounds?: boolean;
+  /** Número de não lidas no ícone da barra de tarefas (padrão: sim). */
+  badge?: boolean;
+  /** Piscar a barra de tarefas (padrão: sim). */
+  flash?: boolean;
+  /** Mostrar o texto da mensagem na notificação (padrão: sim). */
+  preview?: boolean;
+  /** Notificar novas solicitações de amizade (padrão: sim). */
+  friendRequests?: boolean;
+  servers?: Record<string, ServerNotify>;
+  channels?: Record<string, ChannelNotify>;
+}
+
+/** Até onde li um canal e quantas menções não lidas ele tem. */
+export interface ReadState {
+  channelId: string;
+  /** Servidor do canal (null = DM). */
+  serverId: string | null;
+  /** Canal pai (threads). */
+  parentId: string | null;
+  lastMessageId: string;
+  lastReadId: string;
+  /** Menções diretas (@eu) ou mensagens de DM. */
+  mentions: number;
+  everyoneMentions: number;
+  roleMentions: number;
+}

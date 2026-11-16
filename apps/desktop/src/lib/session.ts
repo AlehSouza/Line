@@ -7,6 +7,7 @@ import { api, configureApi, DEFAULT_SERVER_URL } from './api';
 import { actions, currentChannelId, dmTitle, firstTextChannel, mentionsToText, useLine, type View } from './store';
 import { bindVoiceSocket, syncVoice, unbindVoice } from './voice';
 import { bindMusicSocket, syncMusic } from './music';
+import { handleIncoming, loadNotifyState, onRemoteAck } from './notify';
 
 /** Convites de voz (ver components/VoiceInvite) viram um texto legível na notificação. */
 const previewContent = (c: string) =>
@@ -156,6 +157,7 @@ async function bootstrap() {
   actions.setDms(dms);
   actions.setFriends(friends);
   loadIgnored();
+  void loadNotifyState();
   restoreView();
   openSharedProfile();
   connectSocket();
@@ -270,6 +272,8 @@ function connectSocket() {
   s.on('presence:update', ({ userId, presence, customStatus }) => actions.setPresence(userId, presence, customStatus));
   s.on('user:update', (u) => actions.upsertUsers([u]));
   s.on('self:update', (u) => actions.setMe(u));
+  s.on('notify:settings', (n) => useLine.setState({ notify: n }));
+  s.on('read:ack', ({ channelId, messageId }) => onRemoteAck(channelId, messageId));
   s.on('server:create', (srv) => {
     actions.upsertServer(srv);
     void syncVoice();
@@ -350,6 +354,7 @@ async function resync() {
   actions.setDms(dms);
   actions.setFriends(friends);
   useLine.setState({ loadedServers: {}, messages: {} });
+  void loadNotifyState();
   const { view } = useLine.getState();
   if (view.kind === 'server') await ensureServerLoaded(view.serverId);
 }
@@ -357,42 +362,47 @@ async function resync() {
 function onMessage(message: Message) {
   const state = useLine.getState();
   // DM nova que ainda não conhecemos: busca a lista de novo.
-  if (!state.channels[message.channelId]) void api.dms().then(actions.setDms);
+  if (!state.channels[message.channelId] && !state.channelInfo[message.channelId]) void api.dms().then(actions.setDms);
   actions.addMessage(message);
   actions.upsertUsers([message.author]);
 
-  const mine = message.author.id === state.me?.id;
-  if (mine) return;
+  if (message.author.id === state.me?.id) {
+    // Minha mensagem: o servidor já marcou o canal como lido até ela.
+    useLine.setState((s) => ({ readMarks: { ...s.readMarks, [message.channelId]: { read: message.id, last: message.id } } }));
+    return;
+  }
   const viewing =
     (currentChannelId(state) === message.channelId || state.threadId === message.channelId) && document.hasFocus();
-  if (!viewing) actions.markUnread(message.channelId);
-
-  const channel = state.channels[message.channelId];
-  const isDm = !channel?.serverId;
-  const mentioned = mentionsMe(message);
-  const dnd = state.me?.status === 'dnd';
-  if (!viewing && !dnd && (isDm || mentioned)) notify(message);
+  handleIncoming(message, viewing, notify);
 }
 
-function notify(message: Message) {
+function notify(message: Message, desktop: boolean) {
   const state = useLine.getState();
   const channel = state.channels[message.channelId];
+  const serverId = channel?.serverId ?? state.channelInfo[message.channelId]?.serverId ?? null;
   let title = message.author.displayName;
-  if (channel?.serverId) {
-    const srv = state.servers[channel.serverId];
-    title = `${message.author.displayName} (#${channel.name}${srv ? `, ${srv.name}` : ''})`;
+  if (serverId) {
+    const srv = state.servers[serverId];
+    title = `${message.author.displayName}${channel ? ` (#${channel.name}${srv ? `, ${srv.name}` : ''})` : srv ? ` (${srv.name})` : ''}`;
   } else if (channel?.type === 'group_dm') {
     title = `${message.author.displayName} em ${dmTitle(channel, state.me?.id, state.users)}`;
   }
-  window.line?.requestAttention();
-  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  const body = (message.content && previewContent(mentionsToText(message.content, channel?.serverId))) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
-  const n = new Notification(title, { body: body.slice(0, 200), silent: false });
+  if (!desktop || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const full = (message.content && previewContent(mentionsToText(message.content, serverId))) || (message.attachments.length ? `📎 ${message.attachments.map((a) => a.filename).join(', ')}` : '');
+  const body = state.notify.preview === false ? 'Nova mensagem' : full;
+  // Sem o som do sistema: o Line toca o próprio (e respeita a opção "Sons").
+  const n = new Notification(title, { body: body.slice(0, 200), silent: true });
   n.onclick = () => {
     window.focus();
-    if (channel?.type === 'thread') actions.openThread(channel.id);
-    else if (channel?.serverId) actions.goServer(channel.serverId, channel.id);
-    else actions.goHome(message.channelId);
+    void (async () => {
+      if (serverId && !channel) await ensureServerLoaded(serverId).catch(() => {});
+      const ch = useLine.getState().channels[message.channelId];
+      if (ch?.type === 'thread' && ch.parentId && ch.serverId) {
+        actions.goServer(ch.serverId, ch.parentId);
+        actions.openThread(ch.id);
+      } else if (serverId) actions.goServer(serverId, message.channelId);
+      else actions.goHome(message.channelId);
+    })();
   };
 }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { ServerNotifyModal } from './Notifications';
 import { FullProfile } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
 import { mobile } from '@/lib/mobile';
@@ -40,6 +41,8 @@ export function Modals() {
       return <NicknameDialog serverId={modal.serverId} userId={modal.userId} onClose={close} />;
     case 'server-settings':
       return <ServerSettings serverId={modal.serverId} initial={modal.section} onClose={close} />;
+    case 'notify-settings':
+      return <ServerNotifyModal serverId={modal.serverId} onClose={close} />;
     case 'invite':
       return <InviteModal serverId={modal.serverId} onClose={close} />;
     case 'profile':

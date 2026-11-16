@@ -8,16 +8,18 @@ import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
 import { VoiceSettingsPanel } from './Voice';
 import { ActivityPrivacySection, GamesSection } from './Activity';
+import { NotificationsSection } from './Notifications';
 import { showError, toast } from './Dialogs';
 import { getTheme, setTheme, THEMES, type ThemeId } from '@/lib/theme';
 
-type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'app' | 'blocked' | 'games' | 'activity';
+type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'notifications' | 'app' | 'blocked' | 'games' | 'activity';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
   { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
+  { id: 'notifications', label: 'Notificações', icon: <Icons.Bell size={18} />, keywords: 'notificações som sons silenciar menções badge área de trabalho não perturbe ocupado' },
   { id: 'app', label: 'Aplicativo', icon: <Icons.Monitor size={18} />, keywords: 'aplicativo iniciar inicialização computador ligar sistema abrir junto minimizado bandeja windows' },
   { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
   { id: 'games', label: 'Jogos registrados', icon: <Icons.Gamepad size={18} />, keywords: 'jogos apps registrados jogo atual adicionados atividade' },
@@ -149,6 +151,7 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               {section === 'profile' && <ProfileEditor />}
               {section === 'appearance' && <AppearanceSection />}
               {section === 'voice' && <VoiceSettingsPanel />}
+              {section === 'notifications' && <NotificationsSection />}
               {section === 'app' && <AppSection />}
               {section === 'blocked' && <BlockedSection />}
               {section === 'games' && <GamesSection />}
