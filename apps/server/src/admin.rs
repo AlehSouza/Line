@@ -663,7 +663,23 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
             let channel = q.channel(&m.channel_id);
             server_id = channel.as_ref().and_then(|c| c.server_id.clone());
             let server = server_id.as_deref().and_then(|s| q.server(s));
+            // Contexto para o julgamento: até 5 mensagens antes e 5 depois no mesmo canal/conversa
+            // (só aparece no painel admin).
+            let brief = |x: &crate::model::Message| {
+                json!({
+                    "id": x.id,
+                    "content": x.content,
+                    "createdAt": x.created_at,
+                    "editedAt": x.edited_at,
+                    "author": { "id": x.author.id, "username": x.author.username, "displayName": x.author.display_name },
+                    "attachments": x.attachments.iter().map(|a| json!({ "filename": a.filename })).collect::<Vec<_>>(),
+                })
+            };
+            let before: Vec<Value> = q.messages(&m.channel_id, Some(&m.id), 5).iter().map(brief).collect();
+            let after: Vec<Value> = q.messages_after(&m.channel_id, &m.id, 5).iter().map(brief).collect();
             snapshot = Some(json!({
+                "before": before,
+                "after": after,
                 "id": m.id,
                 "content": m.content,
                 "createdAt": m.created_at,

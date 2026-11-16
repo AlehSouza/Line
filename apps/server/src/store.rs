@@ -1955,6 +1955,17 @@ impl Q<'_> {
         rows
     }
 
+    /// Até `limit` mensagens logo depois de uma, em ordem cronológica.
+    pub fn messages_after(&self, channel_id: &str, after: &str, limit: i64) -> Vec<Message> {
+        self.message_rows(
+            &format!(
+                "{} WHERE m.channel_id = ? AND m.id > ? ORDER BY m.id ASC LIMIT ?",
+                message_select()
+            ),
+            params![channel_id, after, limit],
+        )
+    }
+
     /// Mensagens em volta de uma (para pular até ela): 25 antes e até 500 depois.
     pub fn messages_around(&self, channel_id: &str, around: &str) -> Vec<Message> {
         let mut before = self.message_rows(
