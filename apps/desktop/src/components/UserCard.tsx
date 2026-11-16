@@ -250,7 +250,7 @@ export function UserCard({
           {/* Agente: o nome de usuário dele é um código interno, não aparece em lugar nenhum. */}
           <p className="truncate text-sm text-soft">
             {user.bot ? 'Agente do servidor' : user.username}
-            {user.pronouns && <span className="text-muted"> • {user.pronouns}</span>}
+            {user.pronouns && <span className="text-muted"> • <span data-tip="Pronomes" style={{ cursor: 'default' }}>{user.pronouns}</span></span>}
           </p>
           {user.customStatus && <p className="mt-1.5 text-sm text-soft">{user.customStatus}</p>}
 

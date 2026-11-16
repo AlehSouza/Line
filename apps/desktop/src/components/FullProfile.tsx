@@ -118,7 +118,7 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
             </p>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-soft">
               <span>{user.bot ? 'Agente do servidor' : user.username}</span>
-              {user.pronouns && <span className="text-muted">• {user.pronouns}</span>}
+              {user.pronouns && <span className="text-muted">• <span data-tip="Pronomes" style={{ cursor: 'default' }}>{user.pronouns}</span></span>}
               <UserTagBadge user={user} />
             </p>
             {user.customStatus && <p className="mt-1.5 text-sm text-soft">{user.customStatus}</p>}
