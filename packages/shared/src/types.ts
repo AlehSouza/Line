@@ -23,6 +23,50 @@ export interface PublicUser {
   tag?: { serverId: string; text: string; icon?: string | null; iconUrl?: string | null; style?: TagStyle | null } | null;
   /** Só para bots: cor do nome, cor da etiqueta, texto dela ("BOT" ou "B") e cor do anel de fala. */
   botStyle?: { nameColor: string | null; tagColor: string | null; tagText: 'BOT' | 'B'; ringColor?: string | null };
+  /** Estilo do nome exibido (fonte, efeito e cores). */
+  nameStyle?: NameStyle | null;
+}
+
+export type NameFont =
+  | 'default' | 'fredoka' | 'bungee' | 'lobster' | 'righteous' | 'playfair'
+  | 'mono' | 'orbitron' | 'gothic' | 'pacifico' | 'pixel' | 'caveat';
+export type NameEffect = 'solid' | 'gradient' | 'neon' | 'draw' | 'pop' | 'gummy' | 'prism';
+
+export interface NameStyle {
+  font: NameFont;
+  effect: NameEffect;
+  /** Cores em #rrggbb (1 a 6, conforme o efeito). */
+  colors: string[];
+}
+
+/** Jogo do perfil (capa da IGDB quando houver). */
+export interface ProfileGame {
+  name: string;
+  cover?: string | null;
+}
+
+export type ConnectionType =
+  | 'twitch' | 'youtube' | 'steam' | 'spotify' | 'instagram' | 'x' | 'github' | 'tiktok'
+  | 'xbox' | 'playstation' | 'epic' | 'riot' | 'battlenet' | 'site';
+
+export interface ProfileConnection {
+  type: ConnectionType;
+  name: string;
+}
+
+/** O que o modal de perfil mostra além do PublicUser (GET /users/{id}/profile). */
+export interface UserProfile {
+  createdAt: string;
+  /** Entrada no servidor aberto (se for membro). */
+  joinedAt: string | null;
+  friendsSince: string | null;
+  note: string;
+  ignored: boolean;
+  favoriteGame: ProfileGame | null;
+  likedGames: ProfileGame[];
+  connections: ProfileConnection[];
+  playing: { name: string; since: string } | null;
+  activity: { name: string; icon?: string | null; cover?: string | null; lastPlayed: string; totalSecs: number }[];
 }
 
 /** Aparência da tag do servidor (tudo opcional; vazio = padrão). */

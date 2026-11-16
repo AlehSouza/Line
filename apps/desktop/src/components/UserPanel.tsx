@@ -1,5 +1,6 @@
 'use client';
 
+import { StyledName } from '@/lib/nameStyle';
 import type { UserStatus } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
@@ -33,7 +34,7 @@ export function UserPanel() {
       >
         <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={32} presence={shownPresence} ring="rail" />
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{me.displayName}</span>
+          <StyledName user={me} className="block truncate text-sm font-semibold">{me.displayName}</StyledName>
           <span className="block truncate text-xs text-muted">{me.customStatus || `@${me.username}`}</span>
         </span>
       </button>

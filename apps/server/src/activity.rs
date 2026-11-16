@@ -93,6 +93,54 @@ impl Igdb {
     }
 }
 
+impl Igdb {
+    /// Busca jogos pelo nome: até 10 `{ name, cover }`.
+    pub async fn search(&self, text: &str) -> Vec<Value> {
+        let Ok(http) = reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .build()
+        else {
+            return vec![];
+        };
+        let Some(token) = self.token(&http).await else {
+            return vec![];
+        };
+        let safe: String = text
+            .chars()
+            .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
+            .take(60)
+            .collect();
+        let body = format!(
+            "search \"{safe}\"; fields name,cover.image_id; where cover != null & version_parent = null; limit 10;"
+        );
+        let Ok(res) = http
+            .post("https://api.igdb.com/v4/games")
+            .header("Client-ID", &self.client_id)
+            .header("Authorization", format!("Bearer {token}"))
+            .body(body)
+            .send()
+            .await
+        else {
+            return vec![];
+        };
+        let v: Value = res.json().await.unwrap_or(Value::Null);
+        v.as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|g| {
+                        let name = g.get("name")?.as_str()?;
+                        let id = g.get("cover")?.get("image_id")?.as_str()?;
+                        Some(json!({
+                            "name": name,
+                            "cover": format!("https://images.igdb.com/igdb/image/upload/t_cover_big/{id}.jpg"),
+                        }))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
 /// Nome de jogo aceitável vindo do app.
 fn clean_name(s: &str) -> Option<String> {
     let n: String = s

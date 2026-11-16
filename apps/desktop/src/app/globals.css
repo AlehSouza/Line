@@ -301,3 +301,18 @@ body {
     font-size: 16px !important;
   }
 }
+
+/* Estilo do nome exibido: efeito Prism (gradiente andando). */
+@keyframes line-name-prism {
+  to {
+    background-position: 200% 0;
+  }
+}
+.line-name-prism {
+  animation: line-name-prism 6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .line-name-prism {
+    animation: none;
+  }
+}

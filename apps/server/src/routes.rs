@@ -200,7 +200,11 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             get(|| async { Json(json!({ "ok": true, "name": "line", "version": VERSION })) }),
         )
         .route("/api/status", get(public_status))
-        .nest("/api", api.merge(crate::admin::router()))
+        .nest(
+            "/api",
+            api.merge(crate::admin::router())
+                .merge(crate::profile::router()),
+        )
         .fallback(web_fallback)
         .with_state(app)
         .layer(socket_layer)

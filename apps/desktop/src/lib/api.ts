@@ -17,6 +17,10 @@ import type {
   UpdateChannelInput,
   UpdateProfileInput,
   UpdateServerInput,
+  NameStyle,
+  ProfileConnection,
+  ProfileGame,
+  UserProfile,
 } from '@line/shared';
 
 /**
@@ -213,6 +217,15 @@ export const api = {
   /** Exclui a conta para sempre. */
   deleteAccount: (proof: { password?: string; code?: string }) => request<void>('POST', '/users/@me/delete', proof),
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
+  profile: (id: string, serverId?: string | null) =>
+    request<UserProfile>('GET', `/users/${enc(id)}/profile${serverId ? `?server=${enc(serverId)}` : ''}`),
+  updateProfileExtras: (patch: { favoriteGame?: ProfileGame | null; likedGames?: ProfileGame[]; connections?: ProfileConnection[]; nameStyle?: NameStyle | null }) =>
+    request<{ favoriteGame: ProfileGame | null; likedGames: ProfileGame[]; connections: ProfileConnection[] }>('PUT', '/users/@me/profile', patch),
+  setNote: (id: string, note: string) => request<{ note: string }>('PUT', `/users/${enc(id)}/note`, { note }),
+  ignored: () => request<string[]>('GET', '/users/@me/ignored'),
+  ignore: (id: string) => request<void>('PUT', `/users/${enc(id)}/ignore`),
+  unignore: (id: string) => request<void>('DELETE', `/users/${enc(id)}/ignore`),
+  searchGames: (q: string) => request<{ games: ProfileGame[]; enabled: boolean }>('GET', `/games/search?q=${enc(q)}`),
   mutual: (id: string) => request<{ friends: PublicUser[]; servers: Server[] }>('GET', `/users/${enc(id)}/mutual`),
 
   servers: () => request<Server[]>('GET', '/servers'),

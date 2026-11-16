@@ -22,6 +22,8 @@ export type Modal =
   | { kind: 'create-poll'; channelId: string }
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
+  | { kind: 'full-profile'; userId: string; serverId?: string | null }
+  | { kind: 'name-style' }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
   | { kind: 'image'; url: string; filename: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }

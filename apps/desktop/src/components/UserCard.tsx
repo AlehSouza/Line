@@ -12,6 +12,7 @@ import { UserTagBadge } from './ServerTag';
 import { EmojiButton } from './EmojiField';
 import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
+import { StyledName } from '@/lib/nameStyle';
 
 export { statusOptions } from './StatusPicker';
 
@@ -44,7 +45,8 @@ export function UserCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
-  const roleColor = useMemberColor(useViewServer(), userId);
+  const viewServer = useViewServer();
+  const roleColor = useMemberColor(viewServer, userId);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -206,7 +208,13 @@ export function UserCard({
           {/* Avatar + balão de pensamento */}
           <div className="relative z-[5] -mt-12 flex items-start gap-2">
             {/* Borda de 4px na cor do fundo do cartão (recorte), sem sombra; flex evita o vão da linha de texto. */}
-            <span className="flex shrink-0 rounded-full border-4" style={{ borderColor: ring, background: ring }}>
+            <button
+              type="button"
+              title="Ver perfil completo"
+              onClick={() => actions.openModal({ kind: 'full-profile', userId, serverId: viewServer })}
+              className="flex shrink-0 rounded-full border-4"
+              style={{ borderColor: ring, background: ring }}
+            >
               <Avatar
                 name={user.displayName}
                 color={user.avatarColor}
@@ -217,7 +225,7 @@ export function UserCard({
                 dotSize={20}
                 className="block"
               />
-            </span>
+            </button>
             {user.thought && (
               <span className="relative mt-14 max-w-[190px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
                 <span className="absolute top-1 -left-1.5 h-2.5 w-2.5 rounded-full border border-edge bg-side" />
@@ -226,8 +234,10 @@ export function UserCard({
             )}
           </div>
 
-          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold" style={{ color: nameColor }}>
-            <span className="truncate">{user.displayName}</span>
+          <p className="mt-2 flex min-w-0 items-center gap-2 text-xl leading-tight font-bold">
+            <StyledName user={user} color={nameColor} className="truncate">
+              {user.displayName}
+            </StyledName>
             <UserTagBadge user={user} />
           </p>
           {/* Agente: o nome de usuário dele é um código interno, não aparece em lugar nenhum. */}
@@ -430,8 +440,9 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
 }
 
 /** Tags de cargos da pessoa no servidor aberto, com + e x para quem pode gerenciar cargos. */
-function MemberRoles({ userId }: { userId: string }) {
-  const serverId = useViewServer();
+export function MemberRoles({ userId, serverId: fixed }: { userId: string; serverId?: string | null }) {
+  const viewServer = useViewServer();
+  const serverId = fixed !== undefined ? fixed : viewServer;
   const member = useLine((s) => (serverId ? s.members[serverId]?.[userId] : undefined));
   const roles = useLine((s) => (serverId ? s.roles[serverId] : undefined));
   const canRoles = useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles));

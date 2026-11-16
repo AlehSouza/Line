@@ -246,7 +246,7 @@ export function userMenu(userId: string, at: { x: number; y: number }, serverId?
     return dm;
   };
   return [
-    { label: 'Perfil', icon: <Icons.User size={15} />, onClick: () => actions.openModal({ kind: 'user', userId, at }) },
+    { label: 'Perfil', icon: <Icons.User size={15} />, onClick: () => actions.openModal({ kind: 'full-profile', userId, serverId }) },
     user && {
       label: 'Mencionar',
       icon: <Icons.AtSign size={15} />,
