@@ -797,14 +797,21 @@ function snapshotView(r) {
   const where = m.server ? `${m.server.name} · #${m.channel?.name || '?'}` : 'Conversa privada';
   const before = m.before || [];
   const after = m.after || [];
-  const files = (x) => (x.attachments?.length ? h('div', { class: 'muted small' }, `📎 ${x.attachments.map((a) => a.filename).join(', ')}`) : null);
+  // Na denunciada, mostra as cópias guardadas (imagens de verdade) em vez do nome do arquivo.
+  const shots = (r.kind === 'message' && r.images) || [];
+  const files = (x, hit) =>
+    hit && shots.length
+      ? shotsView(shots)
+      : x.attachments?.length
+        ? h('div', { class: 'muted small' }, `📎 ${x.attachments.map((a) => a.filename).join(', ')}`)
+        : null;
   if (!before.length && !after.length) {
     return h(
       'div',
       { class: 'quote' },
       h('div', { class: 'muted small', style: 'margin-bottom:4px' }, h('b', { style: 'color:var(--fg)' }, m.author?.displayName || '?'), ` @${m.author?.username || '?'} · ${where} · ${date(m.createdAt)}`, m.editedAt ? ` (editada ${date(m.editedAt)})` : '', ` · id ${m.id}`),
-      msgText(m.content),
-      files(m),
+      m.content || !shots.length ? msgText(m.content) : null,
+      files(m, true),
     );
   }
   // Contexto guardado na hora da denúncia: até 5 antes e 5 depois, com a denunciada destacada.
@@ -819,8 +826,8 @@ function snapshotView(r) {
         h('span', { class: 'muted small' }, ` @${x.author?.username || '?'} · ${date(x.createdAt)}${x.editedAt ? ' (editada)' : ''}`),
         hit ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'denunciada') : null,
       ),
-      h('div', { class: 'ctx-text' }, msgText(x.content)),
-      files(x),
+      x.content || !(hit && shots.length) ? h('div', { class: 'ctx-text' }, msgText(x.content)) : null,
+      files(x, hit),
     );
   return h(
     'div',
@@ -830,6 +837,11 @@ function snapshotView(r) {
     row(m, true),
     after.map((x) => row(x, false)),
   );
+}
+
+/** Miniaturas dos anexos (imagem abre em nova aba; outros arquivos viram link). */
+function shotsView(list) {
+  return h('div', { class: 'shots' }, list.map((img) => (img.contentType || '').startsWith('image/') ? h('a', { href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${FILES}${img.url}`, alt: img.filename, loading: 'lazy' })) : h('a', { class: 'pill', href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, img.filename)));
 }
 
 /** Texto da mensagem: **negrito** e cartões de música ([[musica:...]]) legíveis. */
@@ -859,7 +871,7 @@ function reportCard(r, reload) {
       h('div', { style: 'margin-top:8px' }, 'Contra ', h('button', { class: 'linkish', onclick: () => openUser(r.targetUserId) }, `${r.targetName || '?'} (@${r.targetUsername || '?'})`), banned(r.targetBannedUntil) ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'suspenso') : null, where ? h('span', { class: 'muted' }, ` em ${where}`) : null),
     snapshotView(r),
     r.details && h('p', { class: 'details' }, r.kind === 'message' || r.kind === 'user' ? h('span', { class: 'muted small' }, 'Relato de quem denunciou: ') : null, r.details),
-    r.images?.length ? h('div', { class: 'shots' }, r.images.map((img) => (img.contentType || '').startsWith('image/') ? h('a', { href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${FILES}${img.url}`, alt: img.filename, loading: 'lazy' })) : h('a', { class: 'pill', href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, img.filename))) : null,
+    r.kind !== 'message' && r.images?.length ? shotsView(r.images) : null,
     (r.platform || r.version) && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, [r.platform, r.version && `versão ${r.version}`].filter(Boolean).join(' · ')),
     r.note && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, `Anotação: ${r.note}`),
     h(
