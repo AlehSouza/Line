@@ -56,6 +56,22 @@ export function ReportModal({
     });
   };
 
+  // Ctrl+V de imagem em qualquer lugar do formulário (inclusive com o foco no texto).
+  const pasteRef = useRef(addImages);
+  pasteRef.current = addImages;
+  const acceptsImages = !target || !target.messageId;
+  useEffect(() => {
+    if (!acceptsImages) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+      e.preventDefault();
+      pasteRef.current(files);
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [acceptsImages]);
+
   const isReport = !!target;
   // Prints: até 5 no bug/melhoria e 3 na denúncia de usuário (a de mensagem já leva a cópia dela).
   const withImages = !target || !target.messageId;
@@ -135,7 +151,7 @@ export function ReportModal({
           <p className="line-clamp-3 rounded-lg border border-edge bg-rail/60 px-3 py-2 text-sm break-words text-soft">{target.preview}</p>
         )}
         {isReport && (
-          <Field label="Motivo">
+          <Field label="Motivo" group>
             <div className="flex flex-wrap gap-2">
               {REASONS.map((r) => (
                 <button
@@ -168,7 +184,6 @@ export function ReportModal({
         </Field>
         {withImages && (
           <div
-            onPaste={(e) => addImages(e.clipboardData.files)}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
@@ -209,6 +224,7 @@ export function ReportModal({
                 </button>
               )}
             </div>
+            <p className="mt-1.5 text-xs text-muted">Dá para colar um print com Ctrl+V ou arrastar a imagem para cá.</p>
             <input
               ref={picker}
               type="file"
