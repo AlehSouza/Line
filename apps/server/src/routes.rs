@@ -64,6 +64,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/forgot", post(forgot_password))
         .route("/auth/reset", post(reset_password))
+        .route("/auth/reset/info", get(reset_info))
         .route("/auth/google/start", get(google_start))
         .route("/auth/google/callback", get(google_callback))
         .route("/auth/google/finish", post(google_finish))
@@ -72,6 +73,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/users/@me/account", patch(update_account))
         .route("/users/@me/password", post(change_password))
         .route("/users/@me/code", post(send_email_code))
+        .route("/users/@me/password/link", post(send_reset_link))
         .route("/users/{id}", get(get_user))
         .route("/users/{id}/mutual", get(get_mutual))
         .route("/search", get(search))
@@ -128,6 +130,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/servers/{id}/agent/replies", get(get_bot_replies).put(set_bot_replies))
         .route("/servers/{id}/music/settings", get(get_music_settings).patch(update_music_settings))
         .route("/messages/{id}/poll/votes", post(vote_poll))
+        .route("/messages/{id}/pin", put(pin_message).delete(unpin_message))
+        .route("/channels/{id}/pins", get(list_pins))
         .route(
             "/messages/{id}/reactions/{emoji}",
             put(add_reaction).delete(remove_reaction),
@@ -531,22 +535,66 @@ async fn forgot_password(State(app): S, headers: HeaderMap, b: Bytes) -> Res {
         q.user_by_email(&input.email).filter(|u| !q.reset_requested_recently(&u.id, 60))
     };
     if let Some(user) = found {
-        use base64::Engine;
-        use rand::RngCore;
-        let mut bytes = [0u8; 32];
-        rand::rng().fill_bytes(&mut bytes);
-        let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
-        app.store.q().create_password_reset(&user.id, &reset_token_hash(&token), RESET_MINUTES);
-        // Envia em segundo plano: a resposta demora o mesmo com ou sem conta.
-        let app = app.clone();
-        tokio::spawn(async move {
-            if let Some(mailer) = &app.mailer {
-                let link = format!("{}/?reset={token}", mailer.app_url);
-                mailer.send_password_reset(&input.email, &user.display_name, &link).await;
-            }
-        });
+        issue_reset_link(&app, &user.id, input.email.clone(), user.display_name.clone());
     }
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Cria um token de recuperação e manda o link por email em segundo plano.
+fn issue_reset_link(app: &Arc<App>, user_id: &str, email: String, name: String) {
+    use base64::Engine;
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+    app.store.q().create_password_reset(user_id, &reset_token_hash(&token), RESET_MINUTES);
+    let app = app.clone();
+    tokio::spawn(async move {
+        if let Some(mailer) = &app.mailer {
+            let link = format!("{}/?reset={token}", mailer.app_url);
+            mailer.send_password_reset(&email, &name, &link).await;
+        }
+    });
+}
+
+/// "Redefinir senha" nas configurações: manda o link para o email da própria conta
+/// (serve também para conta do Google, que não tem senha).
+async fn send_reset_link(State(app): S, Me(me): Me) -> Res {
+    if app.mailer.is_none() {
+        return Err(ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "RESET_DISABLED", "O envio de email ainda não está disponível."));
+    }
+    let (email, name) = {
+        let q = app.store.q();
+        let user = q.user_row(&me).ok_or_else(|| validation("Conta não encontrada"))?;
+        let Some(email) = user.email.clone().filter(|e| !e.is_empty()) else {
+            return Err(validation("Sua conta não tem email cadastrado."));
+        };
+        if q.reset_requested_recently(&me, 60) {
+            return Err(ApiError::new(StatusCode::TOO_MANY_REQUESTS, "RATE_LIMITED", "Espere um minuto para pedir outro link."));
+        }
+        (email, user.display_name)
+    };
+    issue_reset_link(&app, &me, email.clone(), name);
+    ok(json!({ "email": email }))
+}
+
+/// Dono do link de recuperação, para a página mostrar "Redefinindo senha de ...".
+async fn reset_info(State(app): S, Query(qs): Query<HashMap<String, String>>) -> Res {
+    let token = qs.get("token").map(String::as_str).unwrap_or_default();
+    if token.is_empty() || token.len() > 128 {
+        return Err(validation("Link de recuperação inválido"));
+    }
+    let q = app.store.q();
+    let user = q
+        .password_reset_user(&reset_token_hash(token))
+        .and_then(|id| q.public_user(&id))
+        .ok_or_else(|| validation("Esse link expirou ou já foi usado. Peça um novo."))?;
+    ok(json!({
+        "username": user.username,
+        "displayName": user.display_name,
+        "avatarUrl": user.avatar_url,
+        "avatarColor": user.avatar_color,
+    }))
 }
 
 /// Define a senha nova a partir do token do email (vale uma vez, por 30 minutos).
@@ -2028,6 +2076,74 @@ async fn edit_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     let updated = q.edit_message(&message.id, &input.content);
     app.to_channel(&q, &message.channel_id, "message:update", &updated);
     ok(updated)
+}
+
+/// Quanto tempo uma mensagem pode ficar fixada (minutos): 1h, 5h, 10h, 1 dia, 7 dias, 30 dias.
+/// Sem `minutes` (ou null) = sempre.
+const PIN_MINUTES: [i64; 6] = [60, 300, 600, 1440, 10080, 43200];
+/// Máximo de fixadas ao mesmo tempo por canal.
+const MAX_PINS: usize = 50;
+
+/// Mensagem que `me` pode fixar/desafixar: em servidor precisa de Gerenciar mensagens;
+/// em DM e grupo qualquer participante pode.
+fn pinnable(q: &Q, me: &str, id: &str) -> ApiResult<Message> {
+    let message = q
+        .message(id)
+        .filter(|m| q.can_access(me, &m.channel_id))
+        .ok_or_else(|| not_found("Mensagem"))?;
+    let channel = q.channel(&message.channel_id).ok_or_else(|| not_found("Mensagem"))?;
+    if let Some(server_id) = channel.server_id.as_deref()
+        && !has(q.permissions(server_id, me), perms::MANAGE_MESSAGES)
+    {
+        return Err(forbidden("Você precisa da permissão Gerenciar mensagens para fixar"));
+    }
+    Ok(message)
+}
+
+#[derive(serde::Deserialize, Default)]
+struct PinInput {
+    minutes: Option<i64>,
+}
+
+async fn pin_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input: PinInput = if b.is_empty() {
+        PinInput::default()
+    } else {
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?
+    };
+    let until = match input.minutes {
+        None => None,
+        Some(m) if PIN_MINUTES.contains(&m) => Some(
+            (chrono::Utc::now() + chrono::Duration::minutes(m))
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string(),
+        ),
+        Some(_) => return Err(validation("Duração inválida")),
+    };
+    let q = app.store.q();
+    let message = pinnable(&q, &me, &id)?;
+    if message.pinned_at.is_none() && q.pinned_messages(&message.channel_id).len() >= MAX_PINS {
+        return Err(validation(format!("Esse canal já tem {MAX_PINS} mensagens fixadas. Desafixe alguma antes.")));
+    }
+    q.pin_message(&message.id, &me, until.as_deref());
+    let updated = q.message(&message.id).ok_or_else(|| not_found("Mensagem"))?;
+    app.to_channel(&q, &message.channel_id, "message:update", &updated);
+    ok(updated)
+}
+
+async fn unpin_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let message = pinnable(&q, &me, &id)?;
+    q.unpin_message(&message.id);
+    let updated = q.message(&message.id).ok_or_else(|| not_found("Mensagem"))?;
+    app.to_channel(&q, &message.channel_id, "message:update", &updated);
+    ok(updated)
+}
+
+async fn list_pins(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let channel = require_access(&q, &id, &me)?;
+    ok(q.pinned_messages(&channel.id))
 }
 
 async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {

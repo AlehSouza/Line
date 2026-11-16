@@ -157,6 +157,10 @@ export const api = {
   authConfig: () => request<{ turnstileSiteKey: string | null; passwordReset?: boolean; google?: boolean }>('GET', '/auth/config'),
   googleFinish: (code: string, desktop = false) => request<AuthResponse>('POST', '/auth/google/finish', { code, desktop }),
   forgotPassword: (email: string) => request<void>('POST', '/auth/forgot', { email }),
+  resetInfo: (token: string) =>
+    request<{ username: string; displayName: string; avatarUrl?: string | null; avatarColor: string }>('GET', `/auth/reset/info?token=${enc(token)}`),
+  /** Manda o link de "redefinir senha" para o email da própria conta. */
+  sendResetLink: () => request<{ email: string }>('POST', '/users/@me/password/link'),
   resetPassword: (token: string, newPassword: string) =>
     request<{ username: string }>('POST', '/auth/reset', { token, newPassword }),
   login: (username: string, password: string) => request<AuthResponse>('POST', '/auth/login', { username, password }),
@@ -244,6 +248,10 @@ export const api = {
     request<Message>('DELETE', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
   votePoll: (messageId: string, optionId: string) =>
     request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
+  /** Fixa a mensagem por `minutes` (null = sempre). */
+  pinMessage: (id: string, minutes: number | null) => request<Message>('PUT', `/messages/${enc(id)}/pin`, { minutes }),
+  unpinMessage: (id: string) => request<Message>('DELETE', `/messages/${enc(id)}/pin`),
+  pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
 

@@ -24,7 +24,7 @@ export function renderMarkdown(text: string, myUsername?: string, ctx?: MentionC
 }
 
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])|(@[a-z0-9_.]{2,32})|(<@&[\w-]+>)/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])|(@[a-z0-9_.]{2,32}(?:-[a-z0-9]+)*)|(<@&[\w-]+>)/g;
 
 function inline(text: string, key: string, me?: string, ctx?: MentionContext): ReactNode[] {
   const nodes: ReactNode[] = [];

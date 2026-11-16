@@ -78,8 +78,8 @@ export function UserCard({
   const banner = user.bannerUrl ? fileUrl(user.bannerUrl) : null;
   /** Cor do cartão (nome, borda do avatar e anel do status). */
   const nameColor = user.botStyle?.nameColor ?? roleColor ?? 'var(--color-fg)';
-  // Mesma cor do topo do fundo do cartão: a borda parece um recorte do avatar no cartão.
-  const ring = `color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail))`;
+  // Borda sólida na cor do perfil escolhida pela pessoa (sem mistura/transparência).
+  const ring = user.avatarColor;
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
 
   async function run(fn: () => Promise<void>) {
@@ -356,7 +356,10 @@ export function UserMention({
     if (s.me?.username.toLowerCase() === name) return s.me.id;
     return Object.values(s.users).find((u) => u.username.toLowerCase() === name)?.id;
   });
-  const label = useLine((s) => (serverId && userId && s.members[serverId]?.[userId] ? `@${displayNameIn(s, serverId, userId)}` : null));
+  // Membro do servidor ou agente (bot): mostra o apelido/nome, nunca o @usuário com id do agente.
+  const label = useLine((s) =>
+    userId && ((serverId && s.members[serverId]?.[userId]) || s.users[userId]?.bot) ? `@${displayNameIn(s, serverId, userId)}` : null,
+  );
   if (!userId) return <span className={className}>{children}</span>;
   return (
     <span

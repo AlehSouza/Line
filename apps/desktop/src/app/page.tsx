@@ -7,7 +7,7 @@ import { ContextMenuHost } from '@/components/ContextMenu';
 import { TitleBar } from '@/components/TitleBar';
 import { UpdateBanner } from '@/components/UpdateBanner';
 import { Logo } from '@/components/ui';
-import { restoreSession } from '@/lib/session';
+import { logout, restoreSession } from '@/lib/session';
 import { useLine } from '@/lib/store';
 
 export default function Home() {
@@ -15,6 +15,8 @@ export default function Home() {
   const token = useLine((s) => s.token);
 
   useEffect(() => {
+    // Link de redefinir senha: abre a página dele mesmo com alguém logado (a troca derruba as sessões).
+    if (new URLSearchParams(window.location.search).has('reset')) logout();
     restoreSession().finally(() => setBooting(false));
   }, []);
 

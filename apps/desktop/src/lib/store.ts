@@ -518,7 +518,7 @@ export function mentionsToText(content: string, serverId: string | null | undefi
   const byUser = new Map<string, string>();
   for (const [name, username] of mentionNames(s, serverId)) byUser.set(username, name);
   let out = byUser.size
-    ? content.replace(/(^|[^\w<&])@([a-z0-9_.]{2,32})/g, (all, pre: string, u: string) => {
+    ? content.replace(/(^|[^\w<&])@([a-z0-9_.]{2,32}(?:-[a-z0-9]+)*)/g, (all, pre: string, u: string) => {
         const name = byUser.get(u);
         return name ? `${pre}@${name}` : all;
       })

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, configureApi } from '@/lib/api';
 import { authenticate, authenticateWithGoogle, savedServerUrl } from '@/lib/session';
 import { Eye, EyeOff } from 'lucide-react';
-import { Button, ErrorText, Field, Input, Logo } from './ui';
+import { Avatar, Button, ErrorText, Field, Input, Logo } from './ui';
 import { toast } from './Dialogs';
 
 export function AuthScreen() {
@@ -25,6 +25,17 @@ export function AuthScreen() {
   const [resetEnabled, setResetEnabled] = useState(false);
   const [sent, setSent] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [resetUser, setResetUser] = useState<{ username: string; displayName: string; avatarUrl?: string | null; avatarColor: string } | null>(null);
+  const [resetError, setResetError] = useState('');
+
+  useEffect(() => {
+    if (!resetToken) return;
+    configureApi({ baseUrl: serverUrl });
+    api
+      .resetInfo(resetToken)
+      .then(setResetUser)
+      .catch((e) => setResetError((e as Error).message));
+  }, [resetToken]);
 
   useEffect(() => {
     configureApi({ baseUrl: serverUrl });
@@ -154,13 +165,36 @@ export function AuthScreen() {
         onSubmit={submit}
         className="relative w-full max-w-sm space-y-5 rounded-2xl border border-edge bg-side p-8 shadow-2xl"
       >
-        <div className="flex flex-col items-center gap-3 text-center">
-          <Logo size={48} />
-          <div>
-            <h1 className="text-2xl font-bold">{TITLES[mode][0]}</h1>
-            <p className="mt-1 text-sm text-muted">{TITLES[mode][1]}</p>
+        {mode === 'reset' ? (
+          <div className="flex flex-col items-center gap-3 text-center">
+            {resetUser ? (
+              <Avatar name={resetUser.displayName} color={resetUser.avatarColor} src={resetUser.avatarUrl ?? undefined} size={72} />
+            ) : (
+              <Logo size={48} />
+            )}
+            <div>
+              <h1 className="text-xl font-bold">
+                {resetUser ? (
+                  <>
+                    Redefinindo senha de <span className="text-accent">{resetUser.displayName}</span>
+                  </>
+                ) : (
+                  TITLES.reset[0]
+                )}
+              </h1>
+              <p className="mt-1 text-sm text-muted">{resetUser ? `@${resetUser.username} · ` : ''}Pelo menos 6 caracteres.</p>
+            </div>
+            {resetError && <p className="text-sm text-red-400">{resetError}</p>}
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Logo size={48} />
+            <div>
+              <h1 className="text-2xl font-bold">{TITLES[mode][0]}</h1>
+              <p className="mt-1 text-sm text-muted">{TITLES[mode][1]}</p>
+            </div>
+          </div>
+        )}
 
         {mode === 'forgot' && (sent ? (
           <p className="rounded-xl border border-edge bg-rail/60 p-4 text-sm leading-relaxed">

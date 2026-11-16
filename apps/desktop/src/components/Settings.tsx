@@ -159,7 +159,7 @@ function maskEmail(email: string) {
 function AccountSection() {
   const me = useLine((s) => s.me)!;
   const [showEmail, setShowEmail] = useState(false);
-  const [editing, setEditing] = useState<'username' | 'email' | 'password' | null>(null);
+  const [editing, setEditing] = useState<'username' | 'email' | 'password' | 'reset-link' | null>(null);
 
   return (
     <div className="space-y-10">
@@ -191,12 +191,16 @@ function AccountSection() {
         <Row
           label="Senha"
           value={<span className="text-muted">{me.hasPassword === false ? 'Nenhuma senha (entra pelo Google)' : '••••••••'}</span>}
-          onEdit={() => setEditing('password')}
-          action={me.hasPassword === false ? 'Definir' : 'Editar'}
+          onEdit={() => setEditing(me.hasPassword === false ? 'reset-link' : 'password')}
+          action={me.hasPassword === false ? 'Redefinir senha' : 'Editar'}
         />
       </div>
 
-      {editing && <EditAccountDialog field={editing} onClose={() => setEditing(null)} />}
+      {editing === 'reset-link' ? (
+        <ResetLinkDialog onClose={() => setEditing(null)} />
+      ) : (
+        editing && <EditAccountDialog field={editing} onClose={() => setEditing(null)} onForgot={() => setEditing('reset-link')} />
+      )}
     </div>
   );
 }
@@ -215,7 +219,66 @@ function Row({ label, value, onEdit, action = 'Editar' }: { label: string; value
 
 /** Troca nome de usuário, email ou senha. Pede a senha atual ou um código enviado por email
  * (conta do Google sem senha só tem o código). */
-function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | 'password'; onClose: () => void }) {
+/** Manda o link de redefinir senha para o email da conta (funciona também em conta do Google). */
+function ResetLinkDialog({ onClose }: { onClose: () => void }) {
+  const me = useLine((s) => s.me)!;
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  async function send() {
+    setError('');
+    setBusy(true);
+    try {
+      await api.sendResetLink();
+      setSent(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
+      <div onMouseDown={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl border border-edge bg-side p-6 shadow-2xl">
+        <h3 className="text-xl font-bold">Redefinir senha</h3>
+        {!me.email ? (
+          <p className="text-sm text-soft">Sua conta não tem email. Adicione um email primeiro.</p>
+        ) : sent ? (
+          <p className="text-sm text-soft">
+            Mandamos um link para <b>{maskEmail(me.email)}</b>. Abra o email e escolha a senha nova. O link vale por 30 minutos; se não
+            chegar, olhe o spam.
+          </p>
+        ) : (
+          <p className="text-sm text-soft">
+            Vamos mandar um link para <b>{maskEmail(me.email)}</b> para você {me.hasPassword === false ? 'criar' : 'escolher'} uma senha
+            {me.hasPassword === false ? ' (sua conta entra pelo Google e ainda não tem uma)' : ' nova'}.
+          </p>
+        )}
+        <ErrorText>{error}</ErrorText>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            {sent ? 'Fechar' : 'Cancelar'}
+          </Button>
+          {!sent && me.email && (
+            <Button type="button" disabled={busy} onClick={() => void send()}>
+              {busy ? 'Enviando…' : 'Enviar link'}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditAccountDialog({
+  field,
+  onClose,
+  onForgot,
+}: {
+  field: 'username' | 'email' | 'password';
+  onClose: () => void;
+  onForgot: () => void;
+}) {
   const me = useLine((s) => s.me)!;
   const [value, setValue] = useState(field === 'username' ? me.username : field === 'email' ? (me.email ?? '') : '');
   const [confirm, setConfirm] = useState('');
@@ -351,8 +414,12 @@ function EditAccountDialog({ field, onClose }: { field: 'username' | 'email' | '
                   <Input required type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
                 </Field>
                 {me.email && (
-                  <button type="button" onClick={() => setUseCode(true)} className="text-sm text-accent hover:underline">
-                    Esqueceu a senha? Receber código por email
+                  <button
+                    type="button"
+                    onClick={() => (field === 'password' ? onForgot() : setUseCode(true))}
+                    className="text-sm text-accent hover:underline"
+                  >
+                    {field === 'password' ? 'Esqueceu a senha? Receber link por email' : 'Esqueceu a senha? Receber código por email'}
                   </button>
                 )}
               </div>

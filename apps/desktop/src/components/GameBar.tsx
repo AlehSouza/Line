@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { detectGame, hasGameDetection, type RunningGame } from '@/lib/nativeScreen';
-import { useVoice } from '@/lib/voice';
+import { toggleScreen, useVoice } from '@/lib/voice';
 import { ScreenShareModal } from './Voice';
 import { Icons } from './ui';
 
@@ -70,6 +70,15 @@ export function GameBar() {
           className="shrink-0 rounded-md p-1.5 text-soft transition-colors hover:bg-hover hover:text-fg"
         >
           <Icons.Screen size={18} />
+        </button>
+      )}
+      {streaming && inCall && (
+        <button
+          title="Encerrar transmissão"
+          onClick={() => void toggleScreen()}
+          className="shrink-0 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/15"
+        >
+          <Icons.X size={18} />
         </button>
       )}
       {/* Abre o seletor já com a janela do jogo marcada: dá para conferir a qualidade e o áudio antes. */}
