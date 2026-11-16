@@ -8,6 +8,7 @@ import { actions, useLine } from '@/lib/store';
 import { showError, toast } from './Dialogs';
 import { UserTagBadge } from './ServerTag';
 import { Avatar, Button, cx, Icons } from './ui';
+import { ColorPicker } from './ColorPicker';
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!;
 
@@ -123,20 +124,19 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                   title="Cores personalizadas"
                 >
                   {Array.from({ length: n }, (_, i) => (
-                    <label key={i} className="relative h-8 w-8 cursor-pointer rounded-md border-2 border-white shadow" style={{ background: style.colors[i] }}>
-                      <input
-                        type="color"
-                        value={style.colors[i] ?? '#ffffff'}
-                        onChange={(e) =>
-                          setStyle((s) => {
-                            const colors = [...s.colors];
-                            colors[i] = e.target.value;
-                            return { ...s, colors };
-                          })
-                        }
-                        className="absolute inset-0 cursor-pointer opacity-0"
-                      />
-                    </label>
+                    <ColorPicker
+                      key={i}
+                      value={style.colors[i] ?? '#ffffff'}
+                      onChange={(c) =>
+                        setStyle((s) => {
+                          const colors = [...s.colors];
+                          colors[i] = c;
+                          return { ...s, colors };
+                        })
+                      }
+                      className="relative h-8 w-8 cursor-pointer rounded-md border-2 border-white shadow"
+                      style={{ background: style.colors[i] }}
+                    />
                   ))}
                 </span>
               )}

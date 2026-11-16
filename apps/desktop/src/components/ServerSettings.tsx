@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { ServerOverview } from './Modals';
 import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
+import { ColorPicker } from './ColorPicker';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { MusicSettings, SmartReplies } from './Music';
@@ -507,22 +508,18 @@ function RoleEditor({ serverId, roleId, onSelect, onBack }: { serverId: string; 
                   >
                     {draft.color === null && <Icons.Check size={22} className="text-white" />}
                   </button>
-                  <label
+                  <ColorPicker
                     title="Cor personalizada"
                     className={cx(
                       'relative flex h-14 w-16 cursor-pointer items-start justify-end rounded-lg border border-edge p-1',
                       draft.color && !ROLE_COLORS.includes(draft.color) && 'ring-2 ring-fg',
                     )}
                     style={{ background: draft.color && !ROLE_COLORS.includes(draft.color) ? draft.color : 'var(--color-rail)' }}
+                    value={draft.color ?? '#ffffff'}
+                    onChange={(c) => setDraft({ ...draft, color: c })}
                   >
                     <Icons.Edit size={12} className="text-white mix-blend-difference" />
-                    <input
-                      type="color"
-                      value={draft.color ?? '#ffffff'}
-                      onChange={(e) => setDraft({ ...draft, color: e.target.value })}
-                      className="absolute inset-0 cursor-pointer opacity-0"
-                    />
-                  </label>
+                  </ColorPicker>
                   <div className="grid grid-cols-10 gap-1.5">
                     {ROLE_COLORS.map((c) => (
                       <button
