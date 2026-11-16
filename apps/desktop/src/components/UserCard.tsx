@@ -468,6 +468,7 @@ export function MemberRoles({ userId, serverId: fixed }: { userId: string; serve
   const canRoles = useLine((s) => hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles));
   const myTop = useLine((s) => (serverId ? topPosition(s, serverId, s.me?.id) : 0));
   const [picker, setPicker] = useState(false);
+  const anchor = useRef<HTMLElement | null>(null);
   const [error, setError] = useState('');
   if (!serverId || !member || !roles) return null;
   const mine = roles.filter((r) => r.id !== serverId && member.roleIds.includes(r.id)).sort((a, b) => b.position - a.position);
@@ -502,12 +503,15 @@ export function MemberRoles({ userId, serverId: fixed }: { userId: string; serve
           <span className="relative">
             <button
               title="Dar cargo"
-              onClick={() => setPicker((v) => !v)}
+              onClick={(e) => {
+                anchor.current = e.currentTarget;
+                setPicker((v) => !v);
+              }}
               className="flex h-6 w-6 items-center justify-center rounded-md border border-edge bg-side text-muted hover:text-fg"
             >
               <Icons.Plus size={13} />
             </button>
-            {picker && <RolePicker roles={assignable} onPick={(id) => {
+            {picker && <RolePicker anchor={anchor.current} roles={assignable} onPick={(id) => {
               setPicker(false);
               void toggle(id, true);
             }} onClose={() => setPicker(false)} />}
@@ -520,7 +524,17 @@ export function MemberRoles({ userId, serverId: fixed }: { userId: string; serve
 }
 
 /** Lista de cargos para dar, com busca "Cargo" no topo. */
-function RolePicker({ roles, onPick, onClose }: { roles: Role[]; onPick: (id: string) => void; onClose: () => void }) {
+function RolePicker({ anchor, roles, onPick, onClose }: { anchor: HTMLElement | null; roles: Role[]; onPick: (id: string) => void; onClose: () => void }) {
+  // Fica fixo na tela (por cima do cartão, que corta o que passa da borda); abre para cima se não couber embaixo.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = anchor?.getBoundingClientRect();
+    const h = box.current?.offsetHeight ?? 300;
+    if (!r) return;
+    const below = r.bottom + 6;
+    const top = below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below;
+    setPos({ left: Math.min(r.left, window.innerWidth - 248), top });
+  }, [anchor]);
   const [text, setText] = useState('');
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -531,7 +545,7 @@ function RolePicker({ roles, onPick, onClose }: { roles: Role[]; onPick: (id: st
   const q = text.trim().toLowerCase();
   const list = [...roles].sort((a, b) => b.position - a.position).filter((r) => !q || r.name.toLowerCase().includes(q));
   return (
-    <div ref={box} className="absolute top-full left-0 z-20 mt-1.5 w-60 rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
+    <div ref={box} style={{ left: pos?.left ?? -9999, top: pos?.top ?? 0 }} className="fixed z-[70] w-60 rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
       <input
         autoFocus
         value={text}
