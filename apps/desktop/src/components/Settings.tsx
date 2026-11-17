@@ -10,7 +10,18 @@ import { VoiceSettingsPage } from './VoiceSettings';
 import { ActivityPrivacySection, GamesSection } from './Activity';
 import { NotificationsSection } from './Notifications';
 import { showError, toast } from './Dialogs';
-import { getTheme, setTheme, THEMES, type ThemeId } from '@/lib/theme';
+import {
+  CUSTOM_FIELDS,
+  DEFAULT_CUSTOM,
+  getCustomColors,
+  getTheme,
+  setCustomColors,
+  setTheme,
+  THEMES,
+  type CustomColors,
+  type ThemeId,
+} from '@/lib/theme';
+import { ColorPicker } from '@/components/ColorPicker';
 
 type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'notifications' | 'app' | 'blocked' | 'games' | 'activity';
 
@@ -664,7 +675,15 @@ function appVersion() {
 
 function AppearanceSection() {
   const [theme, setCurrent] = useState<ThemeId>('padrao');
-  useEffect(() => setCurrent(getTheme()), []);
+  const [custom, setCustom] = useState<CustomColors>(DEFAULT_CUSTOM);
+  useEffect(() => {
+    setCurrent(getTheme());
+    setCustom(getCustomColors());
+  }, []);
+  const changeCustom = (c: CustomColors) => {
+    setCustom(c);
+    setCustomColors(c);
+  };
   return (
     <div>
       <h3 className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Tema</h3>
@@ -672,6 +691,7 @@ function AppearanceSection() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {THEMES.map((t) => {
           const active = t.id === theme;
+          const colors = t.id === 'personalizado' ? [custom.rail, custom.main, custom.raise, custom.accent] : t.colors;
           return (
             <button
               key={t.id}
@@ -684,11 +704,11 @@ function AppearanceSection() {
                 active ? 'border-accent bg-raise' : 'border-edge hover:border-muted',
               )}
             >
-              <div className="flex h-16 overflow-hidden rounded-lg" style={{ background: t.colors[1] }}>
-                <div className="w-4" style={{ background: t.colors[0] }} />
+              <div className="flex h-16 overflow-hidden rounded-lg" style={{ background: colors[1] }}>
+                <div className="w-4" style={{ background: colors[0] }} />
                 <div className="flex flex-1 flex-col justify-center gap-1.5 px-2">
-                  <div className="h-2 w-3/4 rounded-full" style={{ background: t.colors[2] }} />
-                  <div className="h-2 w-1/2 rounded-full" style={{ background: t.colors[3] }} />
+                  <div className="h-2 w-3/4 rounded-full" style={{ background: colors[2] }} />
+                  <div className="h-2 w-1/2 rounded-full" style={{ background: colors[3] }} />
                 </div>
               </div>
               <div className="mt-2 flex items-center gap-1.5 px-1">
@@ -699,6 +719,74 @@ function AppearanceSection() {
             </button>
           );
         })}
+      </div>
+      {theme === 'personalizado' && <CustomThemeEditor colors={custom} onChange={changeCustom} />}
+    </div>
+  );
+}
+
+/** Editor do tema Personalizado: cada troca já vale no app inteiro (prévia ao vivo). */
+function CustomThemeEditor({ colors, onChange }: { colors: CustomColors; onChange: (c: CustomColors) => void }) {
+  const c = colors;
+  return (
+    <div className="mt-6">
+      <div className="flex items-center justify-between pb-1">
+        <h3 className="text-xs font-bold tracking-wide text-muted uppercase">Cores do Personalizado</h3>
+        <Button type="button" variant="ghost" onClick={() => onChange({ ...DEFAULT_CUSTOM })}>
+          Restaurar padrão
+        </Button>
+      </div>
+      <p className="mb-3 text-sm text-muted">As mudanças aparecem na hora e ficam salvas neste aparelho.</p>
+
+      <div className="mb-4 flex h-28 overflow-hidden rounded-xl border" style={{ borderColor: c.edge, background: c.main }}>
+        <div className="flex w-10 flex-col items-center gap-1.5 py-2" style={{ background: c.rail }}>
+          <div className="h-6 w-6 rounded-lg" style={{ background: c.accent }} />
+          <div className="h-6 w-6 rounded-full" style={{ background: c.raise }} />
+        </div>
+        <div className="flex w-28 flex-col gap-1 p-2 text-[11px]" style={{ background: c.side, color: c.soft }}>
+          <span className="font-semibold" style={{ color: c.fg }}># geral</span>
+          <span># jogos</span>
+          <span style={{ color: c.muted }}># avisos</span>
+        </div>
+        <div className="flex flex-1 flex-col justify-between p-2 text-xs">
+          <div>
+            <span className="font-semibold" style={{ color: c.fg }}>
+              Ana <span className="inline-block h-2 w-2 rounded-full" style={{ background: c.online }} />
+            </span>{' '}
+            <span style={{ color: c.muted }}>hoje 21:04</span>
+            <p style={{ color: c.soft }}>Bora jogar mais tarde?</p>
+          </div>
+          <div className="flex gap-1.5">
+            <span className="rounded-md px-2 py-1 font-semibold" style={{ background: c.accent, color: c['on-accent'] }}>
+              Entrar
+            </span>
+            <span className="rounded-md px-2 py-1" style={{ background: c.raise, color: c.fg }}>
+              Depois
+            </span>
+            <span className="rounded-md px-2 py-1" style={{ color: c.danger }}>
+              Sair
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {CUSTOM_FIELDS.map((f) => (
+          <div key={f.key} className="flex items-center gap-3 rounded-lg border border-edge bg-raise px-3 py-2">
+            <ColorPicker
+              value={c[f.key]}
+              onChange={(hex) => onChange({ ...c, [f.key]: hex })}
+              title={`Escolher cor: ${f.label}`}
+              className="h-8 w-8 shrink-0 rounded-lg border border-edge"
+              style={{ background: c[f.key] }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{f.label}</div>
+              <div className="truncate text-xs text-muted">{f.hint}</div>
+            </div>
+            <span className="font-mono text-xs text-soft uppercase">{c[f.key]}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

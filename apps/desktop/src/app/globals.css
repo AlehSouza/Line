@@ -136,6 +136,48 @@
   --color-danger: #ff6b5c;
   --color-dnd: #ff6b5c;
 }
+/* Azul pastel: campo de flores azuis; texto azul-marinho, destaque azul e rubi para perigo. */
+:root[data-theme='azul-pastel'] {
+  color-scheme: light;
+  --color-rail: #cfe4f5;
+  --color-side: #e3f0fa;
+  --color-main: #f4f8fc;
+  --color-raise: #e6f1fb;
+  --color-hover: #d6e8f6;
+  --color-edge: #b9d5ec;
+  --color-fg: #10243d;
+  --color-soft: #2f4c6e;
+  --color-muted: #5d7a99;
+  --color-accent: #3a8fd6;
+  --color-accent-strong: #1f5fa8;
+  --color-sun: #c2700f;
+  --color-danger: #d6324a;
+  --color-online: #1f9d55;
+  --color-idle: #d98a1f;
+  --color-dnd: #d6324a;
+  --color-offline: #8a9bb0;
+}
+/* Verde pastel: floresta com cachoeira; verdes folha, luz amarelada e texto verde-azulado escuro. */
+:root[data-theme='verde-pastel'] {
+  color-scheme: light;
+  --color-rail: #d3e8c6;
+  --color-side: #e6f2dc;
+  --color-main: #f5f9ea;
+  --color-raise: #e8f2dc;
+  --color-hover: #d9eacb;
+  --color-edge: #bcd9ad;
+  --color-fg: #123a3a;
+  --color-soft: #1d4f52;
+  --color-muted: #5b7d74;
+  --color-accent: #4f9a5a;
+  --color-accent-strong: #3d8048;
+  --color-sun: #a86f00;
+  --color-danger: #c62828;
+  --color-online: #2f8f4a;
+  --color-idle: #c98a00;
+  --color-dnd: #c62828;
+  --color-offline: #8a9a94;
+}
 /* Paleta Okabe-Ito: azul, laranja e amarelo no lugar de verde/vermelho. */
 :root[data-theme='daltonico'] {
   --color-accent: #3d9be9;
