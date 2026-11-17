@@ -13,7 +13,7 @@
     platform: ua.includes('Windows') ? 'win32' : ua.includes('Mac') ? 'darwin' : 'linux',
     /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
     nativeScreen: __LINE_NATIVE_SCREEN__,
-    /** Notificação nativa (Windows). Resolve false quando não deu, para cair na do navegador. */
+    /** Notificação nativa (Windows). Resolve false quando não deu. */
     notify: (opts) => invoke('notify_show', opts).then((v) => v === true),
     /** Pisca o ícone na barra de tarefas quando a janela não está em foco. */
     requestAttention: () => void invoke('request_attention'),
@@ -75,7 +75,49 @@
       isMaximized: () => invoke('window_is_maximized').then((v) => !!v),
       close: () => void invoke('window_close'),
     },
-    // Sem getScreenSources: o compartilhamento usa o seletor do próprio WebView2/Windows,
-    // que já oferece telas, janelas e "compartilhar áudio do sistema".
   };
+
+  // Windows: a Notification do WebView2 aparece como "tauri.localhost". Toda notificação
+  // (inclusive a de chamada e as de bibliotecas) passa pelo toast nativo com o nome "Line".
+  if (window.line.platform === 'win32') {
+    const notify = window.line.notify;
+    let seq = 0;
+    class LineNotification extends EventTarget {
+      constructor(title, opts = {}) {
+        super();
+        this.title = String(title ?? '');
+        this.body = String(opts.body ?? '');
+        this.tag = String(opts.tag ?? '');
+        this.data = opts.data ?? null;
+        this.icon = opts.icon ?? '';
+        this.silent = !!opts.silent;
+        this.onclick = this.onshow = this.onclose = this.onerror = null;
+        void notify({
+          title: this.title,
+          body: this.body,
+          tag: this.tag || `n${Date.now()}${seq++}`,
+          data: typeof this.data === 'string' ? this.data : '',
+          avatar: null,
+          avatarKey: null,
+          reply: false,
+        });
+      }
+      close() {}
+      static get permission() {
+        return 'granted';
+      }
+      static get maxActions() {
+        return 0;
+      }
+      static requestPermission(cb) {
+        if (typeof cb === 'function') cb('granted');
+        return Promise.resolve('granted');
+      }
+    }
+    try {
+      Object.defineProperty(window, 'Notification', { value: LineNotification, configurable: true, writable: true });
+    } catch {
+      window.Notification = LineNotification;
+    }
+  }
 })();

@@ -1622,7 +1622,7 @@ export function IncomingCall() {
     window.line?.requestAttention();
     if (!dnd && typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
       const caller = users[ringing.userId]?.displayName ?? 'Alguém';
-      new Notification(`${caller} está te ligando`, { body: 'Abra o Line para atender.' });
+      new Notification(`${caller} está te ligando`, { body: 'Abra o Line para atender.', tag: `call${ringing.channelId}`, data: `${ringing.channelId}:` });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ringing?.channelId]);

@@ -649,6 +649,14 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
 
     let window = builder.build()?;
 
+    // Windows: sem a barra de status do WebView2 (mostraria "tauri.localhost/..." ao passar em links).
+    #[cfg(windows)]
+    let _ = window.with_webview(|pw| unsafe {
+        if let Ok(settings) = pw.controller().CoreWebView2().and_then(|c| c.Settings()) {
+            let _ = settings.SetIsStatusBarEnabled(false);
+        }
+    });
+
     #[cfg(target_os = "linux")]
     enable_linux_media(&window);
 

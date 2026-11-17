@@ -407,7 +407,8 @@ function notify(message: Message, desktop: boolean) {
         avatarKey: `${message.author.id}${(message.author.avatarUrl ?? '').replace(/[^a-z0-9]/gi, '').slice(-16)}`,
         reply: pref(state.notify, 'quickReply'),
       });
-      if (shown) return;
+      // Nunca cai na Notification do WebView2 no Windows: ela mostraria "tauri.localhost".
+      if (shown || window.line.platform === 'win32') return;
     }
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     // Sem o som do sistema: o Line toca o próprio (e respeita a opção "Sons").
@@ -462,6 +463,7 @@ if (typeof window !== 'undefined') {
   // Clique ou "Enviar" na notificação nativa do Windows (vem do Rust).
   (window as unknown as { lineToast?: (e: { action: string; data: string; reply?: string | null }) => void }).lineToast = (e) => {
     const [channelId = ''] = e.data.split(':');
+    if (!channelId) return;
     if (e.action === 'reply') {
       const text = e.reply?.trim();
       if (text && channelId) void api.sendMessage(channelId, text).catch(() => {});
