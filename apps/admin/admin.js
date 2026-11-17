@@ -640,7 +640,7 @@ function servers() {
     title: 'Servidores',
     placeholder: 'Buscar por nome, dono ou id',
     load: ({ q, offset }) => api('GET', `/admin/servers?q=${encodeURIComponent(q)}&offset=${offset}`),
-    head: ['Servidor', 'Dono', 'Membros', 'Canais', 'Mensagens', 'Criado'],
+    head: ['Servidor', 'Dono', 'Membros', 'Online', 'Canais', 'Mensagens', 'Criado'],
     row: (s) => {
       const icon = avatar(s.name, s.iconUrl, true);
       return h(
@@ -649,6 +649,7 @@ function servers() {
         h('td', {}, h('div', { class: 'who' }, icon, h('div', {}, h('b', {}, s.name, s.tag ? ` [${s.tag}]` : ''), h('span', {}, s.isPublic ? 'Público' : 'Privado')))),
         h('td', {}, s.ownerUsername ? `@${s.ownerUsername}` : '—'),
         h('td', {}, num(s.memberCount)),
+        h('td', {}, h('span', { class: `dot${s.onlineCount ? ' on' : ''}` }), num(s.onlineCount || 0)),
         h('td', {}, num(s.channelCount)),
         h('td', {}, num(s.messageCount)),
         h('td', { title: date(s.createdAt) }, ago(s.createdAt)),
@@ -680,6 +681,8 @@ async function openServer(id) {
       s.suspendedAt ? [h('dt', {}, 'Situação'), h('dd', {}, h('span', { class: 'pill red' }, `Suspenso ${ago(s.suspendedAt)}`))] : null,
       h('dt', {}, 'Membros'),
       h('dd', {}, num(s.memberCount)),
+      h('dt', {}, 'Online agora'),
+      h('dd', {}, h('span', { class: `dot${s.onlineCount ? ' on' : ''}` }), num(s.onlineCount || 0)),
       h('dt', {}, 'Mensagens'),
       h('dd', {}, num(s.messageCount)),
       s.description ? [h('dt', {}, 'Descrição'), h('dd', {}, s.description)] : null,

@@ -466,19 +466,40 @@ async fn delete_user(State(app): S, Admin(me): Admin, Path(id): Path<String>, b:
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
+/// Quantos membros do servidor estão conectados agora (mesma conta do "online" do painel).
+fn online_in(
+    q: &crate::store::Q<'_>,
+    online: &std::collections::HashSet<String>,
+    server_id: &str,
+) -> usize {
+    q.member_ids(server_id)
+        .iter()
+        .filter(|id| online.contains(*id))
+        .count()
+}
+
 async fn servers(State(app): S, Admin(_): Admin, Query(qs): Query<HashMap<String, String>>) -> Res {
-    ok(app.store.q().admin_servers(
+    let online: std::collections::HashSet<String> =
+        lock(&app.store.presence).online_ids().into_iter().collect();
+    let q = app.store.q();
+    let mut list = q.admin_servers(
         qs.get("q").map(|s| s.as_str()).unwrap_or(""),
         qs_offset(&qs),
-    ))
+    );
+    for s in &mut list {
+        let id = s["id"].as_str().unwrap_or_default().to_string();
+        s["onlineCount"] = json!(online_in(&q, &online, &id));
+    }
+    ok(list)
 }
 
 async fn server(State(app): S, Admin(_): Admin, Path(id): Path<String>) -> Res {
-    ok(app
-        .store
-        .q()
-        .admin_server(&id)
-        .ok_or_else(|| not_found("Servidor"))?)
+    let online: std::collections::HashSet<String> =
+        lock(&app.store.presence).online_ids().into_iter().collect();
+    let q = app.store.q();
+    let mut server = q.admin_server(&id).ok_or_else(|| not_found("Servidor"))?;
+    server["onlineCount"] = json!(online_in(&q, &online, &id));
+    ok(server)
 }
 
 async fn delete_server(State(app): S, Admin(me): Admin, Path(id): Path<String>) -> Res {
