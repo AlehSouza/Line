@@ -31,6 +31,8 @@ interface SoundsStore extends Prefs {
   loaded: boolean;
   /** Som tocando agora (id → quem tocou), para destacar o botão. */
   playing: Record<string, string>;
+  /** Efeito que cada pessoa acabou de tocar (userId → emoji): brilho roxo e emoji subindo no quadro. */
+  effects: Record<string, { emoji: string; key: number }>;
 }
 
 function loadPrefs(): Prefs {
@@ -54,6 +56,7 @@ export const useSounds = create<SoundsStore>(() => ({
   sounds: [],
   loaded: false,
   playing: {},
+  effects: {},
   ...loadPrefs(),
 }));
 const set = useSounds.setState;
@@ -92,9 +95,29 @@ export function bindSoundsSocket(s: LineSocket) {
   });
   s.on("voice:sound", ({ userId, channelId, sound }) => {
     const v = useVoice.getState();
-    if (v.channelId !== channelId || v.deafened) return;
+    if (v.channelId !== channelId) return;
+    showEffect(userId, sound.emoji || "🔊", sound.duration);
+    if (v.deafened) return;
     playLocal(sound.url, sound.volume * get().volume, sound.id, userId);
   });
+}
+
+let effectSeq = 0;
+
+/** Marca quem tocou o som enquanto ele toca (no mínimo 2 s, para dar tempo da animação). */
+function showEffect(userId: string, emoji: string, duration = 2) {
+  const key = ++effectSeq;
+  set((s) => ({ effects: { ...s.effects, [userId]: { emoji, key } } }));
+  setTimeout(
+    () =>
+      set((s) => {
+        if (s.effects[userId]?.key !== key) return s;
+        const effects = { ...s.effects };
+        delete effects[userId];
+        return { effects };
+      }),
+    Math.max(2, duration || 0) * 1000 + 200,
+  );
 }
 
 export function toggleFavorite(id: string) {

@@ -291,6 +291,15 @@ body {
 }
 .line-toast { animation: line-toast-in 160ms ease-out; }
 
+/* Efeito sonoro: o emoji sobe na frente da foto de quem tocou e some. */
+@keyframes line-sound-rise {
+  0% { opacity: 0; transform: translateY(30%) scale(0.5); }
+  15% { opacity: 1; transform: translateY(0) scale(1); }
+  75% { opacity: 1; transform: translateY(-35%) scale(1); }
+  100% { opacity: 0; transform: translateY(-80%) scale(1.05); }
+}
+.line-sound-rise { animation: line-sound-rise 2s ease-out forwards; }
+
 /* Tooltip do Line (components/Tooltip.tsx): aparece com um leve fade. */
 @keyframes line-tip-in {
   from {

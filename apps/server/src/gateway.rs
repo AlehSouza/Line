@@ -668,7 +668,7 @@ async fn voice_sound(
     let payload = json!({
         "userId": me,
         "channelId": st.channel_id,
-        "sound": { "id": sound.id, "name": sound.name, "emoji": sound.emoji, "volume": sound.volume, "url": sound.url, "serverId": sound.server_id },
+        "sound": { "id": sound.id, "name": sound.name, "emoji": sound.emoji, "volume": sound.volume, "duration": sound.duration, "url": sound.url, "serverId": sound.server_id },
     });
     for sid in targets {
         app.to_socket(sid, "voice:sound", &payload);

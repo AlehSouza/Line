@@ -43,6 +43,8 @@ import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
 import { SoundboardButton } from './Soundboard';
+import { useSounds } from '@/lib/sounds';
+import { EMOJI_FONT } from './EmojiPicker';
 import { fileUrl } from '@/lib/api';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
 
@@ -265,6 +267,7 @@ function TileView({
   onAspect?: (aspect: number) => void;
 }) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
+  const effect = useSounds((s) => (tile.kind === 'person' ? s.effects[tile.state.userId] : undefined));
   const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !v.watching[tile.state.userId]);
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
@@ -299,10 +302,21 @@ function TileView({
       {tile.kind === 'person' && (
         <span
           className={cx(
-            'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset ring-online transition-opacity ease-out',
-            speaking ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
+            'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-inset transition-opacity ease-out',
+            effect ? 'ring-[#a855f7]' : 'ring-online',
+            speaking || effect ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
           )}
         />
+      )}
+      {/* Efeito sonoro: o emoji sobe na frente da foto de quem tocou. */}
+      {effect && (
+        <span
+          key={effect.key}
+          className="line-sound-rise pointer-events-none absolute z-20 leading-none drop-shadow-lg"
+          style={{ fontFamily: EMOJI_FONT, fontSize: big ? 120 : 72 }}
+        >
+          {effect.emoji}
+        </span>
       )}
       {hidden ? (
         <div className="flex flex-col items-center gap-2 text-center">
@@ -1506,6 +1520,7 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
 export function VoiceChannelMembers({ channelId, serverId }: { channelId: string; serverId?: string }) {
   const states = useVoice((v) => v.states);
   const speaking = useVoice((v) => v.speaking);
+  const effects = useSounds((s) => s.effects);
   const myChannel = useVoice((v) => v.channelId);
   const users = useLine((s) => s.users);
   useLine((s) => s.members); // apelidos
@@ -1536,8 +1551,13 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
             {/* Caixa fixa 24x24; o anel de "falando" fica 2px em volta, sempre redondo e centralizado. */}
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
               <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
-              {speaking[p.userId] && (
-                <span className="pointer-events-none absolute -inset-[3px] rounded-full border-2 border-online" />
+              {(speaking[p.userId] || effects[p.userId]) && (
+                <span
+                  className={cx(
+                    'pointer-events-none absolute -inset-[3px] rounded-full border-2',
+                    effects[p.userId] ? 'border-[#a855f7]' : 'border-online',
+                  )}
+                />
               )}
             </span>
             <span className="flex min-w-0 flex-1 items-center gap-1.5">

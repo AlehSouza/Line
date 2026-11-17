@@ -74,7 +74,7 @@ export interface ServerToClientEvents {
   'voice:sound': (payload: {
     userId: string;
     channelId: string;
-    sound: { id: string; name: string; emoji: string; volume: number; url: string; serverId: string };
+    sound: { id: string; name: string; emoji: string; volume: number; url: string; serverId: string; duration: number };
   }) => void;
   /** Os sons do painel de efeitos sonoros de um servidor mudaram. */
   'sounds:update': (payload: { serverId: string }) => void;

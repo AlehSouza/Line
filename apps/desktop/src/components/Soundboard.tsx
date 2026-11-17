@@ -23,7 +23,7 @@ import { confirmDialog, showError, toast } from "./Dialogs";
 import { EMOJI_FONT, EmojiPicker } from "./EmojiPicker";
 import { Avatar, Button, cx, Icons, Input, Modal, Slider } from "./ui";
 
-const MAX_SOUNDS = 48;
+const MAX_SOUNDS = 15;
 
 function norm(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

@@ -6,7 +6,7 @@ use rusqlite::{OptionalExtension, Row, params};
 use serde::Serialize;
 
 /// Quantos sons cada servidor pode ter.
-pub const MAX_SOUNDS: i64 = 48;
+pub const MAX_SOUNDS: i64 = 15;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
