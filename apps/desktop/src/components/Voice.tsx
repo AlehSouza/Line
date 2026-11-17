@@ -1,5 +1,6 @@
 'use client';
 
+import { CallLookAvatar, CallLookLayers, useCallLook } from './CallLook';
 import { mobile } from '@/lib/mobile';
 import { MobileBack } from './Mobile';
 
@@ -275,6 +276,7 @@ function TileView({
   const inSameCall = useVoice((v) => !!v.channelId && v.channelId === tile.state.channelId);
   const thumb = useVoice((v) => (tile.kind === 'screen' ? v.screenThumbs[tile.state.userId] : undefined));
   const tint = useAvatarTint(tile.user?.avatarUrl, tile.user?.avatarColor ?? '#3a3a42');
+  const look = useCallLook(tile.kind === 'person' ? tile.state.userId : undefined);
   // Clique direito no quadro: o mesmo menu da pessoa na lista do canal de voz.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Tela de alguém da minha chamada: no hover, mostra por fora (acima) quem está assistindo.
@@ -358,7 +360,12 @@ function TileView({
           onAspect={tile.kind === 'screen' ? onAspect : undefined}
         />
       ) : (
-        <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
+        <>
+          {tile.kind === 'person' && <CallLookLayers look={look} />}
+          <CallLookAvatar look={tile.kind === 'person' ? look : null}>
+            <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
+          </CallLookAvatar>
+        </>
       )}
       <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium">
         {tile.kind === 'screen' && <Icons.Screen size={14} />}

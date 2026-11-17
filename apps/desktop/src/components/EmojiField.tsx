@@ -25,7 +25,7 @@ export function insertIntoField(el: Field, text: string) {
 }
 
 /** Botão de emojis para o fim de uma caixa de texto (abre o seletor padrão do Line). */
-export function EmojiButton({ target, className, size = 18 }: { target: RefObject<Field | null>; className?: string; size?: number }) {
+export function EmojiButton({ target, className, size = 18, onPickerClose }: { target: RefObject<Field | null>; className?: string; size?: number; onPickerClose?: () => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   return (
     <>
@@ -47,7 +47,10 @@ export function EmojiButton({ target, className, size = 18 }: { target: RefObjec
       {anchor && (
         <EmojiPicker
           anchor={anchor}
-          onClose={() => setAnchor(null)}
+          onClose={() => {
+            setAnchor(null);
+            onPickerClose?.();
+          }}
           onPick={(emoji, keepOpen) => {
             if (target.current) insertIntoField(target.current, emoji);
             if (!keepOpen) setAnchor(null);

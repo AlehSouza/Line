@@ -3,12 +3,20 @@
 import type { NameEffect, NameStyle } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
-import { DEFAULT_NAME_STYLE, EFFECT_COLORS, NAME_EFFECTS, NAME_FONTS, NAME_PALETTES, nameStyleCss, StyledName } from '@/lib/nameStyle';
+import { DEFAULT_NAME_STYLE, EFFECT_COLORS, NAME_EFFECTS, NAME_FONTS, NAME_PALETTES, nameDir, namePulse, nameStyleClass, nameStyleCss, nameWave, StyledName } from '@/lib/nameStyle';
 import { actions, useLine } from '@/lib/store';
 import { showError, toast } from './Dialogs';
 import { UserTagBadge } from './ServerTag';
 import { Avatar, Button, cx, Icons } from './ui';
 import { ColorPicker } from './ColorPicker';
+
+/** Cor personalizada: qualquer efeito aceita até 4 cores (o mínimo é o que o efeito usa). */
+const MAX_COLORS = 4;
+const minColors = (effect: NameEffect) => (effect === 'prism' ? 2 : EFFECT_COLORS[effect]);
+const colorCount = (effect: NameEffect, colors: string[]) => Math.min(MAX_COLORS, Math.max(minColors(effect), colors.length));
+
+/** No máximo 4 sugestões de cores por efeito. */
+const presetsOf = (effect: NameEffect) => NAME_PALETTES[effect].slice(0, 4);
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]!;
 
@@ -33,8 +41,9 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
   }, [onClose]);
 
   if (!me) return null;
-  const n = EFFECT_COLORS[style.effect];
-  const palettes = NAME_PALETTES[style.effect];
+  const n = colorCount(style.effect, style.colors);
+  const base = minColors(style.effect);
+  const palettes = presetsOf(style.effect);
   const isPreset = palettes.some((p) => p.join() === style.colors.join());
 
   async function save(next: NameStyle | null) {
@@ -53,7 +62,7 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
 
   function surprise() {
     const effect = pick(NAME_EFFECTS).id;
-    setStyle({ font: pick(NAME_FONTS).id, effect, colors: pick(NAME_PALETTES[effect]) });
+    setStyle({ font: pick(NAME_FONTS).id, effect, colors: pick(presetsOf(effect)) });
   }
 
   const banner = me.bannerUrl ? fileUrl(me.bannerUrl) : null;
@@ -107,7 +116,7 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                       style.effect === e.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
                     )}
                   >
-                    <span className={e.id === 'prism' ? 'line-name-prism' : undefined} style={nameStyleCss(sample)}>
+                    <span className={nameStyleClass(sample)} style={nameStyleCss(sample)}>
                       {e.label}
                     </span>
                   </button>
@@ -117,15 +126,25 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
 
             <p className="mt-5 mb-2 text-sm font-bold">Escolha cor</p>
             <div className="flex flex-wrap items-center gap-2">
-              {style.effect !== 'prism' && (
+              {n < MAX_COLORS && (
+                <button
+                  type="button"
+                  title="Adicionar mais uma cor"
+                  onClick={() => setStyle((s) => ({ ...s, colors: [...s.colors.slice(0, n), s.colors[n - 1] ?? '#ffffff'] }))}
+                  className="flex h-11 w-11 items-center justify-center rounded-lg border-2 border-dashed border-edge text-soft hover:border-accent hover:text-fg"
+                >
+                  <Icons.Plus size={18} />
+                </button>
+              )}
+              {(
                 <span
                   className={cx('flex h-11 items-center gap-1.5 rounded-lg border px-1.5', !isPreset ? 'border-accent' : 'border-edge')}
-                  style={{ background: n > 1 ? `linear-gradient(90deg, ${style.colors[0]}, ${style.colors[1]})` : style.colors[0] }}
+                  style={{ background: n > 1 ? `linear-gradient(90deg, ${style.colors.slice(0, n).join(', ')})` : style.colors[0] }}
                   title="Cores personalizadas"
                 >
                   {Array.from({ length: n }, (_, i) => (
+                    <span key={i} className="group/c relative">
                     <ColorPicker
-                      key={i}
                       value={style.colors[i] ?? '#ffffff'}
                       onChange={(c) =>
                         setStyle((s) => {
@@ -137,6 +156,17 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                       className="relative h-8 w-8 cursor-pointer rounded-md border-2 border-white shadow"
                       style={{ background: style.colors[i] }}
                     />
+                    {i >= base && (
+                      <button
+                        type="button"
+                        title="Remover cor"
+                        onClick={() => setStyle((s) => ({ ...s, colors: s.colors.slice(0, n).filter((_, j) => j !== i) }))}
+                        className="absolute -top-1.5 -right-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-black text-white group-hover/c:flex"
+                      >
+                        <Icons.X size={10} />
+                      </button>
+                    )}
+                    </span>
                   ))}
                 </span>
               )}
@@ -150,6 +180,49 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                 />
               ))}
             </div>
+
+            {/* Fica no layout mesmo escondido, para o modal não mudar de tamanho. */}
+            {(
+              <div className="mt-4 flex flex-wrap items-end gap-3">
+                <span className={cx(style.colors.length <= 1 && 'invisible')}>
+                <Toggle
+                  label="Orientação"
+                  value={nameDir(style)}
+                  options={[
+                    ['h', 'Horizontal'],
+                    ['v', 'Vertical'],
+                  ]}
+                  onChange={(dir) => setStyle((s) => ({ ...s, dir }))}
+                />
+                </span>
+                <span className={cx(style.colors.length <= 1 && style.effect !== 'neon' && 'invisible')}>
+                <Toggle
+                  label="Movimento"
+                  value={namePulse(style) ? 'pulse' : nameWave(style) ? 'wave' : 'static'}
+                  options={[
+                    ['static', 'Estático'],
+                    ...(style.colors.length > 1 ? [['wave', 'Onda'] as ['wave', string]] : []),
+                    ...(style.effect === 'neon' ? [['pulse', 'Piscar'] as ['pulse', string]] : []),
+                  ]}
+                  onChange={(motion) => setStyle((s) => ({ ...s, motion }))}
+                />
+                </span>
+                {(
+                  <span className={cx(!nameWave(style) && !namePulse(style) && 'invisible')}>
+                  <Toggle
+                    label="Velocidade"
+                    value={style.speed ?? 'medium'}
+                    options={[
+                      ['slow', '0.5x'],
+                      ['medium', '1x'],
+                      ['fast', '1.5x'],
+                    ]}
+                    onChange={(speed) => setStyle((s) => ({ ...s, speed }))}
+                  />
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Prévia */}
@@ -196,8 +269,22 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                 </StyledName>
                 <UserTagBadge user={me} />
               </div>
+
+              <div className="rounded-xl border border-edge bg-side px-2 py-2">
+                <p className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[15px] text-soft">
+                  <Icons.Speaker size={17} />
+                  <span className="truncate">voice</span>
+                </p>
+                <div className="mt-0.5 flex items-center gap-2 py-1 pl-7">
+                  <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={24} />
+                  <StyledName style={style} className="truncate text-sm font-medium">
+                    {me.displayName}
+                  </StyledName>
+                  <UserTagBadge user={me} />
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-muted">O estilo aparece no seu nome em mensagens, listas de membros e no seu perfil, para todo mundo.</p>
+            <p className="text-xs text-muted">O estilo aparece no seu nome em mensagens, listas de membros, canais de voz e no seu perfil, para todo mundo.</p>
           </div>
         </div>
 
@@ -214,6 +301,26 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
             {busy ? 'Aplicando…' : 'Aplicar'}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Toggle<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: [T, string][]; onChange: (v: T) => void }) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-bold text-soft">{label}</p>
+      <div className="inline-flex rounded-lg border border-edge bg-rail p-0.5">
+        {options.map(([id, text]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onChange(id)}
+            className={cx('rounded-md px-2 py-1 text-xs font-semibold whitespace-nowrap', value === id ? 'bg-accent text-on-accent' : 'text-soft hover:text-fg')}
+          >
+            {text}
+          </button>
+        ))}
       </div>
     </div>
   );

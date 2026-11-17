@@ -1,5 +1,5 @@
 /** Temas do Line: cada um troca as variáveis de cor de globals.css via data-theme no <html>. */
-export type ThemeId = 'padrao' | 'escuro' | 'claro' | 'carmesim' | 'pink' | 'daltonico';
+export type ThemeId = 'padrao' | 'escuro' | 'claro' | 'carmesim' | 'pink' | 'pink-escuro' | 'daltonico';
 
 export const THEMES: { id: ThemeId; label: string; hint: string; colors: [string, string, string, string] }[] = [
   { id: 'padrao', label: 'Padrão', hint: 'Grafite com violeta', colors: ['#0a0a0c', '#16161a', '#1d1d22', '#7c6af2'] },
@@ -7,6 +7,7 @@ export const THEMES: { id: ThemeId; label: string; hint: string; colors: [string
   { id: 'claro', label: 'Claro', hint: 'Fundo branco', colors: ['#e4e4ea', '#ffffff', '#f2f2f6', '#5b4ae0'] },
   { id: 'carmesim', label: 'Carmesim', hint: 'Vinho com vermelho', colors: ['#0e0708', '#1c0e11', '#251417', '#dc2f4b'] },
   { id: 'pink', label: 'Pink', hint: 'Rosa pastel', colors: ['#f6d9e4', '#fff5f8', '#fdecf2', '#d6336c'] },
+  { id: 'pink-escuro', label: 'Pink escuro', hint: 'Ameixa com rosa', colors: ['#140a10', '#21111a', '#2b1621', '#e8478a'] },
   { id: 'daltonico', label: 'Daltônico', hint: 'Cores seguras para daltonismo', colors: ['#0a0a0c', '#16161a', '#56b4e9', '#e69f00'] },
 ];
 

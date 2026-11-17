@@ -6,7 +6,7 @@ import { logout, replaceToken } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
-import { VoiceSettingsPanel } from './Voice';
+import { VoiceSettingsPage } from './VoiceSettings';
 import { ActivityPrivacySection, GamesSection } from './Activity';
 import { NotificationsSection } from './Notifications';
 import { showError, toast } from './Dialogs';
@@ -145,12 +145,12 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
               <Icons.X size={20} />
             </button>
           </header>
-          <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth">
-            <div className={cx('mx-auto px-6 py-10', section === 'profile' ? 'max-w-[1000px]' : 'max-w-[700px]')}>
+          <div className={cx('min-h-0 flex-1 overflow-y-auto scroll-smooth', section === 'profile' && '[container-type:size]')}>
+            <div className={cx('mx-auto px-6', section === 'profile' ? 'max-w-[1000px] py-5' : 'max-w-[700px] py-10')}>
               {section === 'account' && <AccountSection />}
               {section === 'profile' && <ProfileEditor />}
               {section === 'appearance' && <AppearanceSection />}
-              {section === 'voice' && <VoiceSettingsPanel />}
+              {section === 'voice' && <VoiceSettingsPage />}
               {section === 'notifications' && <NotificationsSection />}
               {section === 'app' && <AppSection />}
               {section === 'blocked' && <BlockedSection />}

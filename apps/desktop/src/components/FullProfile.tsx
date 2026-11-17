@@ -1,16 +1,21 @@
 'use client';
 
 import type { PublicUser, Server, UserProfile } from '@line/shared';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { setIgnored, useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
 import { actions, useServerLook, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
+import { Paintbrush } from 'lucide-react';
+import { NameStyleModal } from './NameStyleModal';
+import { CardColorButton, cardStyle, ImageEditMenu, InlineText, saveProfile, SongSlot, TagPicker } from './InlineProfileEdit';
 import { ConnectionList, GamesBoard, SongPlayer } from './ProfileExtras';
 import { UserTagBadge } from './ServerTag';
-import { MemberRoles } from './UserCard';
+import { MemberRoles, useHasMemberRoles } from './UserCard';
 import { Avatar, Button, cx, DefaultServerIcon, Icons, Logo } from './ui';
 
 const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
@@ -18,7 +23,7 @@ const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('p
 type Tab = 'mural' | 'activity' | 'friends' | 'servers';
 
 /** Perfil completo (clique direito → Perfil): cartão à esquerda e abas à direita. */
-export function FullProfile({ userId, serverId, onClose }: { userId: string; serverId?: string | null; onClose: () => void }) {
+export function FullProfile({ userId, serverId, onClose, embedded }: { userId: string; serverId?: string | null; onClose: () => void; /** Só o cartão, editável, dentro de Configurações → Perfil. */ embedded?: boolean }) {
   const me = useLine((s) => s.me);
   const other = useLine((s) => s.users[userId]);
   const friend = useLine((s) => s.friends[userId]);
@@ -33,13 +38,16 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
   const [tab, setTab] = useState<Tab>('activity');
   const [menu, setMenu] = useState(false);
   const [main, setMain] = useState(false);
+  const [nameStyleOpen, setNameStyleOpen] = useState(false);
+  const [imgMenu, setImgMenu] = useState<{ kind: 'banner' | 'avatar'; el: HTMLElement } | null>(null);
   const look = useServerLook(serverId, userId);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    if (embedded) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !e.defaultPrevented && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   useEffect(() => {
     if (!other && !isMe) api.user(userId).then((u) => actions.upsertUsers([u]), () => {});
@@ -62,6 +70,11 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
   const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
   const serverName = !main && serverId ? displayNameIn(useLine.getState(), serverId, userId) : user.displayName;
   const hasGames = !!(profile?.favoriteGame || profile?.likedGames.length);
+  // Próprio perfil: edita direto aqui. Aberto num servidor, mexe no perfil daquele servidor.
+  const editable = isMe && !user.bot;
+  const editServer = serverId && server ? serverId : null;
+  const hasOwnBanner = !!(editServer ? look.bannerUrl : user.bannerUrl);
+  const hasOwnAvatar = !!(editServer ? look.avatarUrl : user.avatarUrl);
 
   async function openDm() {
     const dm = await api.openDm([userId]);
@@ -81,53 +94,144 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
       : []),
   ];
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
-      <div
-        role="dialog"
-        aria-label={user.displayName}
-        onMouseDown={(e) => e.stopPropagation()}
-        className="relative flex max-h-full w-full max-w-[980px] flex-col gap-6 overflow-y-auto rounded-2xl border border-edge bg-side p-6 shadow-2xl md:h-[min(800px,100%)] md:flex-row md:overflow-hidden md:p-10"
-      >
-        <button onClick={onClose} title="Fechar" className="absolute top-4 right-4 z-10 rounded-lg border border-edge bg-rail p-1.5 text-soft hover:text-fg">
-          <Icons.X size={18} />
-        </button>
-
-        {/* Cartão */}
+  const card = (
         <div
-          className="w-full shrink-0 overflow-hidden rounded-2xl border border-edge md:w-[400px] md:overflow-y-auto"
-          style={{ background: `linear-gradient(to bottom, color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail)), var(--color-rail) 45%)` }}
+          className={cx('flex w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-edge md:w-[400px]', embedded && 'md:w-full xl:min-h-0 xl:flex-1')}
+          style={cardStyle(profile?.cardColors, user.avatarColor)}
         >
-          <div className="h-[140px]" style={banner ? undefined : { background: user.avatarColor }}>
+          <div className="relative h-[140px] shrink-0" style={banner ? undefined : { background: user.avatarColor }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
+            {editable && (
+              <>
+                <button
+                  type="button"
+                  title="Editar faixa e avatar"
+                  onClick={(e) => { const el = e.currentTarget; setImgMenu((v) => (v?.kind === 'banner' ? null : { kind: 'banner', el })); }}
+                  className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75"
+                >
+                  <Icons.Edit size={15} />
+                </button>
+                {imgMenu?.kind === 'banner' && (
+                  <ImageEditMenu serverId={editServer} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} align="right" />
+                )}
+              </>
+            )}
           </div>
-          <div className="px-6 pb-6">
+          <div className="shrink-0 px-6">
             <div className="relative z-[5] -mt-16 flex items-start gap-2">
-              <span className="flex shrink-0 rounded-full border-[6px]" style={{ borderColor: ring, background: ring }}>
+              <span className="group/av relative flex shrink-0 rounded-full border-[6px]" style={{ borderColor: ring, background: ring }}>
                 <Avatar name={user.displayName} color={user.avatarColor} src={(!main && look.avatarUrl) || user.avatarUrl} size={120} presence={presence} dotRingColor={ring} dotSize={26} className="block" />
+                {editable && (
+                  <>
+                    <button
+                      type="button"
+                      title="Editar avatar"
+                      onClick={(e) => { const el = e.currentTarget; setImgMenu((v) => (v?.kind === 'avatar' ? null : { kind: 'avatar', el })); }}
+                      className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity group-hover/av:opacity-100"
+                    >
+                      <Icons.Edit size={24} />
+                    </button>
+                    {imgMenu?.kind === 'avatar' && (
+                      <ImageEditMenu serverId={editServer} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} />
+                    )}
+                  </>
+                )}
               </span>
-              {user.thought && (
-                <span className="relative mt-20 max-w-[200px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
-                  {user.thought}
+              {editable ? (
+                <span className="relative mt-20 max-w-[200px] rounded-2xl border border-edge bg-side px-2 py-1 text-xs break-words text-soft shadow-lg">
+                  <span className="absolute top-1.5 -left-1.5 h-2.5 w-2.5 rounded-full border border-edge bg-side" />
+                  <InlineText
+                    value={user.thought ?? ''}
+                    placeholder="+ Adicionar nota"
+                    maxLength={80}
+                    className="px-1 py-0.5"
+                    inputClassName="text-xs"
+                    onSave={async (v) => actions.setMe(await api.updateMe({ thought: v || null }))}
+                  />
                 </span>
+              ) : (
+                user.thought && (
+                  <span className="relative mt-20 max-w-[200px] rounded-2xl border border-edge bg-side px-3 py-1.5 text-xs break-words text-soft shadow-lg">
+                    <span className="absolute top-1.5 -left-1.5 h-2.5 w-2.5 rounded-full border border-edge bg-side" />
+                    {user.thought}
+                  </span>
+                )
               )}
             </div>
 
+          </div>
+          {/* Do nome para baixo rola; capa e foto ficam paradas. */}
+          <div className="min-w-0 px-6 pb-6 md:min-h-0 md:flex-1 md:overflow-y-auto">
             <p className="mt-3 flex min-w-0 items-center gap-2 text-2xl leading-tight font-bold">
-              <StyledName user={user} color={user.botStyle?.nameColor ?? roleColor} className="truncate">
-                {serverName}
-              </StyledName>
+              {editable ? (
+                <InlineText
+                  value={editServer ? nickname ?? '' : user.displayName}
+                  placeholder={editServer ? user.displayName : 'Nome de exibição'}
+                  maxLength={32}
+                  emoji
+                  className="-mx-1 min-w-0 truncate px-1"
+                  inputClassName="text-xl font-bold"
+                  onSave={(v) => saveProfile.name({ serverId: editServer }, me.id, v)}
+                >
+                  <StyledName user={user} color={roleColor} className="truncate">
+                    {serverName}
+                  </StyledName>
+                </InlineText>
+              ) : null}
+              {editable && (
+                <button
+                  type="button"
+                  title="Personalizar estilo do nome"
+                  onClick={() => setNameStyleOpen(true)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-soft hover:bg-hover hover:text-fg"
+                >
+                  <Paintbrush size={17} />
+                </button>
+              )}
+              {editable ? null : (
+                <StyledName user={user} color={user.botStyle?.nameColor ?? roleColor} className="truncate">
+                  {serverName}
+                </StyledName>
+              )}
             </p>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-soft">
               <span>{user.bot ? 'Agente do servidor' : user.username}</span>
-              {user.pronouns && <span className="text-muted">• <span data-tip="Pronomes" style={{ cursor: 'default' }}>{user.pronouns}</span></span>}
-              <UserTagBadge user={user} />
+              {editable ? (
+                <span className="flex items-center gap-1 text-muted">
+                  •
+                  <InlineText
+                    value={user.pronouns ?? ''}
+                    placeholder="Adicionar pronomes"
+                    maxLength={40}
+                    className="px-1"
+                    inputClassName="w-40 text-sm"
+                    onSave={async (v) => actions.setMe(await api.updateMe({ pronouns: v }))}
+                  />
+                </span>
+              ) : (
+                user.pronouns && <span className="text-muted">• <span data-tip="Pronomes" style={{ cursor: 'default' }}>{user.pronouns}</span></span>
+              )}
+              {editable ? <TagPicker /> : <UserTagBadge user={user} />}
             </p>
-            {user.customStatus && <p className="mt-1.5 text-sm text-soft">{user.customStatus}</p>}
+            {editable ? (
+              <div className="mt-1.5 text-sm text-soft">
+                <InlineText
+                  value={user.customStatus ?? ''}
+                  placeholder="Adicionar status personalizado"
+                  maxLength={128}
+                  emoji
+                  className="-mx-1 px-1"
+                  inputClassName="text-sm"
+                  onSave={async (v) => actions.setMe(await api.updateMe({ customStatus: v || null }))}
+                />
+              </div>
+            ) : (
+              user.customStatus && <p className="mt-1.5 text-sm text-soft">{user.customStatus}</p>
+            )}
 
             {/* Ações */}
-            {!user.bot && (
+            {!user.bot && !embedded && !isMe && (
               <div className="mt-4 flex items-center gap-2">
                 {isMe ? (
                   <Button
@@ -169,12 +273,33 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
               </div>
             )}
 
-            {profile?.favoriteSong && (
+            {editable && profile ? (
               <div className="mt-5">
-                <SongPlayer song={profile.favoriteSong} />
+                <SongSlot song={profile.favoriteSong ?? null} colors={profile.cardColors} onChange={(favoriteSong) => setProfile((p) => (p ? { ...p, favoriteSong } : p))} />
               </div>
+            ) : (
+              profile?.favoriteSong && (
+                <div className="mt-5">
+                  <SongPlayer song={profile.favoriteSong} colors={profile.cardColors} />
+                </div>
+              )
             )}
-            {bio && <p className="mt-5 text-sm break-words whitespace-pre-wrap">{bio}</p>}
+            {editable ? (
+              <div className="mt-5 text-sm">
+                <InlineText
+                  value={(editServer ? look.bio : user.bio) ?? ''}
+                  placeholder={editServer && user.bio ? user.bio : 'Clique para adicionar uma bio'}
+                  maxLength={190}
+                  multiline
+                  className="-mx-1 block w-[calc(100%+0.5rem)] px-1 py-0.5 break-words whitespace-pre-wrap"
+                  inputClassName="text-sm"
+                  onSave={(v) => saveProfile.bio({ serverId: editServer }, v)}
+                />
+              </div>
+            ) : (
+              bio && <p className="mt-5 text-sm break-words whitespace-pre-wrap">{bio}</p>
+            )}
+            {editable && editServer && server && <p className="mt-2 text-xs text-muted">Nome, bio, faixa e avatar mudam só no perfil de {server.name}.</p>}
 
             {profile && (
               <Section title="Membro desde">
@@ -205,8 +330,37 @@ export function FullProfile({ userId, serverId, onClose }: { userId: string; ser
               </Section>
             )}
             {!isMe && profile && <NoteField userId={userId} initial={profile.note} />}
+
           </div>
+          {editable && profile && (
+            // Fica no canto de baixo do cartão, mesmo rolando o conteúdo.
+            // Altura zero: não cria rolagem a mais.
+            <div className="pointer-events-none sticky bottom-0 mt-auto h-0 shrink-0">
+              <span className="pointer-events-auto absolute right-3 bottom-3">
+                <CardColorButton colors={profile.cardColors} fallback={user.avatarColor} onPreview={(cardColors) => setProfile((p) => (p ? { ...p, cardColors } : p))} />
+              </span>
+            </div>
+          )}
+          {/* Portal: o cartão fixo (sticky) prende o modal embaixo de outras coisas da tela. */}
+          {nameStyleOpen && createPortal(<NameStyleModal onClose={() => setNameStyleOpen(false)} />, document.body)}
         </div>
+  );
+  if (embedded) return card;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-label={user.displayName}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="relative flex max-h-full w-full max-w-[980px] flex-col gap-6 overflow-y-auto rounded-2xl border border-edge bg-side p-6 shadow-2xl md:h-[min(800px,100%)] md:flex-row md:overflow-hidden md:p-10"
+      >
+        <button onClick={onClose} title="Fechar" className="absolute top-4 right-4 z-10 rounded-lg border border-edge bg-rail p-1.5 text-soft hover:text-fg">
+          <Icons.X size={18} />
+        </button>
+
+        {/* Cartão */}
+        {card}
 
         {/* Abas */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -268,7 +422,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 function RolesSection({ userId, serverId }: { userId: string; serverId: string }) {
-  const has = useLine((s) => !!s.members[serverId]?.[userId]);
+  const has = useHasMemberRoles(userId, serverId);
   if (!has) return null;
   return (
     <div className="mt-5">
@@ -373,12 +527,30 @@ export function MoreMenu({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [invite, setInvite] = useState(false);
-  const servers = useLine((s) => s.serverOrder.map((id) => s.servers[id]).filter((sv): sv is Server => !!sv && !sv.suspended));
+  const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]).filter((sv): sv is Server => !!sv && !sv.suspended)));
+
+  // O menu flutua solto na tela (portal), preso abaixo do botão "⋯" (o elemento pai do marcador).
+  const mark = useRef<HTMLSpanElement>(null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const place = () => mark.current?.parentElement && setRect(mark.current.parentElement.getBoundingClientRect());
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, []);
 
   useEffect(() => {
-    const down = (e: MouseEvent) => !box.current?.contains(e.target as Node) && onClose();
-    window.addEventListener('mousedown', down);
-    return () => window.removeEventListener('mousedown', down);
+    const down = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (box.current?.contains(t) || mark.current?.parentElement?.contains(t)) return;
+      onClose();
+    };
+    window.addEventListener('mousedown', down, true);
+    return () => window.removeEventListener('mousedown', down, true);
   }, [onClose]);
 
   const act = (fn: () => unknown) => () => {
@@ -393,8 +565,15 @@ export function MoreMenu({
     toast(`Convite de ${sv.name} enviado para ${user.displayName}.`);
   }
 
+  const W = 240;
+  const pos = rect
+    ? { top: rect.bottom + 6, left: Math.max(8, Math.min(align === 'left' ? rect.left : rect.right - W, window.innerWidth - W - 8)) }
+    : { top: -9999, left: -9999 };
   return (
-    <div ref={box} className={cx('absolute top-full z-20 mt-1.5 w-60 rounded-xl border border-edge bg-rail p-1.5 text-sm shadow-2xl', align === 'left' ? 'left-0' : 'right-0')}>
+    <>
+    <span ref={mark} hidden />
+    {createPortal(
+    <div ref={box} onMouseDown={(e) => e.stopPropagation()} style={pos} className="fixed z-[200] w-60 rounded-xl border border-edge bg-rail p-1.5 text-sm shadow-2xl">
       {onFullProfile && <Item onClick={act(onFullProfile)}>Ver Perfil Completo</Item>}
       {!onFullProfile && nickname && (
         <Item onClick={act(onMain)} sub={main ? nickname : user.displayName}>
@@ -471,7 +650,10 @@ export function MoreMenu({
       >
         Copiar ID do usuário
       </Item>
-    </div>
+    </div>,
+    document.body,
+    )}
+    </>
   );
 }
 
@@ -549,7 +731,7 @@ export function ActivityList({ profile }: { profile: UserProfile | null }) {
 function ActivityRow({ name, cover, icon, children }: { name: string; cover?: string | null; icon?: string | null; children: ReactNode }) {
   return (
     <div className="flex items-center gap-3.5 rounded-xl border border-edge bg-rail/70 p-3">
-      <GameArt cover={cover} icon={icon} size={58} />
+      <GameArt cover={cover} icon={icon} size={50} />
       <div className="min-w-0">
         <p className="truncate font-bold">{name}</p>
         <p className="mt-0.5 flex items-center gap-1.5 text-xs text-soft">{children}</p>

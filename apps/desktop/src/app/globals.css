@@ -120,6 +120,22 @@
   --color-dnd: #c62828;
   --color-offline: #9a8590;
 }
+/* Pink no escuro: fundos ameixa bem fechados, texto rosado e o rosa como destaque. */
+:root[data-theme='pink-escuro'] {
+  --color-rail: #140a10;
+  --color-side: #1a0d15;
+  --color-main: #21111a;
+  --color-raise: #2b1621;
+  --color-hover: #351b29;
+  --color-edge: #452436;
+  --color-fg: #fbeef3;
+  --color-soft: #e0bfcd;
+  --color-muted: #a57d8e;
+  --color-accent: #e8478a;
+  --color-accent-strong: #d23677;
+  --color-danger: #ff6b5c;
+  --color-dnd: #ff6b5c;
+}
 /* Paleta Okabe-Ito: azul, laranja e amarelo no lugar de verde/vermelho. */
 :root[data-theme='daltonico'] {
   --color-accent: #3d9be9;
@@ -341,8 +357,45 @@ body {
 .line-name-prism {
   animation: line-name-prism 6s linear infinite;
 }
+@keyframes line-name-wave-v {
+  to {
+    background-position: 0 200%;
+  }
+}
+.line-name-wave-v {
+  animation: line-name-wave-v 6s linear infinite;
+}
+@keyframes line-song-ring {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: var(--ring); }
+}
+@property --line-glow {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+@keyframes line-name-neon-pulse {
+  0%, 100% { --line-glow: 1; opacity: 1; }
+  45% { --line-glow: 1.9; }
+  70% { --line-glow: 1.2; opacity: 1; }
+  72% { opacity: 0.45; }
+  74% { opacity: 1; }
+  77% { opacity: 0.6; }
+  79% { opacity: 1; }
+}
+.line-name-neon-pulse {
+  animation: line-name-neon-pulse 2.5s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
+  .line-name-neon-pulse,
+  .line-name-wave-v,
   .line-name-prism {
     animation: none;
   }
+}
+
+/* Sem o contorno de foco do navegador em nenhum lugar (pedido de design). */
+*:focus,
+*:focus-visible {
+  outline: none !important;
 }

@@ -18,6 +18,7 @@ import type {
   UpdateProfileInput,
   UpdateServerInput,
   NameStyle,
+  CallLook,
   ProfileConnection,
   ProfileGame,
   UserProfile,
@@ -225,8 +226,8 @@ export const api = {
   user: (id: string) => request<PublicUser>('GET', `/users/${enc(id)}`),
   profile: (id: string, serverId?: string | null) =>
     request<UserProfile>('GET', `/users/${enc(id)}/profile${serverId ? `?server=${enc(serverId)}` : ''}`),
-  updateProfileExtras: (patch: { favoriteSong?: string | null; favoriteGame?: ProfileGame | null; likedGames?: ProfileGame[]; connections?: ProfileConnection[]; nameStyle?: NameStyle | null }) =>
-    request<{ favoriteSong?: FavoriteSong | null; favoriteGame: ProfileGame | null; likedGames: ProfileGame[]; connections: ProfileConnection[] }>('PUT', '/users/@me/profile', patch),
+  updateProfileExtras: (patch: { favoriteSong?: string | null; favoriteGame?: ProfileGame | null; likedGames?: ProfileGame[]; connections?: ProfileConnection[]; nameStyle?: NameStyle | null; cardColors?: string[] | null; callLook?: CallLook | null }) =>
+    request<{ favoriteSong?: FavoriteSong | null; cardColors?: string[] | null; callLook?: CallLook | null; favoriteGame: ProfileGame | null; likedGames: ProfileGame[]; connections: ProfileConnection[] }>('PUT', '/users/@me/profile', patch),
   setNote: (id: string, note: string) => request<{ note: string }>('PUT', `/users/${enc(id)}/note`, { note }),
   ignored: () => request<string[]>('GET', '/users/@me/ignored'),
   ignore: (id: string) => request<void>('PUT', `/users/${enc(id)}/ignore`),

@@ -3,12 +3,37 @@
 import { create } from 'zustand';
 import { loadApi } from './music';
 
-/** Prévia da música favorita do perfil: um player escondido só para isso, toca até 30 s. */
+/** Quanto da música a prévia toca. */
+export const PREVIEW_SECS = 25;
+
+/** Prévia da música favorita do perfil: um player escondido só para isso, toca um trechinho (PREVIEW_SECS). */
 export const useSongPreview = create<{ videoId: string | null; loading: boolean }>(() => ({ videoId: null, loading: false }));
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 let player: any = null;
 let stopTimer: number | undefined;
+let rampTimer: number | undefined;
+
+/** Volume máximo da prévia e quanto tempo leva para subir e para descer. */
+const MAX_VOLUME = 50;
+const FADE_IN_MS = 2500;
+const FADE_OUT_MS = 3000;
+
+/** Muda o volume aos poucos até `to`; `done` roda no fim. */
+function ramp(from: number, to: number, ms: number, done?: () => void) {
+  window.clearInterval(rampTimer);
+  const start = performance.now();
+  rampTimer = window.setInterval(() => {
+    const t = Math.min(1, (performance.now() - start) / ms);
+    try {
+      player?.setVolume?.(Math.round(from + (to - from) * t));
+    } catch {}
+    if (t >= 1) {
+      window.clearInterval(rampTimer);
+      done?.();
+    }
+  }, 50);
+}
 
 async function ensure(): Promise<any> {
   if (player) return player;
@@ -28,7 +53,18 @@ async function ensure(): Promise<any> {
       events: {
         onReady: () => resolve(),
         onStateChange: (e: any) => {
-          if (e.data === 1) useSongPreview.setState({ loading: false });
+          if (e.data === 1 && useSongPreview.getState().loading) {
+            useSongPreview.setState({ loading: false });
+            // O trecho conta a partir de quando começa a tocar de verdade.
+            // Entra baixinho, sobe até MAX_VOLUME e, no fim do trecho, vai abaixando até parar.
+            const id = useSongPreview.getState().videoId;
+            ramp(0, MAX_VOLUME, FADE_IN_MS);
+            window.clearTimeout(stopTimer);
+            stopTimer = window.setTimeout(() => {
+              if (useSongPreview.getState().videoId !== id) return;
+              ramp(MAX_VOLUME, 0, FADE_OUT_MS, () => useSongPreview.getState().videoId === id && stopSong());
+            }, PREVIEW_SECS * 1000 - FADE_OUT_MS);
+          }
           if (e.data === 0) stopSong();
         },
         onError: () => stopSong(),
@@ -40,6 +76,7 @@ async function ensure(): Promise<any> {
 
 export function stopSong() {
   window.clearTimeout(stopTimer);
+  window.clearInterval(rampTimer);
   try {
     player?.stopVideo?.();
   } catch {}
@@ -52,10 +89,11 @@ export async function toggleSong(videoId: string) {
   try {
     const p = await ensure();
     if (useSongPreview.getState().videoId !== videoId) return;
-    p.setVolume?.(60);
+    p.setVolume?.(0);
     p.loadVideoById({ videoId, startSeconds: 30 });
+    // Garantia se o player nunca disser que começou.
     window.clearTimeout(stopTimer);
-    stopTimer = window.setTimeout(() => useSongPreview.getState().videoId === videoId && stopSong(), 60_000);
+    stopTimer = window.setTimeout(() => useSongPreview.getState().videoId === videoId && stopSong(), (PREVIEW_SECS + 20) * 1000);
   } catch {
     stopSong();
   }

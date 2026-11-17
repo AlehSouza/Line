@@ -179,12 +179,13 @@ export function ColorPicker({
         setOpen(false);
       }
     };
-    window.addEventListener('mousedown', onDown);
+    // Captura: modais param a propagação do clique, e aí o seletor não fechava.
+    window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', place);
     window.addEventListener('scroll', place, true);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('resize', place);
       window.removeEventListener('scroll', place, true);
@@ -208,7 +209,7 @@ export function ColorPicker({
       {open &&
         rect &&
         createPortal(
-          <div ref={pop} className="fixed z-[90] rounded-xl border border-edge bg-side p-3 shadow-2xl" style={pos}>
+          <div ref={pop} data-color-panel className="fixed z-[250] rounded-xl border border-edge bg-side p-3 shadow-2xl" style={pos}>
             <ColorPanel value={value ?? '#7c6af2'} onChange={onChange} />
           </div>,
           document.body,

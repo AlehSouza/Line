@@ -57,11 +57,26 @@ export const RESOLUTIONS: Record<Resolution, { label: string; width: number; hei
 
 // ---------- preferências (ficam salvas no PC) ----------
 
+export type InputProfile = 'voice' | 'studio' | 'custom';
+export type InputMode = 'voice' | 'ptt';
+
 interface VoicePrefs {
   noiseSuppression: boolean;
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
+  /** Volume do microfone e geral da saída (1 = 100%, até 2). */
+  inputVolume: number;
+  outputVolume: number;
+  /** Isolamento de voz (supressor + eco + sensibilidade automática), Estúdio (tudo cru) ou Personalizado. */
+  inputProfile: InputProfile;
+  echoCancellation: boolean;
+  /** Sensibilidade automática; desligada, o microfone só abre acima de `sensitivityDb`. */
+  autoSensitivity: boolean;
+  sensitivityDb: number;
+  /** Detecção de voz ou Apertar para falar (com a tecla `pttKey`, um KeyboardEvent.code). */
+  inputMode: InputMode;
+  pttKey: string | null;
 }
 
 const PREFS_KEY = 'line.voice';
@@ -70,6 +85,14 @@ const defaultPrefs: VoicePrefs = {
   inputId: null,
   outputId: null,
   screenQuality: { resolution: '1080', fps: 60 },
+  inputVolume: 1,
+  outputVolume: 1,
+  inputProfile: 'voice',
+  echoCancellation: true,
+  autoSensitivity: true,
+  sensitivityDb: -45,
+  inputMode: 'voice',
+  pttKey: null,
 };
 
 function loadPrefs(): VoicePrefs {
@@ -82,9 +105,23 @@ function loadPrefs(): VoicePrefs {
 }
 
 function savePrefs() {
-  const { noiseSuppression, inputId, outputId, screenQuality } = getV();
+  const v = getV();
+  const prefs: VoicePrefs = {
+    noiseSuppression: v.noiseSuppression,
+    inputId: v.inputId,
+    outputId: v.outputId,
+    screenQuality: v.screenQuality,
+    inputVolume: v.inputVolume,
+    outputVolume: v.outputVolume,
+    inputProfile: v.inputProfile,
+    echoCancellation: v.echoCancellation,
+    autoSensitivity: v.autoSensitivity,
+    sensitivityDb: v.sensitivityDb,
+    inputMode: v.inputMode,
+    pttKey: v.pttKey,
+  };
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify({ noiseSuppression, inputId, outputId, screenQuality }));
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
   } catch {
     // sem localStorage: as preferências valem só nesta sessão
   }
@@ -160,6 +197,16 @@ export interface VoiceStore {
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
+  inputVolume: number;
+  outputVolume: number;
+  inputProfile: InputProfile;
+  echoCancellation: boolean;
+  autoSensitivity: boolean;
+  sensitivityDb: number;
+  inputMode: InputMode;
+  pttKey: string | null;
+  /** Tecla do Apertar para falar segurada agora. */
+  pttDown: boolean;
   /** Sobe quando troco a câmera ou a tela sem parar (mesmo stream, trilha nova): a prévia recarrega. */
   mediaRev: number;
   /** Quadro a pôr em destaque quando a tela da chamada abrir (ex.: clique no mini player). */
@@ -188,6 +235,7 @@ export const useVoice = create<VoiceStore>(() => ({
   error: null,
   mediaRev: 0,
   stageFocus: null,
+  pttDown: false,
   ...loadPrefs(),
 }));
 
@@ -538,22 +586,22 @@ export function toggleDeafen() {
 }
 
 function applyMute() {
-  const { muted, deafened, states } = getV();
+  const { muted, deafened, states, inputMode, pttDown } = getV();
   const forced = myId ? states[myId] : undefined;
-  const silent = muted || deafened || !!forced?.serverMuted || !!forced?.serverDeafened;
+  const silent = muted || deafened || !!forced?.serverMuted || !!forced?.serverDeafened || (inputMode === 'ptt' && !pttDown);
   for (const s of [rawMic, mic]) s?.getAudioTracks().forEach((t) => (t.enabled = !silent));
   for (const el of audioEls.values()) applyPeerAudio(el);
 }
 
 /** Ensurdecido (por mim ou pelo servidor), silenciado localmente e volume de cada pessoa. */
 function applyPeerAudio(el: HTMLAudioElement) {
-  const { deafened, states, localMuted, userVolume, screenVolume, screenMuted, watching } = getV();
+  const { deafened, states, localMuted, userVolume, screenVolume, screenMuted, watching, outputVolume } = getV();
   const peer = el.dataset.peer ?? '';
   const forced = myId ? states[myId]?.serverDeafened : false;
   // O áudio da tela vem no mesmo stream do vídeo da tela; o resto é a voz.
   const isScreen = !!states[peer]?.screenStreamId && el.dataset.stream === states[peer]?.screenStreamId;
   const off = deafened || !!forced || (isScreen ? !!screenMuted[peer] || !watching[peer] : !!localMuted[peer]);
-  const volume = Math.min(2, Math.max(0, (isScreen ? screenVolume[peer] : userVolume[peer]) ?? 1));
+  const volume = Math.min(2, Math.max(0, ((isScreen ? screenVolume[peer] : userVolume[peer]) ?? 1) * (outputVolume ?? 1)));
   const boost = volume > 1 ? boostFor(el) : null;
   if (boost) {
     // Acima de 100%: o elemento fica mudo e o som sai amplificado pelo GainNode.
@@ -660,13 +708,15 @@ export function moderateVoice(m: VoiceModeration) {
 // ---------- microfone, supressor de ruído e dispositivos ----------
 
 async function openMic() {
-  const { inputId, noiseSuppression } = getV();
+  const { inputId, noiseSuppression, echoCancellation, autoSensitivity, inputProfile } = getV();
+  const studio = inputProfile === 'studio';
   const audio: MediaTrackConstraints = {
     deviceId: inputId ? { exact: inputId } : undefined,
-    echoCancellation: true,
+    echoCancellation,
     // Com o nosso supressor ligado, o do navegador sai do caminho (os dois juntos deixam a voz "metálica").
-    noiseSuppression: !noiseSuppression,
-    autoGainControl: true,
+    // No Estúdio o som vai cru: sem nenhum filtro do navegador.
+    noiseSuppression: !noiseSuppression && !studio,
+    autoGainControl: autoSensitivity && !studio,
     channelCount: 1,
   };
   try {
@@ -689,6 +739,134 @@ async function openMic() {
       setV({ noiseSuppression: false, error: 'Não deu para ligar o supressor de ruído neste PC.' });
     }
   }
+  // Estágio de volume e do corte por sensibilidade: o medidor de fala lê antes dele (micPre).
+  micPre = mic;
+  mic = withGain(mic);
+}
+
+/** Microfone já tratado, antes do volume/corte (para medir o nível mesmo com o corte fechado). */
+let micPre: MediaStream | null = null;
+let gainCtx: AudioContext | null = null;
+let gainNode: GainNode | null = null;
+/** Corte por sensibilidade aberto agora (fala passou do limiar). */
+let gateOpen = true;
+let gateUntil = 0;
+
+function withGain(s: MediaStream): MediaStream {
+  try {
+    gainCtx = new AudioContext();
+    const dest = gainCtx.createMediaStreamDestination();
+    gainNode = gainCtx.createGain();
+    gainCtx.createMediaStreamSource(s).connect(gainNode).connect(dest);
+    applyGain();
+    void gainCtx.resume().catch(() => {});
+    return dest.stream;
+  } catch {
+    gainCtx = null;
+    gainNode = null;
+    return s;
+  }
+}
+
+function disposeGain() {
+  void gainCtx?.close().catch(() => {});
+  gainCtx = null;
+  gainNode = null;
+  micPre = null;
+  gateOpen = true;
+}
+
+function applyGain() {
+  if (!gainNode) return;
+  const { inputVolume } = getV();
+  gainNode.gain.setTargetAtTime(gateOpen ? inputVolume : 0, gainNode.context.currentTime, 0.015);
+}
+
+/** Abre/fecha o corte pela sensibilidade manual (chamado pelo laço de fala). */
+function updateGate(lvl: number, now: number) {
+  const { autoSensitivity, sensitivityDb, inputProfile } = getV();
+  let open = true;
+  if (!autoSensitivity && inputProfile !== 'voice') {
+    const db = lvl > 0 ? 20 * Math.log10(lvl) : -100;
+    if (db >= sensitivityDb) gateUntil = now + 400;
+    open = now < gateUntil;
+  }
+  if (open !== gateOpen) {
+    gateOpen = open;
+    applyGain();
+  }
+}
+
+export function setInputVolume(v: number) {
+  setV({ inputVolume: Math.min(2, Math.max(0, v)) });
+  savePrefs();
+  applyGain();
+}
+
+export function setOutputVolume(v: number) {
+  setV({ outputVolume: Math.min(2, Math.max(0, v)) });
+  savePrefs();
+  for (const el of audioEls.values()) applyPeerAudio(el);
+}
+
+/** Perfil de entrada: Isolamento de voz liga os filtros, Estúdio desliga tudo; mexer num filtro vira Personalizado. */
+export async function setInputProfile(p: InputProfile) {
+  if (p === 'voice') setV({ inputProfile: p, noiseSuppression: true, echoCancellation: true, autoSensitivity: true });
+  else if (p === 'studio') setV({ inputProfile: p, noiseSuppression: false, echoCancellation: false, autoSensitivity: false });
+  else setV({ inputProfile: p });
+  savePrefs();
+  await reopenMic();
+}
+
+export async function setEchoCancellation(on: boolean) {
+  setV({ echoCancellation: on, inputProfile: 'custom' });
+  savePrefs();
+  await reopenMic();
+}
+
+export async function setAutoSensitivity(on: boolean) {
+  setV({ autoSensitivity: on, inputProfile: 'custom' });
+  savePrefs();
+  gateOpen = true;
+  applyGain();
+  await reopenMic();
+}
+
+export function setSensitivityDb(db: number) {
+  setV({ sensitivityDb: Math.min(0, Math.max(-100, db)) });
+  savePrefs();
+}
+
+export function setInputMode(mode: InputMode) {
+  setV({ inputMode: mode, pttDown: false });
+  savePrefs();
+  applyMute();
+}
+
+export function setPttKey(code: string | null) {
+  setV({ pttKey: code, pttDown: false });
+  savePrefs();
+  applyMute();
+}
+
+/** Apertar para falar: segura a tecla escolhida e o microfone abre (só com a janela do Line em foco). */
+if (typeof window !== 'undefined') {
+  const isPtt = (e: KeyboardEvent) => {
+    const { inputMode, pttKey } = getV();
+    return inputMode === 'ptt' && !!pttKey && e.code === pttKey;
+  };
+  window.addEventListener('keydown', (e) => {
+    if (!isPtt(e) || e.repeat || getV().pttDown) return;
+    setV({ pttDown: true });
+    applyMute();
+  });
+  const release = () => {
+    if (!getV().pttDown) return;
+    setV({ pttDown: false });
+    applyMute();
+  };
+  window.addEventListener('keyup', (e) => isPtt(e) && release());
+  window.addEventListener('blur', release);
 }
 
 /** Reabre o microfone (trocou o dispositivo ou o supressor) sem derrubar a chamada. */
@@ -699,6 +877,7 @@ async function reopenMic() {
   mic = null;
   rawMic = null;
   disposeNoiseSuppressor();
+  disposeGain();
   try {
     await openMic();
   } catch (err) {
@@ -722,7 +901,7 @@ async function reopenMic() {
 }
 
 export async function setNoiseSuppression(on: boolean) {
-  setV({ noiseSuppression: on });
+  setV({ noiseSuppression: on, inputProfile: 'custom' });
   savePrefs();
   await reopenMic();
 }
@@ -1507,7 +1686,9 @@ function stopStream(stream: MediaStream | null) {
 function stopMic() {
   stopStream(rawMic);
   if (mic !== rawMic) stopStream(mic);
+  if (micPre && micPre !== rawMic) stopStream(micPre);
   disposeNoiseSuppressor();
+  disposeGain();
   mic = null;
   rawMic = null;
   analysers.delete('local');
@@ -1566,9 +1747,14 @@ function startSpeakingLoop() {
     const v = getV();
     const now = performance.now();
     const next: Record<string, boolean> = {};
-    if (mic && myId && !v.muted && !v.deafened) {
-      const e = analyserFor('local', myId, mic);
-      if (e && isSpeaking(myId, level(e), now)) next[myId] = true;
+    const pttClosed = v.inputMode === 'ptt' && !v.pttDown;
+    if (mic && myId && !v.muted && !v.deafened && !pttClosed) {
+      const e = analyserFor('local', myId, micPre ?? mic);
+      if (e) {
+        const lvl = level(e);
+        updateGate(lvl, now);
+        if (gateOpen && isSpeaking(myId, lvl, now)) next[myId] = true;
+      }
     } else if (myId) lastLoud.delete(myId);
     for (const [peerId, peer] of peers) {
       const screenId = v.states[peerId]?.screenStreamId;
@@ -1703,6 +1889,7 @@ function onForeground() {
   void playCtx?.resume().catch(() => {});
   void audioCtx?.resume().catch(() => {});
   resumeNoiseSuppressor();
+  void gainCtx?.resume().catch(() => {});
   if (!getV().channelId) return;
   for (const el of audioEls.values()) if (el.paused) void el.play().catch(() => {});
   const track = rawMic?.getAudioTracks()[0];

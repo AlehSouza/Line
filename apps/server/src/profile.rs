@@ -112,9 +112,20 @@ fn clean_style(v: &Value) -> ApiResult<Option<Value>> {
                 .collect()
         })
         .unwrap_or_default();
-    Ok(Some(
-        json!({ "font": font, "effect": effect, "colors": colors }),
-    ))
+    let dir = v.get("dir").and_then(|x| x.as_str()).filter(|d| matches!(*d, "h" | "v"));
+    let motion = v.get("motion").and_then(|x| x.as_str()).filter(|m| matches!(*m, "static" | "wave" | "pulse"));
+    let speed = v.get("speed").and_then(|x| x.as_str()).filter(|s| matches!(*s, "slow" | "medium" | "fast"));
+    let mut out = json!({ "font": font, "effect": effect, "colors": colors });
+    if let Some(d) = dir {
+        out["dir"] = json!(d);
+    }
+    if let Some(m) = motion {
+        out["motion"] = json!(m);
+    }
+    if let Some(s) = speed {
+        out["speed"] = json!(s);
+    }
+    Ok(Some(out))
 }
 
 /// PUT /users/@me/profile: `favoriteGame`, `likedGames` (até 20), `connections` (até 10) e
@@ -142,6 +153,37 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let mut changed_games = false;
     if let Some(song) = song {
         games["song"] = song;
+        changed_games = true;
+    }
+    // Cores do cartão do perfil (degradê de cima para baixo): [c1, c2] em #rrggbb; null tira.
+    if let Some(c) = input.get("cardColors") {
+        let colors: Vec<String> = c
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str())
+                    .filter(|x| is_hex(x))
+                    .take(2)
+                    .map(|x| x.to_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default();
+        games["card"] = if colors.is_empty() { Value::Null } else { json!(colors) };
+        changed_games = true;
+    }
+    // Visual do quadro na chamada: { bg: "color" | "image", color, image, border, ring (borda da foto) }; null tira.
+    if let Some(c) = input.get("callLook") {
+        games["call"] = if c.is_object() {
+            let hex = |k: &str| c.get(k).and_then(|x| x.as_str()).filter(|x| is_hex(x)).map(|x| x.to_lowercase());
+            let image = c
+                .get("image")
+                .and_then(|x| x.as_str())
+                .filter(|x| x.starts_with("/api/attachments/") && x.len() <= 300 && !x.contains(".."));
+            let bg = c.get("bg").and_then(|x| x.as_str()).filter(|b| matches!(*b, "color" | "image"));
+            json!({ "bg": bg, "color": hex("color"), "image": image, "border": hex("border"), "ring": hex("ring") })
+        } else {
+            Value::Null
+        };
         changed_games = true;
     }
     if let Some(f) = input.get("favoriteGame") {
@@ -201,6 +243,8 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
         "favoriteGame": games.get("favorite"),
         "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
         "favoriteSong": games.get("song"),
+        "cardColors": games.get("card"),
+        "callLook": games.get("call"),
         "connections": connections,
     }))
 }
@@ -245,6 +289,8 @@ async fn get_profile(
         "favoriteGame": games.get("favorite"),
         "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
         "favoriteSong": games.get("song"),
+        "cardColors": games.get("card"),
+        "callLook": games.get("call"),
         "connections": connections,
         "playing": playing.map(|(name, since)| json!({ "name": name, "since": since })),
         "activity": activity,

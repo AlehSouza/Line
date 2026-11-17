@@ -85,34 +85,70 @@ const fontOf = (id: NameFont | undefined) => NAME_FONTS.find((f) => f.id === id)
 export function nameStyleCss(style: NameStyle | null | undefined, fallback?: string): CSSProperties {
   if (!style) return fallback ? { color: fallback } : {};
   const font = fontOf(style.font);
-  const [c1 = '#f5f5f7', c2 = c1] = style.colors ?? [];
+  const list = style.colors?.length ? style.colors.slice(0, 6) : style.effect === 'prism' ? NAME_PALETTES.prism[0]! : ['#f5f5f7'];
+  const c1 = list[0]!;
+  const last = list[list.length - 1]!;
   const base: CSSProperties = font.id === 'default' ? {} : { fontFamily: font.family };
-  const clip = (bg: string): CSSProperties => ({
-    ...base,
-    backgroundImage: bg,
-    WebkitBackgroundClip: 'text',
-    backgroundClip: 'text',
-    color: 'transparent',
-    WebkitTextFillColor: 'transparent',
-  });
+  const vertical = nameDir(style) === 'v';
+  const wave = nameWave(style);
+  // Degradê recortado no texto; em onda, repete a primeira cor no fim e corre o fundo (classe de nameStyleClass).
+  const clip = (cols: string[]): CSSProperties => {
+    const stops = wave ? [...cols, cols[0]!] : cols;
+    return {
+      ...base,
+      backgroundImage: `linear-gradient(${vertical ? '180deg' : '90deg'}, ${stops.join(', ')})`,
+      ...(wave ? { backgroundSize: vertical ? '100% 200%' : '200% 100%', animationDuration: WAVE_SECS[style.speed ?? 'medium'] } : {}),
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      color: 'transparent',
+      WebkitTextFillColor: 'transparent',
+    };
+  };
+  const fill = (cols: string[]): CSSProperties => (cols.length > 1 ? clip(cols) : { ...base, color: cols[0] });
+  const multi = list.length > 1;
   switch (style.effect) {
-    case 'gradient':
-      return clip(`linear-gradient(90deg, ${c1}, ${c2})`);
-    case 'neon':
-      return { ...base, color: `color-mix(in srgb, ${c1} 45%, white)`, textShadow: `0 0 2px ${c1}, 0 0 8px ${c1}, 0 0 14px color-mix(in srgb, ${c1} 60%, transparent)` };
-    case 'draw':
-      return { ...base, color: `color-mix(in srgb, ${c1} 22%, transparent)`, WebkitTextStroke: `0.06em ${c1}`, paintOrder: 'stroke fill' };
-    case 'pop':
-      return { ...base, color: c1, textShadow: `0.07em 0.07em 0 ${c2}` };
-    case 'gummy':
-      return { ...clip(`linear-gradient(180deg, ${c1}, ${c2})`), filter: `drop-shadow(0 0.06em 0 color-mix(in srgb, ${c2} 55%, black))` };
-    case 'prism': {
-      const list = style.colors?.length ? style.colors : NAME_PALETTES.prism[0]!;
-      return { ...clip(`linear-gradient(90deg, ${[...list, list[0]].join(', ')})`), backgroundSize: '200% 100%' };
+    case 'neon': {
+      // --line-glow (1 = normal) é o que a animação de piscar mexe.
+      const g = (px: number) => `calc(${px}px * var(--line-glow, 1))`;
+      const pulse = namePulse(style) ? { animationDuration: PULSE_SECS[style.speed ?? 'medium'] } : {};
+      const glow = `drop-shadow(0 0 2px ${c1}) drop-shadow(0 0 ${g(7)} ${last}) drop-shadow(0 0 ${g(12)} color-mix(in srgb, ${last} 60%, transparent))`;
+      if (!multi) return { ...base, ...pulse, color: `color-mix(in srgb, ${c1} 45%, white)`, textShadow: `0 0 2px ${c1}, 0 0 ${g(8)} ${c1}, 0 0 ${g(14)} color-mix(in srgb, ${c1} 60%, transparent)` };
+      return { ...clip(list.map((c) => `color-mix(in srgb, ${c} 45%, white)`)), ...pulse, filter: glow };
     }
+    case 'draw':
+      if (!multi) return { ...base, color: `color-mix(in srgb, ${c1} 22%, transparent)`, WebkitTextStroke: `0.06em ${c1}`, paintOrder: 'stroke fill' };
+      return { ...clip(list.map((c) => `color-mix(in srgb, ${c} 35%, transparent)`)), WebkitTextStroke: `0.06em ${c1}`, paintOrder: 'stroke fill' };
+    case 'pop': {
+      // A última cor é a sombra; as outras pintam o texto.
+      const cols = multi ? list.slice(0, -1) : list;
+      if (cols.length === 1) return { ...base, color: cols[0], textShadow: `0.07em 0.07em 0 ${last}` };
+      return { ...clip(cols), filter: `drop-shadow(0.07em 0.07em 0 ${last})` };
+    }
+    case 'gummy':
+      return { ...fill(list), filter: `drop-shadow(0 0.06em 0 color-mix(in srgb, ${last} 55%, black))` };
     default:
-      return { ...base, color: c1 };
+      // solid, gradient e prism: o texto pinta com as cores (uma só = cor lisa).
+      return fill(list);
   }
+}
+
+/** Duração de uma volta da onda por velocidade. */
+const WAVE_SECS = { slow: '12s', medium: '6s', fast: '4s' } as const;
+const PULSE_SECS = { slow: '5s', medium: '2.5s', fast: '1.67s' } as const;
+
+/** Neon piscando: brilho que pulsa com umas falhas de lâmpada. */
+export const namePulse = (s: NameStyle) => s.effect === 'neon' && s.motion === 'pulse';
+
+/** Direção do degradê: a escolhida, ou vertical no gummy e horizontal no resto. */
+export const nameDir = (s: NameStyle): 'h' | 'v' => s.dir ?? (s.effect === 'gummy' ? 'v' : 'h');
+/** Se o degradê corre em onda: o escolhido, ou só no prism. Precisa de mais de uma cor. */
+export const nameWave = (s: NameStyle) => (s.motion ? s.motion === 'wave' : s.effect === 'prism') && (s.colors?.length ?? (s.effect === 'prism' ? 2 : 1)) !== 1;
+
+/** Classe da animação de onda (vazia quando o nome é parado). */
+export function nameStyleClass(s: NameStyle | null | undefined): string {
+  if (s && namePulse(s)) return 'line-name-neon-pulse';
+  if (!s || !nameWave(s)) return '';
+  return nameDir(s) === 'v' ? 'line-name-wave-v' : 'line-name-prism';
 }
 
 /**
@@ -135,7 +171,7 @@ export function StyledName({
 }) {
   const s = style !== undefined ? style : user?.bot ? null : user?.nameStyle;
   return (
-    <span className={[className, s?.effect === 'prism' ? 'line-name-prism' : ''].filter(Boolean).join(' ')} style={nameStyleCss(s, color)}>
+    <span className={[className, nameStyleClass(s)].filter(Boolean).join(' ')} style={nameStyleCss(s, color)}>
       {children}
     </span>
   );

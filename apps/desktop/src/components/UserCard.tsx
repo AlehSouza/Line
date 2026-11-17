@@ -14,6 +14,7 @@ import { StatusPicker } from './StatusPicker';
 import { confirmDialog } from './Dialogs';
 import { StyledName } from '@/lib/nameStyle';
 import { SongPlayer } from './ProfileExtras';
+import { cardStyle } from './InlineProfileEdit';
 import { MoreMenu } from './FullProfile';
 import { useIgnored } from '@/lib/ignored';
 
@@ -47,6 +48,7 @@ export function UserCard({
   const dmRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [song, setSong] = useState<FavoriteSong | null>(null);
+  const [cardColors, setCardColors] = useState<string[] | null>(null);
   const [error, setError] = useState('');
   // Nome na cor do cargo mais alto no servidor aberto, igual à lista de membros.
   const viewServer = useViewServer();
@@ -71,7 +73,13 @@ export function UserCard({
 
   useEffect(() => {
     if (other?.bot) return;
-    api.profile(userId).then((p) => setSong(p.favoriteSong ?? null), () => {});
+    api.profile(userId).then(
+      (p) => {
+        setSong(p.favoriteSong ?? null);
+        setCardColors(p.cardColors ?? null);
+      },
+      () => {},
+    );
   }, [userId]);
 
   // Posiciona perto do clique sem sair da tela.
@@ -141,7 +149,9 @@ export function UserCard({
           width: W,
           left: pos?.left ?? -9999,
           top: pos?.top ?? 0,
-          background: `linear-gradient(to bottom, color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail)), var(--color-rail) 60%)`,
+          ...(cardColors?.length
+            ? cardStyle(cardColors, user.avatarColor)
+            : { background: `linear-gradient(to bottom, color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail)), var(--color-rail) 60%)` }),
         }}
       >
         {/* Banner com ações no canto */}
@@ -285,7 +295,7 @@ export function UserCard({
 
           {song && (
             <div className="mt-3">
-              <SongPlayer song={song} />
+              <SongPlayer song={song} colors={cardColors} />
             </div>
           )}
           {shownBio && <p className="mt-3 max-h-60 overflow-y-auto pr-1 text-sm break-words whitespace-pre-wrap">{shownBio}</p>}
@@ -460,6 +470,19 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
 }
 
 /** Tags de cargos da pessoa no servidor aberto, com + e x para quem pode gerenciar cargos. */
+/** Se a lista de cargos tem algo para mostrar: cargos da pessoa ou o "+" de quem pode dar cargos. */
+export function useHasMemberRoles(userId: string, serverId: string): boolean {
+  return useLine((s) => {
+    const member = s.members[serverId]?.[userId];
+    const roles = s.roles[serverId];
+    if (!member || !roles) return false;
+    if (roles.some((r) => r.id !== serverId && member.roleIds.includes(r.id))) return true;
+    if (!hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles)) return false;
+    const myTop = topPosition(s, serverId, s.me?.id);
+    return roles.some((r) => r.id !== serverId && r.position < myTop && !member.roleIds.includes(r.id));
+  });
+}
+
 export function MemberRoles({ userId, serverId: fixed }: { userId: string; serverId?: string | null }) {
   const viewServer = useViewServer();
   const serverId = fixed !== undefined ? fixed : viewServer;

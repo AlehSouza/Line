@@ -32,11 +32,29 @@ export type NameFont =
   | 'mono' | 'orbitron' | 'gothic' | 'pacifico' | 'pixel' | 'caveat';
 export type NameEffect = 'solid' | 'gradient' | 'neon' | 'draw' | 'pop' | 'gummy' | 'prism';
 
+export interface CallLook {
+  /** Fundo: cor sólida ou imagem; sem = o tom tirado da foto. */
+  bg?: 'color' | 'image' | null;
+  color?: string | null;
+  /** Caminho de um anexo enviado (/api/attachments/...). */
+  image?: string | null;
+  /** Cor da borda; sem = sem borda. */
+  border?: string | null;
+  /** Cor da borda em volta da foto; sem = sem borda. */
+  ring?: string | null;
+}
+
 export interface NameStyle {
   font: NameFont;
   effect: NameEffect;
   /** Cores em #rrggbb (1 a 6, conforme o efeito). */
   colors: string[];
+  /** Direção do degradê quando há mais de uma cor: h (padrão) ou v (padrão do gummy). */
+  dir?: 'h' | 'v';
+  /** Degradê parado ou correndo em onda (padrão: onda só no prism); pulse = neon piscando. */
+  motion?: 'static' | 'wave' | 'pulse';
+  /** Velocidade da onda (padrão: medium). */
+  speed?: 'slow' | 'medium' | 'fast';
 }
 
 /** Música favorita do perfil (vídeo do YouTube). */
@@ -72,6 +90,10 @@ export interface UserProfile {
   favoriteGame: ProfileGame | null;
   likedGames: ProfileGame[];
   favoriteSong?: FavoriteSong | null;
+  /** Degradê do cartão do perfil (cima, baixo); sem = cor do perfil. */
+  cardColors?: string[] | null;
+  /** Visual do quadro da pessoa na chamada (sempre meio transparente, por trás da foto). */
+  callLook?: CallLook | null;
   connections: ProfileConnection[];
   playing: { name: string; since: string } | null;
   activity: { name: string; icon?: string | null; cover?: string | null; lastPlayed: string; totalSecs: number }[];

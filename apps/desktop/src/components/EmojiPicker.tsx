@@ -206,10 +206,11 @@ export function EmojiPicker({
       onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('mousedown', onDown);
+    // Captura: dentro de modais que param a propagação o seletor também precisa fechar.
+    window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey);
     };
   }, [anchor, onClose]);

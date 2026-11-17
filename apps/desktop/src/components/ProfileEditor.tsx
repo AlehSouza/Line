@@ -3,40 +3,29 @@
 import type { FavoriteSong, ProfileConnection, ProfileGame, UserProfile } from '@line/shared';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { StyledName } from '@/lib/nameStyle';
-import { ActivityList } from './FullProfile';
+import { ActivityList, FullProfile } from './FullProfile';
+import { CallLookEditor } from './CallLook';
 import { NameStyleModal } from './NameStyleModal';
 import { ConnectionsEditor, GamesBoard, SongEditor } from './ProfileExtras';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
-import { ImageCropper } from './ImageCropper';
 import { useShallow } from 'zustand/react/shallow';
 import { TagIcon } from './ServerTag';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
-import { EmojiInput, EmojiTextarea } from './EmojiField';
+import { EmojiInput } from './EmojiField';
 
 const COLORS = ['#7c6af2', '#f5c451', '#2b6cff', '#ff5a5f', '#8e4ec6', '#12a594', '#f76b15', '#d6409f', '#b5b5bf'];
 
-type Image = { id: string | null; url: string | null; uploading?: boolean };
-
-/** Editor de perfil: foto, banner, nome, pronomes, pensamento, bio e conexões, com prévia do cartão ao lado. */
+/** Editor de perfil: o cartão do perfil completo, editável na hora, e ao lado as outras opções (salvas pelo botão). */
 export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onCancel?: () => void }) {
   const me = useLine((s) => s.me);
-  const [displayName, setDisplayName] = useState(me?.displayName ?? '');
-  const [pronouns, setPronouns] = useState(me?.pronouns ?? '');
-  const [thought, setThought] = useState(me?.thought ?? '');
-  const [bio, setBio] = useState(me?.bio ?? '');
   const [customStatus, setCustomStatus] = useState(me?.customStatus ?? '');
   const [color, setColor] = useState(me?.avatarColor ?? COLORS[0]!);
   const [tagServerId, setTagServerId] = useState<string | null>(me?.tag?.serverId ?? null);
   const taggedServers = useLine(useShallow((s) => Object.values(s.servers).filter((sv) => sv.tag)));
-  const [avatar, setAvatar] = useState<Image>({ id: null, url: me?.avatarUrl ?? null });
-  const [banner, setBanner] = useState<Image>({ id: null, url: me?.bannerUrl ?? null });
-  const [avatarChanged, setAvatarChanged] = useState(false);
-  const [bannerChanged, setBannerChanged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
-  const [crop, setCrop] = useState<{ file: File; kind: 'avatar' | 'banner' } | null>(null);
   const [extras, setExtras] = useState<UserProfile | null>(null);
   const [favorite, setFavorite] = useState<ProfileGame | null>(null);
   const [liked, setLiked] = useState<ProfileGame[]>([]);
@@ -45,6 +34,7 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
   const [extrasChanged, setExtrasChanged] = useState(false);
   const [nameStyleOpen, setNameStyleOpen] = useState(false);
   const [tab, setTab] = useState<'games' | 'activity'>('games');
+  const [left, setLeft] = useState<'card' | 'call'>('card');
 
   useEffect(() => {
     if (!me) return;
@@ -62,52 +52,12 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
     setExtrasChanged(true);
   };
 
-  /** Escolheu a imagem: abre o recorte (GIF vai direto para manter a animação). */
-  function pick(file: File, kind: 'avatar' | 'banner') {
-    if (file.type === 'image/gif' || !file.type.startsWith('image/')) return finish(file, kind);
-    setCrop({ file, kind });
-  }
-  function finish(file: File, kind: 'avatar' | 'banner') {
-    if (kind === 'avatar') void upload(file, avatar, setAvatar, () => setAvatarChanged(true));
-    else void upload(file, banner, setBanner, () => setBannerChanged(true));
-  }
-
-  /** `previous` volta se o envio falhar, para não apagar a foto atual ao salvar. */
-  async function upload(file: File, previous: Image, set: (i: Image) => void, mark: () => void) {
-    if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return setError('Escolha uma imagem (PNG, JPG, GIF ou WebP).');
-    if (file.size > 8 * 1024 * 1024) return setError('A imagem precisa ter até 8 MB.');
-    setError('');
-    const local = URL.createObjectURL(file);
-    set({ id: null, url: local, uploading: true });
-    try {
-      const a = await api.uploadAttachment(file, file.name || 'imagem');
-      set({ id: a.id, url: local });
-      mark();
-    } catch (e) {
-      set(previous);
-      setError(`Não deu para enviar a imagem: ${(e as Error).message}`);
-    }
-  }
-
   async function save() {
     setBusy(true);
     setError('');
     try {
-      actions.setMe(
-        await api.updateMe({
-          displayName,
-          bio,
-          avatarColor: color,
-          customStatus: customStatus.trim() || null,
-          pronouns: pronouns.trim(),
-          thought: thought.trim() || null,
-          ...(avatarChanged ? { avatarId: avatar.id } : {}),
-          ...(bannerChanged ? { bannerId: banner.id } : {}),
-          ...(tagServerId !== (me?.tag?.serverId ?? null) ? { tagServerId } : {}),
-        }),
-      );
       if (extrasChanged) {
-        await api.updateProfileExtras({ favoriteGame: favorite, likedGames: liked, connections });
+        await api.updateProfileExtras({ favoriteGame: favorite, likedGames: liked });
         setExtrasChanged(false);
       }
       setSaved(true);
@@ -119,91 +69,36 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
     }
   }
 
-  const uploading = avatar.uploading || banner.uploading;
-
   return (
     <div className="space-y-6">
-    <div className="flex flex-col gap-8 lg:flex-row">
-      <div className="min-w-0 flex-1 space-y-5">
-        <Field label="Nome de exibição">
-          <EmojiInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} />
-        </Field>
-        <Field label="Pronomes">
-          <EmojiInput value={pronouns} onChange={(e) => setPronouns(e.target.value)} maxLength={40} placeholder="ele/dele, ela/dela…" />
-        </Field>
-        <Field label="Pensamento" hint="Aparece num balãozinho ao lado da sua foto.">
-          <EmojiInput value={thought} onChange={(e) => setThought(e.target.value)} maxLength={80} placeholder="No que você está pensando?" />
-        </Field>
-        <Field label="Status personalizado">
-          <EmojiInput value={customStatus} onChange={(e) => setCustomStatus(e.target.value)} maxLength={128} placeholder="Jogando, estudando, no rolê…" />
-        </Field>
-        <Field label="Sobre mim">
-          <EmojiTextarea
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            maxLength={190}
-            rows={3}
-            className="w-full resize-none rounded-lg border border-edge bg-rail px-3 py-2 text-sm outline-none focus:border-accent"
-          />
-        </Field>
-        <Field label="Cor do perfil" hint="Usada no avatar sem foto e no fundo do cartão.">
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map((c) => (
+    <div className="flex flex-col gap-8 xl:flex-row xl:items-start">
+      <div className="flex w-full shrink-0 flex-col xl:sticky xl:top-5 xl:h-[calc(100cqh-2.5rem)] xl:w-[400px]">
+        <div className="mb-4 flex justify-center gap-6 border-b border-edge">
+          <>
+            {(
+              [
+                ['card', 'Cartão'],
+                ['call', 'Chamada'],
+              ] as const
+            ).map(([id, label]) => (
               <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={cx('h-8 w-8 rounded-full ring-offset-2 ring-offset-side', color === c && 'ring-2 ring-fg')}
-                style={{ background: c }}
-                aria-label={c}
-              />
+                key={id}
+                type="button"
+                onClick={() => setLeft(id)}
+                className={cx('-mb-px border-b-2 pb-2 text-sm font-semibold', left === id ? 'border-fg text-fg' : 'border-transparent text-soft hover:text-fg')}
+              >
+                {label}
+              </button>
             ))}
-          </div>
-        </Field>
-
-        <Field
-          label="Tag de servidor"
-          hint={taggedServers.length ? 'Aparece ao lado do seu nome nas mensagens e no seu perfil.' : 'Nenhum servidor seu tem tag ainda. O dono cria em Configurações do servidor → Visão geral.'}
-        >
-          <div className="flex flex-wrap gap-2">
-            {[null, ...taggedServers].map((sv) => {
-              const active = (sv?.id ?? null) === tagServerId;
-              return (
-                <button
-                  key={sv?.id ?? 'none'}
-                  type="button"
-                  title={sv?.name}
-                  onClick={() => setTagServerId(sv?.id ?? null)}
-                  className={cx(
-                    'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-bold',
-                    active ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
-                  )}
-                >
-                  {sv && <TagIcon icon={sv.tagIcon} iconUrl={sv.iconUrl} size={16} />}
-                  {sv ? sv.tag : 'Nenhuma'}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-
-        <Field label="Estilo do nome exibido" hint="Fonte, efeito e cores do seu nome no Line.">
-          <button
-            type="button"
-            onClick={() => setNameStyleOpen(true)}
-            className="flex h-14 w-full items-center justify-center rounded-lg border border-edge bg-rail text-xl font-bold hover:bg-raise"
-          >
-            <StyledName user={me}>{displayName || me.username}</StyledName>
-          </button>
-        </Field>
-
-        <Field label="Música favorita" hint="Aparece num mini player acima da sua bio. Cole o link do YouTube ou escreva o nome.">
-          <SongEditor song={song} onChange={setSong} />
-        </Field>
-
-        <Field label="Conexões" hint="Suas contas em outros lugares. Aparecem no seu perfil.">
-          <ConnectionsEditor value={connections} onChange={changeExtras(setConnections)} />
-        </Field>
-
+          </>
+        </div>
+        {left === 'card' ? (
+          <FullProfile userId={me.id} embedded onClose={() => {}} />
+        ) : (
+          <CallLookEditor />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 space-y-5">
         <div>
           <div className="mb-3 flex gap-5 border-b border-edge">
             {(
@@ -231,48 +126,6 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
       </div>
 
       {nameStyleOpen && <NameStyleModal onClose={() => setNameStyleOpen(false)} />}
-      {crop && (
-        <ImageCropper
-          file={crop.file}
-          kind={crop.kind}
-          onCancel={() => setCrop(null)}
-          onApply={(f) => {
-            setCrop(null);
-            finish(f, crop.kind);
-          }}
-        />
-      )}
-      <div className="shrink-0 lg:w-[320px]">
-        <p className="mb-2 text-xs font-bold tracking-wide text-muted uppercase">Prévia</p>
-        <ProfileCard
-          name={displayName || me.username}
-          username={me.username}
-          pronouns={pronouns}
-          thought={thought}
-          bio={bio}
-          status={customStatus}
-          color={color}
-          avatarUrl={avatar.url}
-          bannerUrl={banner.url}
-          createdAt={me.createdAt}
-          nameStyle={me.nameStyle}
-          onAvatarFile={(f) => pick(f, 'avatar')}
-          onBannerFile={(f) => pick(f, 'banner')}
-        />
-        <p className="mt-2 text-xs text-muted">Clique no banner ou na foto para trocar.</p>
-        <div className="mt-1 flex flex-wrap gap-x-3">
-          {avatar.url && (
-            <button className="text-xs text-soft hover:text-danger hover:underline" onClick={() => (setAvatar({ id: null, url: null }), setAvatarChanged(true))}>
-              Remover foto
-            </button>
-          )}
-          {banner.url && (
-            <button className="text-xs text-soft hover:text-danger hover:underline" onClick={() => (setBanner({ id: null, url: null }), setBannerChanged(true))}>
-              Remover banner
-            </button>
-          )}
-        </div>
-      </div>
     </div>
       <ErrorText>{error}</ErrorText>
       <div className="flex items-center justify-end gap-2 border-t border-edge pt-4">
@@ -282,8 +135,8 @@ export function ProfileEditor({ onSaved, onCancel }: { onSaved?: () => void; onC
             Cancelar
           </Button>
         )}
-        <Button disabled={busy || uploading} onClick={save} className="px-6">
-          {uploading ? 'Enviando imagem…' : busy ? 'Salvando…' : 'Salvar'}
+        <Button disabled={busy} onClick={save} className="px-6">
+          {busy ? 'Salvando…' : 'Salvar'}
         </Button>
       </div>
     </div>

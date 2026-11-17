@@ -2,7 +2,8 @@
 
 import type { ConnectionType, FavoriteSong, ProfileConnection, ProfileGame } from '@line/shared';
 import { thumbOf } from '@/lib/music';
-import { stopSong, toggleSong, useSongPreview } from '@/lib/songPreview';
+import { PREVIEW_SECS, stopSong, toggleSong, useSongPreview } from '@/lib/songPreview';
+import { Pause, Play } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { Button, cx, Icons, Input, Modal } from './ui';
@@ -279,9 +280,9 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
         {results.map((g) => {
           const used = taken.includes(g.name.toLowerCase());
           return (
-            <button key={g.name} type="button" disabled={used} onClick={() => onPick(g)} className="text-left disabled:opacity-40">
+            <button key={g.name} type="button" disabled={used} onClick={() => onPick(g)} title={g.name} className="flex min-w-0 flex-col items-start self-start text-left disabled:opacity-40">
               <GameCover game={g} size={80} />
-              <span className="mt-1 line-clamp-2 block text-xs text-soft">{g.name}</span>
+              <span className="mt-1 line-clamp-2 w-full text-xs leading-4 break-words text-soft">{g.name}</span>
             </button>
           );
         })}
@@ -299,15 +300,23 @@ function GamePicker({ title, taken, onPick, onClose }: { title: string; taken: s
 
 // ---------- música favorita ----------
 
-/** Mini player da música favorita (capa + tocar/pausar a prévia). */
-export function SongPlayer({ song, onRemove }: { song: FavoriteSong; onRemove?: () => void }) {
+/** Mini player da música favorita (capa + tocar/parar um trechinho). `colors` = cores do cartão, para combinar. */
+export function SongPlayer({ song, onRemove, colors }: { song: FavoriteSong; onRemove?: () => void; colors?: string[] | null }) {
   const playing = useSongPreview((s) => s.videoId === song.videoId);
   const loading = useSongPreview((s) => s.videoId === song.videoId && s.loading);
   useEffect(() => () => {
     if (useSongPreview.getState().videoId === song.videoId) stopSong();
   }, [song.videoId]);
+  const tint = colors?.[0] ?? null;
+  const accent = tint ? `color-mix(in srgb, ${tint} 75%, white)` : 'var(--color-accent)';
+  // Anel do tempo em volta do play (r=19 num quadrado de 44).
+  const R = 19;
+  const C = 2 * Math.PI * R;
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-edge bg-side/70 p-2">
+    <div
+      className="relative flex items-center gap-3 rounded-xl border border-edge bg-side/70 p-2"
+      style={tint ? { background: `color-mix(in srgb, ${tint} 22%, rgb(0 0 0 / 0.35))`, borderColor: `color-mix(in srgb, ${tint} 45%, transparent)` } : undefined}
+    >
       <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-raise">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={thumbOf(song.videoId)} alt="" className={cx('h-full w-full object-cover', playing && 'animate-pulse')} />
@@ -321,15 +330,37 @@ export function SongPlayer({ song, onRemove }: { song: FavoriteSong; onRemove?: 
       </span>
       <button
         type="button"
-        title={playing ? 'Pausar' : 'Ouvir prévia'}
+        title={playing ? 'Parar' : `Ouvir ${PREVIEW_SECS} s`}
         onClick={() => void toggleSong(song.videoId)}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent hover:opacity-90"
+        className="relative flex h-11 w-11 shrink-0 items-center justify-center hover:opacity-90"
       >
-        {loading ? <Icons.Refresh size={15} className="animate-spin" /> : playing ? <Icons.Pause size={16} /> : <Icons.Play size={16} />}
+        <svg viewBox="0 0 44 44" className="absolute inset-0 -rotate-90" aria-hidden>
+          <circle cx="22" cy="22" r={R} fill="none" strokeWidth="2.5" style={{ stroke: `color-mix(in srgb, ${accent} 25%, transparent)` }} />
+          {playing && !loading && (
+            <circle
+              cx="22"
+              cy="22"
+              r={R}
+              fill="none"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray={C}
+              style={{ stroke: accent, ['--ring' as string]: `${C}`, animation: `line-song-ring ${PREVIEW_SECS}s linear forwards` }}
+            />
+          )}
+        </svg>
+        <span className={cx('flex h-8 w-8 items-center justify-center rounded-full', tint ? 'text-black' : 'text-on-accent')} style={{ background: accent }}>
+          {loading ? <Icons.Refresh size={14} className="animate-spin" /> : playing ? <Pause size={14} fill="currentColor" strokeWidth={0} /> : <Play size={14} fill="currentColor" strokeWidth={0} className="ml-0.5" />}
+        </span>
       </button>
       {onRemove && (
-        <button type="button" title="Tirar música" onClick={onRemove} className="text-muted hover:text-danger">
-          <Icons.X size={15} />
+        <button
+          type="button"
+          title="Tirar música"
+          onClick={onRemove}
+          className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full border border-edge bg-rail text-muted shadow hover:text-danger"
+        >
+          <Icons.X size={12} />
         </button>
       )}
     </div>
