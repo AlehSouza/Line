@@ -102,13 +102,24 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
     );
   }
   return (
-    <div className="relative min-h-[220px] w-[420px] max-w-full overflow-hidden rounded-lg border border-edge bg-[#3d3d40]">
+    <div
+      className={cx(
+        'relative max-w-full overflow-hidden rounded-lg border border-edge bg-[#3d3d40]',
+        blocked ? 'min-h-[220px] w-[420px]' : 'w-fit min-h-[200px] min-w-[280px]',
+      )}
+    >
       {!blocked && (
-        <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-60 blur-3xl select-none [&_*]:pointer-events-none">
+        // A mídia fica no fluxo (borrada e invisível ao clique): o cartão tem o mesmo formato dela.
+        <div aria-hidden className="pointer-events-none blur-2xl brightness-75 select-none [&_*]:pointer-events-none">
           {children}
         </div>
       )}
-      <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-6 py-6 text-center text-white">
+      <div
+        className={cx(
+          'flex flex-col items-center justify-center gap-2 px-5 py-5 text-center text-white',
+          blocked ? 'relative min-h-[220px]' : 'absolute inset-0 bg-black/30',
+        )}
+      >
         {a.nsfw ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
         <p className="mt-1 text-sm font-bold tracking-wide uppercase">{a.nsfw ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
         <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
