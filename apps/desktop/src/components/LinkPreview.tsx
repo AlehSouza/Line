@@ -34,6 +34,10 @@ export function LinkPreviews({ content }: { content: string }) {
   );
 }
 
+/** O TikTok só aceita o player dentro de um site; o app desktop roda de endereço local, então
+ *  passa por uma página do useline.tech que embute o player oficial. */
+const TIKTOK_BRIDGE = 'https://useline.tech/api/embed/tiktok';
+
 type Social = { kind: 'instagram' | 'tiktok' | 'x' | 'facebook' | 'reddit'; src: string; label: string; width: number; height: number };
 
 /** Links de Instagram, TikTok, X, Facebook (vídeos) e Reddit viram o player oficial de cada plataforma (nada é baixado). */
@@ -59,7 +63,7 @@ function socialEmbed(raw: string): Social | null {
     if (!id || !/^\d{8,25}$/.test(id)) return null;
     return {
       kind: 'tiktok',
-      src: `https://www.tiktok.com/embed/v2/${id}?lang=pt-BR`,
+      src: `${TIKTOK_BRIDGE}/${id}`,
       label: 'TikTok',
       width: 325,
       height: 740,
