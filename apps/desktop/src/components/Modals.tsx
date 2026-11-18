@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { hasPerm, Perm, type Channel, type Role } from '@line/shared';
 import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
-import { Composer } from './ChatView';
+import { Composer, ThreadChip, threadsOf } from './ChatView';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel, Select } from './ui';
@@ -782,11 +782,17 @@ function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: (
 function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { channelId?: string; messageId?: string; attachmentId?: string; onClose: () => void }) {
   const parent = useLine((s) => (channelId ? s.channels[channelId] : undefined));
   const message = useLine((s) => (channelId && messageId ? s.messages[channelId]?.items.find((m) => m.id === messageId) : undefined));
+  // Mensagem com várias mídias: cada uma tem a própria thread; com uma só, vale a da mensagem.
+  const mediaId = message && message.attachments.length > 1 ? message.attachments.find((a) => a.id === attachmentId)?.id : undefined;
+  const summary = message ? threadsOf(message).find((t) => (mediaId ? t.attachmentId === mediaId : !t.attachmentId)) : undefined;
   const threadId = useLine((s) => {
+    if (summary) return summary.id;
     if (!messageId) return null;
-    const m = channelId ? s.messages[channelId]?.items.find((x) => x.id === messageId) : undefined;
-    if (m?.thread) return m.thread.id;
-    return Object.values(s.channels).find((c) => c.type === 'thread' && c.threadMessageId === messageId)?.id ?? null;
+    return (
+      Object.values(s.channels).find(
+        (c) => c.type === 'thread' && c.threadMessageId === messageId && (c.threadAttachmentId ?? undefined) === mediaId,
+      )?.id ?? null
+    );
   });
   const thread = useLine((s) => (threadId ? s.channels[threadId] : undefined));
   const canCreate = useLine((s) => hasPerm(channelPermsOf(s, channelId, s.me?.id), Perm.CreateThreads));
@@ -796,11 +802,11 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
     if (thread) return thread;
     if (parent.type !== 'text' || !parent.serverId || !canCreate) return null;
     const plain = message.content ? mentionsToText(message.content, parent.serverId) : '';
-    const media = message.attachments.length > 1 ? message.attachments.find((a) => a.id === attachmentId) : undefined;
+    const media = mediaId ? message.attachments.find((a) => a.id === mediaId) : undefined;
     const name = (plain.split('\n')[0] || media?.filename || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
     return {
       ...parent,
-      id: `draft:${message.id}`,
+      id: `draft:${message.id}${media ? `:${media.id}` : ''}`,
       type: 'thread',
       name,
       parentId: parent.id,
@@ -809,17 +815,23 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
       threadAttachmentId: media?.id ?? null,
       messageCount: 0,
     };
-  }, [parent, message, thread, canCreate, attachmentId]);
+  }, [parent, message, thread, canCreate, mediaId]);
   if (!target) return null;
+  const open = (id: string) => {
+    actions.openThread(id);
+    onClose();
+  };
   return (
     <div className="w-full max-w-[760px] text-left" onMouseDown={(e) => e.stopPropagation()}>
+      {summary && parent?.type !== 'thread' && (
+        <div className="mb-2 px-4">
+          <ThreadChip thread={summary} onClick={() => open(summary.id)} />
+        </div>
+      )}
       <Composer
         channel={target}
         placeholder={target.id.startsWith('draft:') ? 'Começar uma thread…' : `Responder em ${target.name}…`}
-        onSent={(id) => {
-          actions.openThread(id);
-          onClose();
-        }}
+        onSent={open}
       />
     </div>
   );

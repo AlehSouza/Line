@@ -322,7 +322,12 @@ impl Q<'_> {
     }
 
     /// Registra quem denunciou o anexo (false = essa pessoa já tinha denunciado).
-    pub fn add_nsfw_reporter(&self, attachment_id: &str, reporter_id: &str, detected: bool) -> bool {
+    pub fn add_nsfw_reporter(
+        &self,
+        attachment_id: &str,
+        reporter_id: &str,
+        detected: bool,
+    ) -> bool {
         ok(self.c.execute(
             "INSERT OR IGNORE INTO nsfw_reporters (attachment_id, reporter_id, detected, created_at) VALUES (?, ?, ?, ?)",
             params![attachment_id, reporter_id, detected as i64, now_iso()],
@@ -397,7 +402,11 @@ impl Q<'_> {
                 if is_nsfw { "resolved" } else { "dismissed" },
                 now,
                 admin_id,
-                if is_nsfw { "Confirmado como +18" } else { "Não é +18" },
+                if is_nsfw {
+                    "Confirmado como +18"
+                } else {
+                    "Não é +18"
+                },
                 attachment_id
             ],
         ));

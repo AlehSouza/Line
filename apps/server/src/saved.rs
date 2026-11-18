@@ -32,10 +32,12 @@ async fn list_saved(State(app): S, Me(me): Me) -> Res {
         .into_iter()
         .map(|row| {
             let access = q.can_access(&me, &row.channel_id);
-            let message = q
-                .message(&row.message_id)
-                .filter(|m| access && !m.deleted);
-            let channel = if access { q.channel(&row.channel_id) } else { None };
+            let message = q.message(&row.message_id).filter(|m| access && !m.deleted);
+            let channel = if access {
+                q.channel(&row.channel_id)
+            } else {
+                None
+            };
             let server = channel
                 .as_ref()
                 .and_then(|c| c.server_id.as_deref())
@@ -56,7 +58,11 @@ async fn list_saved(State(app): S, Me(me): Me) -> Res {
 
 async fn saved_ids(State(app): S, Me(me): Me) -> Res {
     let q = app.store.q();
-    let ids: Vec<String> = q.saved_rows(&me).into_iter().map(|r| r.message_id).collect();
+    let ids: Vec<String> = q
+        .saved_rows(&me)
+        .into_iter()
+        .map(|r| r.message_id)
+        .collect();
     ok(ids)
 }
 
@@ -72,13 +78,21 @@ async fn save(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
         )));
     }
     q.save_message(&me, &message.id, &message.channel_id);
-    app.to_user(&me, "saved:update", &json!({ "messageId": message.id, "saved": true }));
+    app.to_user(
+        &me,
+        "saved:update",
+        &json!({ "messageId": message.id, "saved": true }),
+    );
     ok(json!({ "messageId": message.id, "saved": true }))
 }
 
 async fn unsave(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     q.unsave_message(&me, &id);
-    app.to_user(&me, "saved:update", &json!({ "messageId": id, "saved": false }));
+    app.to_user(
+        &me,
+        "saved:update",
+        &json!({ "messageId": id, "saved": false }),
+    );
     ok(json!({ "messageId": id, "saved": false }))
 }

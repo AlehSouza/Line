@@ -80,7 +80,10 @@ pub fn router() -> Router<Arc<App>> {
         .route("/admin/messages/{id}", delete(delete_message))
         .route("/admin/reports", get(reports))
         .route("/admin/reports/{id}", patch(update_report))
-        .route("/admin/attachments/{id}/nsfw", axum::routing::put(set_attachment_nsfw))
+        .route(
+            "/admin/attachments/{id}/nsfw",
+            axum::routing::put(set_attachment_nsfw),
+        )
         .route("/admin/log", get(log))
         .route("/reports", post(create_report))
 }
@@ -611,7 +614,12 @@ struct NsfwDecision {
 
 /// O operador decide se o anexo denunciado é +18: sim fixa o +18 (ninguém tira), não tira o
 /// +18 que veio das denúncias. Fecha as denúncias +18 abertas dele e atualiza o chat na hora.
-async fn set_attachment_nsfw(State(app): S, Admin(me): Admin, Path(id): Path<String>, b: Bytes) -> Res {
+async fn set_attachment_nsfw(
+    State(app): S,
+    Admin(me): Admin,
+    Path(id): Path<String>,
+    b: Bytes,
+) -> Res {
     let input: NsfwDecision =
         serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
     let q = app.store.q();
@@ -622,7 +630,16 @@ async fn set_attachment_nsfw(State(app): S, Admin(me): Admin, Path(id): Path<Str
     if let Some(m) = q.attachment_message_id(&id).and_then(|mid| q.message(&mid)) {
         app.to_channel(&q, &m.channel_id, "message:update", &m);
     }
-    q.log_admin(&me, if input.nsfw { "nsfw_confirm" } else { "nsfw_reject" }, &id, "");
+    q.log_admin(
+        &me,
+        if input.nsfw {
+            "nsfw_confirm"
+        } else {
+            "nsfw_reject"
+        },
+        &id,
+        "",
+    );
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
@@ -667,7 +684,10 @@ fn clip(s: &str, n: usize) -> String {
 async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input: ReportInput =
         serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
-    if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message" | "nsfw") {
+    if !matches!(
+        input.kind.as_str(),
+        "bug" | "idea" | "user" | "message" | "nsfw"
+    ) {
         return Err(validation("Tipo inválido"));
     }
     // Prints: até 5 no bug report/sugestão e 3 na denúncia de usuário.
@@ -694,7 +714,9 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if input.kind == "nsfw" {
         let att_id = input.attachment_id.clone().unwrap_or_default();
         let att = q.attachment(&att_id).ok_or_else(|| not_found("Anexo"))?;
-        let msg_id = q.attachment_message_id(&att_id).ok_or_else(|| not_found("Mensagem"))?;
+        let msg_id = q
+            .attachment_message_id(&att_id)
+            .ok_or_else(|| not_found("Mensagem"))?;
         let m = q
             .message(&msg_id)
             .filter(|m| q.can_access(&me, &m.channel_id))
@@ -710,7 +732,8 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         }
         let (count, detected) = q.nsfw_report_counts(&att_id);
         // Detector concordou ou várias pessoas denunciaram: já fica +18 até o admin decidir.
-        if (input.detected || count >= NSFW_AUTO_REPORTS) && q.mark_nsfw_by_report(&att_id)
+        if (input.detected || count >= NSFW_AUTO_REPORTS)
+            && q.mark_nsfw_by_report(&att_id)
             && let Some(updated) = q.message(&msg_id)
         {
             app.to_channel(&q, &updated.channel_id, "message:update", &updated);
@@ -791,7 +814,12 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
                 "reportedAt": now_iso(),
             }));
             evidence = match &nsfw_attachment {
-                Some(a) => m.attachments.iter().filter(|x| &x.id == a).cloned().collect(),
+                Some(a) => m
+                    .attachments
+                    .iter()
+                    .filter(|x| &x.id == a)
+                    .cloned()
+                    .collect(),
                 None => m.attachments.clone(),
             };
             message_id = Some(m.id);

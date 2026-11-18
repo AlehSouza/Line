@@ -279,6 +279,8 @@ export interface ThreadSummary {
   lastMessageAt: string | null;
   participantIds?: string[];
   participantCount?: number;
+  /** Mídia da mensagem a que a thread responde (thread por imagem). */
+  attachmentId?: string;
 }
 
 export interface Member {
@@ -317,6 +319,8 @@ export interface Message {
   attachments: Attachment[];
   /** Thread aberta a partir desta mensagem. */
   thread: ThreadSummary | null;
+  /** Todas as threads da mensagem: a da mensagem inteira e as de cada mídia (servidor novo). */
+  threads?: ThreadSummary[];
   poll?: Poll | null;
   /** @everyone/@here que vale (quem mandou tinha permissão). */
   mentionEveryone?: boolean;

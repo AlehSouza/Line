@@ -2151,6 +2151,7 @@ impl Q<'_> {
                     edited_at: r.get("edited_at")?,
                     attachments: Vec::new(),
                     thread: None,
+                    threads: Vec::new(),
                     poll: None,
                     reactions: Vec::new(),
                     mention_everyone: r.get::<_, i64>("mention_everyone")? != 0,
@@ -2187,7 +2188,9 @@ impl Q<'_> {
                 }
                 m.author = self.to_public_user(&u);
                 m.attachments = self.attachments_of(&m.id);
-                m.thread = self.thread_of_message(&m.id);
+                m.threads = self.threads_of_message(&m.id);
+                // Apps antigos só conhecem `thread`: a da mensagem inteira, ou a primeira.
+                m.thread = m.threads.first().cloned();
                 m.poll = self.poll_of(&m.id);
                 if m.poll.is_some() && !m.requires.iter().any(|f| f == "poll") {
                     m.requires.push("poll".into());
@@ -2690,16 +2693,33 @@ impl Q<'_> {
         ))
     }
 
-    fn thread_of_message(&self, message_id: &str) -> Option<ThreadSummary> {
-        let row: Option<(String, String, Option<String>)> = ok(self
+    /// Threads da mensagem (a da mensagem inteira primeiro, depois as de cada mídia).
+    fn threads_of_message(&self, message_id: &str) -> Vec<ThreadSummary> {
+        let rows: Vec<(String, String, Option<String>, Option<String>)> = ok(self
             .c
-            .query_row(
-                "SELECT id, name, last_message_at FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1",
-                [message_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            .prepare_cached(
+                "SELECT id, name, last_message_at, thread_attachment_id FROM channels
+                 WHERE thread_message_id = ? AND type = 'thread'
+                 ORDER BY thread_attachment_id IS NOT NULL, created_at",
             )
-            .optional());
-        let (id, name, last_message_at) = row?;
+            .and_then(|mut st| {
+                st.query_map([message_id], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()
+            }));
+        rows.into_iter()
+            .map(|(id, name, last, att)| self.thread_summary(id, name, last, att))
+            .collect()
+    }
+
+    fn thread_summary(
+        &self,
+        id: String,
+        name: String,
+        last_message_at: Option<String>,
+        attachment_id: Option<String>,
+    ) -> ThreadSummary {
         let participant_ids = ok(self
             .c
             .prepare_cached(
@@ -2711,20 +2731,26 @@ impl Q<'_> {
             [&id],
             |r| r.get(0),
         ));
-        Some(ThreadSummary {
+        ThreadSummary {
             message_count: self.message_count(&id),
             id,
             name,
             last_message_at,
             participant_ids,
             participant_count,
-        })
+            attachment_id,
+        }
     }
 
-    pub fn thread_for_message(&self, message_id: &str) -> Option<Channel> {
+    /// Thread da mensagem inteira (attachment None) ou de uma mídia dela.
+    pub fn thread_for_message(
+        &self,
+        message_id: &str,
+        attachment_id: Option<&str>,
+    ) -> Option<Channel> {
         self.channel_rows(
-            "SELECT * FROM channels WHERE thread_message_id = ? AND type = 'thread' LIMIT 1",
-            [message_id],
+            "SELECT * FROM channels WHERE thread_message_id = ? AND type = 'thread' AND thread_attachment_id IS ? LIMIT 1",
+            params![message_id, attachment_id],
         )
         .pop()
     }

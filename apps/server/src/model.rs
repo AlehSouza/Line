@@ -206,6 +206,8 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
     /// Thread que começou nesta mensagem (se houver).
     pub thread: Option<ThreadSummary>,
+    /// Todas as threads da mensagem: a da mensagem inteira e as de cada mídia.
+    pub threads: Vec<ThreadSummary>,
     pub poll: Option<Poll>,
     /// @everyone/@here que vale (quem mandou tinha permissão).
     pub mention_everyone: bool,
@@ -284,6 +286,9 @@ pub struct ThreadSummary {
     pub participant_ids: Vec<String>,
     /// Quantas pessoas diferentes responderam.
     pub participant_count: i64,
+    /// Mídia da mensagem a que a thread responde (thread por imagem).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -2,7 +2,7 @@
 
 import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
-import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
+import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message, type ThreadSummary } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, openMenuAt, useContextMenuOpen, userMenu, type MenuEntry } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji, topEmojis } from './EmojiPicker';
@@ -454,6 +454,11 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   );
 }
 
+/** Threads da mensagem (servidor antigo só manda `thread`). */
+export const threadsOf = (m: Message): ThreadSummary[] => m.threads ?? (m.thread ? [m.thread] : []);
+/** Thread da mensagem inteira (não de uma mídia só). */
+export const wholeThreadOf = (m: Message) => threadsOf(m).find((t) => !t.attachmentId);
+
 /** Só mídia, sem texto, enquete ou thread: pode entrar numa grade. */
 const mediaOnly = (m: Message) =>
   !m.deleted && !m.content && !m.poll && !!m.attachments.length && m.attachments.every(isMedia);
@@ -464,8 +469,8 @@ const mediaOnly = (m: Message) =>
 function mediaRunsOf(items: Message[]) {
   const leaders = new Map<string, Attachment[]>();
   const hidden = new Set<string>();
-  /** Threads das mensagens escondidas na grade (aparecem embaixo dela). */
-  const threads = new Map<string, NonNullable<Message['thread']>[]>();
+  /** Todas as threads das mensagens da grade (viram um "Ver conversas" embaixo dela). */
+  const threads = new Map<string, ThreadSummary[]>();
   let i = 0;
   while (i < items.length) {
     const first = items[i]!;
@@ -491,8 +496,8 @@ function mediaRunsOf(items: Message[]) {
     if (media.length >= GRID_MIN) {
       leaders.set(first.id, media);
       for (const m of run.slice(1)) hidden.add(m.id);
-      const extra = run.slice(1).flatMap((m) => (m.thread ? [m.thread] : []));
-      if (extra.length) threads.set(first.id, extra);
+      const all = run.flatMap(threadsOf);
+      if (all.length) threads.set(first.id, all);
     }
     i = j;
   }
@@ -549,7 +554,7 @@ function MessageRow({
   grouped: boolean;
   /** Primeira de uma sequência de mídias: mostra a grade com todas. */
   gallery?: Attachment[];
-  galleryThreads?: NonNullable<Message['thread']>[];
+  galleryThreads?: ThreadSummary[];
   mine: boolean;
   canDelete: boolean;
   editing: boolean;
@@ -565,7 +570,8 @@ function MessageRow({
   const editRef = useRef<HTMLTextAreaElement>(null);
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
-  const showThreadAction = canThread && !message.thread;
+  const whole = wholeThreadOf(message);
+  const showThreadAction = canThread && !whole;
   const mentionsMe = !mine && messageMentionsMe(message);
   const ignored = useIgnored((s) => s.ids.includes(message.author.id));
   const [reveal, setReveal] = useState(false);
@@ -610,7 +616,7 @@ function MessageRow({
         </div>
         <div className="min-w-0 flex-1">
           <p className="pt-2 text-[15px] text-soft">A mensagem foi excluída.</p>
-          {message.thread && <ThreadChip thread={message.thread} />}
+          {threadsOf(message).map((t) => <ThreadChip key={t.id} thread={t} />)}
         </div>
       </div>
     );
@@ -633,12 +639,12 @@ function MessageRow({
     const c = message.forwardedFrom ? s.channels[message.forwardedFrom] : null;
     return c?.serverId ? c.name : null;
   });
-  const canReply = showThreadAction || !!message.thread;
+  const canReply = showThreadAction || !!whole;
   const canForward = !message.poll;
   const canReport = !mine && !message.author.bot;
 
   function reply() {
-    if (message.thread) return actions.openThread(message.thread.id);
+    if (whole) return actions.openThread(whole.id);
     const parent = useLine.getState().channels[message.channelId];
     const name = (plain.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
     if (parent) actions.openThreadDraft(parent, message.id, name);
@@ -693,7 +699,7 @@ function MessageRow({
         const menuAt = { x: e.clientX, y: e.clientY };
         openContextMenu(e, [
           canReact && { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
-          canReply && { label: message.thread ? 'Abrir thread' : 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: reply },
+          canReply && { label: whole ? 'Abrir thread' : 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: reply },
           canForward && { label: 'Encaminhar', icon: <Icons.Forward size={15} />, onClick: forward },
           {
             label: isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem',
@@ -831,7 +837,12 @@ function MessageRow({
         {gallery ? (
           <MediaGrid attachments={gallery} channelId={message.channelId} />
         ) : (
-          <AttachmentList attachments={message.attachments} authorId={message.author.id} owner={{ channelId: message.channelId, messageId: message.id }} />
+          <AttachmentList
+            attachments={message.attachments}
+            authorId={message.author.id}
+            owner={{ channelId: message.channelId, messageId: message.id }}
+            below={mediaThreadsBelow(message)}
+          />
         )}
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
@@ -839,8 +850,7 @@ function MessageRow({
         {!!message.reactions?.length && (
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
-        {message.thread && <ThreadChip thread={message.thread} />}
-        {galleryThreads?.map((t) => <ThreadChip key={t.id} thread={t} />)}
+        {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} /> : null : whole && <ThreadChip thread={whole} />}
       </div>
 
       {reactAnchor && (
@@ -903,7 +913,7 @@ function MessageRow({
           )}
           {canReply && (
             <button
-              title={message.thread ? 'Abrir thread' : 'Responder em thread'}
+              title={whole ? 'Abrir thread' : 'Responder em thread'}
               onClick={reply}
               className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
             >
@@ -962,7 +972,12 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
         </p>
         {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
         {message.content && !gifFromContent(message.content) && <LinkPreviews content={message.content} />}
-        <AttachmentList attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments} compact authorId={message.author.id} />
+        <AttachmentList
+          attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments}
+          compact
+          authorId={message.author.id}
+          below={only ? undefined : mediaThreadsBelow(message)}
+        />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
       <div className={cx('absolute -top-3 right-4 rounded-lg border border-edge bg-side shadow', anchor ? 'flex' : 'hidden group-hover:flex')}>
@@ -1108,7 +1123,62 @@ function PollView({ message, poll }: { message: Message; poll: NonNullable<Messa
   );
 }
 
-function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
+/** Embaixo de cada mídia, a thread aberta só para ela (se houver). */
+function mediaThreadsBelow(message: Message) {
+  const list = threadsOf(message).filter((t) => t.attachmentId);
+  if (!list.length) return undefined;
+  return (a: Attachment) => {
+    const t = list.find((x) => x.attachmentId === a.id);
+    return t ? <ThreadChip thread={t} /> : null;
+  };
+}
+
+/** Grade com respostas: avatares de quem respondeu (até 3 e +N) e "Ver conversas". */
+function GalleryThreads({ threads }: { threads: ThreadSummary[] }) {
+  const users = useLine((s) => s.users);
+  const ids = [...new Set(threads.flatMap((t) => t.participantIds ?? []))];
+  const total = Math.max(ids.length, ...threads.map((t) => t.participantCount ?? 0));
+  const shown = ids.slice(0, 3);
+  const extra = Math.max(0, total - shown.length);
+  return (
+    <button
+      onClick={(e) => {
+        if (threads.length === 1) return actions.openThread(threads[0]!.id);
+        const r = e.currentTarget.getBoundingClientRect();
+        openMenuAt(
+          { x: r.left, y: r.bottom + 4 },
+          threads.map((t) => ({
+            label: `${t.name} · ${t.messageCount === 1 ? '1 resposta' : `${t.messageCount} respostas`}`,
+            icon: <Icons.Thread size={15} />,
+            onClick: () => actions.openThread(t.id),
+          })),
+        );
+      }}
+      className="group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60"
+    >
+      {shown.length > 0 ? (
+        <span className="flex items-center -space-x-1.5">
+          {shown.map((id) => (
+            <span key={id} className="rounded-full ring-2 ring-main">
+              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} src={users[id]?.avatarUrl} size={22} />
+            </span>
+          ))}
+          {extra > 0 && (
+            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft ring-2 ring-main">
+              +{extra}
+            </span>
+          )}
+        </span>
+      ) : (
+        <Icons.Thread size={18} className="text-accent" />
+      )}
+      <span className="font-semibold text-accent group-hover/thread:underline">Ver conversas</span>
+    </button>
+  );
+}
+
+/** onClick troca o abrir/fechar padrão (o visualizador abre a thread e se fecha). */
+export function ThreadChip({ thread, onClick }: { thread: ThreadSummary; onClick?: () => void }) {
   const open = useLine((s) => s.threadId === thread.id);
   const users = useLine((s) => s.users);
   const n = thread.messageCount;
@@ -1116,7 +1186,7 @@ function ThreadChip({ thread }: { thread: NonNullable<Message['thread']> }) {
   const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
   return (
     <button
-      onClick={() => (open ? actions.closeThread() : actions.openThread(thread.id))}
+      onClick={onClick ?? (() => (open ? actions.closeThread() : actions.openThread(thread.id)))}
       className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
     >
       {ids.length > 0 ? (

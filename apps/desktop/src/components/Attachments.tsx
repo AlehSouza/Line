@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment } from '@line/shared';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
@@ -55,21 +55,44 @@ function mediaMenu(a: Attachment, url: string, mine: boolean): MenuEntry[] {
   return attachmentKind(a.contentType, a.filename) === 'image' ? [...imageMenuItems(url, a.filename), ...report] : report.slice(1);
 }
 
-export function AttachmentList({ attachments, compact, authorId, owner }: { attachments: Attachment[]; compact?: boolean; authorId?: string; owner?: { channelId: string; messageId: string } }) {
+/** below: algo embaixo de cada anexo (a thread daquela mídia). */
+export function AttachmentList({
+  attachments,
+  compact,
+  authorId,
+  owner,
+  below,
+}: {
+  attachments: Attachment[];
+  compact?: boolean;
+  authorId?: string;
+  owner?: { channelId: string; messageId: string };
+  below?: (a: Attachment) => ReactNode;
+}) {
   const meId = useLine((s) => s.me?.id);
   const mine = !!authorId && authorId === meId;
   if (!attachments.length) return null;
   return (
     <div className="mt-1 flex flex-col items-start gap-2">
-      {attachments.map((a) => (
-        a.spoiler || a.nsfw ? (
-          <MediaGate key={a.id} attachment={a}>
+      {attachments.map((a) => {
+        const view =
+          a.spoiler || a.nsfw ? (
+            <MediaGate attachment={a}>
+              <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
+            </MediaGate>
+          ) : (
             <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
-          </MediaGate>
+          );
+        const extra = below?.(a);
+        return extra ? (
+          <div key={a.id} className="flex max-w-full flex-col items-start">
+            {view}
+            {extra}
+          </div>
         ) : (
-          <AttachmentView key={a.id} attachment={a} compact={compact} mine={mine} owner={owner} />
-        )
-      ))}
+          <Fragment key={a.id}>{view}</Fragment>
+        );
+      })}
     </div>
   );
 }
