@@ -35,7 +35,7 @@ pub fn router() -> Router<Arc<App>> {
 }
 
 /// Fontes e efeitos aceitos no estilo do nome (iguais aos de `apps/desktop/src/lib/nameStyle.ts`).
-const FONTS: &[&str] = &[
+pub(crate) const FONTS: &[&str] = &[
     "default",
     "fredoka",
     "bungee",
@@ -49,7 +49,7 @@ const FONTS: &[&str] = &[
     "pixel",
     "caveat",
 ];
-const EFFECTS: &[&str] = &["solid", "gradient", "neon", "draw", "pop", "gummy", "prism"];
+pub(crate) const EFFECTS: &[&str] = &["solid", "gradient", "neon", "draw", "pop", "gummy", "prism"];
 const CONNECTIONS: &[&str] = &[
     "twitch",
     "youtube",

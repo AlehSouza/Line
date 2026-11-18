@@ -1,6 +1,7 @@
 'use client';
 
-import type { PublicUser, TagPaint, TagStyle } from '@line/shared';
+import type { NameStyle, PublicUser, TagPaint, TagStyle } from '@line/shared';
+import { NAME_EFFECTS, NAME_FONTS, NAME_PALETTES, nameStyleClass, nameStyleCss, StyledName } from '@/lib/nameStyle';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type Ref } from 'react';
@@ -11,7 +12,7 @@ import { mobile } from '@/lib/mobile';
 import { placeAround, useFloating } from '@/lib/floating';
 import { showError, toast } from './Dialogs';
 import { ColorPicker } from './ColorPicker';
-import { Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input, SWATCHES } from './ui';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input, SWATCHES } from './ui';
 
 /** Ícones do Lucide que dá para escolher para a tag (os que não existirem na versão instalada somem). */
 const TAG_ICONS = [
@@ -58,6 +59,21 @@ export function tagBadgeStyle(style: TagStyle | null | undefined): CSSProperties
   return out;
 }
 
+/** Texto da tag com fonte/efeito/degradê (o mesmo motor do estilo do nome); null = texto comum. */
+function textLook(st: TagStyle | null | undefined): { className: string; style: CSSProperties } | null {
+  if (!st) return null;
+  const effect = st.effect ?? 'solid';
+  const fg = st.fg;
+  const colors = isGrad(fg) ? fg : solidOf(fg) && solidOf(fg) !== 'transparent' ? [solidOf(fg)!] : effect !== 'solid' ? NAME_PALETTES[effect][0]! : null;
+  if (!colors) {
+    const font = NAME_FONTS.find((f) => f.id === st.font && f.id !== 'default');
+    return font ? { className: '', style: { fontFamily: font.family } } : null;
+  }
+  if (effect === 'solid' && colors.length === 1 && (!st.font || st.font === 'default')) return null;
+  const ns: NameStyle = { font: st.font ?? 'default', effect, colors, dir: st.dir, motion: st.motion, speed: st.speed };
+  return { className: nameStyleClass(ns), style: nameStyleCss(ns) };
+}
+
 /**
  * A badge da tag: ícone + texto com as cores do dono (lisas, degradê ou transparentes).
  * As classes padrão (bg-raise, text-soft…) vêm de quem usa; as cores escolhidas passam por cima.
@@ -99,11 +115,8 @@ export function TagPill({
         />
       )}
       {!hideIcon && <TagIcon icon={icon} iconUrl={iconUrl} style={st} />}
-      {isGrad(st?.fg) ? (
-        <span
-          className={waveClass(st)}
-          style={{ ...gradCss(st.fg, st), WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', WebkitTextFillColor: 'transparent' }}
-        >
+      {textLook(st) ? (
+        <span className={textLook(st)!.className} style={textLook(st)!.style}>
           {text}
         </span>
       ) : (
@@ -416,6 +429,8 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
       return next;
     });
 
+  const anyGrad = (['bg', 'fg', 'border', 'iconColor'] as const).some((k) => isGrad(style[k]));
+
   async function save() {
     setBusy(true);
     try {
@@ -431,29 +446,14 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-[1080px]">
       <h2 className="text-xl font-bold">Tag do servidor</h2>
       <p className="mt-1 mb-6 text-sm text-soft">
         Crie uma tag que os membros podem exibir ao lado do nome. Quem clicar nela vê o cartão do servidor. Cada membro ativa a tag em Editar perfil.
       </p>
 
-      <div className="mb-6 flex items-center gap-2 rounded-xl border border-edge bg-rail px-4 py-3">
-        <span className="text-xs font-bold tracking-wide text-muted uppercase">Prévia</span>
-        <span className="ml-2 font-semibold">Seu nome</span>
-        {tag ? (
-          <TagPill
-            className="inline-flex items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
-            text={tag}
-            icon={icon}
-            iconUrl={server.iconUrl}
-            tagStyle={style}
-          />
-        ) : (
-          <span className="text-xs text-muted">(sem tag)</span>
-        )}
-      </div>
-
-      <div className="space-y-6">
+      <div className="flex flex-col-reverse gap-8 lg:flex-row lg:items-start">
+      <div className="min-w-0 flex-1 space-y-6">
         <Field label="Nome da tag" hint="Até 4 letras ou números. Deixe vazio para desativar a tag.">
           <Input
             value={tag}
@@ -519,6 +519,49 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
           </div>
         </Field>
 
+        <Field label="Fonte do texto" group>
+          <div className="grid grid-cols-6 gap-1.5">
+            {NAME_FONTS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                title={f.label}
+                onClick={() => setStyle((st) => ({ ...st, font: f.id }))}
+                className={cx(
+                  'flex h-11 items-center justify-center rounded-lg border bg-rail text-lg font-bold',
+                  (style.font ?? 'default') === f.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
+                )}
+                style={{ fontFamily: f.family }}
+              >
+                Gg
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Efeito do texto" hint="As cores do efeito vêm de Texto, logo abaixo (Padrão usa as cores sugeridas do efeito)." group>
+          <div className="grid grid-cols-4 gap-1.5">
+            {NAME_EFFECTS.map((e) => {
+              const sample: NameStyle = { font: 'default', effect: e.id, colors: NAME_PALETTES[e.id][0]! };
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => setStyle((st) => ({ ...st, effect: e.id, ...(e.id !== 'neon' && st.motion === 'pulse' ? { motion: 'static' as const } : {}) }))}
+                  className={cx(
+                    'flex h-11 items-center justify-center rounded-lg border bg-rail text-sm font-semibold',
+                    (style.effect ?? 'solid') === e.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
+                  )}
+                >
+                  <span className={nameStyleClass(sample)} style={nameStyleCss(sample)}>
+                    {e.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+
         <Field label="Cores da tag" group>
           <div className="space-y-4">
             {(
@@ -535,7 +578,8 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
               </div>
             ))}
             {/* Fica no layout mesmo sem degradê, para a página não pular. */}
-            <div className={cx('flex flex-wrap items-end gap-3', !(['bg', 'fg', 'border', 'iconColor'] as const).some((k) => isGrad(style[k])) && 'hidden')}>
+            <div className={cx('flex flex-wrap items-end gap-3', !anyGrad && style.effect !== 'neon' && 'hidden')}>
+              <span className={cx(!anyGrad && 'invisible')}>
               <Toggle
                 label="Orientação"
                 value={style.dir ?? 'h'}
@@ -545,16 +589,18 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                 ]}
                 onChange={(dir) => setStyle((st) => ({ ...st, dir }))}
               />
+              </span>
               <Toggle
                 label="Movimento"
                 value={style.motion ?? 'static'}
                 options={[
                   ['static', 'Estático'],
-                  ['wave', 'Onda'],
+                  ...(anyGrad ? [['wave', 'Onda'] as ['wave', string]] : []),
+                  ...(style.effect === 'neon' ? [['pulse', 'Piscar'] as ['pulse', string]] : []),
                 ]}
                 onChange={(motion) => setStyle((st) => ({ ...st, motion }))}
               />
-              <span className={cx(!waving(style) && 'invisible')}>
+              <span className={cx((style.motion ?? 'static') === 'static' && 'invisible')}>
                 <Toggle
                   label="Velocidade"
                   value={style.speed ?? 'medium'}
@@ -576,6 +622,122 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
           </Button>
         </div>
       </div>
+
+      <aside className="shrink-0 lg:sticky lg:top-0 lg:w-[300px]">
+        <TagPreviews tag={tag} icon={icon} iconUrl={server.iconUrl} style={style} server={server} />
+      </aside>
+      </div>
+    </div>
+  );
+}
+
+/** Prévias fixas à direita: todos os lugares onde a tag aparece, com o meu nome e foto. */
+function TagPreviews({
+  tag,
+  icon,
+  iconUrl,
+  style,
+  server,
+}: {
+  tag: string;
+  icon: string;
+  iconUrl?: string | null;
+  style: TagStyle;
+  server: { name: string; bannerUrl?: string | null; iconUrl?: string | null };
+}) {
+  const me = useLine((s) => s.me);
+  if (!me) return null;
+  const pill = (pad = 'px-1') =>
+    tag ? (
+      <TagPill
+        className={cx('inline-flex shrink-0 items-center gap-1 rounded-md bg-raise py-px text-[11px] leading-4 font-bold text-soft', pad)}
+        text={tag}
+        icon={icon}
+        iconUrl={iconUrl}
+        tagStyle={style}
+      />
+    ) : (
+      <span className="text-[11px] text-muted">(sem tag)</span>
+    );
+  const banner = me.bannerUrl ? fileUrl(me.bannerUrl) : null;
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-bold tracking-wide text-muted uppercase">Prévia</p>
+
+      <div
+        className="overflow-hidden rounded-xl border border-edge"
+        style={{ background: `linear-gradient(to bottom, color-mix(in srgb, ${me.avatarColor} 30%, var(--color-side)), var(--color-side) 70%)` }}
+      >
+        <div className="h-14" style={banner ? undefined : { background: me.avatarColor }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
+        </div>
+        <div className="px-3.5 pb-3.5">
+          <span className="-mt-7 inline-flex rounded-full border-4 border-side">
+            <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={52} />
+          </span>
+          <p className="mt-1 text-lg leading-tight font-bold">
+            <StyledName user={me}>{me.displayName}</StyledName>
+          </p>
+          <p className="flex items-center gap-1.5 text-xs text-soft">
+            {me.username} {pill()}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex gap-3 rounded-xl border border-edge bg-main p-3">
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={36} />
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5">
+            <StyledName user={me} className="truncate font-semibold">
+              {me.displayName}
+            </StyledName>
+            {pill()}
+            <span className="text-xs text-muted">{new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+          </p>
+          <p className="text-sm text-soft">será que alguém lê isso?</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2.5 rounded-xl border border-edge bg-side px-3 py-2">
+        <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={28} presence="online" />
+        <StyledName user={me} className="truncate text-[15px] font-medium">
+          {me.displayName}
+        </StyledName>
+        {pill()}
+      </div>
+
+      <div className="rounded-xl border border-edge bg-side px-2 py-2">
+        <p className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[15px] text-soft">
+          <Icons.Speaker size={17} />
+          <span className="truncate">voice</span>
+        </p>
+        <div className="mt-0.5 flex items-center gap-2 py-1 pl-7">
+          <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={24} />
+          <StyledName user={me} className="truncate text-sm font-medium">
+            {me.displayName}
+          </StyledName>
+          {pill()}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-edge bg-side">
+        <div className="h-12 bg-raise">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {server.bannerUrl && <img src={fileUrl(server.bannerUrl)} alt="" className="h-full w-full object-cover" />}
+        </div>
+        <div className="px-3.5 pb-3">
+          <span className="-mt-6 flex h-12 w-12 overflow-hidden rounded-[14px] border-4 border-side bg-side">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {server.iconUrl ? <img src={fileUrl(server.iconUrl)} alt="" className="h-full w-full rounded-[10px] object-cover" /> : <DefaultServerIcon />}
+          </span>
+          <p className="mt-1.5 flex min-w-0 items-center gap-2 font-bold">
+            <span className="truncate">{server.name}</span>
+            {pill()}
+          </p>
+          <p className="text-xs text-muted">Cartão do servidor</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -588,13 +750,15 @@ const TAG_GRADIENTS = [
   ['#ff5a5f', '#8e4ec6', '#2b6cff'],
 ];
 const MAX_TAG_COLORS = 4;
+/** Só 6 cores prontas (o resto vai pelo seletor e pelo degradê), para caber ao lado da prévia. */
+const TAG_SWATCHES = [...SWATCHES.slice(0, 5), '#ffffff'];
 const CHECKER = 'repeating-conic-gradient(#8a8a94 0 25%, #c9c9d1 0 50%) 50% / 8px 8px';
 
 /** Uma linha de cor da tag: Padrão, Sem (transparente, opcional), cores prontas, outra cor e degradê de 2 a 4 cores. */
 function TagPaintRow({ value, onChange, transparent }: { value: TagPaint | null; onChange: (p: TagPaint | null) => void; transparent: boolean }) {
   const grad = isGrad(value ?? undefined) ? (value as string[]) : null;
   const single = grad ? null : (solidOf(value ?? undefined) ?? null);
-  const custom = single && single !== 'transparent' && !SWATCHES.includes(single);
+  const custom = single && single !== 'transparent' && !TAG_SWATCHES.includes(single);
   const pill = (active: boolean) => cx('rounded-full border px-2.5 py-1 text-xs', active ? 'border-accent text-fg' : 'border-edge text-soft hover:bg-raise');
   return (
     <div className="space-y-2">
@@ -607,7 +771,7 @@ function TagPaintRow({ value, onChange, transparent }: { value: TagPaint | null;
             <span className="h-3.5 w-3.5 rounded-full border border-edge" style={{ background: CHECKER }} /> Sem
           </button>
         )}
-        {SWATCHES.map((c) => (
+        {TAG_SWATCHES.map((c) => (
           <button
             key={c}
             type="button"

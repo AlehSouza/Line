@@ -111,9 +111,12 @@ export interface TagStyle {
   iconStyle?: 'outline' | 'solid';
   /** Direção dos degradês (padrão h). */
   dir?: 'h' | 'v';
-  /** Degradês parados ou correndo em onda (padrão static). */
-  motion?: 'static' | 'wave';
+  /** Degradês parados ou correndo em onda (padrão static); pulse = texto neon piscando. */
+  motion?: 'static' | 'wave' | 'pulse';
   speed?: 'slow' | 'medium' | 'fast';
+  /** Fonte e efeito do texto (os mesmos do estilo do nome exibido). */
+  font?: NameFont;
+  effect?: NameEffect;
 }
 
 /** Uma faixa na fila do bot de música. */

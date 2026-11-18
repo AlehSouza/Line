@@ -74,7 +74,8 @@ fn display_name(raw: &str) -> ApiResult<String> {
 }
 
 /// Aparência da tag: só as chaves conhecidas. Cada cor é "#rrggbb", "transparent" (menos no texto)
-/// ou uma lista de 2 a 4 cores (degradê); dir h|v, motion static|wave, speed e iconStyle outline|solid.
+/// ou uma lista de 2 a 4 cores (degradê); dir h|v, motion static|wave|pulse, speed, iconStyle outline|solid
+/// e fonte/efeito do texto (os mesmos do estilo do nome).
 fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
     let mut out = serde_json::Map::new();
     let Some(obj) = v.as_object() else {
@@ -108,8 +109,10 @@ fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
     for (key, allowed) in [
         ("iconStyle", &["outline", "solid"][..]),
         ("dir", &["h", "v"][..]),
-        ("motion", &["static", "wave"][..]),
+        ("motion", &["static", "wave", "pulse"][..]),
         ("speed", &["slow", "medium", "fast"][..]),
+        ("font", crate::profile::FONTS),
+        ("effect", crate::profile::EFFECTS),
     ] {
         if let Some(s) = obj.get(key).and_then(|s| s.as_str()) {
             if !allowed.contains(&s) {

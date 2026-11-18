@@ -61,7 +61,9 @@ export const updateServerSchema = createServerSchema.partial().extend({
       iconColor: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
       iconStyle: z.enum(['outline', 'solid']).optional(),
       dir: z.enum(['h', 'v']).optional(),
-      motion: z.enum(['static', 'wave']).optional(),
+      motion: z.enum(['static', 'wave', 'pulse']).optional(),
+      font: z.string().max(20).optional(),
+      effect: z.string().max(20).optional(),
       speed: z.enum(['slow', 'medium', 'fast']).optional(),
     })
     .nullable()
