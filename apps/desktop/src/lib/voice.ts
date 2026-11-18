@@ -249,6 +249,8 @@ interface Peer {
   makingOffer: boolean;
   ignoreOffer: boolean;
   streamIds: Set<string>;
+  /** Parou de assistir: os envios da minha tela ficam na conexão sem trilha, prontos para voltar sem renegociar. */
+  pausedScreen?: RTCRtpSender[];
 }
 
 let socket: LineSocket | null = null;
@@ -1352,6 +1354,7 @@ function stopScreen() {
   const { screen } = getV();
   if (!screen) return;
   removeStreamFromPeers(screen);
+  dropPausedScreens();
   watchers.clear();
   if (myId) {
     const me = myId;
@@ -1561,14 +1564,16 @@ async function onSignal(from: string, signal: VoiceSignal) {
       if (watchers.has(from) && (!screen || sendsStream(pc, screen))) return;
       watchers.add(from);
       if (screen) {
-        addStream(pc, screen);
+        // Voltou a assistir: religa os envios pausados (sem renegociar); se não der, envia do zero.
+        if (!resumeScreen(peer, screen)) addStream(pc, screen);
         playCallSound('enter_in_transmission');
         sendViewers();
       }
     } else {
       if (!watchers.delete(from)) return;
       if (screen) {
-        removeStreamFrom(pc, screen);
+        // Só pausa (replaceTrack null): sair e voltar a assistir não mexe na negociação, que quebrava a tela.
+        pauseScreen(peer, screen);
         playCallSound('left_transmission');
         sendViewers();
       }
@@ -1812,6 +1817,50 @@ async function tuneScreenSender(sender: RTCRtpSender, fps: Fps, retry = true) {
 
 function removeStreamFromPeers(stream: MediaStream) {
   for (const { pc } of peers.values()) removeStreamFrom(pc, stream);
+}
+
+function pauseScreen(peer: Peer, screen: MediaStream) {
+  const ids = new Set(screen.getTracks().map((t) => t.id));
+  const senders = peer.pc.getSenders().filter((sender) => !!sender.track && ids.has(sender.track.id));
+  for (const sender of senders) void sender.replaceTrack(null).catch(() => {});
+  peer.pausedScreen = [...(peer.pausedScreen ?? []), ...senders];
+}
+
+function resumeScreen(peer: Peer, screen: MediaStream): boolean {
+  const paused = peer.pausedScreen ?? [];
+  peer.pausedScreen = [];
+  const tracks = screen.getTracks();
+  const pick = (kind: string) => paused.find((sender) => {
+    const t = peer.pc.getTransceivers().find((x) => x.sender === sender);
+    return t && t.currentDirection !== 'stopped' && sender.track === null && t.receiver.track.kind === kind;
+  });
+  const plan = tracks.map((track) => [track, pick(track.kind)] as const);
+  if (!plan.length || plan.some(([, sender]) => !sender)) {
+    retirePaused(peer.pc, paused);
+    return false;
+  }
+  const { resolution, fps } = getV().screenQuality;
+  for (const [track, sender] of plan) {
+    void sender!.replaceTrack(track).catch(() => {});
+    if (track.kind === 'video') void retuneScreenSender(sender!, resolution, fps);
+  }
+  retirePaused(peer.pc, paused.filter((sender) => !plan.some(([, s]) => s === sender)));
+  return true;
+}
+
+/** Envios pausados que não vão mais voltar: desliga o canal, e do outro lado a tela velha some. */
+function retirePaused(pc: RTCPeerConnection, senders: RTCRtpSender[]) {
+  for (const sender of senders) {
+    const t = pc.getTransceivers().find((x) => x.sender === sender);
+    if (t && t.currentDirection !== 'stopped' && pc.signalingState !== 'closed') t.direction = 'inactive';
+  }
+}
+
+function dropPausedScreens() {
+  for (const peer of peers.values()) {
+    retirePaused(peer.pc, peer.pausedScreen ?? []);
+    peer.pausedScreen = [];
+  }
 }
 
 function sendsStream(pc: RTCPeerConnection, stream: MediaStream) {
