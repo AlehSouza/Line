@@ -16,6 +16,7 @@ pub mod activity;
 pub mod admin;
 pub mod notify;
 pub mod profile;
+pub mod events;
 pub mod sounds;
 pub use admin::{BAN_FOREVER, NewReport};
 

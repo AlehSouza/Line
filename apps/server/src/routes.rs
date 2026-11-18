@@ -107,6 +107,9 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/servers/{id}/channels", post(create_channel))
         .route("/servers/{id}/layout", put(set_layout))
         .route("/servers/{id}/notes", put(set_notes))
+        .route("/channels/{id}/events", get(list_events).post(create_event))
+        .route("/events/{id}", patch(update_event).delete(delete_event))
+        .route("/events/{id}/rsvp", put(rsvp_event))
         .route("/servers/{id}/roles", get(list_roles).post(create_role))
         .route("/servers/{id}/roles/order", put(reorder_roles))
         .route(
@@ -3502,4 +3505,168 @@ async fn delete_sound(
     q.delete_sound(&sound_id);
     app.to_server(&id, "sounds:update", &json!({ "serverId": id }));
     no_content()
+}
+
+// ----- eventos (canal base "Eventos") -----
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventBody {
+    title: String,
+    #[serde(default)]
+    description: String,
+    starts_at: String,
+    ends_at: Option<String>,
+    #[serde(default)]
+    location: String,
+    voice_channel_id: Option<String>,
+    #[serde(default)]
+    game: String,
+}
+
+/// Data no formato ISO em UTC (o app manda `toISOString()`), normalizada para comparar como texto.
+fn event_time(v: &str) -> ApiResult<String> {
+    chrono::DateTime::parse_from_rfc3339(v.trim())
+        .map(|d| {
+            d.with_timezone(&chrono::Utc)
+                .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+                .to_string()
+        })
+        .map_err(|_| validation("Data inválida"))
+}
+
+fn event_input(q: &Q, server_id: &str, b: &Bytes) -> ApiResult<crate::store::events::EventInput> {
+    let e: EventBody = serde_json::from_slice(b).map_err(|_| validation("Dados inválidos"))?;
+    let title = e.title.trim().to_string();
+    if title.is_empty() || title.chars().count() > 100 {
+        return Err(validation("O nome do evento precisa ter de 1 a 100 caracteres"));
+    }
+    let description = e.description.trim().to_string();
+    if description.chars().count() > 1000 {
+        return Err(validation("A descrição pode ter até 1000 caracteres"));
+    }
+    let location = e.location.trim().to_string();
+    if location.chars().count() > 200 {
+        return Err(validation("O local pode ter até 200 caracteres"));
+    }
+    let game = e.game.trim().to_string();
+    if game.chars().count() > 80 {
+        return Err(validation("O nome do jogo pode ter até 80 caracteres"));
+    }
+    let starts_at = event_time(&e.starts_at)?;
+    let ends_at = match e.ends_at.as_deref().filter(|v| !v.trim().is_empty()) {
+        Some(v) => Some(event_time(v)?),
+        None => None,
+    };
+    if ends_at.as_ref().is_some_and(|end| *end <= starts_at) {
+        return Err(validation("O fim precisa ser depois do início"));
+    }
+    let voice_channel_id = e.voice_channel_id.filter(|v| !v.is_empty());
+    if let Some(v) = &voice_channel_id
+        && q
+            .channel(v)
+            .is_none_or(|c| c.kind != "voice" || c.server_id.as_deref() != Some(server_id))
+    {
+        return Err(validation("Canal de voz inválido"));
+    }
+    Ok(crate::store::events::EventInput {
+        title,
+        description,
+        starts_at,
+        ends_at,
+        location,
+        voice_channel_id,
+        game,
+    })
+}
+
+/// Canal "Eventos" que a pessoa enxerga.
+fn require_events_channel(q: &Q, channel_id: &str, me: &str) -> ApiResult<(Channel, String)> {
+    let channel = require_access(q, channel_id, me)?;
+    match (&channel.server_id, channel.base.as_str()) {
+        (Some(server_id), "events") => {
+            let server_id = server_id.clone();
+            Ok((channel, server_id))
+        }
+        _ => Err(bad_request("Esse canal não tem eventos")),
+    }
+}
+
+/// Quem cria eventos: quem pode publicar no canal (dono, admin e "Publicar em Notas e Atualizações").
+fn can_post_events(q: &Q, channel_id: &str, me: &str) -> bool {
+    has(q.channel_permissions(me, channel_id), perms::SEND_MESSAGES)
+}
+
+async fn list_events(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let (channel, _) = require_events_channel(&q, &id, &me)?;
+    ok(q.channel_events(&channel.id))
+}
+
+async fn create_event(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let (channel, server_id) = require_events_channel(&q, &id, &me)?;
+    if !can_post_events(&q, &channel.id, &me) {
+        return Err(forbidden("Você não tem permissão para criar eventos"));
+    }
+    let input = event_input(&q, &server_id, &b)?;
+    let event = q.create_event(&server_id, &channel.id, &me, &input);
+    app.to_channel(&q, &channel.id, "event:update", &event);
+    created(event)
+}
+
+/// Evento que a pessoa pode editar: quem criou, ou quem pode publicar e gerencia mensagens.
+fn editable_event(q: &Q, id: &str, me: &str) -> ApiResult<crate::store::events::Event> {
+    let event = q
+        .event(id)
+        .filter(|e| q.can_access(me, &e.channel_id))
+        .ok_or_else(|| not_found("Evento"))?;
+    let mine = event.creator_id == me && can_post_events(q, &event.channel_id, me);
+    if !mine && !has(q.channel_permissions(me, &event.channel_id), perms::MANAGE_MESSAGES) {
+        return Err(forbidden("Só quem criou o evento pode mudar ele"));
+    }
+    Ok(event)
+}
+
+async fn update_event(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let q = app.store.q();
+    let event = editable_event(&q, &id, &me)?;
+    let input = event_input(&q, &event.server_id, &b)?;
+    let updated = q
+        .update_event(&event.id, &input)
+        .ok_or_else(|| not_found("Evento"))?;
+    app.to_channel(&q, &event.channel_id, "event:update", &updated);
+    ok(updated)
+}
+
+async fn delete_event(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let event = editable_event(&q, &id, &me)?;
+    q.delete_event(&event.id);
+    app.to_channel(
+        &q,
+        &event.channel_id,
+        "event:delete",
+        &json!({ "id": event.id, "channelId": event.channel_id }),
+    );
+    no_content()
+}
+
+/// Marcar presença: { status: 'going' | 'maybe' | 'no' | null }.
+async fn rsvp_event(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let v: serde_json::Value = body(&b)?;
+    let status = match v.get("status").and_then(|s| s.as_str()) {
+        None => None,
+        Some(s @ ("going" | "maybe" | "no")) => Some(s),
+        Some(_) => return Err(validation("Resposta inválida")),
+    };
+    let q = app.store.q();
+    let event = q
+        .event(&id)
+        .filter(|e| q.can_access(&me, &e.channel_id))
+        .ok_or_else(|| not_found("Evento"))?;
+    q.set_rsvp(&event.id, &me, status);
+    let updated = q.event(&event.id).ok_or_else(|| not_found("Evento"))?;
+    app.to_channel(&q, &event.channel_id, "event:update", &updated);
+    ok(updated)
 }

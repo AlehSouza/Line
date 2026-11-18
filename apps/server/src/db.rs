@@ -451,6 +451,31 @@ const MIGRATIONS: &[&str] = &[
   UPDATE roles SET permissions = permissions | (1 << 22) | (1 << 24) WHERE (permissions & (1 << 3)) != 0;
   UPDATE roles SET permissions = permissions | (1 << 20) WHERE (permissions & (1 << 6)) != 0;
 "#,
+    // Eventos do canal "Eventos" e quem marcou presença.
+    r#"
+  CREATE TABLE events (
+    id               TEXT PRIMARY KEY,
+    server_id        TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    channel_id       TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    creator_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    title            TEXT NOT NULL,
+    description      TEXT NOT NULL DEFAULT '',
+    starts_at        TEXT NOT NULL,
+    ends_at          TEXT,
+    location         TEXT NOT NULL DEFAULT '',
+    voice_channel_id TEXT REFERENCES channels(id) ON DELETE SET NULL,
+    game             TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL
+  );
+  CREATE INDEX events_channel ON events(channel_id, starts_at);
+  CREATE TABLE event_rsvps (
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    user_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status   TEXT NOT NULL,
+    at       TEXT NOT NULL,
+    PRIMARY KEY (event_id, user_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

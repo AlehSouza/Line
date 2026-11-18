@@ -10,6 +10,7 @@ import type {
   PublicUser,
   SelfUser,
   Server,
+  ServerEvent,
   VoiceSignal,
   VoiceState,
   MusicState,
@@ -55,6 +56,8 @@ export interface ServerToClientEvents {
   'category:create': (category: Category) => void;
   'category:update': (category: Category) => void;
   'category:delete': (payload: { id: string; serverId: string }) => void;
+  'event:update': (event: ServerEvent) => void;
+  'event:delete': (payload: { id: string; channelId: string }) => void;
   'friend:update': (friend: Friend) => void;
   'friend:remove': (payload: { userId: string }) => void;
   /** Todos os estados de voz que você pode ver (enviado ao conectar). */

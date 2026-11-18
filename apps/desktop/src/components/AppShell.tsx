@@ -18,6 +18,7 @@ import { cx } from './ui';
 import { IncomingCall, MiniStream, VoiceBar, VoiceStage } from './Voice';
 import { GameBar } from './GameBar';
 import { ActivityChannel } from './Activity';
+import { EventsChannel } from './Events';
 
 export function AppShell() {
   const view = useLine((s) => s.view);
@@ -67,6 +68,7 @@ export function AppShell() {
   else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : <FriendsView />;
   else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
   else if (channel?.base === 'activity') main = <ActivityChannel channel={channel} />;
+  else if (channel?.base === 'events') main = <EventsChannel channel={channel} />;
   else if (channel) main = <ChatView channel={channel} />;
   else main = <EmptyServer />;
 

@@ -26,7 +26,20 @@ import type {
   NotifySettings,
   ReadState,
   Sound,
+  ServerEvent,
+  RsvpStatus,
 } from '@line/shared';
+
+/** Criar/editar evento (datas em ISO). */
+export interface EventInput {
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string | null;
+  location: string;
+  voiceChannelId: string | null;
+  game: string;
+}
 
 /**
  * O Line tem um servidor público só. Em desenvolvimento (porta 3000) usa o servidor local,
@@ -240,6 +253,11 @@ export const api = {
   createServer: (input: CreateServerInput) => request<Server>('POST', '/servers', input),
   server: (id: string) => request<ServerDetail>('GET', `/servers/${enc(id)}`),
   updateServer: (id: string, patch: UpdateServerInput) => request<Server>('PATCH', `/servers/${enc(id)}`, patch),
+  channelEvents: (channelId: string) => request<ServerEvent[]>('GET', `/channels/${enc(channelId)}/events`),
+  createEvent: (channelId: string, body: EventInput) => request<ServerEvent>('POST', `/channels/${enc(channelId)}/events`, body),
+  updateEvent: (id: string, body: EventInput) => request<ServerEvent>('PATCH', `/events/${enc(id)}`, body),
+  deleteEvent: (id: string) => request<void>('DELETE', `/events/${enc(id)}`),
+  rsvpEvent: (id: string, status: RsvpStatus | null) => request<ServerEvent>('PUT', `/events/${enc(id)}/rsvp`, { status }),
   /** Notas e Atualizações: mostrar/esconder a categoria e cada canal base. */
   setNotes: (id: string, body: { categoryVisible?: boolean; channels?: Record<string, boolean> }) =>
     request<void>('PUT', `/servers/${enc(id)}/notes`, body),

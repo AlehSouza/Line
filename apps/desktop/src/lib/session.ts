@@ -312,6 +312,9 @@ function connectSocket() {
   s.on('category:create', (c) => actions.upsertCategory(c));
   s.on('category:update', (c) => actions.upsertCategory(c));
   s.on('category:delete', ({ id }) => actions.removeCategory(id));
+  // Eventos do canal Eventos: a tela aberta escuta e atualiza a lista.
+  s.on('event:update', (e) => window.dispatchEvent(new CustomEvent('line:event', { detail: { event: e } })));
+  s.on('event:delete', (d) => window.dispatchEvent(new CustomEvent('line:event', { detail: { deleted: d.id } })));
   s.on('friend:update', (f) => actions.upsertFriend(f));
   s.on('friend:remove', ({ userId }) => actions.removeFriend(userId));
 }

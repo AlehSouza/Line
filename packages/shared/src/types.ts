@@ -183,6 +183,25 @@ export interface Category {
   base?: boolean;
 }
 
+export type RsvpStatus = 'going' | 'maybe' | 'no';
+
+/** Evento do canal base "Eventos". Datas em ISO (UTC). */
+export interface ServerEvent {
+  id: string;
+  serverId: string;
+  channelId: string;
+  creatorId: string;
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string | null;
+  location: string;
+  voiceChannelId: string | null;
+  game: string;
+  createdAt: string;
+  rsvps: { userId: string; status: RsvpStatus; at: string }[];
+}
+
 export type BaseChannelKind = 'rules' | 'announcements' | 'events' | 'activity';
 
 export interface Channel {

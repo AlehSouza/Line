@@ -38,6 +38,7 @@ export function ChatView({ channel }: { channel: Channel }) {
   const title = isDm ? dmTitle(channel, me?.id, users) : channel.name;
   const other = isDm && channel.type === 'dm' ? channel.recipients?.find((r) => r.id !== me?.id) : undefined;
   const ChanIcon = channelIcon(channel);
+  const canPost = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.SendMessages));
 
   const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
   const inCall = useVoice((v) => v.channelId === channel.id);
@@ -102,7 +103,10 @@ export function ChatView({ channel }: { channel: Channel }) {
       </header>
       {isDm && callActive && <VoiceStage channel={channel} compact />}
       <MessageList channel={channel} title={title} />
-      <Composer ref={composer} channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
+      {/* Canal de Notas e Atualizações sem permissão para publicar: só leitura, sem caixa de texto. */}
+      {!(channel.base && !canPost) && (
+        <Composer ref={composer} channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
+      )}
     </div>
   );
 }
@@ -383,7 +387,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             <h2 className="text-3xl font-bold">{channel.base ? title : channel.serverId ? `Bem-vindo a #${title}!` : title}</h2>
             <p className="mt-1 text-muted">
               {channel.base
-                ? `${channel.topic || 'Canal de Notas e Atualizações.'} Só quem tem permissão publica aqui.`
+                ? channel.topic || 'Canal de Notas e Atualizações.'
                 : channel.serverId
                 ? `Este é o começo do canal #${title}.`
                 : `Este é o começo da sua conversa com ${title}.`}
@@ -1411,7 +1415,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
           />
         ) : !canSend ? (
           <p className="flex-1 py-0.5 text-[15px] text-muted">
-            {channel.base ? `Só quem tem permissão publica em ${channel.name}. Você pode ler e reagir.` : 'Você não tem permissão para enviar mensagens neste canal.'}
+            Você não tem permissão para enviar mensagens neste canal.
           </p>
         ) : (
         <textarea

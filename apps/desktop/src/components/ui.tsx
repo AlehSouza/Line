@@ -313,6 +313,10 @@ export function channelIcon(c: { type: string; base?: string }) {
 export const Icons = {
   Hash: icon(L.Hash),
   BookCheck: icon(L.BookCheck),
+  MapPin: icon(L.MapPin),
+  Calendar: icon(L.Calendar),
+  CalendarPlus: icon(L.CalendarPlus),
+  Help: icon(L.CircleHelp),
   Megaphone: icon(L.Megaphone),
   CalendarCheck: icon(L.CalendarCheck2),
   Speaker: icon(L.Volume2),
