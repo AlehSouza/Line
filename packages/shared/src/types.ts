@@ -251,6 +251,8 @@ export interface Attachment {
   spoiler?: boolean;
   /** +18: só aparece para quem informou ter 18 anos ou mais. */
   nsfw?: boolean;
+  /** +18 confirmado no painel admin. */
+  nsfwLocked?: boolean;
 }
 
 export interface ThreadSummary {

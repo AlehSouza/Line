@@ -2,12 +2,14 @@
 
 import type { Attachment } from '@line/shared';
 import { useEffect, useState } from 'react';
-import { fileUrl } from '@/lib/api';
+import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
 import { cx, Icons, Skeleton } from './ui';
 import { VideoPlayer } from './VideoPlayer';
-import { imageMenuItems, openContextMenu } from './ContextMenu';
+import { imageMenuItems, openContextMenu, type MenuEntry } from './ContextMenu';
+import { looksNsfw } from '@/lib/nsfw';
+import { showError, toast } from './Dialogs';
 import { AudioPlayer, isVoiceMessage, VoicePlayer } from './AudioPlayer';
 
 export function formatSize(bytes: number) {
@@ -26,17 +28,46 @@ export function attachmentKind(contentType: string, filename = '') {
 }
 
 /** Anexos de uma mensagem: imagens e GIFs, vídeos, áudios, textos com prévia e demais arquivos. */
-export function AttachmentList({ attachments, compact }: { attachments: Attachment[]; compact?: boolean }) {
+/** Clique direito numa imagem/vídeo de outra pessoa: Denunciar como +18. O detector roda de novo
+ * aqui antes de mandar; se ele concordar, o anexo já fica +18 até o admin decidir. */
+async function reportNsfw(a: Attachment, url: string) {
+  toast('Verificando o anexo…');
+  let detected = false;
+  try {
+    const res = await fetch(url);
+    if (res.ok) {
+      const blob = await res.blob();
+      detected = await looksNsfw(new File([blob], a.filename, { type: blob.type || a.contentType }));
+    }
+  } catch {
+    /* sem o arquivo: denuncia mesmo assim */
+  }
+  try {
+    const r = (await api.report({ kind: 'nsfw', attachmentId: a.id, detected })) as { already?: boolean };
+    toast(r.already ? 'Esse anexo já foi confirmado como +18.' : 'Denúncia enviada. A equipe vai verificar se é +18.');
+  } catch (e) {
+    showError(e);
+  }
+}
+
+function mediaMenu(a: Attachment, url: string, mine: boolean): MenuEntry[] {
+  const report: MenuEntry[] = !mine && !a.nsfwLocked ? ['sep', { label: 'Denunciar como +18', icon: <Icons.Warning size={15} />, danger: true, onClick: () => reportNsfw(a, url) }] : [];
+  return attachmentKind(a.contentType, a.filename) === 'image' ? [...imageMenuItems(url, a.filename), ...report] : report.slice(1);
+}
+
+export function AttachmentList({ attachments, compact, authorId }: { attachments: Attachment[]; compact?: boolean; authorId?: string }) {
+  const meId = useLine((s) => s.me?.id);
+  const mine = !!authorId && authorId === meId;
   if (!attachments.length) return null;
   return (
     <div className="mt-1 flex flex-col items-start gap-2">
       {attachments.map((a) => (
         a.spoiler || a.nsfw ? (
           <MediaGate key={a.id} attachment={a}>
-            <AttachmentView attachment={a} compact={compact} />
+            <AttachmentView attachment={a} compact={compact} mine={mine} />
           </MediaGate>
         ) : (
-          <AttachmentView key={a.id} attachment={a} compact={compact} />
+          <AttachmentView key={a.id} attachment={a} compact={compact} mine={mine} />
         )
       ))}
     </div>
@@ -93,14 +124,14 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
   );
 }
 
-function AttachmentView({ attachment: a, compact }: { attachment: Attachment; compact?: boolean }) {
+function AttachmentView({ attachment: a, compact, mine }: { attachment: Attachment; compact?: boolean; mine?: boolean }) {
   const url = fileUrl(a.url);
   switch (attachmentKind(a.contentType, a.filename)) {
     case 'image':
       return (
         <button
           onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename })}
-          onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, a.filename))}
+          onContextMenu={(e) => openContextMenu(e, mediaMenu(a, url, !!mine))}
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
         >
@@ -109,11 +140,13 @@ function AttachmentView({ attachment: a, compact }: { attachment: Attachment; co
       );
     case 'video':
       return (
-        <VideoPlayer
-          src={url}
-          filename={a.filename}
-          className={compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
-        />
+        <div onContextMenu={mine || a.nsfwLocked ? undefined : (e) => openContextMenu(e, mediaMenu(a, url, !!mine))} className="max-w-full">
+          <VideoPlayer
+            src={url}
+            filename={a.filename}
+            className={compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
+          />
+        </div>
       );
     case 'audio':
       return (

@@ -252,6 +252,8 @@ pub struct Attachment {
     pub spoiler: bool,
     /// +18: só aparece para quem informou ter 18 anos ou mais.
     pub nsfw: bool,
+    /// +18 confirmado no painel admin: ninguém tira.
+    pub nsfw_locked: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

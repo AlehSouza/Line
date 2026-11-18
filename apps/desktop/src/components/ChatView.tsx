@@ -716,7 +716,7 @@ function MessageRow({
         {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
-        <AttachmentList attachments={message.attachments} />
+        <AttachmentList attachments={message.attachments} authorId={message.author.id} />
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
         )}
@@ -840,7 +840,7 @@ function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; 
         </p>
         {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
         {message.content && !gifFromContent(message.content) && <LinkPreviews content={message.content} />}
-        <AttachmentList attachments={message.attachments} compact />
+        <AttachmentList attachments={message.attachments} compact authorId={message.author.id} />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
       <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', anchor && 'flex')}>

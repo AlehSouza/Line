@@ -729,8 +729,17 @@ async function openServer(id) {
 
 // ---------- denúncias e bugs ----------
 
-const KIND = { bug: 'Bug', idea: 'Melhoria', user: 'Usuário', message: 'Mensagem' };
-const KIND_PILL = { bug: 'red', idea: 'violet', user: 'sun', message: 'sun' };
+const KIND = { bug: 'Bug', idea: 'Melhoria', user: 'Usuário', message: 'Mensagem', nsfw: '+18' };
+const KIND_PILL = { bug: 'red', idea: 'violet', user: 'sun', message: 'sun', nsfw: 'red' };
+
+/** Prioridade da denúncia +18: mais denúncias (e o detector concordando) = mais crítica. */
+function nsfwPriority(r) {
+  const score = (r.reportCount || 1) + 2 * (r.detectedCount || 0);
+  if (score >= 7) return ['Crítica', 'red'];
+  if (score >= 4) return ['Alta', 'sun'];
+  if (score >= 2) return ['Média', 'violet'];
+  return ['Normal', ''];
+}
 const statusLabel = (s) => ({ open: 'Aberta', resolved: 'Resolvida', dismissed: 'Descartada' })[s] || s;
 
 function reportsPage(which) {
@@ -779,7 +788,7 @@ function reportsPage(which) {
       'div',
       { class: 'toolbar' },
       tabs([['open', 'Abertas'], ['resolved', 'Resolvidas'], ['dismissed', 'Descartadas'], ['', 'Todas']], status, (v) => (status = v)),
-      tabs(feedback ? [['feedback', 'Tudo'], ['bug', 'Bugs'], ['idea', 'Melhorias']] : [['reports', 'Tudo'], ['user', 'Usuários'], ['message', 'Mensagens']], kind, (v) => (kind = v)),
+      tabs(feedback ? [['feedback', 'Tudo'], ['bug', 'Bugs'], ['idea', 'Melhorias']] : [['reports', 'Tudo'], ['user', 'Usuários'], ['message', 'Mensagens'], ['nsfw', '+18']], kind, (v) => (kind = v)),
     ),
     list,
     h('div', { class: 'more' }, more),
@@ -801,10 +810,10 @@ function snapshotView(r) {
   const before = m.before || [];
   const after = m.after || [];
   // Na denunciada, mostra as cópias guardadas (imagens de verdade) em vez do nome do arquivo.
-  const shots = (r.kind === 'message' && r.images) || [];
+  const shots = ((r.kind === 'message' || r.kind === 'nsfw') && r.images) || [];
   const files = (x, hit) =>
     hit && shots.length
-      ? shotsView(shots)
+      ? shotsView(shots, r.kind === 'nsfw')
       : x.attachments?.length
         ? h('div', { class: 'muted small' }, `📎 ${x.attachments.map((a) => a.filename).join(', ')}`)
         : null;
@@ -843,8 +852,28 @@ function snapshotView(r) {
 }
 
 /** Miniaturas dos anexos (imagem abre em nova aba; outros arquivos viram link). */
-function shotsView(list) {
-  return h('div', { class: 'shots' }, list.map((img) => (img.contentType || '').startsWith('image/') ? h('a', { href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${FILES}${img.url}`, alt: img.filename, loading: 'lazy' })) : h('a', { class: 'pill', href: `${FILES}${img.url}`, target: '_blank', rel: 'noopener' }, img.filename)));
+function shotsView(list, sensitive = false) {
+  // +18: começa borrado; o primeiro clique mostra, o segundo abre em nova aba.
+  const reveal = (e) => {
+    const a = e.currentTarget;
+    if (a.classList.contains('blurred')) {
+      e.preventDefault();
+      a.classList.remove('blurred');
+    }
+  };
+  return h(
+    'div',
+    { class: 'shots' },
+    list.map((img) => {
+      const url = `${FILES}${img.url}`;
+      const kind = img.contentType || '';
+      if (kind.startsWith('image/'))
+        return h('a', { href: url, target: '_blank', rel: 'noopener', class: sensitive ? 'blurred' : '', onclick: sensitive ? reveal : undefined }, h('img', { src: url, alt: img.filename, loading: 'lazy' }));
+      if (kind.startsWith('video/') && sensitive)
+        return h('a', { href: url, target: '_blank', rel: 'noopener', class: 'blurred', onclick: reveal }, h('video', { src: url, muted: true, preload: 'metadata' }));
+      return h('a', { class: 'pill', href: url, target: '_blank', rel: 'noopener' }, img.filename);
+    }),
+  );
 }
 
 /** Texto da mensagem: **negrito** e cartões de música ([[musica:...]]) legíveis. */
@@ -873,16 +902,32 @@ function reportCard(r, reload) {
     r.targetUserId &&
       h('div', { style: 'margin-top:8px' }, 'Contra ', h('button', { class: 'linkish', onclick: () => openUser(r.targetUserId) }, `${r.targetName || '?'} (@${r.targetUsername || '?'})`), banned(r.targetBannedUntil) ? h('span', { class: 'pill red', style: 'margin-left:6px' }, 'suspenso') : null, where ? h('span', { class: 'muted' }, ` em ${where}`) : null),
     snapshotView(r),
-    r.details && h('p', { class: 'details' }, r.kind === 'message' || r.kind === 'user' ? h('span', { class: 'muted small' }, 'Relato de quem denunciou: ') : null, r.details),
+    r.kind === 'nsfw' &&
+      h(
+        'div',
+        { style: 'margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center' },
+        (() => {
+          const [label, color] = nsfwPriority(r);
+          return h('span', { class: `pill ${color}` }, `Prioridade ${label}`);
+        })(),
+        h('span', { class: 'pill' }, `${num(r.reportCount || 1)} ${(r.reportCount || 1) === 1 ? 'denúncia' : 'denúncias'}`),
+        h('span', { class: 'pill' }, `Detector: ${num(r.detectedCount || 0)} de ${num(r.reportCount || 1)} acharam +18`),
+      ),
+    r.details && h('p', { class: 'details' }, r.kind === 'message' || r.kind === 'user' || r.kind === 'nsfw' ? h('span', { class: 'muted small' }, 'Relato de quem denunciou: ') : null, r.details),
     r.kind !== 'message' && r.images?.length ? shotsView(r.images) : null,
     (r.platform || r.version) && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, [r.platform, r.version && `versão ${r.version}`].filter(Boolean).join(' · ')),
     r.note && h('p', { class: 'muted small', style: 'margin:8px 0 0' }, `Anotação: ${r.note}`),
     h(
       'div',
       { class: 'actions' },
-      r.status === 'open'
-        ? [h('button', { class: 'btn primary small', onclick: () => setStatus('resolved') }, 'Resolver'), h('button', { class: 'btn small', onclick: () => setStatus('dismissed') }, 'Descartar')]
-        : h('button', { class: 'btn small', onclick: () => setStatus('open') }, 'Reabrir'),
+      r.kind === 'nsfw' && r.attachmentId
+        ? [
+            h('button', { class: 'btn danger small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: true }), 'Fixado como +18.')) && reload() }, 'É +18 (fixar)'),
+            h('button', { class: 'btn small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: false }), 'Marcado como não +18.')) && reload() }, 'Não é +18'),
+          ]
+        : r.status === 'open'
+          ? [h('button', { class: 'btn primary small', onclick: () => setStatus('resolved') }, 'Resolver'), h('button', { class: 'btn small', onclick: () => setStatus('dismissed') }, 'Descartar')]
+          : h('button', { class: 'btn small', onclick: () => setStatus('open') }, 'Reabrir'),
       r.messageId && r.messageExists ? h('button', { class: 'btn danger small', onclick: () => deleteMessage(r.messageId, reload) }, 'Apagar mensagem') : r.messageId ? h('span', { class: 'muted small', style: 'align-self:center' }, 'mensagem já apagada') : null,
       r.targetUserId && !banned(r.targetBannedUntil) ? h('button', { class: 'btn danger small', onclick: () => banFlow({ id: r.targetUserId, displayName: r.targetName, username: r.targetUsername }, reload) }, 'Suspender autor') : null,
     ),
@@ -936,7 +981,7 @@ async function admins() {
 
 // ---------- registro ----------
 
-const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia', add_admin: 'Tornou admin', remove_admin: 'Tirou admin de' };
+const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia', add_admin: 'Tornou admin', remove_admin: 'Tirou admin de', nsfw_confirm: 'Fixou +18 no anexo', nsfw_reject: 'Disse que não é +18 o anexo' };
 
 async function log() {
   loading();

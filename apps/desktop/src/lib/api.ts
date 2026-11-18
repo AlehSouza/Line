@@ -200,8 +200,11 @@ export interface LinkEmbed {
 export const api = {
   /** Bug report, sugestão ou denúncia (cai no painel administrador). */
   report: (input: {
-    kind: 'bug' | 'idea' | 'user' | 'message';
+    kind: 'bug' | 'idea' | 'user' | 'message' | 'nsfw';
     targetUserId?: string;
+    /** Denúncia +18: o anexo e se o detector deste aparelho concordou. */
+    attachmentId?: string;
+    detected?: boolean;
     messageId?: string;
     reason?: string;
     details?: string;

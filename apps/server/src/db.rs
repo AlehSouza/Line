@@ -486,6 +486,23 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE users ADD COLUMN blur_sensitive INTEGER NOT NULL DEFAULT 1;
 "#,
+    // Denúncia de anexo +18: uma denúncia aberta por anexo, contando quantos denunciaram
+    // (prioridade no painel) e quantas vezes o detector concordou. O admin pode fixar o +18.
+    r#"
+  ALTER TABLE reports ADD COLUMN attachment_id TEXT;
+  ALTER TABLE reports ADD COLUMN report_count INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE reports ADD COLUMN detected_count INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX reports_attachment ON reports(attachment_id);
+  ALTER TABLE attachments ADD COLUMN nsfw_locked INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE attachments ADD COLUMN nsfw_by_report INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE nsfw_reporters (
+    attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    reporter_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    detected      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (attachment_id, reporter_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

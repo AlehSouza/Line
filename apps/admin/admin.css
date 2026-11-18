@@ -723,3 +723,22 @@ tbody tr.click:hover {
   border: 1px solid var(--edge);
   display: block;
 }
+
+/* Anexo denunciado como +18: borrado até clicar. */
+.shots a.blurred img,
+.shots a.blurred video {
+  filter: blur(18px);
+}
+.shots a.blurred {
+  overflow: hidden;
+  border-radius: 8px;
+  cursor: zoom-in;
+}
+.shots video {
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--edge);
+  display: block;
+}

@@ -265,7 +265,7 @@ impl Q<'_> {
         );
         let mut p: Vec<Sql> = vec![];
         match kind {
-            Some("reports") => sql.push_str(" AND r.kind IN ('user', 'message')"),
+            Some("reports") => sql.push_str(" AND r.kind IN ('user', 'message', 'nsfw')"),
             Some("feedback") => sql.push_str(" AND r.kind IN ('bug', 'idea')"),
             Some(k) if !k.is_empty() => {
                 sql.push_str(" AND r.kind = ?");
@@ -277,7 +277,12 @@ impl Q<'_> {
             sql.push_str(" AND r.status = ?");
             p.push(Sql::Text(s.into()));
         }
-        sql.push_str(" ORDER BY r.created_at DESC LIMIT 50 OFFSET ?");
+        // Abertas primeiro; entre elas, +18 com mais denúncias (e com o detector concordando) sobe.
+        sql.push_str(
+            " ORDER BY (r.status = 'open') DESC,
+               CASE WHEN r.kind = 'nsfw' THEN r.report_count + 2 * r.detected_count ELSE 0 END DESC,
+               r.created_at DESC LIMIT 50 OFFSET ?",
+        );
         p.push(Sql::Integer(offset.max(0)));
         let mut list = self.rows(&sql, p);
         for r in &mut list {
@@ -299,6 +304,104 @@ impl Q<'_> {
             "UPDATE reports SET status = ?, note = COALESCE(?, note), resolved_at = ?, resolved_by = ? WHERE id = ?",
             params![status, note, resolved, resolved.as_ref().map(|_| admin_id), id],
         )) == 1
+    }
+
+    // ---------- denúncias de anexo +18 ----------
+
+    /// Mensagem a que o anexo pertence (None = anexo solto ou inexistente).
+    pub fn attachment_message_id(&self, attachment_id: &str) -> Option<String> {
+        ok(self
+            .c
+            .query_row(
+                "SELECT message_id FROM attachments WHERE id = ?",
+                [attachment_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional())
+        .flatten()
+    }
+
+    /// Registra quem denunciou o anexo (false = essa pessoa já tinha denunciado).
+    pub fn add_nsfw_reporter(&self, attachment_id: &str, reporter_id: &str, detected: bool) -> bool {
+        ok(self.c.execute(
+            "INSERT OR IGNORE INTO nsfw_reporters (attachment_id, reporter_id, detected, created_at) VALUES (?, ?, ?, ?)",
+            params![attachment_id, reporter_id, detected as i64, now_iso()],
+        )) == 1
+    }
+
+    /// Denúncia +18 ainda aberta desse anexo.
+    pub fn open_nsfw_report(&self, attachment_id: &str) -> Option<String> {
+        ok(self
+            .c
+            .query_row(
+                "SELECT id FROM reports WHERE kind = 'nsfw' AND attachment_id = ? AND status = 'open' ORDER BY created_at LIMIT 1",
+                [attachment_id],
+                |r| r.get(0),
+            )
+            .optional())
+    }
+
+    /// Mais uma pessoa denunciou: sobe a contagem (e a do detector, se ele concordou).
+    pub fn bump_nsfw_report(&self, report_id: &str, detected: bool) {
+        ok(self.c.execute(
+            "UPDATE reports SET report_count = report_count + 1, detected_count = detected_count + ? WHERE id = ?",
+            params![detected as i64, report_id],
+        ));
+    }
+
+    pub fn set_report_attachment(&self, report_id: &str, attachment_id: &str, detected: bool) {
+        ok(self.c.execute(
+            "UPDATE reports SET attachment_id = ?, detected_count = ? WHERE id = ?",
+            params![attachment_id, detected as i64, report_id],
+        ));
+    }
+
+    /// (denúncias, quantas o detector confirmou) de um anexo, contando todas as pessoas.
+    pub fn nsfw_report_counts(&self, attachment_id: &str) -> (i64, i64) {
+        ok(self.c.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(detected), 0) FROM nsfw_reporters WHERE attachment_id = ?",
+            [attachment_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ))
+    }
+
+    /// Marca +18 por causa das denúncias (até o admin decidir). true = mudou.
+    pub fn mark_nsfw_by_report(&self, attachment_id: &str) -> bool {
+        ok(self.c.execute(
+            "UPDATE attachments SET nsfw = 1, nsfw_by_report = 1 WHERE id = ? AND nsfw = 0",
+            [attachment_id],
+        )) == 1
+    }
+
+    /// Decisão do admin: é +18 (fixa, ninguém tira) ou não é (tira o +18 que veio de denúncia;
+    /// o que quem enviou marcou continua). Fecha as denúncias +18 abertas do anexo.
+    pub fn admin_set_nsfw(&self, attachment_id: &str, is_nsfw: bool, admin_id: &str) -> bool {
+        let changed = if is_nsfw {
+            ok(self.c.execute(
+                "UPDATE attachments SET nsfw = 1, nsfw_locked = 1, nsfw_by_report = 0 WHERE id = ?",
+                [attachment_id],
+            ))
+        } else {
+            ok(self.c.execute(
+                "UPDATE attachments SET nsfw = CASE WHEN nsfw_by_report = 1 THEN 0 ELSE nsfw END,
+                   nsfw_locked = 0, nsfw_by_report = 0 WHERE id = ?",
+                [attachment_id],
+            ))
+        } == 1;
+        let now = now_iso();
+        ok(self.c.execute(
+            "UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ?,
+               note = CASE WHEN note = '' THEN ? ELSE note END
+             WHERE kind = 'nsfw' AND attachment_id = ? AND status = 'open'",
+            params![
+                if is_nsfw { "resolved" } else { "dismissed" },
+                now,
+                admin_id,
+                if is_nsfw { "Confirmado como +18" } else { "Não é +18" },
+                attachment_id
+            ],
+        ));
+        changed
     }
 
     pub fn reports_today(&self, reporter_id: &str) -> i64 {
@@ -388,7 +491,7 @@ impl Q<'_> {
                 "servers": self.count("SELECT COUNT(DISTINCT server_id) FROM activity WHERE kind = 'music_play'", vec![]),
             },
             "reports": {
-                "open": self.count("SELECT COUNT(*) FROM reports WHERE status = 'open' AND kind IN ('user', 'message')", vec![]),
+                "open": self.count("SELECT COUNT(*) FROM reports WHERE status = 'open' AND kind IN ('user', 'message', 'nsfw')", vec![]),
                 "feedbackOpen": self.count("SELECT COUNT(*) FROM reports WHERE status = 'open' AND kind IN ('bug', 'idea')", vec![]),
                 "total": self.count("SELECT COUNT(*) FROM reports", vec![]),
             },

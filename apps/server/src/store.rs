@@ -242,6 +242,7 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
         size: r.get("size")?,
         spoiler: r.get::<_, i64>("spoiler").unwrap_or(0) != 0,
         nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
+        nsfw_locked: r.get::<_, i64>("nsfw_locked").unwrap_or(0) != 0,
     })
 }
 

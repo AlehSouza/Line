@@ -80,6 +80,7 @@ pub fn router() -> Router<Arc<App>> {
         .route("/admin/messages/{id}", delete(delete_message))
         .route("/admin/reports", get(reports))
         .route("/admin/reports/{id}", patch(update_report))
+        .route("/admin/attachments/{id}/nsfw", axum::routing::put(set_attachment_nsfw))
         .route("/admin/log", get(log))
         .route("/reports", post(create_report))
 }
@@ -603,6 +604,28 @@ async fn update_report(State(app): S, Admin(me): Admin, Path(id): Path<String>, 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
+#[derive(Deserialize)]
+struct NsfwDecision {
+    nsfw: bool,
+}
+
+/// O operador decide se o anexo denunciado é +18: sim fixa o +18 (ninguém tira), não tira o
+/// +18 que veio das denúncias. Fecha as denúncias +18 abertas dele e atualiza o chat na hora.
+async fn set_attachment_nsfw(State(app): S, Admin(me): Admin, Path(id): Path<String>, b: Bytes) -> Res {
+    let input: NsfwDecision =
+        serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
+    let q = app.store.q();
+    if q.attachment(&id).is_none() {
+        return Err(not_found("Anexo"));
+    }
+    q.admin_set_nsfw(&id, input.nsfw, &me);
+    if let Some(m) = q.attachment_message_id(&id).and_then(|mid| q.message(&mid)) {
+        app.to_channel(&q, &m.channel_id, "message:update", &m);
+    }
+    q.log_admin(&me, if input.nsfw { "nsfw_confirm" } else { "nsfw_reject" }, &id, "");
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
 async fn log(State(app): S, Admin(_): Admin, Query(qs): Query<HashMap<String, String>>) -> Res {
     ok(app.store.q().admin_log(qs_offset(&qs)))
 }
@@ -627,7 +650,14 @@ struct ReportInput {
     /// Ids de anexos de imagem já enviados por POST /api/attachments (até 5).
     #[serde(default)]
     images: Vec<String>,
+    /// Denúncia +18: o anexo denunciado e se o detector do app de quem denunciou concordou.
+    attachment_id: Option<String>,
+    #[serde(default)]
+    detected: bool,
 }
+
+/// A partir de quantas denúncias o anexo já fica +18 enquanto o admin não decide.
+const NSFW_AUTO_REPORTS: i64 = 3;
 
 fn clip(s: &str, n: usize) -> String {
     s.trim().chars().take(n).collect()
@@ -637,7 +667,7 @@ fn clip(s: &str, n: usize) -> String {
 async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input: ReportInput =
         serde_json::from_slice(&b).map_err(|_| validation("Dados inválidos"))?;
-    if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message") {
+    if !matches!(input.kind.as_str(), "bug" | "idea" | "user" | "message" | "nsfw") {
         return Err(validation("Tipo inválido"));
     }
     // Prints: até 5 no bug report/sugestão e 3 na denúncia de usuário.
@@ -658,13 +688,54 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         ));
     }
     let q = app.store.q();
+    // Denúncia +18 de um anexo: vira (ou soma em) uma denúncia de mensagem com o anexo.
+    let mut input = input;
+    let mut nsfw_attachment: Option<String> = None;
+    if input.kind == "nsfw" {
+        let att_id = input.attachment_id.clone().unwrap_or_default();
+        let att = q.attachment(&att_id).ok_or_else(|| not_found("Anexo"))?;
+        let msg_id = q.attachment_message_id(&att_id).ok_or_else(|| not_found("Mensagem"))?;
+        let m = q
+            .message(&msg_id)
+            .filter(|m| q.can_access(&me, &m.channel_id))
+            .ok_or_else(|| not_found("Mensagem"))?;
+        if m.author.id == me {
+            return Err(bad_request("Você não pode denunciar o próprio anexo"));
+        }
+        if att.nsfw_locked {
+            return Ok((StatusCode::OK, Json(json!({ "already": true }))).into_response());
+        }
+        if !q.add_nsfw_reporter(&att_id, &me, input.detected) {
+            return Err(bad_request("Você já denunciou esse anexo"));
+        }
+        let (count, detected) = q.nsfw_report_counts(&att_id);
+        // Detector concordou ou várias pessoas denunciaram: já fica +18 até o admin decidir.
+        if (input.detected || count >= NSFW_AUTO_REPORTS) && q.mark_nsfw_by_report(&att_id)
+            && let Some(updated) = q.message(&msg_id)
+        {
+            app.to_channel(&q, &updated.channel_id, "message:update", &updated);
+        }
+        if let Some(open) = q.open_nsfw_report(&att_id) {
+            q.bump_nsfw_report(&open, input.detected);
+            return Ok((
+                StatusCode::CREATED,
+                Json(json!({ "id": open, "reports": count, "detected": detected })),
+            )
+                .into_response());
+        }
+        input.message_id = Some(msg_id);
+        if input.reason.is_empty() {
+            input.reason = "Conteúdo +18".into();
+        }
+        nsfw_attachment = Some(att_id);
+    }
     let (mut target, mut channel_id, mut server_id, mut content) =
         (input.target_user_id.clone(), None, None, None);
     let mut message_id = None;
     let mut snapshot: Option<Value> = None;
     let mut evidence: Vec<crate::model::Attachment> = vec![];
     match input.kind.as_str() {
-        "message" => {
+        "message" | "nsfw" => {
             // Só dá para denunciar mensagem que a pessoa consegue ver; guarda uma cópia do texto
             // (a mensagem pode ser apagada depois).
             let m = input
@@ -719,7 +790,10 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
                 "attachments": m.attachments.iter().map(|a| json!({ "filename": a.filename, "contentType": a.content_type, "size": a.size })).collect::<Vec<_>>(),
                 "reportedAt": now_iso(),
             }));
-            evidence = m.attachments.clone();
+            evidence = match &nsfw_attachment {
+                Some(a) => m.attachments.iter().filter(|x| &x.id == a).cloned().collect(),
+                None => m.attachments.clone(),
+            };
             message_id = Some(m.id);
         }
         "user" => {
@@ -754,6 +828,9 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
             &[]
         },
     });
+    if let Some(a) = &nsfw_attachment {
+        q.set_report_attachment(&id, a, input.detected);
+    }
     // Prova que não some: cópia dos arquivos da mensagem (até 10 e 100 MB), que ficam mesmo se
     // a mensagem for apagada.
     if let Some(snap) = snapshot {
