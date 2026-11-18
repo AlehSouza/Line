@@ -21,6 +21,7 @@ import {
   toggleHiddenVideo,
   toggleLocalMute,
   toggleMute,
+  toggleScreen,
   toggleScreenMute,
   useVoice,
 } from "@/lib/voice";
@@ -70,9 +71,12 @@ export function VoiceUserMenu({
   x,
   y,
   onClose,
+  screen = false,
 }: {
   userId: string;
   channelId: string;
+  /** Aberto no quadro de uma transmissão (a minha mostra "Parar transmissão" e só o essencial). */
+  screen?: boolean;
   x: number;
   y: number;
   onClose: () => void;
@@ -145,6 +149,7 @@ export function VoiceUserMenu({
   if (!user || !me) return null;
   const isMe = userId === me.id;
   const isBot = !!user.bot;
+  const myScreen = isMe && screen;
   const otherVoice = Object.values(allChannels)
     .filter(
       (c) =>
@@ -185,6 +190,14 @@ export function VoiceUserMenu({
       className="fixed z-50 w-60 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl"
       onContextMenu={(e) => e.preventDefault()}
     >
+      {myScreen ? (
+        <Item danger onClick={run(() => toggleScreen())}>
+          <span className="flex items-center gap-2">
+            <Icons.MonitorX size={14} /> Parar transmissão
+          </span>
+        </Item>
+      ) : (
+      <>
       <Item
         onClick={run(() =>
           actions.openModal({
@@ -220,6 +233,8 @@ export function VoiceUserMenu({
             Iniciar chamada
           </Item>
         </>
+      )}
+      </>
       )}
       <Sep />
 
@@ -398,7 +413,7 @@ export function VoiceUserMenu({
         </>
       )}
 
-      {!isBot && (
+      {!isBot && !myScreen && (
         <>
           <Sep />
           <Item onClick={run(() => navigator.clipboard.writeText(userId))}>

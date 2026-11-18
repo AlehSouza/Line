@@ -591,6 +591,7 @@ function TileView({
           <VoiceUserMenu
             userId={tile.state.userId}
             channelId={tile.state.channelId}
+            screen={tile.kind === 'screen'}
             x={menu.x}
             y={menu.y}
             onClose={() => setMenu(null)}
