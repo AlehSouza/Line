@@ -45,6 +45,7 @@ export function SoundboardButton({
   title?: string;
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [uploadFor, setUploadFor] = useState<string | null>(null);
   return (
     <>
       <button
@@ -58,7 +59,20 @@ export function SoundboardButton({
         <Icons.Soundboard size={size} />
       </button>
       {anchor && (
-        <SoundboardPanel anchor={anchor} onClose={() => setAnchor(null)} />
+        <SoundboardPanel
+          anchor={anchor}
+          onClose={() => setAnchor(null)}
+          onAddSound={(id) => {
+            setAnchor(null);
+            setUploadFor(id);
+          }}
+        />
+      )}
+      {uploadFor && (
+        <UploadSoundModal
+          serverId={uploadFor}
+          onClose={() => setUploadFor(null)}
+        />
       )}
     </>
   );
@@ -74,9 +88,11 @@ type Section = {
 function SoundboardPanel({
   anchor,
   onClose,
+  onAddSound,
 }: {
   anchor: HTMLElement;
   onClose: () => void;
+  onAddSound: (serverId: string) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -102,6 +118,18 @@ function SoundboardPanel({
     ) ?? null;
   const servers = useLine((s) => s.servers);
   const order = useLine((s) => s.serverOrder);
+  // Servidores em que posso enviar sons (string para o seletor ser estável).
+  const manageable = useLine((s) =>
+    Object.keys(s.servers)
+      .filter((id) =>
+        hasPerm(permsOf(s, id, s.me?.id), Perm.ManageServer),
+      )
+      .join(","),
+  );
+  const canAddIn = useMemo(
+    () => new Set(manageable.split(",").filter(Boolean)),
+    [manageable],
+  );
 
   useEffect(() => {
     void loadSounds();
@@ -384,6 +412,27 @@ function SoundboardPanel({
                           onPlay={() => play(s)}
                         />
                       ))}
+                      {(() => {
+                        const sid = sec.key.startsWith("server:")
+                          ? sec.key.slice(7)
+                          : null;
+                        if (
+                          !sid ||
+                          !canAddIn.has(sid) ||
+                          sec.sounds.length >= MAX_SOUNDS
+                        )
+                          return null;
+                        return (
+                          <button
+                            onClick={() => onAddSound(sid)}
+                            title="Enviar um novo som para este servidor"
+                            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-edge px-3 text-[13px] font-semibold text-muted transition-colors hover:border-accent hover:bg-hover hover:text-fg"
+                          >
+                            <Icons.Plus size={16} className="shrink-0" />
+                            <span className="truncate">Novo áudio</span>
+                          </button>
+                        );
+                      })()}
                     </div>
                   ))}
               </section>
