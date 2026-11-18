@@ -271,9 +271,10 @@ async fn tiktok_page(Path(id): Path<String>, Query(q): Query<HashMap<String, Str
     let html = format!(
         r##"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<style>html,body{{margin:0;background:#000;overflow:hidden}}blockquote{{margin:0!important}}</style>
+<style>html,body{{margin:0;background:transparent;overflow:hidden}}blockquote{{margin:0!important}}</style>
 </head><body><blockquote class="tiktok-embed" cite="{cite}" data-video-id="{id}" style="max-width:605px;min-width:325px"><section></section></blockquote>
-<script async src="https://www.tiktok.com/embed.js"></script></body></html>"##
+<script async src="https://www.tiktok.com/embed.js"></script>
+<script>new ResizeObserver(function(){{parent.postMessage(JSON.stringify({{type:"MEASURE",details:{{height:document.body.scrollHeight}}}}),"*")}}).observe(document.body)</script></body></html>"##
     );
     (
         [

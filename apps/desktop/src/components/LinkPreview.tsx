@@ -66,7 +66,7 @@ function socialEmbed(raw: string): Social | null {
       src: `${TIKTOK_BRIDGE}/${id}${seg[0]?.startsWith('@') ? `?u=${encodeURIComponent(seg[0].slice(1))}` : ''}`,
       label: 'TikTok',
       width: 325,
-      height: 740,
+      height: 580,
     };
   }
   if (host === 'twitter.com' || host === 'x.com') {
@@ -173,7 +173,7 @@ function SocialPlayer({ url, s }: { url: string; s: Social }) {
         referrerPolicy="strict-origin-when-cross-origin"
         scrolling="no"
         className="block w-full border-0 bg-transparent"
-        style={{ height: s.kind === 'tiktok' || s.kind === 'facebook' ? s.height : height, colorScheme: 'normal' }}
+        style={{ height: s.kind === 'facebook' ? s.height : height, colorScheme: 'normal' }}
       />
       <a
         href={url}
