@@ -55,7 +55,7 @@ function mediaMenu(a: Attachment, url: string, mine: boolean): MenuEntry[] {
   return attachmentKind(a.contentType, a.filename) === 'image' ? [...imageMenuItems(url, a.filename), ...report] : report.slice(1);
 }
 
-export function AttachmentList({ attachments, compact, authorId }: { attachments: Attachment[]; compact?: boolean; authorId?: string }) {
+export function AttachmentList({ attachments, compact, authorId, owner }: { attachments: Attachment[]; compact?: boolean; authorId?: string; owner?: { channelId: string; messageId: string } }) {
   const meId = useLine((s) => s.me?.id);
   const mine = !!authorId && authorId === meId;
   if (!attachments.length) return null;
@@ -64,10 +64,10 @@ export function AttachmentList({ attachments, compact, authorId }: { attachments
       {attachments.map((a) => (
         a.spoiler || a.nsfw ? (
           <MediaGate key={a.id} attachment={a}>
-            <AttachmentView attachment={a} compact={compact} mine={mine} />
+            <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
           </MediaGate>
         ) : (
-          <AttachmentView key={a.id} attachment={a} compact={compact} mine={mine} />
+          <AttachmentView key={a.id} attachment={a} compact={compact} mine={mine} owner={owner} />
         )
       ))}
     </div>
@@ -173,13 +173,13 @@ function fitBox(d: { w: number; h: number }, maxW: number, maxH: number) {
   return { width: Math.max(1, Math.round(d.w * k)), aspectRatio: `${d.w} / ${d.h}` };
 }
 
-function AttachmentView({ attachment: a, compact, mine }: { attachment: Attachment; compact?: boolean; mine?: boolean }) {
+function AttachmentView({ attachment: a, compact, mine, owner }: { attachment: Attachment; compact?: boolean; mine?: boolean; owner?: { channelId: string; messageId: string } }) {
   const url = fileUrl(a.url);
   switch (attachmentKind(a.contentType, a.filename)) {
     case 'image':
       return (
         <button
-          onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename })}
+          onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename, ...owner })}
           onContextMenu={(e) => openContextMenu(e, mediaMenu(a, url, !!mine))}
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
@@ -335,7 +335,7 @@ export const GRID_MIN = 4;
 
 /** Grade 2x2 de mídias enviadas juntas; a quarta mostra "+N" quando há mais. Clicar abre a
  * galeria na mídia clicada. +18 sem idade fica bloqueado; spoiler/+18 aparecem borrados. */
-export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
+export function MediaGrid({ attachments, channelId }: { attachments: Attachment[]; channelId?: string }) {
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const adult = (ageOf(birthDate) ?? 0) >= 18;
@@ -358,7 +358,10 @@ export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
             title={a.filename}
             onClick={() => {
               if (blocked) return actions.openModal({ kind: 'settings', section: 'account' });
-              actions.openModal({ kind: 'gallery', items, index: Math.max(0, visible.indexOf(a)) });
+              // Cada mídia lembra a mensagem dona (a grade junta mensagens seguidas) para responder em thread.
+              const list = channelId ? useLine.getState().messages[channelId]?.items ?? [] : [];
+              const withOwner = items.map((it, k) => ({ ...it, messageId: list.find((m) => m.attachments.some((x) => x.id === visible[k]!.id))?.id }));
+              actions.openModal({ kind: 'gallery', items: withOwner, index: Math.max(0, visible.indexOf(a)), channelId });
             }}
             onContextMenu={!video && !blocked ? (e) => openContextMenu(e, imageMenuItems(url, a.filename)) : undefined}
             className="relative aspect-square overflow-hidden bg-rail"

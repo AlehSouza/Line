@@ -14,10 +14,11 @@ import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 import { ReportModal } from './ReportModal';
 import { ForwardModal } from './Forward';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { hasPerm, Perm, type Role } from '@line/shared';
-import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
+import { hasPerm, Perm, type Channel, type Role } from '@line/shared';
+import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
+import { Composer } from './ChatView';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel, Select } from './ui';
@@ -69,9 +70,9 @@ export function Modals() {
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
-      return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
+      return <ImageViewer url={modal.url} filename={modal.filename} channelId={modal.channelId} messageId={modal.messageId} onClose={close} />;
     case 'gallery':
-      return <GalleryViewer items={modal.items} start={modal.index} onClose={close} />;
+      return <GalleryViewer items={modal.items} start={modal.index} channelId={modal.channelId} onClose={close} />;
     case 'voice-invite':
       return <VoiceInviteModal serverId={modal.serverId} channelId={modal.channelId} onClose={close} />;
     case 'voice-status':
@@ -775,16 +776,64 @@ function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: (
   );
 }
 
-function ImageViewer({ url, filename, onClose }: { url: string; filename: string; onClose: () => void }) {
+/** Caixa de texto do chat embaixo do visualizador: manda a mensagem na thread da mensagem dona da
+ * mídia (cria a thread se ainda não existe, como o "Responder em thread" da barra de ações). */
+function ViewerComposer({ channelId, messageId, onClose }: { channelId?: string; messageId?: string; onClose: () => void }) {
+  const parent = useLine((s) => (channelId ? s.channels[channelId] : undefined));
+  const message = useLine((s) => (channelId && messageId ? s.messages[channelId]?.items.find((m) => m.id === messageId) : undefined));
+  const threadId = useLine((s) => {
+    if (!messageId) return null;
+    const m = channelId ? s.messages[channelId]?.items.find((x) => x.id === messageId) : undefined;
+    if (m?.thread) return m.thread.id;
+    return Object.values(s.channels).find((c) => c.type === 'thread' && c.threadMessageId === messageId)?.id ?? null;
+  });
+  const thread = useLine((s) => (threadId ? s.channels[threadId] : undefined));
+  const canCreate = useLine((s) => hasPerm(channelPermsOf(s, channelId, s.me?.id), Perm.CreateThreads));
+  const target = useMemo<Channel | null>(() => {
+    if (!parent || !message) return null;
+    if (parent.type === 'thread') return parent;
+    if (thread) return thread;
+    if (parent.type !== 'text' || !parent.serverId || !canCreate) return null;
+    const plain = message.content ? mentionsToText(message.content, parent.serverId) : '';
+    const name = (plain.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+    return { ...parent, id: `draft:${message.id}`, type: 'thread', name, parentId: parent.id, threadMessageId: message.id, messageCount: 0 };
+  }, [parent, message, thread, canCreate]);
+  if (!target) return null;
+  return (
+    <div className="w-full max-w-[760px] text-left" onMouseDown={(e) => e.stopPropagation()}>
+      <Composer
+        channel={target}
+        placeholder={target.id.startsWith('draft:') ? 'Começar uma thread…' : `Responder em ${target.name}…`}
+        onSent={(id) => {
+          actions.openThread(id);
+          onClose();
+        }}
+      />
+    </div>
+  );
+}
+
+/** Setas e Esc do visualizador, sem atrapalhar quem está digitando na caixa de texto. */
+function viewerKey(e: KeyboardEvent, onClose: () => void, go?: (d: number) => void) {
+  const el = e.target as HTMLElement | null;
+  const field = el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') ? (el as HTMLTextAreaElement) : null;
+  if (e.key === 'Escape') {
+    if (!e.defaultPrevented && !field?.value) onClose();
+  } else if (go && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !field?.value) {
+    go(e.key === 'ArrowRight' ? 1 : -1);
+  }
+}
+
+function ImageViewer({ url, filename, channelId, messageId, onClose }: { url: string; filename: string; channelId?: string; messageId?: string; onClose: () => void }) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => viewerKey(e, onClose);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={filename} className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+      <img src={url} alt={filename} className="max-h-[calc(100vh-170px)] min-h-0 max-w-full rounded-lg object-contain shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, filename))}
       />
@@ -797,39 +846,37 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
       >
         Abrir original
       </a>
+      <ViewerComposer channelId={channelId} messageId={messageId} onClose={onClose} />
     </div>
   );
 }
 
 /** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
-function GalleryViewer({ items, start, onClose }: { items: { url: string; filename: string; contentType: string }[]; start: number; onClose: () => void }) {
+function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string }[]; start: number; channelId?: string; onClose: () => void }) {
   const [i, setI] = useState(start);
   const n = items.length;
   const go = (d: number) => setI((x) => (x + d + n) % n);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-      else if (e.key === 'ArrowRight') go(1);
-      else if (e.key === 'ArrowLeft') go(-1);
-    };
+    const onKey = (e: KeyboardEvent) => viewerKey(e, onClose, go);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, n]);
   const item = items[i]!;
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
+  const media = 'max-h-[calc(100vh-170px)] max-w-full rounded-lg shadow-2xl';
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onMouseDown={onClose}>
-      <div className="relative flex max-h-[85vh] max-w-full items-center justify-center" onMouseDown={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
+      <div className="relative flex min-h-0 max-w-full items-center justify-center" onMouseDown={(e) => e.stopPropagation()}>
         {video ? (
-          <video key={item.url} src={item.url} controls autoPlay className="max-h-[85vh] max-w-full rounded-lg shadow-2xl" />
+          <video key={item.url} src={item.url} controls autoPlay className={media} />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={item.url}
             src={item.url}
             alt={item.filename}
-            className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+            className={cx(media, 'object-contain')}
             onContextMenu={(e) => openContextMenu(e, imageMenuItems(item.url, item.filename))}
           />
         )}
@@ -850,6 +897,7 @@ function GalleryViewer({ items, start, onClose }: { items: { url: string; filena
           Abrir original
         </a>
       </div>
+      <ViewerComposer channelId={channelId} messageId={item.messageId} onClose={onClose} />
     </div>
   );
 }

@@ -29,9 +29,10 @@ export type Modal =
   | { kind: 'name-style' }
   | { kind: 'server-profile'; serverId: string }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
-  | { kind: 'image'; url: string; filename: string }
+  /** channelId/messageId: mensagem dona da mídia, para a caixa de responder em thread do visualizador. */
+  | { kind: 'image'; url: string; filename: string; channelId?: string; messageId?: string }
   /** Várias mídias seguidas (grade do chat): abre na posição clicada e navega com as setas. */
-  | { kind: 'gallery'; items: { url: string; filename: string; contentType: string }[]; index: number }
+  | { kind: 'gallery'; items: { url: string; filename: string; contentType: string; messageId?: string }[]; index: number; channelId?: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }
   | { kind: 'voice-status'; channelId: string }
   /** Bug/sugestão (sem alvo) ou denúncia de usuário/mensagem. */

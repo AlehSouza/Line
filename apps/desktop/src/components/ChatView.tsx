@@ -819,7 +819,11 @@ function MessageRow({
         {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
-        {gallery ? <MediaGrid attachments={gallery} /> : <AttachmentList attachments={message.attachments} authorId={message.author.id} />}
+        {gallery ? (
+          <MediaGrid attachments={gallery} channelId={message.channelId} />
+        ) : (
+          <AttachmentList attachments={message.attachments} authorId={message.author.id} owner={{ channelId: message.channelId, messageId: message.id }} />
+        )}
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
         )}
@@ -1223,7 +1227,8 @@ const MAX_FILES = 5;
 /** Texto colado maior que isso vira um arquivo .txt (como no Discord). */
 const LONG_PASTE = 2000;
 
-function Composer({ channel, placeholder, ref: handle }: { channel: Channel; placeholder: string; ref?: Ref<ComposerHandle> }) {
+/** Caixa de texto padrão do chat. onSent avisa onde a mensagem foi parar (a thread criada no caso de um rascunho). */
+export function Composer({ channel, placeholder, ref: handle, onSent }: { channel: Channel; placeholder: string; ref?: Ref<ComposerHandle>; onSent?: (targetId: string) => void }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -1399,6 +1404,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
       const target = await resolveTarget();
       actions.addMessage(await api.sendMessage(target, '', [attachment.id], ['audio']));
       if (target !== channel.id) actions.openThread(target);
+      onSent?.(target);
     } catch (e) {
       showError(e);
     } finally {
@@ -1476,6 +1482,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
       );
       actions.addMessage(message);
       if (target !== channel.id) actions.openThread(target);
+      onSent?.(target);
       if (gif) return;
       setText('');
       setPending((list) => {
