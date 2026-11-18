@@ -9,7 +9,7 @@ import { UserTagBadge } from './ServerTag';
 import { useMusic } from '@/lib/music';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
-import { type MouseEvent as ReactMouseEvent, type ReactNode, type SyntheticEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { actions, displayNameIn, dmTitle, useLine } from '@/lib/store';
 import { StyledName } from '@/lib/nameStyle';
@@ -891,14 +891,7 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
     else actions.goHome(state.channelId);
   };
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      title="Voltar para a transmissão"
-      onClick={open}
-      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && open()}
-      className="group absolute top-16 right-4 z-30 aspect-video w-80 cursor-pointer overflow-hidden rounded-xl border border-edge bg-black shadow-2xl max-md:hidden"
-    >
+    <FloatingCorner onClick={open} title="Voltar para a transmissão (arraste para mudar de canto)">
       <Video stream={stream} contain />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-xs font-medium text-white">
         <Icons.Screen size={12} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
@@ -913,6 +906,134 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
       >
         <Icons.X size={14} />
       </button>
+    </FloatingCorner>
+  );
+}
+
+type Corner = 'tl' | 'tr' | 'bl' | 'br';
+const CORNER_KEY = 'line.miniStream.corner';
+const EDGE = 16;
+const TOP = 64; // abaixo do cabeçalho do canal
+
+/** Onde o quadro pode ir sem cobrir a caixa de texto do canal (se houver). */
+function floatBounds(box: HTMLElement) {
+  const parent = box.offsetParent as HTMLElement | null;
+  const pr = parent?.getBoundingClientRect() ?? new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+  let bottom = pr.height - EDGE;
+  const composer = parent?.querySelector<HTMLElement>('textarea[data-composer]');
+  if (composer) {
+    // Sobe até o bloco inteiro da caixa (anexos, respostas, barra de digitando).
+    const block = (composer.closest('form') as HTMLElement | null) ?? composer.parentElement ?? composer;
+    bottom = Math.min(bottom, block.getBoundingClientRect().top - pr.top - EDGE);
+  }
+  const w = box.offsetWidth;
+  const h = box.offsetHeight;
+  return { minX: EDGE, maxX: pr.width - w - EDGE, minY: TOP, maxY: Math.max(TOP, bottom - h) };
+}
+
+/**
+ * Quadro flutuante que se arrasta e encaixa no canto mais perto da área central, sem tampar a
+ * caixa de texto. Um clique sem arrastar chama onClick.
+ */
+function FloatingCorner({ children, onClick, title }: { children: ReactNode; onClick: () => void; title: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [corner, setCorner] = useState<Corner>(() => {
+    try {
+      const c = localStorage.getItem(CORNER_KEY);
+      return c === 'tl' || c === 'tr' || c === 'bl' || c === 'br' ? c : 'tr';
+    } catch {
+      return 'tr';
+    }
+  });
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
+  const moved = useRef(false);
+
+  // Recalcula o canto quando a área muda (janela, caixa de texto crescendo, troca de canal).
+  useLayoutEffect(() => {
+    const box = ref.current;
+    if (!box) return;
+    const place = () => {
+      const b = floatBounds(box);
+      const x = corner.endsWith('l') ? b.minX : b.maxX;
+      const y = corner.startsWith('t') ? b.minY : b.maxY;
+      setPos((p) => (p && p.x === x && p.y === y ? p : { x, y }));
+    };
+    place();
+    const parent = box.offsetParent as HTMLElement | null;
+    const ro = new ResizeObserver(place);
+    if (parent) ro.observe(parent);
+    const composer = parent?.querySelector('textarea[data-composer]');
+    if (composer) ro.observe(composer);
+    const mo = parent ? new MutationObserver(place) : null;
+    if (parent) mo!.observe(parent, { childList: true, subtree: true });
+    return () => {
+      ro.disconnect();
+      mo?.disconnect();
+    };
+  }, [corner]);
+
+  const down = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !pos) return;
+    if ((e.target as HTMLElement).closest('button')) return;
+    moved.current = false;
+    const start = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+    const box = ref.current!;
+    box.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - start.px;
+      const dy = ev.clientY - start.py;
+      if (!moved.current && Math.hypot(dx, dy) < 5) return;
+      moved.current = true;
+      const b = floatBounds(box);
+      setDrag({ x: Math.min(Math.max(start.x + dx, b.minX), b.maxX), y: Math.min(Math.max(start.y + dy, b.minY), b.maxY) });
+    };
+    const up = (ev: PointerEvent) => {
+      box.removeEventListener('pointermove', move);
+      box.removeEventListener('pointerup', up);
+      box.removeEventListener('pointercancel', up);
+      if (!moved.current) return;
+      const b = floatBounds(box);
+      const x = start.x + ev.clientX - start.px;
+      const y = start.y + ev.clientY - start.py;
+      const next: Corner = `${y + box.offsetHeight / 2 < (b.minY + b.maxY + box.offsetHeight) / 2 ? 't' : 'b'}${x + box.offsetWidth / 2 < (b.minX + b.maxX + box.offsetWidth) / 2 ? 'l' : 'r'}`;
+      setDrag(null);
+      setCorner(next);
+      setPos({ x: next.endsWith('l') ? b.minX : b.maxX, y: next.startsWith('t') ? b.minY : b.maxY });
+      try {
+        localStorage.setItem(CORNER_KEY, next);
+      } catch {
+        // só não lembra o canto
+      }
+    };
+    box.addEventListener('pointermove', move);
+    box.addEventListener('pointerup', up);
+    box.addEventListener('pointercancel', up);
+  };
+
+  const at = drag ?? pos;
+  return (
+    <div
+      ref={ref}
+      role="button"
+      tabIndex={0}
+      title={title}
+      onPointerDown={down}
+      onClick={() => {
+        if (moved.current) {
+          moved.current = false;
+          return;
+        }
+        onClick();
+      }}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onClick()}
+      style={at ? { left: at.x, top: at.y } : { right: EDGE, top: TOP, visibility: 'hidden' }}
+      className={cx(
+        'group absolute z-30 aspect-video w-80 cursor-pointer touch-none overflow-hidden rounded-xl border border-edge bg-black shadow-2xl select-none max-md:hidden',
+        drag ? 'cursor-grabbing' : 'transition-[left,top] duration-200 ease-out',
+      )}
+    >
+      {children}
     </div>
   );
 }
