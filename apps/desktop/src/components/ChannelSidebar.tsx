@@ -14,6 +14,9 @@ import { confirmDialog, showError } from './Dialogs';
 import { isChannelMuted, isMutedAnywhere, isServerMuted, mentionCount, muteServer, serverNotify, unmuteServer } from '@/lib/notify';
 import { channelNotifyItems, MentionBadge, MutedIcon } from './Notifications';
 
+/** Furo no canto do ícone do canal onde fica o cadeado (centro do sub-ícone de 11 px). */
+const SUB_ICON_MASK = 'radial-gradient(circle at 16.5px 1.5px, transparent 6.5px, #000 7px)';
+
 export function ChannelSidebar({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
   const me = useLine((s) => s.me);
@@ -183,9 +186,16 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             )}
           >
             <span className="relative shrink-0">
-              <Icon size={18} className={cx('opacity-70', c.nsfw && 'text-amber-400 opacity-90')} />
+              {/* O sub-ícone (cadeado/olho) recorta o ícone com máscara, sem fundo próprio:
+                  assim acompanha o hover e o canal ativo. */}
+              <span
+                className="block"
+                style={c.isPrivate && (c.base || c.type !== 'text' || c.nsfw) ? { mask: SUB_ICON_MASK, WebkitMask: SUB_ICON_MASK } : undefined}
+              >
+                <Icon size={18} className={cx('block opacity-70', c.nsfw && 'text-amber-400 opacity-90')} />
+              </span>
               {c.isPrivate && (c.base || c.type !== 'text' || c.nsfw) && (
-                <span className="absolute -top-1 -right-1 rounded-full bg-side p-px" title={c.base ? 'Escondido: só você e os administradores veem' : 'Canal privado'}>
+                <span className="absolute -top-1 -right-1 rounded-full p-px opacity-70" title={c.base ? 'Escondido: só você e os administradores veem' : 'Canal privado'}>
                   {c.base ? <Icons.EyeOff size={9} /> : <Icons.Lock size={9} />}
                 </span>
               )}
