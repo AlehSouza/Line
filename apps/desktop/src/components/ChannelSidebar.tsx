@@ -200,7 +200,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 </span>
               )}
             </span>
-            <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-9')}>{c.type === 'thread' ? mentionsToText(c.name, c.serverId) : c.name}</span>
+            <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-5')}>{c.type === 'thread' ? mentionsToText(c.name, c.serverId) : c.name}</span>
             {muted && <MutedIcon className={cx(canChannels && 'group-hover:hidden')} />}
             {mentions > 0 && <MentionBadge count={mentions} className={cx('ml-auto', canChannels && 'group-hover:hidden')} />}
           </button>
@@ -215,23 +215,9 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             <button
               title="Editar canal"
               onClick={() => actions.openModal({ kind: 'edit-channel', channelId: c.id })}
-              className="absolute top-1/2 right-6 hidden -translate-y-1/2 text-muted group-hover:block hover:text-fg"
+              className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 text-muted group-hover:block hover:text-fg"
             >
               <Icons.Settings size={14} />
-            </button>
-          )}
-          {canChannels && !c.base && (
-            <button
-              title="Excluir canal"
-              onClick={async () => {
-                if (await confirmDialog({ title: `Excluir #${c.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true })) {
-                  const { api } = await import('@/lib/api');
-                  await api.deleteChannel(c.id).catch(showError);
-                }
-              }}
-              className="absolute top-1/2 right-1.5 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
-            >
-              <Icons.Trash size={14} />
             </button>
           )}
         </div>
@@ -415,7 +401,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                     onClick={() => actions.openModal({ kind: 'edit-category', categoryId: cat.id })}
                     className="hidden text-muted group-hover:block hover:text-fg"
                   >
-                    <Icons.Edit size={13} />
+                    <Icons.Settings size={13} />
                   </button>
                   {!cat.base && (
                     <button
@@ -494,17 +480,6 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
       label: 'Editar canal',
       icon: <Icons.Settings size={15} />,
       onClick: () => actions.openModal({ kind: 'edit-channel', channelId: c.id }),
-    },
-    canChannels && !c.base && {
-      label: 'Excluir canal',
-      icon: <Icons.Trash size={15} />,
-      danger: true,
-      onClick: async () => {
-        if (await confirmDialog({ title: `Excluir #${c.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true })) {
-          const { api } = await import('@/lib/api');
-          await api.deleteChannel(c.id);
-        }
-      },
     },
   ];
 }

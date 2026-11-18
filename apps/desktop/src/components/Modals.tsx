@@ -543,7 +543,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
             variant="danger"
             disabled={busy}
             onClick={async () => {
-              if (!(await confirmDialog({ title: `Excluir ${isText ? '#' : ''}${channel.name}`, message: 'As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true }))) return;
+              if (!(await confirmDialog({ title: `Excluir ${isText ? '#' : ''}${channel.name}`, message: 'Essa ação não poderá ser desfeita, tem certeza? As mensagens do canal serão apagadas.', confirmLabel: 'Excluir', danger: true }))) return;
               run(async () => {
                 await api.deleteChannel(channelId);
                 onClose();
@@ -568,6 +568,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
 
 function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClose: () => void }) {
   const category = useLine((s) => s.categories[categoryId]);
+  const inside = useLine((s) => Object.values(s.channels).filter((c) => c.categoryId === categoryId && c.type !== 'thread').length);
   const [name, setName] = useState(category?.name ?? '');
   const { busy, error, run } = useAction();
   if (!category) return null;
@@ -593,7 +594,7 @@ function EditCategoryModal({ categoryId, onClose }: { categoryId: string; onClos
             variant="danger"
             disabled={busy}
             onClick={async () => {
-              if (!(await confirmDialog({ title: `Excluir a categoria ${category.name}`, message: 'Os canais dela continuam, só ficam sem categoria.', confirmLabel: 'Excluir', danger: true }))) return;
+              if (!(await confirmDialog({ title: `Excluir a categoria ${category.name}`, message: inside > 0 ? `Essa ação não poderá ser desfeita, tem certeza? ${inside === 1 ? 'O canal que ainda está nela também será excluído' : `Os ${inside} canais que ainda estão nela também serão excluídos`}, com todas as mensagens. Para manter, tire ${inside === 1 ? 'ele' : 'eles'} da categoria antes.` : 'Essa ação não poderá ser desfeita, tem certeza?', confirmLabel: 'Excluir', danger: true }))) return;
               run(async () => {
                 await api.deleteCategory(categoryId);
                 actions.removeCategory(categoryId);

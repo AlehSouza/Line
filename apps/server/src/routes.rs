@@ -2086,23 +2086,30 @@ async fn delete_category(State(app): S, Me(me): Me, Path(id): Path<String>) -> R
             "A categoria Notas e Atualizações não pode ser excluída. Dá para escondê-la nas configurações do servidor.",
         ));
     }
-    // Os canais da categoria ficam "soltos" (ON DELETE SET NULL).
-    let affected: Vec<String> = q
+    // Os canais que ainda estão na categoria são excluídos junto com ela.
+    let affected: Vec<Channel> = q
         .channels(&category.server_id)
         .into_iter()
-        .filter(|c| c.category_id.as_deref() == Some(category.id.as_str()))
-        .map(|c| c.id)
+        .filter(|c| c.category_id.as_deref() == Some(category.id.as_str()) && c.base.is_empty())
         .collect();
+    for c in &affected {
+        remove_channel(&app, &q, c, &category.server_id);
+    }
     q.delete_category(&category.id);
     app.to_server(
         &category.server_id,
         "category:delete",
         &json!({ "id": category.id, "serverId": category.server_id }),
     );
-    for id in affected {
-        if let Some(c) = q.channel(&id) {
+    // Canais de Notas e Atualizações nunca são excluídos: se estavam aqui, ficam soltos.
+    for c in q.channels(&category.server_id) {
+        if !c.base.is_empty() && c.category_id.is_none() {
             app.to_channel(&q, &c.id, "channel:update", &c);
         }
+    }
+    drop(q);
+    if !affected.is_empty() {
+        app.sweep_uploads();
     }
     no_content()
 }
@@ -2286,16 +2293,10 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     ok(updated)
 }
 
-async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
-    let q = app.store.q();
-    let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
-    if !channel.base.is_empty() {
-        return Err(bad_request(
-            "Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor.",
-        ));
-    }
+/// Exclui um canal de servidor (com as threads dele) e avisa quem o via.
+fn remove_channel(app: &App, q: &Q, channel: &Channel, server_id: &str) {
     app.drop_voice(
-        &q,
+        q,
         VoiceFilter {
             channel_id: Some(&channel.id),
             ..Default::default()
@@ -2308,7 +2309,7 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         let payload = json!({ "id": c, "serverId": server_id });
         match &audience {
             Some(ids) => app.to_users(ids, "channel:delete", &payload),
-            None => app.to_server(&server_id, "channel:delete", &payload),
+            None => app.to_server(server_id, "channel:delete", &payload),
         }
     }
     if let Some(Some(mid)) = &channel.thread_message_id
@@ -2318,15 +2319,26 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
             // Sem a thread, a mensagem excluída não tem mais por que ficar.
             q.delete_message(&starter.id);
             app.to_channel(
-                &q,
+                q,
                 &starter.channel_id,
                 "message:delete",
                 &json!({ "id": starter.id, "channelId": starter.channel_id }),
             );
         } else {
-            app.to_channel(&q, &starter.channel_id, "message:update", &starter);
+            app.to_channel(q, &starter.channel_id, "message:update", &starter);
         }
     }
+}
+
+async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
+    if !channel.base.is_empty() {
+        return Err(bad_request(
+            "Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor.",
+        ));
+    }
+    remove_channel(&app, &q, &channel, &server_id);
     drop(q);
     app.sweep_uploads();
     no_content()
