@@ -1392,7 +1392,10 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
                 key={p.key}
                 item={p}
                 onRemove={() => remove(p.key)}
-                onToggle={(flag) => patch(p.key, flag === 'spoiler' ? { spoiler: !p.spoiler } : { nsfw: !p.nsfw })}
+                onToggle={(flag) => {
+                  if (flag === 'nsfw' && p.autoNsfw) return toast('Esse anexo foi identificado como +18 e não dá para tirar a marca.');
+                  patch(p.key, flag === 'spoiler' ? { spoiler: !p.spoiler } : { nsfw: !p.nsfw });
+                }}
               />
             ))}
           </div>
@@ -1767,13 +1770,14 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
           <button
             type="button"
             onClick={() => onToggle('nsfw')}
-            title={item.autoNsfw ? 'Marcado automaticamente como +18' : 'Só quem tem 18 anos ou mais vê'}
+            title={item.autoNsfw ? 'Identificado automaticamente como +18 (não dá para tirar)' : 'Só quem tem 18 anos ou mais vê'}
             className={cx(
               'rounded-md border px-1.5 py-0.5 text-[11px] font-semibold transition-colors',
               item.nsfw ? 'border-danger bg-danger/15 text-danger' : 'border-edge text-muted hover:text-fg',
+              item.autoNsfw && 'cursor-not-allowed',
             )}
           >
-            +18
+            {item.autoNsfw && <Icons.Lock size={11} className="mr-0.5 inline" />}+18
           </button>
           {item.checking && <span className="ml-auto text-[10px] text-muted">Verificando…</span>}
         </div>

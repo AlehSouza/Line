@@ -2,7 +2,7 @@
 
 /**
  * Detecção automática de imagens +18, feita no próprio aparelho (nada sai do computador).
- * Usa o NSFWJS com o modelo MobileNetV2 (uns 3,5 MB), carregado só na primeira vez que
+ * Usa o NSFWJS com o modelo MobileNetV2Mid (uns 5,7 MB, o mais preciso dos leves), carregado só na primeira vez que
  * alguém anexa uma imagem ou vídeo.
  */
 
@@ -14,8 +14,8 @@ let model: Promise<Model> | null = null;
 function loadModel(): Promise<Model> {
   if (!model) {
     model = (async () => {
-      const [core, mobilenet] = await Promise.all([import('nsfwjs/core'), import('nsfwjs/models/mobilenet_v2')]);
-      return (await core.load('MobileNetV2', { modelDefinitions: [mobilenet.MobileNetV2Model] })) as unknown as Model;
+      const [core, mobilenet] = await Promise.all([import('nsfwjs/core'), import('nsfwjs/models/mobilenet_v2_mid')]);
+      return (await core.load('MobileNetV2Mid', { modelDefinitions: [mobilenet.MobileNetV2MidModel] })) as unknown as Model;
     })();
     model.catch(() => {
       model = null;
@@ -24,11 +24,33 @@ function loadModel(): Promise<Model> {
   return model;
 }
 
-/** Pornografia + hentai acima disso marca o anexo como +18. */
-const THRESHOLD = 0.6;
+/** Explícito (pornografia/hentai) ou erótico (classe "Sexy"): qualquer um marca +18.
+ * Limites baixos de propósito: melhor marcar demais do que deixar passar. */
+function isExplicit(p: Prediction[]) {
+  const prob = (c: string) => p.find((x) => x.className === c)?.probability ?? 0;
+  const explicit = prob('Porn') + prob('Hentai');
+  const sexy = prob('Sexy');
+  return explicit >= 0.35 || sexy >= 0.5 || explicit + sexy >= 0.6;
+}
 
-const isExplicit = (p: Prediction[]) =>
-  p.filter((x) => x.className === 'Porn' || x.className === 'Hentai').reduce((sum, x) => sum + x.probability, 0) >= THRESHOLD;
+/** A imagem inteira e o quadrado do centro (o corpo costuma estar no meio e o modelo vê 224x224). */
+function crops(source: HTMLImageElement | HTMLCanvasElement): HTMLCanvasElement[] {
+  const w = source instanceof HTMLImageElement ? source.naturalWidth : source.width;
+  const h = source instanceof HTMLImageElement ? source.naturalHeight : source.height;
+  const out: HTMLCanvasElement[] = [];
+  const draw = (sx: number, sy: number, sw: number, sh: number) => {
+    const scale = Math.min(1, 448 / Math.max(sw, sh, 1));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(sw * scale));
+    c.height = Math.max(1, Math.round(sh * scale));
+    c.getContext('2d')?.drawImage(source, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    out.push(c);
+  };
+  draw(0, 0, w, h);
+  const side = Math.min(w, h);
+  if (Math.max(w, h) > side * 1.2) draw((w - side) / 2, (h - side) / 2, side, side);
+  return out;
+}
 
 function imageFrom(url: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -73,7 +95,7 @@ async function check(file: File): Promise<boolean> {
   try {
     const net = await loadModel();
     const inputs = file.type.startsWith('video/') ? await videoFrames(url) : [await imageFrom(url)];
-    for (const input of inputs) if (isExplicit(await net.classify(input))) return true;
+    for (const input of inputs) for (const crop of crops(input)) if (isExplicit(await net.classify(crop))) return true;
     return false;
   } finally {
     URL.revokeObjectURL(url);
