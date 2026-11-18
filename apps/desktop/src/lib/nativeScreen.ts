@@ -190,7 +190,8 @@ export async function startNativeScreen(
     if (session && d.session === session) {
       buffer = buf;
       layout = d;
-    } else pendingBuffers.push({ session: d.session, buf, data: d });
+    } else if (!session) pendingBuffers.push({ session: d.session, buf, data: d });
+    // Memória de outra captura (a nova, na troca de qualidade/janela): não é desta, não guarda.
   };
 
   const onMessage = (e: WebviewMessageEvent) => {
@@ -282,8 +283,10 @@ export async function startNativeScreen(
     wv.removeEventListener('sharedbufferreceived', onBuffer as never);
     wv.removeEventListener('message', onMessage as never);
     if (!keepCapture) stopping = invoke('screen_stop').catch(() => {});
+    // Solta só a própria memória. Antes soltava também as guardadas de outras sessões, e na troca
+    // de qualidade isso apagava a memória da captura nova: tela preta e imagem congelada.
     if (buffer) wv.releaseBuffer?.(buffer);
-    for (const p of pendingBuffers) wv.releaseBuffer?.(p.buf);
+    pendingBuffers.length = 0;
     buffer = null;
     void videoWriter.close().catch(() => {});
     void audioWriter?.close().catch(() => {});
@@ -294,10 +297,10 @@ export async function startNativeScreen(
     session = res.session;
     const i = pendingBuffers.findIndex((p) => p.session === session);
     if (i >= 0) {
-      const [p] = pendingBuffers.splice(i, 1);
-      buffer = p.buf;
-      layout = p.data;
+      buffer = pendingBuffers[i].buf;
+      layout = pendingBuffers[i].data;
     }
+    pendingBuffers.length = 0;
     const size = await Promise.race([
       firstFrame,
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('sem quadros')), 8000)),
