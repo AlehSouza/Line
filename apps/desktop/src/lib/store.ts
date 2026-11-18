@@ -94,6 +94,8 @@ export interface LineState {
   threadId: string | null;
   /** "Responder" numa mensagem sem thread: painel aberto, thread criada só na primeira resposta. */
   threadDraft: Channel | null;
+  /** "Ver conversas" de uma grade: painel lateral com as mídias e a thread de cada uma. */
+  mediaThreads: { channelId: string; messageIds: string[] } | null;
   /** Mensagem para rolar até e destacar (busca). */
   highlight: { channelId: string; messageId: string } | null;
   modal: Modal;
@@ -124,6 +126,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   view: { kind: 'home', dmId: null },
   threadId: null,
   threadDraft: null,
+  mediaThreads: null,
   highlight: null,
   modal: null,
 };
@@ -470,6 +473,7 @@ export const actions = {
     set((s) => ({
       threadDraft: draft,
       threadId: null,
+      mediaThreads: null,
       messages: { ...s.messages, [id]: { items: [], hasMore: false, loaded: true } },
     }));
   },
@@ -478,7 +482,7 @@ export const actions = {
   openThread(threadId: string) {
     const thread = get().channels[threadId];
     if (!thread) return;
-    set({ threadDraft: null });
+    set({ threadDraft: null, mediaThreads: null });
     if (thread.serverId && thread.parentId) {
       const v = get().view;
       if (v.kind !== 'server' || v.channelId !== thread.parentId) actions.goServer(thread.serverId, thread.parentId);
@@ -492,7 +496,12 @@ export const actions = {
   },
 
   closeThread() {
-    set({ threadId: null, threadDraft: null });
+    set({ threadId: null, threadDraft: null, mediaThreads: null });
+  },
+
+  /** Abre o painel "Ver conversas" das mensagens de uma grade. */
+  openMediaThreads(channelId: string, messageIds: string[]) {
+    set({ mediaThreads: { channelId, messageIds }, threadId: null, threadDraft: null });
   },
 
   openModal(modal: Modal) {

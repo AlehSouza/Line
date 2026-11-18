@@ -122,6 +122,54 @@ export function ChatView({ channel }: { channel: Channel }) {
   );
 }
 
+/** "Ver conversas" de uma grade: as mídias uma embaixo da outra, cada uma com a thread dela. */
+export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string; messageIds: string[] }) {
+  const items = useLine((s) => s.messages[channelId]?.items);
+  const messages = useMemo(() => (items ?? []).filter((m) => messageIds.includes(m.id)), [items, messageIds]);
+  const first = messages[0];
+  const author = useLine((s) => (first ? s.users[first.author.id] : undefined)) ?? first?.author;
+  return (
+    <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:border-0">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        <h2 className="font-bold">Conversas</h2>
+        <div className="ml-auto flex gap-1">
+          <button title="Fechar" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+            <Icons.X size={20} />
+          </button>
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto py-3">
+        {first && author && (
+          <div className="flex gap-3 px-4 py-1">
+            <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={36} />
+            <div className="min-w-0 flex-1">
+              <p className="flex items-baseline gap-2">
+                <span className="font-semibold">{author.displayName}</span>
+                <span className="text-xs text-muted">{formatTime(first.createdAt)}</span>
+              </p>
+              {messages.map((m) => {
+                const whole = m.attachments.length > 1 ? wholeThreadOf(m) : undefined;
+                return (
+                  <Fragment key={m.id}>
+                    <AttachmentList
+                      attachments={m.attachments}
+                      compact
+                      authorId={m.author.id}
+                      owner={{ channelId: m.channelId, messageId: m.id }}
+                      below={mediaThreadsBelow(m, true)}
+                    />
+                    {whole && <ThreadChip thread={whole} />}
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 /** Painel lateral com a conversa de uma thread. */
 export function ThreadPanel({ thread }: { thread: Channel }) {
   const composer = useRef<ComposerHandle>(null);
@@ -434,6 +482,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 grouped={grouped}
                 gallery={mediaRuns.leaders.get(m.id)}
                 galleryThreads={mediaRuns.threads.get(m.id)}
+                galleryIds={mediaRuns.runIds.get(m.id)}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
                 canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages || canPinMessages)}
@@ -471,6 +520,8 @@ function mediaRunsOf(items: Message[]) {
   const hidden = new Set<string>();
   /** Todas as threads das mensagens da grade (viram um "Ver conversas" embaixo dela). */
   const threads = new Map<string, ThreadSummary[]>();
+  /** Mensagens de cada grade (para o painel "Ver conversas"). */
+  const runIds = new Map<string, string[]>();
   let i = 0;
   while (i < items.length) {
     const first = items[i]!;
@@ -498,10 +549,11 @@ function mediaRunsOf(items: Message[]) {
       for (const m of run.slice(1)) hidden.add(m.id);
       const all = run.flatMap(threadsOf);
       if (all.length) threads.set(first.id, all);
+      runIds.set(first.id, run.map((m) => m.id));
     }
     i = j;
   }
-  return { leaders, hidden, threads };
+  return { leaders, hidden, threads, runIds };
 }
 
 function DayDivider({ date }: { date: string }) {
@@ -535,6 +587,7 @@ function MessageRow({
   grouped,
   gallery,
   galleryThreads,
+  galleryIds,
   mine,
   canDelete,
   editing,
@@ -555,6 +608,7 @@ function MessageRow({
   /** Primeira de uma sequência de mídias: mostra a grade com todas. */
   gallery?: Attachment[];
   galleryThreads?: ThreadSummary[];
+  galleryIds?: string[];
   mine: boolean;
   canDelete: boolean;
   editing: boolean;
@@ -850,7 +904,7 @@ function MessageRow({
         {!!message.reactions?.length && (
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
-        {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} /> : null : whole && <ThreadChip thread={whole} />}
+        {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} /> : null : whole && <ThreadChip thread={whole} />}
       </div>
 
       {reactAnchor && (
@@ -1124,37 +1178,30 @@ function PollView({ message, poll }: { message: Message; poll: NonNullable<Messa
 }
 
 /** Embaixo de cada mídia, a thread aberta só para ela (se houver). */
-function mediaThreadsBelow(message: Message) {
-  const list = threadsOf(message).filter((t) => t.attachmentId);
-  if (!list.length) return undefined;
+function mediaThreadsBelow(message: Message, withWhole = false) {
+  const all = threadsOf(message);
+  const list = all.filter((t) => t.attachmentId);
+  // No painel "Ver conversas", mensagem com uma mídia só mostra a thread dela embaixo da mídia.
+  const whole = withWhole && message.attachments.length === 1 ? all.find((t) => !t.attachmentId) : undefined;
+  if (!list.length && !whole) return undefined;
   return (a: Attachment) => {
-    const t = list.find((x) => x.attachmentId === a.id);
+    const t = list.find((x) => x.attachmentId === a.id) ?? whole;
     return t ? <ThreadChip thread={t} /> : null;
   };
 }
 
 /** Grade com respostas: avatares de quem respondeu (até 3 e +N) e "Ver conversas". */
-function GalleryThreads({ threads }: { threads: ThreadSummary[] }) {
+function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSummary[]; channelId: string; messageIds: string[] }) {
   const users = useLine((s) => s.users);
+  const open = useLine((s) => s.mediaThreads?.messageIds[0] === messageIds[0]);
   const ids = [...new Set(threads.flatMap((t) => t.participantIds ?? []))];
   const total = Math.max(ids.length, ...threads.map((t) => t.participantCount ?? 0));
   const shown = ids.slice(0, 3);
   const extra = Math.max(0, total - shown.length);
   return (
     <button
-      onClick={(e) => {
-        if (threads.length === 1) return actions.openThread(threads[0]!.id);
-        const r = e.currentTarget.getBoundingClientRect();
-        openMenuAt(
-          { x: r.left, y: r.bottom + 4 },
-          threads.map((t) => ({
-            label: `${t.name} · ${t.messageCount === 1 ? '1 resposta' : `${t.messageCount} respostas`}`,
-            icon: <Icons.Thread size={15} />,
-            onClick: () => actions.openThread(t.id),
-          })),
-        );
-      }}
-      className="group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60"
+      onClick={() => (open ? actions.closeThread() : actions.openMediaThreads(channelId, messageIds))}
+      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
     >
       {shown.length > 0 ? (
         <span className="flex items-center -space-x-1.5">

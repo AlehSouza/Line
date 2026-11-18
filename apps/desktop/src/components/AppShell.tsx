@@ -7,7 +7,7 @@ import { mobile, useMobile } from '@/lib/mobile';
 import { ensureServerLoaded } from '@/lib/session';
 import { actions, firstTextChannel, useLine } from '@/lib/store';
 import { ChannelSidebar } from './ChannelSidebar';
-import { ChatView, ThreadPanel } from './ChatView';
+import { ChatView, MediaThreadsPanel, ThreadPanel } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendRequestsView, FriendsView } from './FriendsView';
@@ -24,6 +24,7 @@ import { EventsChannel } from './Events';
 export function AppShell() {
   const view = useLine((s) => s.view);
   const connection = useLine((s) => s.connection);
+  const mediaThreads = useLine((s) => s.mediaThreads);
   const thread = useLine((s) =>
     s.threadId ? s.channels[s.threadId] : s.threadDraft && s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId ? s.threadDraft : undefined,
   );
@@ -107,6 +108,8 @@ export function AppShell() {
         </main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
+        ) : mediaThreads && channel?.type === 'text' && mediaThreads.channelId === channel.id ? (
+          <MediaThreadsPanel channelId={mediaThreads.channelId} messageIds={mediaThreads.messageIds} />
         ) : (
           view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />
         )}
