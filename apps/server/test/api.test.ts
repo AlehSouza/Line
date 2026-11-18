@@ -250,17 +250,17 @@ describe('Line server', () => {
     expect((await api('POST', `/servers/${srv.data.id}/join`, gui.token)).status).toBe(200);
     expect((await api<unknown[]>('GET', '/servers/discover', gui.token)).data.length).toBe(0);
 
-    // Apagar categoria solta os canais dela
+    // Apagar categoria exclui os canais dela junto
     const cat = await api<{ id: string }>('POST', `/servers/${srv.data.id}/categories`, fabi.token, { name: 'Extra' });
     const ch = await api<{ id: string; categoryId: string }>('POST', `/servers/${srv.data.id}/channels`, fabi.token, {
-      name: 'solto',
+      name: 'dentro',
       categoryId: cat.data.id,
     });
     expect(ch.data.categoryId).toBe(cat.data.id);
     expect((await api('DELETE', `/categories/${cat.data.id}`, fabi.token)).status).toBe(204);
-    const loose = await api<{ categoryId: string | null }>('GET', `/channels/${ch.data.id}`, fabi.token);
-    expect(loose.data.categoryId).toBeNull();
-    const moved = await api<{ position: number; categoryId: string | null }>('PATCH', `/channels/${ch.data.id}`, fabi.token, {
+    expect((await api('GET', `/channels/${ch.data.id}`, fabi.token)).status).toBe(404);
+    const solto = await api<{ id: string }>('POST', `/servers/${srv.data.id}/channels`, fabi.token, { name: 'solto' });
+    const moved = await api<{ position: number; categoryId: string | null }>('PATCH', `/channels/${solto.data.id}`, fabi.token, {
       position: 7,
       categoryId: null,
     });

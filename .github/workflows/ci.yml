@@ -241,6 +241,8 @@ jobs:
           exe=$(ls win/*.exe | grep -v '\.sig$' | head -n1)
           name=$(basename "$exe")
           version="0.1.${{ github.run_number }}"
+          # Sufixo por run: várias runs publicam ao mesmo tempo e não podem disputar o mesmo .tmp.
+          tmp="tmp-${{ github.run_id }}"
           jq -n --arg v "$version" --arg sig "$(cat "$exe.sig")" --arg url "https://$HOST/updates/$name" \
             --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{version: $v, notes: "Build \($v)", pub_date: $date, platforms: {"windows-x86_64": {signature: $sig, url: $url}}}' > latest.json
@@ -278,17 +280,17 @@ jobs:
           for f in "${linux_files[@]}"; do
             scp -i ~/.ssh/deploy "$f" "line-deploy@$HOST:/opt/line/updates/$(basename "$f")"
           done
-          scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.tmp"
+          scp -i ~/.ssh/deploy latest.json "line-deploy@$HOST:/opt/line/updates/latest.json.$tmp"
           # Várias runs podem terminar fora de ordem: só troca o latest.json se esta versão for
           # a mais nova, e a limpeza nunca apaga o instalador para o qual o latest.json aponta.
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" bash -s -- "$version" "$name" <<'REMOTE'
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" bash -s -- "$version" "$name" "$tmp" <<'REMOTE'
           set -e
           cd /opt/line/updates
           cur=$(grep -o '"version": *"[^"]*"' latest.json 2>/dev/null | grep -o '[0-9][0-9.]*' || echo 0)
           if [ "$(printf '%s\n' "$cur" "$1" | sort -V | tail -n1)" = "$1" ]; then
-            mv latest.json.tmp latest.json
+            mv "latest.json.$3" latest.json
           else
-            echo "latest.json já está em $cur (mais nova que $1)."; rm -f latest.json.tmp
+            echo "latest.json já está em $cur (mais nova que $1)."; rm -f "latest.json.$3"
           fi
           keep=$(grep -o 'Line_[0-9.]*_x64-setup\.exe' latest.json | head -n1)
           ls -t *.exe | grep -vxF -e "$keep" -e "$2" | tail -n +3 | xargs -r rm --
@@ -305,13 +307,13 @@ jobs:
           rpm=$(find linux -name '*.rpm' | head -n1)
           appimage=$(find linux -name '*.AppImage' | head -n1)
           ssh -i ~/.ssh/deploy "line-deploy@$HOST" "mkdir -p /opt/line/updates/latest"
-          scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.tmp"
+          scp -i ~/.ssh/deploy "$exe" "line-deploy@$HOST:/opt/line/updates/latest/Line-windows-setup.exe.$tmp"
           dmg=$(find mac -name '*.dmg' | head -n1)
-          scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.tmp"
-          scp -i ~/.ssh/deploy "$rpm" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.rpm.tmp"
-          scp -i ~/.ssh/deploy "$appimage" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.AppImage.tmp"
-          scp -i ~/.ssh/deploy "$dmg" "line-deploy@$HOST:/opt/line/updates/latest/Line-macos.dmg.tmp"
-          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.tmp Line-windows-setup.exe && mv Line-linux.deb.tmp Line-linux.deb && mv Line-linux.rpm.tmp Line-linux.rpm && mv Line-linux.AppImage.tmp Line-linux.AppImage && mv Line-macos.dmg.tmp Line-macos.dmg"
+          scp -i ~/.ssh/deploy "$deb" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.deb.$tmp"
+          scp -i ~/.ssh/deploy "$rpm" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.rpm.$tmp"
+          scp -i ~/.ssh/deploy "$appimage" "line-deploy@$HOST:/opt/line/updates/latest/Line-linux.AppImage.$tmp"
+          scp -i ~/.ssh/deploy "$dmg" "line-deploy@$HOST:/opt/line/updates/latest/Line-macos.dmg.$tmp"
+          ssh -i ~/.ssh/deploy "line-deploy@$HOST" "cd /opt/line/updates/latest && mv Line-windows-setup.exe.$tmp Line-windows-setup.exe && mv Line-linux.deb.$tmp Line-linux.deb && mv Line-linux.rpm.$tmp Line-linux.rpm && mv Line-linux.AppImage.$tmp Line-linux.AppImage && mv Line-macos.dmg.$tmp Line-macos.dmg"
           # Site de apresentação (raiz do useline.tech).
           # Precisa da pasta /opt/line/site criada pelo install.sh; sem ela, só avisa.
           scp -i ~/.ssh/deploy -r apps/site/* "line-deploy@$HOST:/opt/line/site/" \
