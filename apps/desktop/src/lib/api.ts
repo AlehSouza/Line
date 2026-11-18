@@ -8,6 +8,7 @@ import type {
   Friend,
   Member,
   Message,
+  SavedMessage,
   PublicUser,
   Role,
   SelfUser,
@@ -396,6 +397,10 @@ export const api = {
   /** Fixa a mensagem por `minutes` (null = sempre). */
   pinMessage: (id: string, minutes: number | null) => request<Message>('PUT', `/messages/${enc(id)}/pin`, { minutes }),
   unpinMessage: (id: string) => request<Message>('DELETE', `/messages/${enc(id)}/pin`),
+  saved: () => request<SavedMessage[]>('GET', '/users/@me/saved'),
+  savedIds: () => request<string[]>('GET', '/users/@me/saved/ids'),
+  saveMessage: (id: string) => request<unknown>('PUT', `/messages/${enc(id)}/save`),
+  unsaveMessage: (id: string) => request<unknown>('DELETE', `/messages/${enc(id)}/save`),
   pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),

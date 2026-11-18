@@ -30,6 +30,7 @@ import { confirmDialog, showError, toast } from './Dialogs';
 import { UpdateRequired } from './UpdateBanner';
 import { MobileBack, MobileMembersButton } from './Mobile';
 import { isPinned, openPinMenu, PinnedNote, PinsButton } from './Pins';
+import { toggleSaved, useIsSaved } from './Saved';
 import { InboxButton } from './Notifications';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
@@ -561,6 +562,7 @@ function MessageRow({
   const ignored = useIgnored((s) => s.ids.includes(message.author.id));
   const [reveal, setReveal] = useState(false);
   const authorUser = useLine((s) => s.users[message.author.id]) ?? message.author;
+  const isSaved = useIsSaved(message.id);
 
   // Ao entrar em edição (botão, menu ou seta para cima), começa do texto atual.
   useEffect(() => {
@@ -649,6 +651,11 @@ function MessageRow({
             label: isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem',
             icon: <Icons.Pin size={15} />,
             onClick: () => openPinMenu(message, menuAt),
+          },
+          {
+            label: isSaved ? 'Remover dos salvos' : 'Salvar mensagem',
+            icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
+            onClick: () => toggleSaved(message),
           },
           !mine && !message.author.bot && {
             label: 'Denunciar mensagem',
@@ -837,6 +844,13 @@ function MessageRow({
               <Icons.Pin size={16} />
             </button>
           )}
+          <button
+            title={isSaved ? 'Remover dos salvos' : 'Salvar mensagem'}
+            onClick={() => toggleSaved(message)}
+            className={cx('p-1.5 hover:text-fg', isSaved ? 'text-accent' : 'text-muted')}
+          >
+            {isSaved ? <Icons.BookmarkCheck size={16} /> : <Icons.Bookmark size={16} />}
+          </button>
           {!mine && !message.author.bot && (
             <button
               title="Denunciar mensagem"

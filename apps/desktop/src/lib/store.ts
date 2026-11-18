@@ -5,7 +5,7 @@ import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, 
 import { create } from 'zustand';
 
 export type View =
-  | { kind: 'home'; dmId: string | null; page?: 'requests' }
+  | { kind: 'home'; dmId: string | null; page?: 'requests' | 'saved' }
   | { kind: 'server'; serverId: string; channelId: string | null }
   | { kind: 'discover' };
 
@@ -81,6 +81,8 @@ export interface LineState {
   /** Servidor e canal pai de cada canal que eu vejo (inclusive de servidores ainda não abertos). */
   channelInfo: Record<string, { serverId: string | null; parentId: string | null }>;
   notify: NotifySettings;
+  /** Ids das mensagens que salvei (aba Salvos). */
+  saved: Record<string, true>;
   typing: Record<string, Record<string, { name: string; until: number }>>;
   lastChannelByServer: Record<string, string>;
 
@@ -113,6 +115,7 @@ const initial: Omit<LineState, 'serverUrl' | 'token'> = {
   readMarks: {},
   channelInfo: {},
   notify: {},
+  saved: {},
   typing: {},
   lastChannelByServer: {},
   view: { kind: 'home', dmId: null },
@@ -416,6 +419,21 @@ export const actions = {
   /** Página "Solicitações" (abaixo de Amigos). */
   goRequests() {
     set({ view: { kind: 'home', dmId: null, page: 'requests' }, threadId: null });
+  },
+
+  /** Página "Salvos" (abaixo de Solicitações). */
+  goSaved() {
+    set({ view: { kind: 'home', dmId: null, page: 'saved' }, threadId: null });
+  },
+
+  /** Marca/desmarca uma mensagem como salva (só o estado local). */
+  setSaved(messageId: string, saved: boolean) {
+    set((s) => {
+      const next = { ...s.saved };
+      if (saved) next[messageId] = true;
+      else delete next[messageId];
+      return { saved: next };
+    });
   },
 
   goServer(serverId: string, channelId?: string | null) {

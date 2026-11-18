@@ -63,9 +63,9 @@ export function PinnedNote({ message }: { message: Message }) {
 }
 
 /** Spoiler e +18 não mostram miniatura na lista. */
-const hidden = (m: Message) => !!(m.attachments[0]?.spoiler || m.attachments[0]?.nsfw);
+export const hidden = (m: Message) => !!(m.attachments[0]?.spoiler || m.attachments[0]?.nsfw);
 
-function summary(m: Message, serverId?: string | null) {
+export function summary(m: Message, serverId?: string | null) {
   if (m.poll) return `📊 ${m.poll.question}`;
   const text = m.content ? mentionsToText(m.content, serverId) : '';
   if (text) return text;

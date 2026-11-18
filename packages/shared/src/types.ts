@@ -324,6 +324,17 @@ export interface Message {
   deleted?: boolean;
 }
 
+/** Item da aba Salvos. `message` vem null quando ela foi apagada (ou o canal sumiu pra mim). */
+export interface SavedMessage {
+  messageId: string;
+  channelId: string;
+  savedAt: string;
+  message: Message | null;
+  channelName: string | null;
+  serverId: string | null;
+  serverName: string | null;
+}
+
 export interface Reaction {
   emoji: string;
   /** Quem reagiu, na ordem em que reagiu. */

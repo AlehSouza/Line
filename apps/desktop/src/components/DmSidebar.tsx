@@ -65,6 +65,19 @@ export function DmSidebar() {
           )}
         </button>
         <button
+          onClick={() => {
+            actions.goSaved();
+            mobile.showMain();
+          }}
+          className={cx(
+            'flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium',
+            view.kind === 'home' && view.page === 'saved' ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+          )}
+        >
+          <Icons.Bookmark />
+          <span className="flex-1 truncate text-left">Salvos</span>
+        </button>
+        <button
           onClick={() => actions.openModal({ kind: 'report' })}
           className="flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium text-muted hover:bg-hover hover:text-soft"
         >

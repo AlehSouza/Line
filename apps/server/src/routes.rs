@@ -214,7 +214,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             "/api",
             api.merge(crate::admin::router())
                 .merge(crate::profile::router())
-                .merge(crate::notify::router()),
+                .merge(crate::notify::router())
+                .merge(crate::saved::router()),
         )
         .fallback(web_fallback)
         .with_state(app)

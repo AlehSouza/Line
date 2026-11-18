@@ -22,6 +22,7 @@ pub mod perms;
 pub mod presence;
 pub mod profile;
 pub mod routes;
+pub mod saved;
 pub mod store;
 pub mod today;
 pub mod validate;

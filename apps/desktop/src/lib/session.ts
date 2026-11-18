@@ -191,6 +191,7 @@ async function bootstrap() {
   actions.setFriends(friends);
   loadIgnored();
   void loadNotifyState();
+  void loadSaved();
   restoreView();
   openSharedProfile();
   connectSocket();
@@ -230,6 +231,12 @@ export async function ensureServerLoaded(serverId: string, force = false) {
 }
 
 /** Abre o canal (ou a thread) da mensagem e rola até ela. */
+/** Ids das mensagens salvas (para o marcador nas mensagens). */
+async function loadSaved() {
+  const ids = await api.savedIds().catch(() => null);
+  if (ids) useLine.setState({ saved: Object.fromEntries(ids.map((id) => [id, true as const])) });
+}
+
 export async function jumpToMessage(message: Message) {
   const s = useLine.getState();
   const channel = s.channels[message.channelId];
@@ -301,12 +308,16 @@ function connectSocket() {
 
   s.on('message:create', onMessage);
   s.on('message:update', (m) => actions.updateMessage(m));
-  s.on('message:delete', ({ id, channelId }) => actions.deleteMessage(channelId, id));
+  s.on('message:delete', ({ id, channelId }) => {
+    actions.deleteMessage(channelId, id);
+    window.dispatchEvent(new CustomEvent('line:message-deleted', { detail: id }));
+  });
   s.on('typing:start', ({ channelId, userId, displayName }) => actions.setTyping(channelId, userId, displayName));
   s.on('presence:update', ({ userId, presence, customStatus }) => actions.setPresence(userId, presence, customStatus));
   s.on('user:update', (u) => actions.upsertUsers([u]));
   s.on('self:update', (u) => actions.setMe(u));
   s.on('notify:settings', (n) => useLine.setState({ notify: n }));
+  s.on('saved:update', ({ messageId, saved }) => actions.setSaved(messageId, saved));
   s.on('read:ack', ({ channelId, messageId }) => onRemoteAck(channelId, messageId));
   s.on('server:create', (srv) => {
     actions.upsertServer(srv);
@@ -392,6 +403,7 @@ async function resync() {
   actions.setFriends(friends);
   useLine.setState({ loadedServers: {}, messages: {} });
   void loadNotifyState();
+  void loadSaved();
   const { view } = useLine.getState();
   if (view.kind === 'server') await ensureServerLoaded(view.serverId);
 }

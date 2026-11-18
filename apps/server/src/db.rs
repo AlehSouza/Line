@@ -513,6 +513,18 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE attachments ADD COLUMN width INTEGER;
   ALTER TABLE attachments ADD COLUMN height INTEGER;
 "#,
+    // Mensagens salvas (Salvos). Sem FK para a mensagem: se ela for apagada, o salvo continua
+    // e o app mostra "Essa mensagem foi apagada".
+    r#"
+  CREATE TABLE saved_messages (
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id TEXT NOT NULL,
+    channel_id TEXT NOT NULL,
+    saved_at   TEXT NOT NULL,
+    PRIMARY KEY (user_id, message_id)
+  );
+  CREATE INDEX saved_messages_user ON saved_messages(user_id, saved_at);
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

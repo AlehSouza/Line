@@ -39,6 +39,8 @@ export interface ServerToClientEvents {
   'self:update': (user: SelfUser) => void;
   /** Configurações de notificação mudaram (em outro aparelho). */
   'notify:settings': (settings: NotifySettings) => void;
+  /** Mensagem salva/removida dos Salvos (em qualquer aparelho meu). */
+  'saved:update': (p: { messageId: string; saved: boolean }) => void;
   /** Canal marcado como lido (em qualquer aparelho meu). */
   'read:ack': (p: { channelId: string; messageId: string }) => void;
   'server:create': (server: Server) => void;
