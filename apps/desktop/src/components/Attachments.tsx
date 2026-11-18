@@ -360,7 +360,12 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
               if (blocked) return actions.openModal({ kind: 'settings', section: 'account' });
               // Cada mídia lembra a mensagem dona (a grade junta mensagens seguidas) para responder em thread.
               const list = channelId ? useLine.getState().messages[channelId]?.items ?? [] : [];
-              const withOwner = items.map((it, k) => ({ ...it, messageId: list.find((m) => m.attachments.some((x) => x.id === visible[k]!.id))?.id }));
+              const withOwner = items.map((it, k) => {
+                const v = visible[k]!;
+                // Ainda coberta na grade: abre em foco, mas com o mesmo aviso do chat.
+                const sensitive = seen.includes(v.id) ? undefined : v.nsfw && blur ? ('nsfw' as const) : v.spoiler ? ('spoiler' as const) : undefined;
+                return { ...it, sensitive, messageId: list.find((m) => m.attachments.some((x) => x.id === v.id))?.id };
+              });
               actions.openModal({ kind: 'gallery', items: withOwner, index: Math.max(0, visible.indexOf(a)), channelId });
             }}
             onContextMenu={!video && !blocked ? (e) => openContextMenu(e, imageMenuItems(url, a.filename)) : undefined}

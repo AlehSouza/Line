@@ -852,8 +852,9 @@ function ImageViewer({ url, filename, channelId, messageId, onClose }: { url: st
 }
 
 /** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
-function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string }[]; start: number; channelId?: string; onClose: () => void }) {
+function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
   const [i, setI] = useState(start);
+  const [revealed, setRevealed] = useState<number[]>([]);
   const n = items.length;
   const go = (d: number) => setI((x) => (x + d + n) % n);
   useEffect(() => {
@@ -864,12 +865,13 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   const item = items[i]!;
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
-  const media = 'max-h-[calc(100vh-170px)] max-w-full rounded-lg shadow-2xl';
+  const covered = !!item.sensitive && !revealed.includes(i);
+  const media = cx('max-h-[calc(100vh-170px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none blur-2xl brightness-75 select-none');
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
-      <div className="relative flex min-h-0 max-w-full items-center justify-center" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="relative flex min-h-0 max-w-full items-center justify-center overflow-hidden rounded-lg" onMouseDown={(e) => e.stopPropagation()}>
         {video ? (
-          <video key={item.url} src={item.url} controls autoPlay className={media} />
+          <video key={item.url + covered} src={item.url} controls={!covered} autoPlay={!covered} muted={covered} className={media} />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -879,6 +881,30 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
             className={cx(media, 'object-contain')}
             onContextMenu={(e) => openContextMenu(e, imageMenuItems(item.url, item.filename))}
           />
+        )}
+        {covered && (
+          // Mesmo aviso do chat: a mídia fica em foco, mas coberta até a pessoa escolher ver.
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 p-5 text-center text-white">
+            {item.sensitive === 'nsfw' ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
+            <p className="mt-1 text-sm font-bold tracking-wide uppercase">{item.sensitive === 'nsfw' ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
+            <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+              {item.sensitive === 'nsfw'
+                ? 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
+                : 'Quem enviou marcou esta mídia como spoiler.'}
+            </p>
+            <button onClick={() => setRevealed((l) => [...l, i])} className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85">
+              {item.sensitive === 'nsfw' ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
+            </button>
+          </div>
+        )}
+        {!!item.sensitive && !covered && (
+          <button
+            onClick={() => setRevealed((l) => l.filter((x) => x !== i))}
+            title="Borrar de novo"
+            className="absolute top-2 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/90 shadow hover:bg-black/80 hover:text-white"
+          >
+            <Icons.EyeOff size={15} />
+          </button>
         )}
       </div>
       {n > 1 && (
@@ -893,9 +919,11 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
       )}
       <div className="flex items-center gap-3 text-sm text-soft" onMouseDown={(e) => e.stopPropagation()}>
         {n > 1 && <span>{i + 1} de {n}</span>}
-        <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-fg hover:underline">
-          Abrir original
-        </a>
+        {!covered && (
+          <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-fg hover:underline">
+            Abrir original
+          </a>
+        )}
       </div>
       <ViewerComposer channelId={channelId} messageId={item.messageId} onClose={onClose} />
     </div>
