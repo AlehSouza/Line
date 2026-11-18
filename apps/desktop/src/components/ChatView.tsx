@@ -1389,26 +1389,40 @@ function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSum
 }
 
 /** onClick troca o abrir/fechar padrão (o visualizador abre a thread e se fecha). */
+const fetchingUsers = new Set<string>();
+
 export function ThreadChip({ thread, onClick, className }: { thread: ThreadSummary; onClick?: () => void; className?: string }) {
   const open = useLine((s) => s.threadId === thread.id);
   const users = useLine((s) => s.users);
   const n = thread.messageCount;
   const ids = (thread.participantIds ?? []).slice(0, 3);
   const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
+  // Quem respondeu e ainda não está carregado: busca o perfil para já mostrar a foto certa.
+  const missing = ids.filter((id) => !users[id]).join(',');
+  useEffect(() => {
+    for (const id of missing ? missing.split(',') : []) {
+      if (fetchingUsers.has(id)) continue;
+      fetchingUsers.add(id);
+      api.user(id).then((u) => actions.upsertUsers([u]), () => fetchingUsers.delete(id));
+    }
+  }, [missing]);
   return (
     <button
       onClick={onClick ?? (() => (open ? actions.closeThread() : actions.openThread(thread.id)))}
       className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10', className)}
     >
       {ids.length > 0 ? (
-        <span className="flex items-center -space-x-1.5">
-          {ids.map((id) => (
-            <span key={id} className="rounded-full ring-2 ring-main">
-              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} src={users[id]?.avatarUrl} size={22} />
-            </span>
-          ))}
+        <span className="flex items-center -space-x-1">
+          {ids.map((id) =>
+            users[id] ? (
+              <Avatar key={id} name={users[id].displayName} color={users[id].avatarColor} src={users[id].avatarUrl} size={22} />
+            ) : (
+              // Perfil ainda chegando: círculo neutro em vez de um ícone que depois troca.
+              <span key={id} className="size-[22px] shrink-0 rounded-full bg-raise" />
+            ),
+          )}
           {extra > 0 && (
-            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft ring-2 ring-main">
+            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft">
               +{extra}
             </span>
           )}
