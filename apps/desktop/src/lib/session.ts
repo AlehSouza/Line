@@ -20,6 +20,8 @@ type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const STORAGE_URL = 'line.serverUrl';
 const STORAGE_TOKEN = 'line.token';
+/** "Manter sessão" desmarcado: o token fica só no sessionStorage e some ao fechar o app/navegador. */
+const STORAGE_REMEMBER = 'line.remember';
 const IDLE_AFTER_MS = 5 * 60 * 1000;
 
 let socket: LineSocket | null = null;
@@ -46,6 +48,36 @@ const storage = {
   },
 };
 
+/** Lê/salva o token respeitando o "Manter sessão". */
+const tokenStore = {
+  get: () => {
+    try {
+      return sessionStorage.getItem(STORAGE_TOKEN) ?? storage.get(STORAGE_TOKEN);
+    } catch {
+      return storage.get(STORAGE_TOKEN);
+    }
+  },
+  set: (v: string | null) => {
+    const keep = rememberSession();
+    try {
+      if (v === null || keep) sessionStorage.removeItem(STORAGE_TOKEN);
+      else sessionStorage.setItem(STORAGE_TOKEN, v);
+    } catch {
+      /* ignora */
+    }
+    storage.set(STORAGE_TOKEN, keep ? v : null);
+  },
+};
+
+/** Preferência do "Manter sessão" (padrão: marcado). */
+export function rememberSession() {
+  return storage.get(STORAGE_REMEMBER) !== '0';
+}
+
+export function setRememberSession(on: boolean) {
+  storage.set(STORAGE_REMEMBER, on ? null : '0');
+}
+
 export function savedServerUrl() {
   return DEFAULT_SERVER_URL;
 }
@@ -54,8 +86,8 @@ export function savedServerUrl() {
 export async function restoreSession(): Promise<boolean> {
   const serverUrl = savedServerUrl();
   // Login feito em outro servidor (antes do useline.tech) não vale aqui: começa do zero.
-  if ((storage.get(STORAGE_URL) ?? serverUrl) !== serverUrl) storage.set(STORAGE_TOKEN, null);
-  const token = storage.get(STORAGE_TOKEN);
+  if ((storage.get(STORAGE_URL) ?? serverUrl) !== serverUrl) tokenStore.set(null);
+  const token = tokenStore.get();
   useLine.setState({ serverUrl });
   configureApi({ baseUrl: serverUrl, token, onUnauthorized: logout });
   if (!token) return false;
@@ -66,7 +98,7 @@ export async function restoreSession(): Promise<boolean> {
     await bootstrap();
     return true;
   } catch {
-    storage.set(STORAGE_TOKEN, null);
+    tokenStore.set(null);
     configureApi({ token: null });
     return false;
   }
@@ -87,7 +119,7 @@ export async function authenticate(
   configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
   const res = mode === 'login' ? await api.login(username, password) : await api.register(username, password, displayName, email, captchaToken);
   storage.set(STORAGE_URL, url);
-  storage.set(STORAGE_TOKEN, res.token);
+  tokenStore.set(res.token);
   configureApi({ token: res.token });
   useLine.setState({ serverUrl: url, token: res.token });
   actions.setMe(res.user);
@@ -100,7 +132,7 @@ export async function authenticateWithGoogle(serverUrl: string, code: string, de
   configureApi({ baseUrl: url, token: null, onUnauthorized: logout });
   const res = await api.googleFinish(code, desktop);
   storage.set(STORAGE_URL, url);
-  storage.set(STORAGE_TOKEN, res.token);
+  tokenStore.set(res.token);
   configureApi({ token: res.token });
   useLine.setState({ serverUrl: url, token: res.token });
   actions.setMe(res.user);
@@ -109,7 +141,7 @@ export async function authenticateWithGoogle(serverUrl: string, code: string, de
 
 /** Troca o token da sessão (ex.: depois de mudar a senha, que derruba as sessões antigas) e reconecta. */
 export function replaceToken(token: string) {
-  storage.set(STORAGE_TOKEN, token);
+  tokenStore.set(token);
   configureApi({ token });
   useLine.setState({ token });
   if (socket) connectSocket();
@@ -130,7 +162,7 @@ export function logout() {
   socket = null;
   if (typingTicker) clearInterval(typingTicker);
   typingTicker = null;
-  storage.set(STORAGE_TOKEN, null);
+  tokenStore.set(null);
   configureApi({ token: null });
   actions.reset();
 }

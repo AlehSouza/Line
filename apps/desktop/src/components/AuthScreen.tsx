@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, configureApi } from '@/lib/api';
-import { authenticate, authenticateWithGoogle, savedServerUrl } from '@/lib/session';
+import { authenticate, authenticateWithGoogle, rememberSession, savedServerUrl, setRememberSession } from '@/lib/session';
 import { Eye, EyeOff } from 'lucide-react';
-import { Avatar, Button, ErrorText, Field, Input, Logo } from './ui';
+import { Avatar, Button, Checkbox, ErrorText, Field, Input, Logo } from './ui';
 import { toast } from './Dialogs';
 
 export function AuthScreen() {
@@ -18,6 +18,7 @@ export function AuthScreen() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(rememberSession);
   const [confirm, setConfirm] = useState('');
   const [siteKey, setSiteKey] = useState<string | null>(null);
   const [captcha, setCaptcha] = useState('');
@@ -239,12 +240,27 @@ export function AuthScreen() {
               onChange={setPassword}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
-            {mode === 'login' && resetEnabled && (
-              <button type="button" className="mt-1.5 text-xs font-semibold text-accent hover:underline" onClick={() => go('forgot')}>
+          </Field>
+        )}
+
+        {mode === 'login' && (
+          <div className="-mt-1 flex items-center justify-between gap-3">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-sm text-soft">
+              <Checkbox
+                checked={remember}
+                onChange={(on) => {
+                  setRemember(on);
+                  setRememberSession(on);
+                }}
+              />
+              Manter sessão
+            </label>
+            {resetEnabled && (
+              <button type="button" className="text-xs font-semibold text-accent hover:underline" onClick={() => go('forgot')}>
                 Esqueci minha senha
               </button>
             )}
-          </Field>
+          </div>
         )}
 
         {(mode === 'register' || mode === 'reset') && (
