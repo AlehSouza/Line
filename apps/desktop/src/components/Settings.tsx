@@ -24,6 +24,7 @@ import {
   type ThemeId,
 } from '@/lib/theme';
 import { ColorPicker } from '@/components/ColorPicker';
+import { Dices, RotateCcw } from 'lucide-react';
 
 type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'notifications' | 'app' | 'blocked' | 'games' | 'activity';
 
@@ -850,6 +851,11 @@ function AppearanceSection() {
   );
 }
 
+/** Cor hexadecimal aleatória (#rrggbb). */
+function randomHex() {
+  return '#' + Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0');
+}
+
 /** Editor do tema Personalizado: cada troca já vale no app inteiro (prévia ao vivo). */
 function CustomThemeEditor({ colors, onChange }: { colors: CustomColors; onChange: (c: CustomColors) => void }) {
   const c = colors;
@@ -910,6 +916,27 @@ function CustomThemeEditor({ colors, onChange }: { colors: CustomColors; onChang
               <div className="truncate text-xs text-muted">{f.hint}</div>
             </div>
             <span className="font-mono text-xs text-soft uppercase">{c[f.key]}</span>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                title="Aleatório"
+                aria-label={`Cor aleatória: ${f.label}`}
+                onClick={() => onChange({ ...c, [f.key]: randomHex() })}
+                className="grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-main hover:text-fg"
+              >
+                <Dices size={15} />
+              </button>
+              <button
+                type="button"
+                title="Padrão"
+                aria-label={`Cor padrão: ${f.label}`}
+                disabled={c[f.key] === DEFAULT_CUSTOM[f.key]}
+                onClick={() => onChange({ ...c, [f.key]: DEFAULT_CUSTOM[f.key] })}
+                className="grid h-7 w-7 place-items-center rounded-md text-muted hover:bg-main hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+              >
+                <RotateCcw size={15} />
+              </button>
+            </div>
           </div>
         ))}
       </div>
