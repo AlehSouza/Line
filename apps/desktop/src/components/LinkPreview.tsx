@@ -63,7 +63,7 @@ function socialEmbed(raw: string): Social | null {
     if (!id || !/^\d{8,25}$/.test(id)) return null;
     return {
       kind: 'tiktok',
-      src: `${TIKTOK_BRIDGE}/${id}`,
+      src: `${TIKTOK_BRIDGE}/${id}${seg[0]?.startsWith('@') ? `?u=${encodeURIComponent(seg[0].slice(1))}` : ''}`,
       label: 'TikTok',
       width: 325,
       height: 740,

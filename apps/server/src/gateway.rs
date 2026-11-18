@@ -531,7 +531,10 @@ async fn voice_status(
         return;
     };
     let q = app.store.q();
-    if !has(q.channel_permissions(&me, channel_id), perms::SET_VOICE_STATUS) {
+    if !has(
+        q.channel_permissions(&me, channel_id),
+        perms::SET_VOICE_STATUS,
+    ) {
         return;
     }
     let set = lock(&app.voice).set_status(&me, channel_id, status);

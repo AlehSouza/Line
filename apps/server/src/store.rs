@@ -14,9 +14,9 @@ use std::sync::{Mutex, MutexGuard};
 
 pub mod activity;
 pub mod admin;
+pub mod events;
 pub mod notify;
 pub mod profile;
-pub mod events;
 pub mod sounds;
 pub use admin::{BAN_FOREVER, NewReport};
 
@@ -116,9 +116,17 @@ const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.av
 /// Canais base: (tipo, nome, descrição), na ordem em que aparecem.
 pub const BASE_CHANNELS: [(&str, &str, &str); 4] = [
     ("rules", "Regras", "As regras do servidor."),
-    ("announcements", "Anúncios", "Novidades e avisos importantes."),
+    (
+        "announcements",
+        "Anúncios",
+        "Novidades e avisos importantes.",
+    ),
     ("events", "Eventos", "O que vem por aí no servidor."),
-    ("activity", "Atividades", "Quem está jogando agora e o que rolou nas últimas 24 h."),
+    (
+        "activity",
+        "Atividades",
+        "Quem está jogando agora e o que rolou nas últimas 24 h.",
+    ),
 ];
 
 const SERVER_SELECT: &str =
@@ -1267,15 +1275,27 @@ impl Q<'_> {
     /// administradores enxergam (vira privado sem ninguém na lista).
     pub fn set_base_visible(&self, table: &str, id: &str, visible: bool) {
         let (main, cond, key, links) = match table {
-            "category" => ("categories", "base = 1", "category_id", ["category_roles", "category_roles"]),
-            _ => ("channels", "base != ''", "channel_id", ["channel_recipients", "channel_roles"]),
+            "category" => (
+                "categories",
+                "base = 1",
+                "category_id",
+                ["category_roles", "category_roles"],
+            ),
+            _ => (
+                "channels",
+                "base != ''",
+                "channel_id",
+                ["channel_recipients", "channel_roles"],
+            ),
         };
         ok(self.c.execute(
             &format!("UPDATE {main} SET is_private = ? WHERE id = ? AND {cond}"),
             params![(!visible) as i64, id],
         ));
         for t in links {
-            ok(self.c.execute(&format!("DELETE FROM {t} WHERE {key} = ?"), [id]));
+            ok(self
+                .c
+                .execute(&format!("DELETE FROM {t} WHERE {key} = ?"), [id]));
         }
     }
 
@@ -1552,7 +1572,9 @@ impl Q<'_> {
             .optional());
         match row {
             None => false,
-            Some((None, _, _, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((None, _, _, _, _, _)) => {
+                self.recipient_ids(channel_id).iter().any(|r| r == user_id)
+            }
             Some((Some(server_id), root, is_private, kind, category_id, base)) => {
                 if !self.is_member(&server_id, user_id) {
                     return false;

@@ -261,7 +261,9 @@ fn decode(s: &str) -> String {
                 "gt" => Some('>'),
                 "nbsp" => Some(' '),
                 _ => {
-                    let n = if let Some(h) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
+                    let n = if let Some(h) =
+                        name.strip_prefix("#x").or_else(|| name.strip_prefix("#X"))
+                    {
                         u32::from_str_radix(h, 16).ok()
                     } else if let Some(d) = name.strip_prefix('#') {
                         d.parse().ok()

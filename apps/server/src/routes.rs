@@ -248,20 +248,37 @@ async fn auth_config(State(app): S) -> Res {
 /// Página-ponte do player oficial do TikTok. O TikTok recusa o player quando a página que o
 /// embute não é um site (app desktop carrega de um endereço local), então o app embute esta
 /// página do useline.tech, que embute o TikTok. Nada do vídeo passa pelo servidor.
-async fn tiktok_page(Path(id): Path<String>) -> Response {
+async fn tiktok_page(Path(id): Path<String>, Query(q): Query<HashMap<String, String>>) -> Response {
     if !(8..=25).contains(&id.len()) || !id.chars().all(|c| c.is_ascii_digit()) {
         return StatusCode::NOT_FOUND.into_response();
     }
+    // Usuário só entra no link "cite" do embed; só letras, números, ponto e _.
+    let user: String = q
+        .get("u")
+        .map(|u| {
+            u.chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '_')
+                .take(40)
+                .collect()
+        })
+        .unwrap_or_default();
+    let cite = if user.is_empty() {
+        format!("https://www.tiktok.com/video/{id}")
+    } else {
+        format!("https://www.tiktok.com/@{user}/video/{id}")
+    };
+    // Embed oficial do TikTok (blockquote + embed.js): o script deles gera o player autenticado.
     let html = format!(
         r##"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<style>html,body{{margin:0;height:100%;background:#000;overflow:hidden}}iframe{{border:0;width:100%;height:100%;display:block}}</style>
-</head><body><iframe src="https://www.tiktok.com/embed/v2/{id}?lang=pt-BR" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe></body></html>"##
+<style>html,body{{margin:0;background:#000;overflow:hidden}}blockquote{{margin:0!important}}</style>
+</head><body><blockquote class="tiktok-embed" cite="{cite}" data-video-id="{id}" style="max-width:605px;min-width:325px"><section></section></blockquote>
+<script async src="https://www.tiktok.com/embed.js"></script></body></html>"##
     );
     (
         [
             (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+            (axum::http::header::CACHE_CONTROL, "no-store"),
         ],
         html,
     )
@@ -1374,7 +1391,9 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let p = body::<validate::UpdateServer>(&b)?.check()?;
     if let Some(show) = p.show_owner_badge {
         if q.server(&id).is_none_or(|s| s.owner_id != me) {
-            return Err(forbidden("Só o dono do servidor pode mudar o emblema de dono"));
+            return Err(forbidden(
+                "Só o dono do servidor pode mudar o emblema de dono",
+            ));
         }
         q.set_show_owner_badge(&id, show);
     }
@@ -1849,10 +1868,18 @@ async fn set_notes(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) 
         .collect();
     let members = q.member_ids(&id);
     let see_cat = |q: &Q| -> Vec<String> {
-        members.iter().filter(|u| q.can_see_category(u, &cat.id)).cloned().collect()
+        members
+            .iter()
+            .filter(|u| q.can_see_category(u, &cat.id))
+            .cloned()
+            .collect()
     };
     let see = |q: &Q, cid: &str| -> Vec<String> {
-        members.iter().filter(|u| q.can_access(u, cid)).cloned().collect()
+        members
+            .iter()
+            .filter(|u| q.can_access(u, cid))
+            .cloned()
+            .collect()
     };
     let before_cat = see_cat(&q);
     let before: Vec<Vec<String>> = chans.iter().map(|c| see(&q, c)).collect();
@@ -1870,17 +1897,41 @@ async fn set_notes(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) 
     }
     let fresh = q.category(&cat.id).ok_or_else(|| not_found("Categoria"))?;
     let after_cat = see_cat(&q);
-    let lost: Vec<String> = before_cat.iter().filter(|u| !after_cat.contains(u)).cloned().collect();
-    let gained: Vec<String> = after_cat.iter().filter(|u| !before_cat.contains(u)).cloned().collect();
-    app.to_users(&lost, "category:delete", &json!({ "id": cat.id, "serverId": id }));
+    let lost: Vec<String> = before_cat
+        .iter()
+        .filter(|u| !after_cat.contains(u))
+        .cloned()
+        .collect();
+    let gained: Vec<String> = after_cat
+        .iter()
+        .filter(|u| !before_cat.contains(u))
+        .cloned()
+        .collect();
+    app.to_users(
+        &lost,
+        "category:delete",
+        &json!({ "id": cat.id, "serverId": id }),
+    );
     app.to_users(&gained, "category:create", &fresh);
     app.to_users(&after_cat, "category:update", &fresh);
     for (cid, before) in chans.iter().zip(before) {
         let Some(c) = q.channel(cid) else { continue };
         let after = see(&q, cid);
-        let lost: Vec<String> = before.iter().filter(|u| !after.contains(u)).cloned().collect();
-        let gained: Vec<String> = after.iter().filter(|u| !before.contains(u)).cloned().collect();
-        app.to_users(&lost, "channel:delete", &json!({ "id": cid, "serverId": id }));
+        let lost: Vec<String> = before
+            .iter()
+            .filter(|u| !after.contains(u))
+            .cloned()
+            .collect();
+        let gained: Vec<String> = after
+            .iter()
+            .filter(|u| !before.contains(u))
+            .cloned()
+            .collect();
+        app.to_users(
+            &lost,
+            "channel:delete",
+            &json!({ "id": cid, "serverId": id }),
+        );
         app.to_users(&gained, "channel:create", &c);
         app.to_users(&after, "channel:update", &c);
     }
@@ -2023,7 +2074,9 @@ async fn delete_category(State(app): S, Me(me): Me, Path(id): Path<String>) -> R
     let category = q.category(&id).ok_or_else(|| not_found("Categoria"))?;
     require_perm(&q, &category.server_id, &me, perms::MANAGE_CHANNELS)?;
     if category.base {
-        return Err(bad_request("A categoria Notas e Atualizações não pode ser excluída. Dá para escondê-la nas configurações do servidor."));
+        return Err(bad_request(
+            "A categoria Notas e Atualizações não pode ser excluída. Dá para escondê-la nas configurações do servidor.",
+        ));
     }
     // Os canais da categoria ficam "soltos" (ON DELETE SET NULL).
     let affected: Vec<String> = q
@@ -2224,7 +2277,9 @@ async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
     let q = app.store.q();
     let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
     if !channel.base.is_empty() {
-        return Err(bad_request("Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor."));
+        return Err(bad_request(
+            "Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor.",
+        ));
     }
     app.drop_voice(
         &q,
@@ -2692,7 +2747,10 @@ async fn add_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String
     require_access(&q, &message.channel_id, &me)?;
     // Sem "Adicionar reações" só dá para entrar numa reação que já existe.
     if !q.has_reaction_emoji(&id, &emoji)
-        && !has(q.channel_permissions(&me, &message.channel_id), perms::ADD_REACTIONS)
+        && !has(
+            q.channel_permissions(&me, &message.channel_id),
+            perms::ADD_REACTIONS,
+        )
     {
         return Err(forbidden("Você não tem permissão para adicionar reações"));
     }
@@ -3563,7 +3621,9 @@ fn event_input(q: &Q, server_id: &str, b: &Bytes) -> ApiResult<crate::store::eve
     let e: EventBody = serde_json::from_slice(b).map_err(|_| validation("Dados inválidos"))?;
     let title = e.title.trim().to_string();
     if title.is_empty() || title.chars().count() > 100 {
-        return Err(validation("O nome do evento precisa ter de 1 a 100 caracteres"));
+        return Err(validation(
+            "O nome do evento precisa ter de 1 a 100 caracteres",
+        ));
     }
     let description = e.description.trim().to_string();
     if description.chars().count() > 1000 {
@@ -3587,8 +3647,7 @@ fn event_input(q: &Q, server_id: &str, b: &Bytes) -> ApiResult<crate::store::eve
     }
     let voice_channel_id = e.voice_channel_id.filter(|v| !v.is_empty());
     if let Some(v) = &voice_channel_id
-        && q
-            .channel(v)
+        && q.channel(v)
             .is_none_or(|c| c.kind != "voice" || c.server_id.as_deref() != Some(server_id))
     {
         return Err(validation("Canal de voz inválido"));
@@ -3646,7 +3705,12 @@ fn editable_event(q: &Q, id: &str, me: &str) -> ApiResult<crate::store::events::
         .filter(|e| q.can_access(me, &e.channel_id))
         .ok_or_else(|| not_found("Evento"))?;
     let mine = event.creator_id == me && can_post_events(q, &event.channel_id, me);
-    if !mine && !has(q.channel_permissions(me, &event.channel_id), perms::MANAGE_MESSAGES) {
+    if !mine
+        && !has(
+            q.channel_permissions(me, &event.channel_id),
+            perms::MANAGE_MESSAGES,
+        )
+    {
         return Err(forbidden("Só quem criou o evento pode mudar ele"));
     }
     Ok(event)

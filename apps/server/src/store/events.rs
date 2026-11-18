@@ -98,7 +98,13 @@ impl Q<'_> {
         list.into_iter().map(|e| self.with_rsvps(e)).collect()
     }
 
-    pub fn create_event(&self, server_id: &str, channel_id: &str, creator: &str, e: &EventInput) -> Event {
+    pub fn create_event(
+        &self,
+        server_id: &str,
+        channel_id: &str,
+        creator: &str,
+        e: &EventInput,
+    ) -> Event {
         let id = new_id();
         let now = now_iso();
         ok(self.c.execute(
