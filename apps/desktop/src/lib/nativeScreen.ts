@@ -68,6 +68,8 @@ export interface NativeScreen {
   height: number;
   /** keepCapture: só solta esta captura, sem parar a do Rust (que já trocou para outra fonte). */
   stop: (keepCapture?: boolean) => void;
+  /** Desde quando a imagem está em "Transmissão pausada" (janela minimizada ou fechada), ou null. */
+  pausedSince: () => number | null;
 }
 
 /**
@@ -80,11 +82,27 @@ function frameTimeline() {
   let offset: number | null = null;
   return (ts: number) => {
     if (offset === null) offset = frameClock + 20_000 - ts;
-    const out = ts + offset;
-    if (out > frameClock) frameClock = out;
+    let out = ts + offset;
+    // Nunca volta no tempo (ex.: o primeiro quadro real depois dos de "pausada", que andam pelo
+    // relógio da página): empurra este e os próximos para depois do último enviado.
+    if (out <= frameClock) {
+      offset += frameClock + 1 - out;
+      out = frameClock + 1;
+    }
+    frameClock = out;
     return out;
   };
 }
+
+/** Marca um quadro gerado na página (pausa, redimensionado) no mesmo relógio, sempre para frente. */
+function nextClock(ts: number) {
+  const out = Math.max(Math.round(ts), frameClock + 1);
+  frameClock = out;
+  return out;
+}
+
+/** Quanto tempo um tamanho novo de janela precisa durar até a transmissão mudar de tamanho. */
+const RESIZE_SETTLE_MS = 600;
 
 /** Começa a capturar a fonte e só resolve quando chega o primeiro quadro. */
 export async function startNativeScreen(
@@ -111,33 +129,56 @@ export async function startNativeScreen(
   // que esticavam o quadro de quem assiste. No lugar, manda "Transmissão pausada" no tamanho de antes.
   let last: { w: number; h: number; ts: number; at: number } | null = null;
   let pauseTimer: ReturnType<typeof setInterval> | null = null;
+  let resizeSince: number | null = null;
+  let fitCanvas: OffscreenCanvas | null = null;
+  let fitCtx: OffscreenCanvasRenderingContext2D | null = null;
+  const fitFrame = (src: VideoFrame, w: number, h: number, timestamp: number) => {
+    if (!fitCanvas || fitCanvas.width !== w || fitCanvas.height !== h) {
+      fitCanvas = new OffscreenCanvas(w, h);
+      fitCtx = fitCanvas.getContext('2d', { alpha: false });
+    }
+    const ctx = fitCtx!;
+    const scale = Math.min(w / src.displayWidth, h / src.displayHeight);
+    const dw = Math.round(src.displayWidth * scale);
+    const dh = Math.round(src.displayHeight * scale);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(src, Math.round((w - dw) / 2), Math.round((h - dh) / 2), dw, dh);
+    return new VideoFrame(fitCanvas, { timestamp });
+  };
+  let pausedCanvas: OffscreenCanvas | null = null;
   const writePaused = () => {
     if (!last || stopped) return;
-    const c = new OffscreenCanvas(last.w, last.h);
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
-    ctx.fillStyle = '#111114';
-    ctx.fillRect(0, 0, last.w, last.h);
-    ctx.fillStyle = '#e4e4e7';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `600 ${Math.round(last.h / 18)}px Geist, system-ui, sans-serif`;
-    ctx.fillText('Transmissão pausada', last.w / 2, last.h / 2);
-    // Mesmo relógio dos quadros do Rust (microssegundos desde o início), sempre andando para frente.
-    const timestamp = Math.round(last.ts + (performance.now() - last.at) * 1000);
-    if (timestamp > frameClock) frameClock = timestamp;
-    const frame = new VideoFrame(c, { timestamp });
+    if (!pausedCanvas || pausedCanvas.width !== last.w || pausedCanvas.height !== last.h) {
+      pausedCanvas = new OffscreenCanvas(last.w, last.h);
+      const ctx = pausedCanvas.getContext('2d');
+      if (!ctx) return;
+      ctx.fillStyle = '#111114';
+      ctx.fillRect(0, 0, last.w, last.h);
+      ctx.fillStyle = '#e4e4e7';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `600 ${Math.round(last.h / 18)}px Geist, system-ui, sans-serif`;
+      ctx.fillText('Transmissão pausada', last.w / 2, last.h / 2);
+    }
+    // Mesmo relógio dos quadros do Rust, sempre andando para frente.
+    const timestamp = nextClock(last.ts + (performance.now() - last.at) * 1000);
+    const frame = new VideoFrame(pausedCanvas, { timestamp });
     if ((videoWriter.desiredSize ?? 1) <= 0) frame.close();
     else void videoWriter.write(frame).catch(() => frame.close());
   };
+  let pausedAt: number | null = null;
   const pause = () => {
     if (pauseTimer || !last) return;
+    pausedAt = performance.now();
     writePaused();
-    pauseTimer = setInterval(writePaused, 500);
+    // 10 por segundo: com poucos quadros o WebRTC baixava a taxa e a volta do jogo ficava borrada e engasgando.
+    pauseTimer = setInterval(writePaused, 100);
   };
   const resume = () => {
     if (pauseTimer) clearInterval(pauseTimer);
     pauseTimer = null;
+    pausedAt = null;
   };
 
   // A memória compartilhada pode chegar antes da resposta do comando: guarda e confere depois.
@@ -177,15 +218,30 @@ export async function startNativeScreen(
       try {
         const ts = timeline(m.ts);
         // Pede em microssegundos; o construtor copia os pixels, então o espaço já pode ser reusado.
-        const frame = new VideoFrame(new Uint8Array(buffer, layout.header + m.slot * layout.slotSize, m.w * m.h * 4), {
+        let frame = new VideoFrame(new Uint8Array(buffer, layout.header + m.slot * layout.slotSize, m.w * m.h * 4), {
           format: 'BGRX',
           codedWidth: m.w,
           codedHeight: m.h,
           timestamp: ts,
         });
         flags[m.slot] = 0;
-        last = { w: m.w, h: m.h, ts, at: performance.now() };
-        first?.({ w: m.w, h: m.h });
+        // Janela mudando de tamanho (alt+tab num jogo, trocar de modo de tela): cada tamanho novo
+        // reinicia o codificador e trava a imagem de quem assiste. Enquanto o tamanho não firma,
+        // encaixa o quadro no tamanho de antes.
+        let { w, h } = { w: m.w, h: m.h };
+        if (last && (w !== last.w || h !== last.h)) {
+          const now = performance.now();
+          resizeSince ??= now;
+          if (now - resizeSince < RESIZE_SETTLE_MS) {
+            const fitted = fitFrame(frame, last.w, last.h, ts);
+            frame.close();
+            frame = fitted;
+            w = last.w;
+            h = last.h;
+          } else resizeSince = null;
+        } else resizeSince = null;
+        last = { w, h, ts, at: performance.now() };
+        first?.({ w, h });
         first = null;
         // Encoder atrasado: descarta em vez de acumular (latência baixa vale mais que todo quadro).
         if ((videoWriter.desiredSize ?? 1) <= 0) frame.close();
@@ -208,6 +264,8 @@ export async function startNativeScreen(
       if ((audioWriter.desiredSize ?? 1) <= 0) data.close();
       else void audioWriter.write(data).catch(() => data.close());
     } else if (m.lineScreen === 'ended') {
+      // Janela fechada: segura a imagem em "pausada" enquanto quem chamou decide (ex.: seguir o jogo).
+      pause();
       opts.onEnded();
     }
   };
@@ -245,7 +303,7 @@ export async function startNativeScreen(
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('sem quadros')), 8000)),
     ]);
     const stream = new MediaStream(audio ? [video, audio] : [video]);
-    return { stream, width: size.w, height: size.h, stop: cleanup };
+    return { stream, width: size.w, height: size.h, stop: cleanup, pausedSince: () => pausedAt };
   } catch (err) {
     cleanup();
     // Espera o Rust soltar a captura: quem chamou pode tentar outra fonte logo em seguida.
@@ -391,7 +449,7 @@ async function startSocketScreen(
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('sem quadros')), 8000)),
     ]);
     const stream = new MediaStream(audioTrack ? [video, audioTrack] : [video]);
-    return { stream, width: size.w, height: size.h, stop: cleanup };
+    return { stream, width: size.w, height: size.h, stop: cleanup, pausedSince: () => null };
   } catch (err) {
     cleanup();
     await stopping;

@@ -205,8 +205,8 @@ fn detect() -> Option<Game> {
     let fg = unsafe { GetForegroundWindow() };
     let mut exes: HashMap<u32, Option<String>> = HashMap::new();
 
-    // (prioridade, janela em primeiro plano, hwnd, nome, executável)
-    let mut best: Option<(u8, bool, HWND, String, String)> = None;
+    // (prioridade, janela em primeiro plano, não minimizada, hwnd, nome, executável)
+    let mut best: Option<(u8, bool, bool, HWND, String, String)> = None;
     for w in &list {
         if w.pid == me {
             continue;
@@ -232,18 +232,20 @@ fn detect() -> Option<Game> {
         };
         let Some((prio, name)) = found else { continue };
         let front = w.hwnd == fg;
+        // Jogos com duas janelas (cliente e partida do League): a que está aberta vale mais que a minimizada.
+        let shown = !unsafe { IsIconic(w.hwnd) }.as_bool();
         let better = match &best {
             None => true,
-            Some((p, f, ..)) => (prio, front) > (*p, *f),
+            Some((p, f, v, ..)) => (prio, front, shown) > (*p, *f, *v),
         };
         if better {
-            best = Some((prio, front, w.hwnd, name, path));
+            best = Some((prio, front, shown, w.hwnd, name, path));
         }
     }
 
     let mut sticky = STICKY.lock().ok()?;
     let (hwnd, name, path) = match best {
-        Some((prio, _, hwnd, name, path)) => {
+        Some((prio, _, _, hwnd, name, path)) => {
             if prio == 1 {
                 *sticky = Some((hwnd.0 as usize, name.clone(), path.clone()));
             }

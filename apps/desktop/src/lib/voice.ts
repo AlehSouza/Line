@@ -8,6 +8,7 @@ import { api } from './api';
 import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
 import { actions, channelPermsOf, useLine } from './store';
+import { toast } from '@/components/Dialogs';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -1018,10 +1019,19 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
   // adicionar a tela na conexão, sem tempo para perguntar.
   await detectHardwareCodecs(resolution, fps);
   const ended = () => {
-    if (gen === screenGen) stopScreen();
+    if (gen !== screenGen || !getV().screen) return;
+    // Jogo com outra janela (cliente/partida do League): segue para ela em vez de encerrar.
+    if (followGame && source?.id.startsWith('window:')) {
+      void followAfterClose(gen, source);
+      return;
+    }
+    stopScreen();
+    // Alt+F4 na janela transmitida (ou fechou o jogo): avisa em vez de só sumir.
+    toast(source?.id.startsWith('window:') ? 'A janela transmitida foi fechada. A transmissão terminou.' : 'A transmissão terminou.');
   };
   let stream: MediaStream;
   let stop: ((keepCapture?: boolean) => void) | null = null;
+  let pausedSince: (() => number | null) | null = null;
   let size: { width: number; height: number } | null = null;
   if (source && hasNativeScreen()) {
     const native = await startNativeScreen(source.id, {
@@ -1032,6 +1042,7 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
     });
     stream = native.stream;
     stop = native.stop;
+    pausedSince = native.pausedSince;
     size = { width: native.width, height: native.height };
   } else {
     const r = RESOLUTIONS[resolution];
@@ -1054,7 +1065,7 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
   // 60fps = jogo/vídeo (prioriza fluidez); 30fps = texto/código (prioriza nitidez).
   if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
   video?.addEventListener('ended', ended);
-  return { stream, stop, size };
+  return { stream, stop, size, pausedSince };
 }
 
 /**
@@ -1080,9 +1091,11 @@ export async function toggleScreen(source?: { id: string; audio: boolean }): Pro
     }
     const { stream } = opened;
     nativeStop = opened.stop;
+    nativePaused = opened.pausedSince;
     screenSize = opened.size;
     currentSource = source ?? null;
     currentFps = getV().screenQuality.fps;
+    watchGame(source);
     setV({ screen: stream });
     addStreamToPeers(stream);
     startThumbs(stream, source?.id);
@@ -1121,7 +1134,7 @@ function retuneScreen() {
  * Troca a janela/tela transmitida (ou só a qualidade) sem parar: as trilhas novas entram no mesmo
  * stream e nas mesmas conexões (replaceTrack), então quem assiste continua assistindo.
  */
-export async function switchScreen(source?: { id: string; audio: boolean }): Promise<string | null> {
+export async function switchScreen(source?: { id: string; audio: boolean }, auto = false): Promise<string | null> {
   const screen = getV().screen;
   if (!screen) return toggleScreen(source);
   const { fps } = getV().screenQuality;
@@ -1170,7 +1183,77 @@ export async function switchScreen(source?: { id: string; audio: boolean }): Pro
   // A captura antiga sai sem desligar a nova no Rust (que já trocou de fonte ao começar a nova).
   oldStop?.(true);
   applySwitch(screen, opened, source);
+  if (!auto) watchGame(source);
   return null;
+}
+
+// ---------- seguir o jogo ----------
+// Jogos com mais de uma janela (no League: o cliente e a partida são programas diferentes). Se a
+// transmissão começou numa janela do jogo, ela troca sozinha para a outra quando a atual fecha ou
+// fica minimizada, sem precisar compartilhar de novo a cada partida.
+
+let nativePaused: (() => number | null) | null = null;
+let followGame: string | null = null;
+let followTimer: ReturnType<typeof setInterval> | null = null;
+let followBusy = false;
+
+function stopFollow() {
+  followGame = null;
+  if (followTimer) clearInterval(followTimer);
+  followTimer = null;
+}
+
+/** Descobre se a fonte escolhida é a janela do jogo aberto e, se for, passa a seguir o jogo. */
+function watchGame(source?: { id: string; audio: boolean }) {
+  stopFollow();
+  if (!source?.id.startsWith('window:') || !hasGameDetection()) return;
+  void detectGame().then((g) => {
+    if (!g || g.windowId !== source.id || currentSource?.id !== source.id || !getV().screen) return;
+    followGame = g.name;
+    followTimer = setInterval(() => void checkFollow(), 3000);
+  });
+}
+
+/** Outra janela do mesmo jogo, aberta e diferente da transmitida agora. */
+async function otherGameWindow() {
+  const g = await detectGame();
+  if (!g || g.name !== followGame || !currentSource || g.windowId === currentSource.id) return null;
+  return g.windowId;
+}
+
+async function followTo(id: string) {
+  if (!currentSource) return false;
+  followBusy = true;
+  try {
+    const err = await switchScreen({ id, audio: currentSource.audio }, true);
+    return !err;
+  } finally {
+    followBusy = false;
+  }
+}
+
+/** A janela transmitida ficou minimizada por um tempo (começou a partida): vai para a outra. */
+async function checkFollow() {
+  if (followBusy || !followGame || !getV().screen) return;
+  const since = nativePaused?.();
+  if (since == null || performance.now() - since < 3000) return;
+  const id = await otherGameWindow();
+  if (id && !followBusy) await followTo(id);
+}
+
+/** A janela transmitida fechou (acabou a partida): espera a outra janela do jogo aparecer. */
+async function followAfterClose(gen: number, source: { id: string; audio: boolean }) {
+  const screen = getV().screen;
+  for (let i = 0; i < 20; i++) {
+    if (gen !== screenGen || getV().screen !== screen) return;
+    const id = await otherGameWindow().catch(() => null);
+    if (gen !== screenGen || getV().screen !== screen) return;
+    if (id && (await followTo(id))) return;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (gen !== screenGen || getV().screen !== screen || currentSource?.id !== source.id) return;
+  stopScreen();
+  toast('A janela transmitida foi fechada. A transmissão terminou.');
 }
 
 /** Reabre uma fonte anterior depois de uma troca que falhou. */
@@ -1213,6 +1296,7 @@ function applySwitch(screen: MediaStream, opened: Awaited<ReturnType<typeof open
   }
   for (const t of oldTracks) t.stop();
   nativeStop = opened.stop;
+  nativePaused = opened.pausedSince;
   currentSource = source ?? null;
   currentFps = fps;
   startThumbs(screen, source?.id);
@@ -1282,6 +1366,8 @@ function stopScreen() {
   stopStream(screen);
   nativeStop?.();
   nativeStop = null;
+  nativePaused = null;
+  stopFollow();
   screenSize = null;
   currentSource = null;
   currentFps = null;
