@@ -192,7 +192,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 className="block"
                 style={c.isPrivate && (c.base || c.type !== 'text' || c.nsfw) ? { mask: SUB_ICON_MASK, WebkitMask: SUB_ICON_MASK } : undefined}
               >
-                <Icon size={18} className={cx('block opacity-70', c.nsfw && 'text-amber-400 opacity-90')} />
+                <Icon size={18} className="block opacity-70" />
               </span>
               {c.isPrivate && (c.base || c.type !== 'text' || c.nsfw) && (
                 <span className="absolute -top-1 -right-1 rounded-full p-px opacity-70" title={c.base ? 'Escondido: só você e os administradores veem' : 'Canal privado'}>
