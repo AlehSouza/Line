@@ -343,12 +343,13 @@ export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
   const items = visible.map((a) => ({ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType }));
   const shown = attachments.slice(0, 4);
   const extra = attachments.length - 4;
+  const [seen, setSeen] = useState<string[]>([]);
   return (
     <div className="mt-1 grid w-[340px] max-w-full grid-cols-2 gap-1 overflow-hidden rounded-lg">
       {shown.map((a, i) => {
         const url = fileUrl(a.url);
         const blocked = !!a.nsfw && !adult;
-        const covered = !blocked && (a.spoiler || (a.nsfw && blur));
+        const covered = !blocked && !seen.includes(a.id) && (a.spoiler || (a.nsfw && blur));
         const video = attachmentKind(a.contentType, a.filename) === 'video';
         const more = i === 3 && extra > 0;
         return (
@@ -373,13 +374,34 @@ export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={url} alt={a.filename} loading="lazy" className={cx('h-full w-full object-cover', covered && 'scale-110 blur-xl')} />
             )}
-            {video && !blocked && !more && (
+            {video && !blocked && !covered && !more && (
               <span className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white">
                 <Icons.Play size={18} />
               </span>
             )}
             {covered && !more && (
-              <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white uppercase">{a.nsfw ? '+18' : 'Spoiler'}</span>
+              // Versão curta do aviso: ícone, título e "Ver" (revela só este quadro).
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/30 p-2 text-center text-white">
+                {a.nsfw ? <Icons.EyeOff size={24} className="text-white/90" /> : <Icons.Warning size={24} className="text-white/90" />}
+                <span className="text-[11px] font-bold tracking-wide uppercase">{a.nsfw ? 'Conteúdo sensível' : 'Spoiler'}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSeen((l) => [...l, a.id]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSeen((l) => [...l, a.id]);
+                  }}
+                  className="rounded-full bg-black/70 px-4 py-1 text-xs font-semibold hover:bg-black/85"
+                >
+                  Ver
+                </span>
+              </span>
             )}
             {more && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-3xl font-bold text-white">+{extra}</span>}
           </button>
