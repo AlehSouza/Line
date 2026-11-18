@@ -45,10 +45,10 @@ function loadPrefs(): Prefs {
     return {
       favorites: Array.isArray(p.favorites) ? p.favorites : [],
       recents: Array.isArray(p.recents) ? p.recents : [],
-      volume: typeof p.volume === "number" ? p.volume : 0.6,
+      volume: typeof p.volume === "number" ? p.volume : 0.1,
     };
   } catch {
-    return { favorites: [], recents: [], volume: 0.6 };
+    return { favorites: [], recents: [], volume: 0.1 };
   }
 }
 

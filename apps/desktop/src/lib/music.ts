@@ -17,9 +17,9 @@ const MUTED_KEY = 'line.musicMuted';
 function loadVolume() {
   try {
     const v = Number(localStorage.getItem(VOLUME_KEY));
-    return Number.isFinite(v) && localStorage.getItem(VOLUME_KEY) !== null ? Math.min(100, Math.max(0, v)) : 60;
+    return Number.isFinite(v) && localStorage.getItem(VOLUME_KEY) !== null ? Math.min(100, Math.max(0, v)) : 10;
   } catch {
-    return 60;
+    return 10;
   }
 }
 
