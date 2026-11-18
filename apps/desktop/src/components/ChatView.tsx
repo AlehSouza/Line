@@ -855,7 +855,7 @@ function MessageRow({
       )}
 
       {!editing && (
-        <div className={cx('absolute -top-4 right-4 hidden items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow group-hover:flex', (reactAnchor || moreOpen) && 'flex')}>
+        <div className={cx('absolute -top-4 right-4 items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', reactAnchor || moreOpen ? 'flex' : 'hidden group-hover:flex')}>
           {canReact && (
             <>
               {topEmojis(3).map((emoji) => (
@@ -965,7 +965,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
         <AttachmentList attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments} compact authorId={message.author.id} />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
-      <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', anchor && 'flex')}>
+      <div className={cx('absolute -top-3 right-4 rounded-lg border border-edge bg-side shadow', anchor ? 'flex' : 'hidden group-hover:flex')}>
         <button
           title="Adicionar reação"
           onClick={(e) => {
