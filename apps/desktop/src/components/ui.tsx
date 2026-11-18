@@ -299,7 +299,7 @@ const icon = (C: LucideIcon) =>
   };
 
 /** Ícone de um canal na lista: canais base têm o seu; voz = alto-falante; texto = #. */
-export function channelIcon(c: { type: string; base?: string }) {
+export function channelIcon(c: { type: string; base?: string; isPrivate?: boolean; nsfw?: boolean }) {
   switch (c.base) {
     case 'rules':
       return Icons.BookCheck;
@@ -310,11 +310,17 @@ export function channelIcon(c: { type: string; base?: string }) {
     case 'activity':
       return Icons.Gamepad;
   }
-  return c.type === 'voice' ? Icons.Speaker : Icons.Hash;
+  if (c.type === 'voice') return Icons.Speaker;
+  if (c.type === 'text' && c.nsfw) return Icons.HashSensitive;
+  if (c.type === 'text' && c.isPrivate) return Icons.HashLock;
+  return Icons.Hash;
 }
 
 export const Icons = {
-  Hash: icon(L.Hash),
+  /** Canal de texto (no lugar do #). */
+  Hash: icon(L.MessageSquare),
+  HashLock: icon(L.MessageSquareLock),
+  HashSensitive: icon(L.MessageSquareWarning),
   BookCheck: icon(L.BookCheck),
   MapPin: icon(L.MapPin),
   Calendar: icon(L.Calendar),

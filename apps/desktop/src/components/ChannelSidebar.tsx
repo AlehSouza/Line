@@ -183,15 +183,14 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             )}
           >
             <span className="relative shrink-0">
-              <Icon size={18} className="opacity-70" />
-              {c.isPrivate && (
+              <Icon size={18} className={cx('opacity-70', c.nsfw && 'text-amber-400 opacity-90')} />
+              {c.isPrivate && (c.base || c.type !== 'text' || c.nsfw) && (
                 <span className="absolute -top-1 -right-1 rounded-full bg-side p-px" title={c.base ? 'Escondido: só você e os administradores veem' : 'Canal privado'}>
                   {c.base ? <Icons.EyeOff size={9} /> : <Icons.Lock size={9} />}
                 </span>
               )}
             </span>
             <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-9')}>{c.type === 'thread' ? mentionsToText(c.name, c.serverId) : c.name}</span>
-            {c.nsfw && <span title="Conteúdo Sensível" className="shrink-0 text-amber-400"><Icons.Warning size={14} /></span>}
             {muted && <MutedIcon className={cx(canChannels && 'group-hover:hidden')} />}
             {mentions > 0 && <MentionBadge count={mentions} className={cx('ml-auto', canChannels && 'group-hover:hidden')} />}
           </button>
