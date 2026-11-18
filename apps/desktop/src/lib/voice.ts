@@ -140,6 +140,27 @@ function loadUserVolumes(): Record<string, number> {
 }
 
 const SCREEN_AUDIO_KEY = 'line.voice.screenAudio';
+const SELF_MUTE_KEY = 'line.voice.selfMute';
+
+/** Meu mudo/ensurdecido, guardado no aparelho para continuar igual depois de recarregar ou reabrir. */
+function loadSelfMute(): { muted: boolean; deafened: boolean } {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SELF_MUTE_KEY) : null;
+    const v = raw ? (JSON.parse(raw) as Partial<{ muted: boolean; deafened: boolean }>) : {};
+    const deafened = !!v.deafened;
+    return { muted: deafened || !!v.muted, deafened };
+  } catch {
+    return { muted: false, deafened: false };
+  }
+}
+
+function saveSelfMute(muted: boolean, deafened: boolean) {
+  try {
+    localStorage.setItem(SELF_MUTE_KEY, JSON.stringify({ muted, deafened }));
+  } catch {
+    // sem localStorage: vale só nesta sessão
+  }
+}
 
 /** Som da tela que cada pessoa transmite: volume (0 a 1) e silenciado. Guardado só neste aparelho. */
 function loadScreenAudio(): { screenVolume: Record<string, number>; screenMuted: Record<string, boolean> } {
@@ -227,8 +248,7 @@ export const useVoice = create<VoiceStore>(() => ({
   screenViewers: {},
   channelId: null,
   connecting: false,
-  muted: false,
-  deafened: false,
+  ...loadSelfMute(),
   camera: null,
   screen: null,
   streams: {},
@@ -583,6 +603,7 @@ export function toggleMute() {
     next.muted = true;
   }
   setV(next);
+  saveSelfMute(getV().muted, getV().deafened);
   playCallSound(next.deafened === false ? 'mute_headphone' : 'mute_microphone');
   applyMute();
   socket?.emit('voice:state', next);
@@ -592,6 +613,7 @@ export function toggleDeafen() {
   const deafened = !getV().deafened;
   const next = { deafened, muted: deafened ? true : !voiceCan(Perm.Speak) };
   setV(next);
+  saveSelfMute(next.muted, next.deafened);
   playCallSound('mute_headphone');
   applyMute();
   socket?.emit('voice:state', next);
