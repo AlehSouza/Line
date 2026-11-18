@@ -1,6 +1,7 @@
 'use client';
 
 import { imageMenuItems, openContextMenu } from './ContextMenu';
+import { COVER_GRADIENT } from './Attachments';
 import { ServerNotifyModal } from './Notifications';
 import { FullProfile } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
@@ -909,7 +910,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
   const covered = !!item.sensitive && !revealed.includes(i);
-  const media = cx('max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none blur-2xl brightness-75 select-none');
+  const media = cx('max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none invisible select-none');
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
       <MediaReactions channelId={channelId} messageId={item.messageId} attachmentId={item.attachmentId} />
@@ -928,7 +929,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
         )}
         {covered && (
           // Mesmo aviso do chat: a mídia fica em foco, mas coberta até a pessoa escolher ver.
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30 p-5 text-center text-white">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center text-white" style={{ background: COVER_GRADIENT }}>
             {item.sensitive === 'nsfw' ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
             <p className="mt-1 text-sm font-bold tracking-wide uppercase">{item.sensitive === 'nsfw' ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
             <p className="max-w-[300px] text-[13px] leading-snug text-white/80">

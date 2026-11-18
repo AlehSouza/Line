@@ -165,11 +165,11 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
       >
         {children}
       </div>
-      {covered && attachmentKind(a.contentType, a.filename) === 'image' && <BlurThumb src={fileUrl(a.url)} className="absolute inset-0" />}
+      {covered && <SensitiveCover className="absolute inset-0" />}
       {covered && (
         <div
           onClick={onOpen}
-          className={cx('absolute inset-0 flex flex-col items-center justify-center bg-black/30 text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
+          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
         >
           {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-white/90" /> : <Icons.Warning size={small ? 22 : 40} className="text-white/90" />}
           <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
@@ -204,58 +204,12 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
   );
 }
 
-/** Miniaturas de 32 px das mídias cobertas, já decodificadas (voltar a rolar não refaz nada). */
-const thumbs = new Map<string, ImageBitmap | HTMLCanvasElement>();
-const THUMB = 32;
+/** Cobertura de mídia sensível/spoiler: degradê cinza, sem nenhum pixel da mídia (e sem
+ * filtro CSS, que travava o scroll). Quem dá o tamanho é a própria mídia, invisível embaixo. */
+export const COVER_GRADIENT = 'linear-gradient(135deg, #5a5a60 0%, #45454a 45%, #2e2e32 100%)';
 
-/** Mídia coberta (spoiler/+18) "borrada" sem filtro CSS: uma miniatura de 32 px esticada.
- * blur() de raio grande em várias imagens repinta a cada quadro do scroll e trava a página;
- * a miniatura esticada fica com o mesmo aspecto borrado e custa quase nada. */
-function BlurThumb({ src, className }: { src: string; className?: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    let cancelled = false;
-    const paint = (t: ImageBitmap | HTMLCanvasElement) => {
-      if (cancelled) return;
-      canvas.width = t.width;
-      canvas.height = t.height;
-      canvas.getContext('2d')?.drawImage(t, 0, 0);
-    };
-    const cached = thumbs.get(src);
-    if (cached) return paint(cached);
-    // Só carrega quando chega perto da tela.
-    const io = new IntersectionObserver(
-      ([e]) => {
-        if (!e?.isIntersecting) return;
-        io.disconnect();
-        const img = new Image();
-        img.decoding = 'async';
-        img.onload = () => {
-          const k = THUMB / Math.max(img.naturalWidth, img.naturalHeight, 1);
-          const w = Math.max(1, Math.round(img.naturalWidth * k));
-          const h = Math.max(1, Math.round(img.naturalHeight * k));
-          const c = document.createElement('canvas');
-          c.width = w;
-          c.height = h;
-          c.getContext('2d')?.drawImage(img, 0, 0, w, h);
-          img.src = '';
-          if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value!);
-          thumbs.set(src, c);
-          paint(c);
-        };
-        img.src = src;
-      },
-      { rootMargin: '400px' },
-    );
-    io.observe(canvas);
-    return () => {
-      cancelled = true;
-      io.disconnect();
-    };
-  }, [src]);
-  return <canvas ref={ref} aria-hidden className={cx('block bg-[#3d3d40] object-cover brightness-75', className)} style={{ width: '100%', height: '100%' }} />;
+export function SensitiveCover({ className }: { className?: string }) {
+  return <span aria-hidden className={cx('block', className)} style={{ background: COVER_GRADIENT }} />;
 }
 
 /** Tamanhos já vistos de mídias sem largura/altura salvas (anexos antigos). */
@@ -476,12 +430,12 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
               </span>
             ) : video ? (
               covered ? (
-                <span className="block h-full w-full bg-[#3d3d40]" />
+                <SensitiveCover className="h-full w-full" />
               ) : (
                 <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />
               )
             ) : covered ? (
-              <BlurThumb src={url} className="h-full w-full" />
+              <SensitiveCover className="h-full w-full" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={url} alt={a.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
