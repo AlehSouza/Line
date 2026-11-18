@@ -9,11 +9,11 @@ import { Avatar, Button, channelIcon, cx, ErrorText, Icons, Input, Modal } from 
 import { ColorPicker } from './ColorPicker';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
-import { MusicSettings, SmartReplies } from './AgentSettings';
+import { AgentCommands, MusicSettings, SmartReplies } from './AgentSettings';
 import { ServerTagSettings } from './ServerTag';
 import { SoundboardSettings } from './Soundboard';
 
-type Section = 'overview' | 'tag' | 'roles' | 'members' | 'notes' | 'sounds' | 'music' | 'replies';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'notes' | 'sounds' | 'music' | 'replies' | 'commands';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -52,6 +52,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
     { id: 'sounds', label: 'Painel de efeitos sonoros', show: canSounds },
     { id: 'music', label: 'Personalizar', show: canAgent },
     { id: 'replies', label: 'Respostas inteligentes', show: canAgent },
+    { id: 'commands', label: 'Comandos', show: canAgent },
   ];
   const visible = nav.filter((n) => n.show);
   const [section, setSection] = useState<Section>(initial && visible.some((n) => n.id === initial) ? initial : (visible[0]?.id ?? 'members'));
@@ -115,6 +116,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
           {section === 'sounds' && canSounds && <SoundboardSettings serverId={serverId} />}
           {section === 'music' && canAgent && <MusicSettings serverId={serverId} />}
           {section === 'replies' && canAgent && <SmartReplies serverId={serverId} />}
+          {section === 'commands' && canAgent && <AgentCommands serverId={serverId} />}
         </main>
 
         <button

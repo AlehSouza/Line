@@ -33,10 +33,7 @@ const SAMPLE_TRACK = { title: 'Nome da música', author: 'Artista' };
 export function MusicSettings({ serverId }: { serverId: string }) {
   const [botId, setBotId] = useState<string | null>(null);
   const bot = useLine((s) => (botId ? s.users[botId] : undefined));
-  const [tab, setTab] = useState<'card' | 'call' | 'commands'>('card');
-  // Aba Comandos: aviso do chat no lugar de cada comando (salva no botão).
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [savedNotes, setSavedNotes] = useState('{}');
+  const [tab, setTab] = useState<'card' | 'call'>('card');
   const [error, setError] = useState('');
   // Aba Chamada (salva no botão).
   const [ringColor, setRingColor] = useState<string | null>(null);
@@ -62,8 +59,6 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         setRingColor(b.botStyle?.ringColor ?? null);
         setNowPlaying(b.botStyle?.nowPlaying ?? null);
         setSavedCall(JSON.stringify([b.botStyle?.ringColor ?? null, b.botStyle?.nowPlaying ?? null, idleMsg]));
-        setNotes(b.botStyle?.commandNotes ?? {});
-        setSavedNotes(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
       })
       .catch((e) => setError((e as Error).message));
   }, [serverId]);
@@ -94,22 +89,6 @@ export function MusicSettings({ serverId }: { serverId: string }) {
     }
   }
 
-  const notesJson = JSON.stringify(cleanNotes(notes));
-  async function saveNotes() {
-    setBusy(true);
-    try {
-      const b = await api.updateMusicBot(serverId, { botCommandNotes: cleanNotes(notes) });
-      actions.upsertUsers([b]);
-      setNotes(b.botStyle?.commandNotes ?? {});
-      setSavedNotes(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
-      toast('Agente salvo.');
-    } catch (e) {
-      showError(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const presence: Presence = !bot || bot.presence === 'offline' ? 'invisible' : bot.presence === 'idle' || bot.presence === 'dnd' ? bot.presence : 'online';
   const style = bot?.botStyle;
 
@@ -130,7 +109,6 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 [
                   ['card', 'Cartão'],
                   ['call', 'Chamada'],
-                  ['commands', 'Comandos'],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -147,46 +125,13 @@ export function MusicSettings({ serverId }: { serverId: string }) {
               <div className="flex h-[640px] max-h-[75vh] flex-col">
                 <FullProfile userId={bot.id} agentServerId={serverId} embedded onClose={() => {}} />
               </div>
-            ) : tab === 'call' ? (
-              <AgentCallPreview bot={bot} ringColor={ringColor} nowPlaying={nowPlaying} />
             ) : (
-              <div className="rounded-xl border border-edge bg-rail p-4">
-                <p className="mb-3 text-xs font-bold tracking-wide text-muted uppercase">Prévia no chat</p>
-                <div className="space-y-3">
-                  {AGENT_COMMANDS.map((c) => (
-                    <div key={c.name}>
-                      <p className="text-xs text-muted">/{c.name}</p>
-                      <p className="text-[15px] font-semibold text-muted">{notes[c.name]?.trim() || DEFAULT_COMMAND_NOTES[c.name]}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <AgentCallPreview bot={bot} ringColor={ringColor} nowPlaying={nowPlaying} />
             )}
           </div>
 
           <div className="min-w-0 flex-1 space-y-5">
-            {tab === 'commands' ? (
-              <>
-                <p className="rounded-lg border border-edge bg-rail px-3 py-2.5 text-sm text-soft">
-                  Quando alguém usa um comando do agente, o chat mostra este aviso em negrito e acinzentado no lugar do texto digitado. Vazio usa o padrão.
-                </p>
-                {AGENT_COMMANDS.map((c) => (
-                  <Field key={c.name} label={`/${c.name}`} hint={c.desc}>
-                    <EmojiInput
-                      value={notes[c.name] ?? ''}
-                      onChange={(e) => setNotes((n) => ({ ...n, [c.name]: e.target.value }))}
-                      maxLength={80}
-                      placeholder={DEFAULT_COMMAND_NOTES[c.name]}
-                    />
-                  </Field>
-                ))}
-                <div className="flex justify-end">
-                  <Button disabled={busy || notesJson === savedNotes} onClick={saveNotes} className="px-6">
-                    {busy ? 'Salvando…' : 'Salvar'}
-                  </Button>
-                </div>
-              </>
-            ) : tab === 'card' ? (
+            {tab === 'card' ? (
               <>
                 <p className="rounded-lg border border-edge bg-rail px-3 py-2.5 text-sm text-soft">
                   Clique no cartão para editar: nome, nota, pronomes, status, bio, música favorita, faixa e avatar (lápis no canto), estilo do nome (pincel) e cores do cartão (bolinha
@@ -458,13 +403,11 @@ export function SmartReplies({ serverId }: { serverId: string }) {
             return row.open ? (
               <div key={row.key} className="space-y-2 rounded-xl border border-edge bg-rail p-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold tracking-wide text-muted uppercase">Pergunta</span>
-                  <span className="flex-1" />
-                  {items.length > 1 && (
-                    <button type="button" title="Recolher" onClick={() => toggle(i)} className="rounded p-1 text-muted hover:bg-hover hover:text-fg">
-                      <L.ChevronUp size={15} />
-                    </button>
-                  )}
+                  <button type="button" title="Recolher" onClick={() => toggle(i)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                    <span className="text-xs font-bold tracking-wide text-muted uppercase">Pergunta</span>
+                    <span className="flex-1" />
+                    <L.ChevronUp size={15} className="text-muted" />
+                  </button>
                   <button type="button" title="Apagar" onClick={() => remove(i)} className="rounded p-1 text-muted hover:bg-hover hover:text-danger">
                     <L.Trash2 size={15} />
                   </button>
@@ -540,6 +483,121 @@ export function SmartReplies({ serverId }: { serverId: string }) {
                   <L.Trash2 size={15} />
                 </button>
               </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Configurações do servidor → Agente → Comandos ----------
+
+/**
+ * Aviso que aparece no chat (em negrito e acinzentado) no lugar do comando digitado, um por
+ * comando do agente. Cartões recolhíveis como as Respostas inteligentes; vazio usa o padrão.
+ */
+export function AgentCommands({ serverId }: { serverId: string }) {
+  const [notes, setNotes] = useState<Record<string, string> | null>(null);
+  const [saved, setSaved] = useState('{}');
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api
+      .musicBot(serverId)
+      .then((b) => {
+        actions.upsertUsers([b]);
+        setNotes(b.botStyle?.commandNotes ?? {});
+        setSaved(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
+      })
+      .catch((e) => setError((e as Error).message));
+  }, [serverId]);
+
+  async function save() {
+    if (!notes) return;
+    setBusy(true);
+    try {
+      const b = await api.updateMusicBot(serverId, { botCommandNotes: cleanNotes(notes) });
+      actions.upsertUsers([b]);
+      setNotes(b.botStyle?.commandNotes ?? {});
+      setSaved(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
+      toast('Comandos salvos.');
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const allOpen = AGENT_COMMANDS.every((c) => open[c.name]);
+  const dirty = !!notes && JSON.stringify(cleanNotes(notes)) !== saved;
+  const toggle = (name: string) => setOpen((o) => ({ ...o, [name]: !o[name] }));
+
+  return (
+    <div className="max-w-3xl">
+      <h2 className="text-xl font-bold">Comandos</h2>
+      <p className="mt-1 mb-4 text-sm text-soft">
+        Quando alguém usa um comando do agente (ex.: <code className="rounded bg-raise px-1">/hoje São Paulo</code>), o chat mostra um aviso em negrito e acinzentado no lugar do
+        texto digitado. Personalize o aviso de cada comando; vazio usa o padrão.
+      </p>
+      {!notes ? (
+        error ? <ErrorText>{error}</ErrorText> : <p className="text-sm text-muted">Carregando…</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-side px-1 py-2">
+            <button
+              type="button"
+              onClick={() => setOpen(Object.fromEntries(AGENT_COMMANDS.map((c) => [c.name, !allOpen])))}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-soft hover:bg-hover hover:text-fg"
+            >
+              {allOpen ? <L.ChevronsDownUp size={14} /> : <L.ChevronsUpDown size={14} />}
+              {allOpen ? 'Recolher todos' : 'Expandir todos'}
+            </button>
+            <span className="flex-1" />
+            <Button disabled={busy || !dirty} onClick={save} className="px-6">
+              {busy ? 'Salvando…' : 'Salvar'}
+            </Button>
+          </div>
+          {AGENT_COMMANDS.map((c) => {
+            const text = notes[c.name]?.trim() || DEFAULT_COMMAND_NOTES[c.name]!;
+            return open[c.name] ? (
+              <div key={c.name} className="space-y-2 rounded-xl border border-edge bg-rail p-3">
+                <button type="button" title="Recolher" onClick={() => toggle(c.name)} className="flex w-full items-center gap-2 text-left">
+                  <L.SquareSlash size={16} className="shrink-0 text-muted" />
+                  <span className="text-sm font-semibold">
+                    /{c.name} {c.args && <span className="font-normal text-muted">{c.args}</span>}
+                  </span>
+                  <span className="flex-1" />
+                  <L.ChevronUp size={15} className="shrink-0 text-muted" />
+                </button>
+                <p className="text-xs text-muted">{c.desc}</p>
+                <span className="block text-xs font-bold tracking-wide text-muted uppercase">Aviso no chat</span>
+                <EmojiInput
+                  value={notes[c.name] ?? ''}
+                  onChange={(e) => setNotes((n) => ({ ...n, [c.name]: e.target.value }))}
+                  maxLength={80}
+                  placeholder={DEFAULT_COMMAND_NOTES[c.name]}
+                  autoFocus
+                />
+                <p className="text-xs text-muted">
+                  Prévia: <span className="text-[15px] font-semibold text-muted">{text}</span>
+                </p>
+              </div>
+            ) : (
+              <button
+                key={c.name}
+                type="button"
+                onClick={() => toggle(c.name)}
+                className="flex w-full items-center gap-2.5 rounded-xl border border-edge bg-rail px-3 py-2.5 text-left hover:bg-hover"
+              >
+                <L.SquareSlash size={16} className="shrink-0 text-muted" />
+                <span className="shrink-0 text-sm font-semibold">/{c.name}</span>
+                <span className="min-w-0 truncate text-sm text-muted">{text}</span>
+                <span className="flex-1" />
+                <L.ChevronDown size={15} className="shrink-0 text-muted" />
+              </button>
             );
           })}
         </div>
