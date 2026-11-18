@@ -846,10 +846,10 @@ const ownMedia = (m: Message, attachmentId?: string) => (m.attachments.length > 
 /** Reações da mídia aberta, acima dela. */
 function MediaReactions({ channelId, messageId, attachmentId }: { channelId?: string; messageId?: string; attachmentId?: string }) {
   const message = useLine((s) => (channelId && messageId ? s.messages[channelId]?.items.find((m) => m.id === messageId) : undefined));
-  if (!message) return null;
+  // Espaço sempre reservado: a primeira reação não empurra (nem encolhe) a imagem.
   return (
-    <div className="flex max-w-[760px] justify-center empty:hidden" onMouseDown={(e) => e.stopPropagation()}>
-      <ViewerReactions message={message} attachmentId={ownMedia(message, attachmentId)} />
+    <div className="flex h-9 max-w-[760px] shrink-0 items-end justify-center [&>div]:mt-0" onMouseDown={(e) => e.stopPropagation()}>
+      {message && <ViewerReactions message={message} attachmentId={ownMedia(message, attachmentId)} />}
     </div>
   );
 }
