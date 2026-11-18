@@ -67,6 +67,7 @@ export const updateServerSchema =createServerSchema.partial().extend({
       border: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
       iconColor: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
       iconStyle: z.enum(['outline', 'solid']).optional(),
+      shape: z.enum(['rounded', 'square']).optional(),
       dir: z.enum(['h', 'v']).optional(),
       motion: z.enum(['static', 'wave', 'pulse']).optional(),
       font: z.string().max(20).optional(),

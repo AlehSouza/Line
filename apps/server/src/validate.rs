@@ -108,6 +108,7 @@ fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
     }
     for (key, allowed) in [
         ("iconStyle", &["outline", "solid"][..]),
+        ("shape", &["rounded", "square"][..]),
         ("dir", &["h", "v"][..]),
         ("motion", &["static", "wave", "pulse"][..]),
         ("speed", &["slow", "medium", "fast"][..]),

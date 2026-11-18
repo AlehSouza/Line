@@ -109,6 +109,8 @@ export interface TagStyle {
   border?: TagPaint;
   iconColor?: TagPaint;
   iconStyle?: 'outline' | 'solid';
+  /** Cantos da tag: arredondados (padrão) ou quadrados. */
+  shape?: 'rounded' | 'square';
   /** Direção dos degradês (padrão h). */
   dir?: 'h' | 'v';
   /** Degradês parados ou correndo em onda (padrão static); pulse = texto neon piscando. */

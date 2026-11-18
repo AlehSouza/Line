@@ -12,7 +12,7 @@ import { mobile } from '@/lib/mobile';
 import { placeAround, useFloating } from '@/lib/floating';
 import { showError, toast } from './Dialogs';
 import { ColorPicker } from './ColorPicker';
-import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input, SWATCHES } from './ui';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input, Select, SWATCHES } from './ui';
 
 /** Ícones do Lucide que dá para escolher para a tag (os que não existirem na versão instalada somem). */
 const TAG_ICONS = [
@@ -58,6 +58,7 @@ export function tagBadgeStyle(style: TagStyle | null | undefined): CSSProperties
   else if (solidOf(style.bg)) out.background = solidOf(style.bg);
   const fg = solidOf(style.fg);
   if (fg && !isGrad(style.fg) && fg !== 'transparent') out.color = fg;
+  if (style.shape === 'square') out.borderRadius = 0;
   const border = solidOf(style.border);
   if (border && !isGrad(style.border) && border !== 'transparent') out.boxShadow = `inset 0 0 0 1px ${border}`;
   return out;
@@ -495,6 +496,26 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
         </div>
 
         <section className="rounded-xl border border-edge bg-rail p-3.5">
+          <p className="text-sm font-semibold">Formato</p>
+          <p className="mb-2 text-xs text-muted">Cantos da tag em todo lugar onde ela aparece.</p>
+          <Select
+            className="w-56"
+            value={style.shape ?? 'rounded'}
+            onChange={(v) =>
+              setStyle((st) => {
+                const next: TagStyle = { ...st, shape: v as 'rounded' | 'square' };
+                if (v === 'rounded') delete next.shape;
+                return next;
+              })
+            }
+            options={[
+              { value: 'rounded', label: 'Cantos arredondados' },
+              { value: 'square', label: 'Cantos quadrados' },
+            ]}
+          />
+        </section>
+
+        <section className="rounded-xl border border-edge bg-rail p-3.5">
           <p className="text-sm font-semibold">Estilo do ícone</p>
           <p className="mb-2 text-xs text-muted">Vale para os ícones; a foto do servidor fica igual.</p>
           <div className="flex gap-2">
@@ -634,6 +655,22 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
 
       <aside className="shrink-0 lg:sticky lg:top-0 lg:w-[300px]">
         <TagPreviews tag={tag} icon={icon} iconUrl={server.iconUrl} style={style} server={server} />
+        {/* A tag bem grande (a mesma TagPill, só escalada) para ver os detalhes com zoom. */}
+        <div className="mt-3 flex h-32 items-center justify-center overflow-hidden rounded-xl border border-edge bg-rail" title="Tag ampliada">
+          {tag ? (
+            <span className="inline-flex origin-center scale-[3.5]">
+              <TagPill
+                className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
+                text={tag}
+                icon={icon}
+                iconUrl={server.iconUrl}
+                tagStyle={style}
+              />
+            </span>
+          ) : (
+            <span className="text-xs text-muted">(sem tag)</span>
+          )}
+        </div>
         {/* Salvar fica na coluna fixa, logo abaixo da última prévia. */}
         <Button disabled={busy || !dirty} onClick={save} className="mt-4 w-full">
           {busy ? 'Salvando…' : 'Salvar'}
