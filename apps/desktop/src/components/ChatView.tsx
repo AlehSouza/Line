@@ -1765,7 +1765,7 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
               item.spoiler ? 'border-accent bg-accent/15 text-accent' : 'border-edge text-muted hover:text-fg',
             )}
           >
-            <Icons.EyeOff size={12} /> Spoiler
+            <Icons.Warning size={12} /> Spoiler
           </button>
           <button
             type="button"

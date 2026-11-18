@@ -368,6 +368,7 @@ export const Icons = {
   Image: icon(L.Image),
   Folder: icon(L.Folder),
   Lock: icon(L.Lock),
+  Warning: icon(L.TriangleAlert),
   Shield: icon(L.Shield),
   Grip: icon(L.GripVertical),
   Upload: icon(L.Upload),

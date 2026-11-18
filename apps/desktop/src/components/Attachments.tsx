@@ -63,7 +63,7 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
         </div>
       )}
       <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-6 py-6 text-center text-white">
-        <Icons.EyeOff size={40} className="text-white/90" />
+        {a.nsfw ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
         <p className="mt-1 text-sm font-bold tracking-wide uppercase">{a.nsfw ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
         <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
           {a.nsfw
