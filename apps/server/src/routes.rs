@@ -2319,8 +2319,8 @@ fn remove_channel(app: &App, q: &Q, channel: &Channel, server_id: &str) {
     if let Some(Some(mid)) = &channel.thread_message_id
         && let Some(starter) = q.message(mid)
     {
-        if starter.deleted {
-            // Sem a thread, a mensagem excluída não tem mais por que ficar.
+        if starter.deleted && !starter.threads.iter().any(|t| t.message_count > 0) {
+            // Sem conversa com respostas, a mensagem excluída não tem mais por que ficar.
             q.delete_message(&starter.id);
             app.to_channel(
                 q,
@@ -2337,6 +2337,12 @@ fn remove_channel(app: &App, q: &Q, channel: &Channel, server_id: &str) {
 async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
+    // Ninguém apaga uma conversa: ela some sozinha quando fica sem respostas.
+    if channel.kind == "thread" {
+        return Err(bad_request(
+            "Conversas não podem ser apagadas. Elas somem quando ficam sem respostas.",
+        ));
+    }
     if !channel.base.is_empty() {
         return Err(bad_request(
             "Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor.",
@@ -3290,6 +3296,15 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         "message:delete",
         &json!({ "id": message.id, "channelId": channel.id }),
     );
+    // Última resposta apagada: a conversa some (e a mensagem excluída de onde ela saiu também).
+    if channel.kind == "thread"
+        && let Some(server_id) = channel.server_id.clone()
+        && q.messages(&channel.id, None, 1).is_empty()
+    {
+        remove_channel(&app, &q, &channel, &server_id);
+    } else if channel.kind == "thread" {
+        refresh_thread_starter(&app, &q, &channel);
+    }
     no_content()
 }
 

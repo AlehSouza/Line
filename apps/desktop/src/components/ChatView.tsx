@@ -174,9 +174,7 @@ export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string
 export function ThreadPanel({ thread }: { thread: Channel }) {
   const composer = useRef<ComposerHandle>(null);
   const drop = useFileDrop(composer);
-  const meId = useLine((s) => s.me?.id);
-  const canManage = useCan(thread.serverId, Perm.ManageChannels);
-  const canDelete = !thread.id.startsWith("draft:") && (canManage || thread.ownerId === meId);
+  // Sem botão de apagar: a conversa some sozinha quando fica sem respostas.
   const back = useLine((s) => s.threadBack);
 
   useEffect(() => {
@@ -202,19 +200,6 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
         <h2 className="font-bold">Conversa</h2>
         <span className="truncate text-sm text-muted">{mentionsToText(thread.name, thread.serverId)}</span>
         <div className="ml-auto flex gap-1">
-          {canDelete && (
-            <button
-              title="Apagar conversa"
-              onClick={async () => {
-                if (await confirmDialog({ title: 'Apagar conversa', message: `A conversa "${thread.name}" e as mensagens dela serão apagadas.`, confirmLabel: 'Apagar', danger: true })) {
-                  await api.deleteChannel(thread.id).catch(showError);
-                }
-              }}
-              className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-danger"
-            >
-              <Icons.Trash size={18} />
-            </button>
-          )}
           <button title="Fechar conversa" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
             <Icons.X size={20} />
           </button>
