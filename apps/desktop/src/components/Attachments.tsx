@@ -85,7 +85,22 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
   const blocked = !!a.nsfw && (age === null || age < 18);
   const covered = !blocked && !shown && (a.spoiler || (a.nsfw && blur));
 
-  if (!blocked && !covered) return <>{children}</>;
+  if (!blocked && !covered) {
+    // Já aberto pela pessoa: botão de olho no canto para borrar de novo.
+    if (!shown) return <>{children}</>;
+    return (
+      <div className="group/gate relative max-w-full">
+        {children}
+        <button
+          onClick={() => setShown(false)}
+          title="Borrar de novo"
+          className="absolute top-2 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/90 shadow hover:bg-black/80 hover:text-white"
+        >
+          <Icons.EyeOff size={15} />
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="relative min-h-[220px] w-[420px] max-w-full overflow-hidden rounded-lg border border-edge bg-[#3d3d40]">
       {!blocked && (
