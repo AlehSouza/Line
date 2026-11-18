@@ -125,9 +125,25 @@ export function ChatView({ channel }: { channel: Channel }) {
 /** "Ver conversas" de uma grade: as mídias uma embaixo da outra, cada uma com a thread dela. */
 export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string; messageIds: string[] }) {
   const items = useLine((s) => s.messages[channelId]?.items);
+  const channel = useLine((s) => s.channels[channelId]);
   const messages = useMemo(() => (items ?? []).filter((m) => messageIds.includes(m.id)), [items, messageIds]);
-  const first = messages[0];
-  const author = useLine((s) => (first ? s.users[first.author.id] : undefined)) ?? first?.author;
+  const meId = useLine((s) => s.me?.id);
+  const myUsername = useLine((s) => s.me?.username);
+  const users = useLine((s) => s.users);
+  const serverId = channel?.serverId ?? undefined;
+  const canManageMessages = useCan(serverId, Perm.ManageMessages);
+  const canPinMessages = useCan(serverId, Perm.PinMessages);
+  const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channelId, s.me?.id), Perm.CreateThreads));
+  const serverMembers = useLine((s) => (serverId ? s.members[serverId] : undefined));
+  const serverRoles = useLine((s) => (serverId ? s.roles[serverId] : undefined));
+  const mentionCtx = useMentionContext(serverId);
+  const [editing, setEditing] = useState<string | null>(null);
+  const colorOf = (userId: string) => {
+    const botColor = users[userId]?.botStyle?.nameColor;
+    if (botColor) return botColor;
+    const mine = serverMembers?.[userId]?.roleIds;
+    return mine?.length ? (serverRoles ?? []).find((r) => r.color && mine.includes(r.id))?.color ?? undefined : undefined;
+  };
   return (
     <aside className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:border-0">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
@@ -138,33 +154,33 @@ export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string
           </button>
         </div>
       </header>
+      {/* Cada mídia da grade é uma mensagem de verdade: mesma linha do chat, com a barra de
+          ações no hover (reagir, responder, encaminhar, menu...). */}
       <div className="min-h-0 flex-1 overflow-y-auto py-3">
-        {first && author && (
-          <div className="flex gap-3 px-4 py-1">
-            <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={36} />
-            <div className="min-w-0 flex-1">
-              <p className="flex items-baseline gap-2">
-                <span className="font-semibold">{author.displayName}</span>
-                <span className="text-xs text-muted">{formatTime(first.createdAt)}</span>
-              </p>
-              {messages.map((m) => {
-                const whole = m.attachments.length > 1 ? wholeThreadOf(m) : undefined;
-                return (
-                  <Fragment key={m.id}>
-                    <AttachmentList
-                      attachments={m.attachments}
-                      compact
-                      authorId={m.author.id}
-                      owner={{ channelId: m.channelId, messageId: m.id }}
-                      below={mediaThreadsBelow(m, true)}
-                    />
-                    {whole && <ThreadChip thread={whole} />}
-                  </Fragment>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {channel &&
+          messages.map((m, i) => {
+            const author = users[m.author.id] ?? m.author;
+            return (
+              <MessageRow
+                key={m.id}
+                message={m}
+                authorName={serverMembers?.[m.author.id]?.nickname || author.displayName}
+                authorColor={author.avatarColor}
+                nameColor={colorOf(m.author.id)}
+                mentionCtx={mentionCtx}
+                grouped={i > 0 && messages[i - 1]!.author.id === m.author.id}
+                mine={m.author.id === meId}
+                canDelete={m.author.id === meId || canManageMessages}
+                canPin={!serverId || canManageMessages || canPinMessages}
+                editing={editing === m.id}
+                onEdit={() => setEditing(m.id)}
+                onDoneEditing={() => setEditing(null)}
+                myUsername={myUsername}
+                canThread={channel.type === 'text' && canCreateThreads}
+                tight
+              />
+            );
+          })}
       </div>
     </aside>
   );
