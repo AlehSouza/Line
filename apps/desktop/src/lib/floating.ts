@@ -12,7 +12,7 @@ import { flushSync } from 'react-dom';
  */
 
 export type Pos = { left: number; top: number };
-export type Side = 'below' | 'above';
+export type Side = 'below' | 'above' | 'right' | 'left';
 type Rect = { left: number; right: number; top: number; bottom: number };
 
 const MARGIN = 8;
@@ -26,21 +26,40 @@ export function placeAround(
   r: Rect,
   w: number,
   h: number,
-  opts: { gap?: number; align?: 'start' | 'end'; prefer?: Side; lock?: Side | null; margin?: number } = {},
-): Pos & { side: Side } {
+  opts: { gap?: number; align?: 'start' | 'end'; prefer?: 'below' | 'above'; lock?: Side | null; margin?: number } = {},
+): Pos & { side: 'below' | 'above' } {
   const { gap = 6, align = 'start', prefer = 'below', lock = null, margin = MARGIN } = opts;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const spaceBelow = vh - r.bottom - gap - margin;
   const spaceAbove = r.top - gap - margin;
-  let side: Side;
-  if (lock) side = lock;
+  let side: 'below' | 'above';
+  if (lock === 'below' || lock === 'above') side = lock;
   else if (prefer === 'below') side = h <= spaceBelow || spaceBelow >= spaceAbove ? 'below' : 'above';
   else side = h <= spaceAbove || spaceAbove >= spaceBelow ? 'above' : 'below';
   const rawTop = side === 'below' ? r.bottom + gap : r.top - gap - h;
   const top = clamp(rawTop, margin, vh - h - margin);
   const rawLeft = align === 'end' ? r.right - w : r.left;
   return { left: clamp(rawLeft, margin, vw - w - margin), top, side };
+}
+
+/**
+ * Lugar de uma caixa w×h ao lado de um retângulo: à direita se couber, senão à esquerda
+ * (ou no lado com mais espaço), alinhada ao topo dele. `lock` mantém o lado depois de aberta.
+ */
+export function placeBeside(
+  r: Rect,
+  w: number,
+  h: number,
+  opts: { gap?: number; lock?: Side | null; margin?: number } = {},
+): Pos & { side: 'right' | 'left' } {
+  const { gap = 6, lock = null, margin = MARGIN } = opts;
+  const vw = window.innerWidth;
+  const spaceRight = vw - r.right - gap - margin;
+  const spaceLeft = r.left - gap - margin;
+  const side = lock === 'right' || lock === 'left' ? lock : (w <= spaceRight || spaceRight >= spaceLeft ? 'right' : 'left');
+  const rawLeft = side === 'right' ? r.right + gap : r.left - gap - w;
+  return { left: clamp(rawLeft, margin, vw - w - margin), top: clamp(r.top, margin, window.innerHeight - h - margin), side };
 }
 
 /** Lugar de uma caixa w×h num ponto (clique com o botão direito), sem sair da tela. */

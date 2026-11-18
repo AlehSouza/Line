@@ -17,7 +17,8 @@ import { SongPlayer } from './ProfileExtras';
 import { cardStyle } from './InlineProfileEdit';
 import { MoreMenu } from './FullProfile';
 import { useIgnored } from '@/lib/ignored';
-import { placeAround, useFloating } from '@/lib/floating';
+import { placeAround, placeBeside, useFloating } from '@/lib/floating';
+import { createPortal } from 'react-dom';
 
 export { statusOptions } from './StatusPicker';
 
@@ -56,6 +57,7 @@ export function UserCard({
   const look = useServerLook(viewServer, userId);
   const ignored = useIgnored((s) => s.ids.includes(userId));
   const [editMenu, setEditMenu] = useState(false);
+  const editBtn = useRef<HTMLSpanElement>(null);
   const roleColor = useMemberColor(viewServer, userId);
 
   useEffect(() => {
@@ -179,7 +181,7 @@ export function UserCard({
               </TopButton>
             )}
             {isMe ? (
-              <span className="relative">
+              <span ref={editBtn} className="relative">
                 <TopButton
                   title="Editar perfil"
                   onClick={() => {
@@ -191,7 +193,7 @@ export function UserCard({
                   <Icons.Edit size={17} />
                 </TopButton>
                 {editMenu && viewServer && (
-                  <div className="absolute top-full right-0 z-10 mt-1.5 w-64 rounded-xl border border-edge bg-rail p-1.5 shadow-2xl">
+                  <EditProfileMenu anchor={editBtn.current}>
                     <button
                       onClick={() => actions.openModal({ kind: 'server-profile', serverId: viewServer })}
                       className="block w-full rounded-md px-2.5 py-2 text-left hover:bg-hover"
@@ -206,7 +208,7 @@ export function UserCard({
                       <span className="block text-sm font-semibold">Editar o Perfil Principal</span>
                       <span className="block text-xs text-muted">Perfil padrão e visível para todos</span>
                     </button>
-                  </div>
+                  </EditProfileMenu>
                 )}
               </span>
             ) : user.bot ? null : (
@@ -597,6 +599,21 @@ function RolePicker({ anchor, roles, onPick, onClose }: { anchor: HTMLElement | 
         {!list.length && <p className="px-2.5 py-2 text-sm text-muted">Nenhum cargo encontrado.</p>}
       </div>
     </div>
+  );
+}
+
+/** Menu do lápis "Editar perfil": abre à direita do botão (fora do cartão) se couber, senão à esquerda. */
+function EditProfileMenu({ anchor, children }: { anchor: HTMLElement | null; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const { style } = useFloating(box, (w, h, lock) => {
+    const r = anchor?.getBoundingClientRect();
+    return r ? placeBeside(r, w, h, { lock }) : null;
+  });
+  return createPortal(
+    <div ref={box} style={style} className="fixed z-[70] w-64 rounded-xl border border-edge bg-rail p-1.5 shadow-2xl">
+      {children}
+    </div>,
+    document.body,
   );
 }
 
