@@ -433,7 +433,7 @@ const MIGRATIONS: &[&str] = &[
   );
   CREATE INDEX soundboard_sounds_server ON soundboard_sounds(server_id);
 "#,
-    // Agente: formato do status do canal enquanto toca (null = "▶ {musica}", vazio = desligado).
+    // Agente: formato do status do canal enquanto toca (null = "▶️ {musica}", vazio = desligado).
     r#"
   ALTER TABLE users ADD COLUMN bot_now_playing TEXT;
 "#,

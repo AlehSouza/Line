@@ -260,8 +260,8 @@ function startEngine() {
   setInterval(reconcile, 4000);
 }
 
-/** Status do canal que o agente usa quando ninguém definiu um: "▶ {musica}" por padrão. */
-export const DEFAULT_NOW_PLAYING = '▶ {musica}';
+/** Status do canal que o agente usa quando ninguém definiu um: "▶️ {musica}" por padrão. */
+export const DEFAULT_NOW_PLAYING = '▶️ {musica}';
 
 /** Troca {musica} e {artista} no formato escolhido nas configurações do agente. */
 export function formatNowPlaying(format: string, title: string, author: string) {
