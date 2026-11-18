@@ -875,12 +875,15 @@ function ImageViewer({ url, filename, channelId, messageId, attachmentId, onClos
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
+      {/* Área fixa da mídia: a caixa de texto não pula enquanto a imagem carrega. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3">
       <MediaReactions channelId={channelId} messageId={messageId} attachmentId={attachmentId} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={url} alt={filename} className="max-h-[calc(100vh-210px)] min-h-0 max-w-full rounded-lg object-contain shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, filename))}
       />
+      </div>
       <a
         href={url}
         target="_blank"
@@ -913,6 +916,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   const media = cx('max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none invisible select-none');
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3">
       <MediaReactions channelId={channelId} messageId={item.messageId} attachmentId={item.attachmentId} />
       <div className="relative flex min-h-0 max-w-full items-center justify-center overflow-hidden rounded-lg" onMouseDown={(e) => e.stopPropagation()}>
         {video ? (
@@ -951,6 +955,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
             <Icons.EyeOff size={15} />
           </button>
         )}
+      </div>
       </div>
       {n > 1 && (
         <>

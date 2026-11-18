@@ -2,7 +2,7 @@
 
 import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
-import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message, type ThreadSummary } from '@line/shared';
+import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message, type Reaction, type ThreadSummary } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, openMenuAt, useContextMenuOpen, userMenu, type MenuEntry } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji, topEmojis } from './EmojiPicker';
@@ -719,6 +719,11 @@ function MessageRow({
     if (parent) actions.openThreadDraft(parent, message.id, name);
   }
 
+  /** Na grade, reagir vale para todas as mídias dela de uma vez. */
+  function reactRow(emoji: string) {
+    return gallery ? toggleGalleryReaction(message.channelId, galleryIds ?? [message.id], emoji) : toggleReaction(message, emoji);
+  }
+
   function forward() {
     actions.openModal({ kind: 'forward', messageId: message.id, channelId: message.channelId });
   }
@@ -773,6 +778,18 @@ function MessageRow({
   return (
     <div
       data-mid={message.id}
+      onDoubleClick={(e) => {
+        // Clique duplo na mensagem abre a conversa dela (ou começa uma). Na grade, abre as conversas das mídias.
+        if (editing || del) return;
+        if ((e.target as HTMLElement).closest('button, a, input, textarea, video, img, [role="button"], [contenteditable="true"]')) return;
+        if (gallery) {
+          window.getSelection()?.removeAllRanges();
+          actions.openMediaThreads(message.channelId, galleryIds ?? [message.id]);
+        } else if (canReply) {
+          window.getSelection()?.removeAllRanges();
+          reply();
+        }
+      }}
       onContextMenu={(e) => {
         if (editing) return;
         const row = e.currentTarget;
@@ -946,8 +963,10 @@ function MessageRow({
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
         )}
-        {!!message.reactions?.length && (
-          <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
+        {gallery ? (
+          <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} galleryIds={galleryIds ?? [message.id]} />
+        ) : (
+          !!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
         {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} /> : null : whole && <ThreadChip thread={whole} />}
           </>
@@ -959,7 +978,7 @@ function MessageRow({
           anchor={reactAnchor}
           onClose={() => setReactAnchor(null)}
           onPick={(emoji, keepOpen) => {
-            void toggleReaction(message, emoji);
+            void reactRow(emoji);
             if (!keepOpen) setReactAnchor(null);
           }}
         />
@@ -973,7 +992,7 @@ function MessageRow({
                 <button
                   key={emoji}
                   title={`Reagir com ${emoji}`}
-                  onClick={() => void toggleReaction(message, emoji)}
+                  onClick={() => void reactRow(emoji)}
                   className="flex size-8 items-center justify-center rounded-md text-lg leading-none hover:bg-hover"
                   style={{ fontFamily: EMOJI_FONT }}
                 >
@@ -1093,7 +1112,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
           owner={{ channelId: message.channelId, messageId: message.id }}
           below={only ? (a) => (a.reactions?.length ? <Reactions message={message} attachmentId={a.id} /> : null) : mediaThreadsBelow(message)}
         />
-        {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
+        {!only && !!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
       <div className={cx('absolute -top-3 right-4 rounded-lg border border-edge bg-side shadow', anchor ? 'flex' : 'hidden group-hover:flex')}>
         <button
@@ -1126,6 +1145,29 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
 async function toggleReaction(message: Message, emoji: string, attachmentId?: string) {
   const meId = useLine.getState().me?.id;
   const current = useLine.getState().messages[message.channelId]?.items.find((m) => m.id === message.id) ?? message;
+  if (attachmentId && current.attachments.length > 1) {
+    // Mídia de uma mensagem com várias: a reação da mensagem inteira (grade) também conta para ela.
+    const att = current.attachments.find((a) => a.id === attachmentId);
+    const onAtt = !!meId && !!att?.reactions?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
+    const onMsg = !!meId && !!current.reactions?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
+    if (!onAtt && !onMsg) pushRecentEmoji(emoji);
+    try {
+      if (onAtt || onMsg) {
+        if (onAtt) actions.updateMessage(await api.setAttachmentReaction(attachmentId, emoji, false));
+        if (onMsg) {
+          // Tirar de uma mídia uma reação dada na grade: sai da mensagem e fica nas outras mídias.
+          let updated = await api.removeReaction(message.id, emoji);
+          for (const a of current.attachments)
+            if (a.id !== attachmentId && isMedia(a) && !a.reactions?.some((r) => r.emoji === emoji && r.userIds.includes(meId!)))
+              updated = await api.setAttachmentReaction(a.id, emoji, true);
+          actions.updateMessage(updated);
+        }
+      } else actions.updateMessage(await api.setAttachmentReaction(attachmentId, emoji, true));
+    } catch (e) {
+      showError(e);
+    }
+    return;
+  }
   const list = attachmentId ? current.attachments.find((a) => a.id === attachmentId)?.reactions : current.reactions;
   const mine = !!meId && !!list?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
   if (!mine) pushRecentEmoji(emoji);
@@ -1136,6 +1178,46 @@ async function toggleReaction(message: Message, emoji: string, attachmentId?: st
         ? await api.removeReaction(message.id, emoji)
         : await api.addReaction(message.id, emoji);
     actions.updateMessage(updated);
+  } catch (e) {
+    showError(e);
+  }
+}
+
+/** Junta reações sem repetir pessoa (mesmo emoji em várias mídias conta uma vez). */
+function mergeReactions(lists: (Reaction[] | undefined)[]): Reaction[] {
+  const out = new Map<string, string[]>();
+  for (const list of lists)
+    for (const r of list ?? []) {
+      const ids = out.get(r.emoji) ?? [];
+      for (const id of r.userIds) if (!ids.includes(id)) ids.push(id);
+      out.set(r.emoji, ids);
+    }
+  return [...out].filter(([, ids]) => ids.length).map(([emoji, userIds]) => ({ emoji, userIds }));
+}
+
+/** Reações da grade: quem reagiu em qualquer mídia dela (ou na mensagem). */
+function galleryReactionsOf(messages: Message[]) {
+  return mergeReactions(messages.flatMap((m) => [m.reactions, ...m.attachments.filter(isMedia).map((a) => a.reactions)]));
+}
+
+/** Reagir na grade = reagir em todas as mídias. Se você já reagiu em alguma, tira de todas. */
+async function toggleGalleryReaction(channelId: string, messageIds: string[], emoji: string) {
+  const meId = useLine.getState().me?.id;
+  if (!meId) return;
+  const msgs = (useLine.getState().messages[channelId]?.items ?? []).filter((m) => messageIds.includes(m.id));
+  const has = (list?: Reaction[]) => !!list?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
+  const mine = galleryReactionsOf(msgs).some((r) => r.emoji === emoji && r.userIds.includes(meId));
+  if (!mine) pushRecentEmoji(emoji);
+  try {
+    await Promise.all(
+      msgs.map(async (m) => {
+        let updated: Message | null = null;
+        if (mine && has(m.reactions)) updated = await api.removeReaction(m.id, emoji);
+        for (const a of m.attachments.filter(isMedia))
+          if (has(a.reactions) === mine) updated = await api.setAttachmentReaction(a.id, emoji, !mine);
+        if (updated) actions.updateMessage(updated);
+      }),
+    );
   } catch (e) {
     showError(e);
   }
@@ -1237,14 +1319,22 @@ function ReactionsListModal({ reactions, onClose }: { reactions: NonNullable<Mes
 /** Reações da mídia: até 3 e "+N reações" (abre a lista de quem reagiu). */
 const MEDIA_REACTIONS_SHOWN = 3;
 
-function Reactions({ message, onAdd, adding, attachmentId }: { message: Message; onAdd?: (el: HTMLElement) => void; adding?: boolean; attachmentId?: string }) {
-  const all = (attachmentId ? message.attachments.find((a) => a.id === attachmentId)?.reactions : message.reactions) ?? [];
+function Reactions({ message, onAdd, adding, attachmentId, galleryIds }: { message: Message; onAdd?: (el: HTMLElement) => void; adding?: boolean; attachmentId?: string; galleryIds?: string[] }) {
+  const channelItems = useLine((s) => (galleryIds ? s.messages[message.channelId]?.items : undefined));
+  const all = galleryIds
+    ? galleryReactionsOf((channelItems ?? []).filter((m) => galleryIds.includes(m.id)))
+    : attachmentId
+      ? message.attachments.length > 1
+        ? mergeReactions([message.attachments.find((a) => a.id === attachmentId)?.reactions, message.reactions])
+        : (message.attachments.find((a) => a.id === attachmentId)?.reactions ?? [])
+      : (message.reactions ?? []);
   const reactions = attachmentId ? all.slice(0, MEDIA_REACTIONS_SHOWN) : all;
   const hidden = all.length - reactions.length;
   const [listOpen, setListOpen] = useState(false);
   const meId = useLine((s) => s.me?.id);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
   useLine((s) => s.users);
+  if (galleryIds && !all.length) return null;
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1">
       {reactions.map((r) => {
@@ -1252,7 +1342,7 @@ function Reactions({ message, onAdd, adding, attachmentId }: { message: Message;
         return (
           <span key={r.emoji} className="group/react relative">
             <button
-              onClick={() => void toggleReaction(message, r.emoji, attachmentId)}
+              onClick={() => void (galleryIds ? toggleGalleryReaction(message.channelId, galleryIds, r.emoji) : toggleReaction(message, r.emoji, attachmentId))}
               aria-pressed={mine}
               aria-label={`${r.emoji} ${r.userIds.length}: ${reactorNames(r.userIds, meId)}`}
               className={cx(
