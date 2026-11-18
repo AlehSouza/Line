@@ -125,6 +125,12 @@ fn window_toggle_maximize(window: WebviewWindow) -> bool {
     !max
 }
 
+/// Tela cheia de verdade (cobre a barra de tarefas): usada no modo "só a transmissão" da chamada.
+#[tauri::command]
+fn window_set_fullscreen(window: WebviewWindow, on: bool) {
+    let _ = window.set_fullscreen(on);
+}
+
 #[tauri::command]
 fn window_is_maximized(window: WebviewWindow) -> bool {
     window.is_maximized().unwrap_or(false)
@@ -711,6 +717,7 @@ pub fn run() {
             window_minimize,
             window_toggle_maximize,
             window_is_maximized,
+            window_set_fullscreen,
             window_close,
             update_check,
             update_install,

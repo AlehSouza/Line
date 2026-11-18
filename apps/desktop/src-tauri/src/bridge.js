@@ -73,6 +73,7 @@
       minimize: () => void invoke('window_minimize'),
       toggleMaximize: () => invoke('window_toggle_maximize'),
       isMaximized: () => invoke('window_is_maximized').then((v) => !!v),
+      setFullscreen: (on) => invoke('window_set_fullscreen', { on }),
       close: () => void invoke('window_close'),
     },
   };

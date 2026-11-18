@@ -364,6 +364,8 @@ export const Icons = {
   ArrowLeft: icon(L.ArrowLeft),
   ZoomIn: icon(L.ZoomIn),
   ZoomOut: icon(L.ZoomOut),
+  Fullscreen: icon(L.Maximize),
+  ExitFullscreen: icon(L.Minimize),
   UserMinus: icon(L.UserMinus),
   Gif: icon(L.ImagePlay),
   Play: icon(L.Play),

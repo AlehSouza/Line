@@ -256,16 +256,199 @@ function ScreenViewers({ userId, serverId }: { userId: string; serverId: string 
   );
 }
 
+const ZOOM_MAX = 6;
+
+/**
+ * Zoom (roda do mouse ou botões + / −) e arrastar na transmissão de outra pessoa. Só muda para mim.
+ * Arrastar com zoom não conta como clique no quadro.
+ */
+function ZoomBox({ enabled, children, controls }: { enabled: boolean; children: ReactNode; controls: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [z, setZ] = useState({ s: 1, x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+  const moved = useRef(false);
+  const clamp = (s: number, x: number, y: number) => {
+    const el = ref.current;
+    if (!el || s <= 1.001) return { s: 1, x: 0, y: 0 };
+    const mx = (el.clientWidth * (s - 1)) / 2;
+    const my = (el.clientHeight * (s - 1)) / 2;
+    return { s, x: Math.max(-mx, Math.min(mx, x)), y: Math.max(-my, Math.min(my, y)) };
+  };
+  // Zoom em direção ao ponto (cx, cy) da tela; sem ponto, no centro.
+  const zoomBy = (factor: number, cx?: number, cy?: number) =>
+    setZ((p) => {
+      const el = ref.current;
+      if (!el) return p;
+      const s = Math.min(ZOOM_MAX, Math.max(1, p.s * factor));
+      const r = el.getBoundingClientRect();
+      const ox = cx === undefined ? 0 : cx - r.left - r.width / 2;
+      const oy = cy === undefined ? 0 : cy - r.top - r.height / 2;
+      const k = s / p.s;
+      return clamp(s, ox - (ox - p.x) * k, oy - (oy - p.y) * k);
+    });
+  const zoomRef = useRef(zoomBy);
+  zoomRef.current = zoomBy;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !enabled) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      zoomRef.current(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [enabled]);
+  useEffect(() => {
+    if (!enabled) setZ({ s: 1, x: 0, y: 0 });
+  }, [enabled]);
+  const stop = (e: SyntheticEvent) => e.stopPropagation();
+  const zoomed = z.s > 1;
+  return (
+    <div
+      ref={ref}
+      className={cx('relative h-full w-full overflow-hidden', enabled && zoomed && (dragging ? 'cursor-grabbing' : 'cursor-grab'))}
+      onPointerDown={(e) => {
+        if (!enabled || !zoomed || e.button !== 0) return;
+        drag.current = { px: e.clientX, py: e.clientY, x: z.x, y: z.y, moved: false };
+        moved.current = false;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setDragging(true);
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        const dx = e.clientX - d.px;
+        const dy = e.clientY - d.py;
+        if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = moved.current = true;
+        setZ((p) => clamp(p.s, d.x + dx, d.y + dy));
+      }}
+      onPointerUp={() => {
+        drag.current = null;
+        setDragging(false);
+      }}
+      onPointerCancel={() => {
+        drag.current = null;
+        setDragging(false);
+      }}
+      onClickCapture={(e) => {
+        if (moved.current) {
+          moved.current = false;
+          e.stopPropagation();
+        }
+      }}
+    >
+      <div
+        className={cx('h-full w-full', !dragging && 'transition-transform duration-100')}
+        style={zoomed ? { transform: `translate(${z.x}px, ${z.y}px) scale(${z.s})` } : undefined}
+      >
+        {children}
+      </div>
+      {enabled && (
+        <div
+          onClick={stop}
+          onPointerDown={stop}
+          onDoubleClick={stop}
+          className={cx('absolute bottom-2 left-1/2 z-20 -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/70 p-1 text-white', controls)}
+        >
+          <button title="Diminuir zoom" disabled={!zoomed} onClick={() => zoomBy(1 / 1.25)} className="rounded-full p-1 hover:bg-white/15 disabled:opacity-40">
+            <Icons.ZoomOut size={16} />
+          </button>
+          <button
+            title="Voltar ao tamanho normal"
+            onClick={() => setZ({ s: 1, x: 0, y: 0 })}
+            className="min-w-12 rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums hover:bg-white/15"
+          >
+            {Math.round(z.s * 100)}%
+          </button>
+          <button title="Aumentar zoom" disabled={z.s >= ZOOM_MAX} onClick={() => zoomBy(1.25)} className="rounded-full p-1 hover:bg-white/15 disabled:opacity-40">
+            <Icons.ZoomIn size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Tela cheia total: só a transmissão, por cima de tudo (canais, barra da chamada, barra de título).
+ * No app, a janela também entra em tela cheia; na web, usa a tela cheia do navegador. Esc sai.
+ */
+function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  const [idle, setIdle] = useState(false);
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wake = () => {
+    setIdle(false);
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => setIdle(true), 2500);
+  };
+  useEffect(() => {
+    wake();
+    const native = window.line?.window?.setFullscreen;
+    if (native) void native(true).catch(() => {});
+    else void ref.current?.requestFullscreen?.().catch(() => {});
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
+    // Na web, o Esc sai da tela cheia do navegador antes de chegar aqui: sai do modo junto.
+    const onFs = () => !native && !document.fullscreenElement && close.current();
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', onFs);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('fullscreenchange', onFs);
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+      if (native) void native(false).catch(() => {});
+      else if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!tile.stream) return null;
+  return createPortal(
+    <div
+      ref={ref}
+      onMouseMove={wake}
+      onPointerDown={wake}
+      className={cx('fixed inset-0 z-[300] bg-black', idle && 'cursor-none')}
+    >
+      <ZoomBox enabled={!tile.isMe} controls={idle ? 'hidden' : 'flex'}>
+        <Video stream={tile.stream} contain />
+      </ZoomBox>
+      <div
+        className={cx(
+          'absolute top-3 right-3 left-3 z-30 flex items-center justify-between gap-2 transition-opacity duration-200',
+          idle ? 'pointer-events-none opacity-0' : 'opacity-100',
+        )}
+      >
+        <span className="flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium text-white">
+          <Icons.Screen size={14} /> Tela de {name}
+        </span>
+        <button
+          title="Sair da tela cheia (Esc)"
+          onClick={() => close.current()}
+          className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-sm font-semibold text-white hover:bg-black/90"
+        >
+          <Icons.ExitFullscreen size={16} /> Sair
+        </button>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function TileView({
   tile,
   big,
   onClick,
   onAspect,
+  onFullscreen,
 }: {
   tile: Tile;
   big?: boolean;
   onClick?: () => void;
   onAspect?: (aspect: number) => void;
+  onFullscreen?: () => void;
 }) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
   const effect = useSounds((s) => (tile.kind === 'person' ? s.effects[tile.state.userId] : undefined));
@@ -351,6 +534,10 @@ function TileView({
           </button>
           {!inSameCall && big && <p className="relative text-xs text-white/80">Entre na chamada para assistir.</p>}
         </div>
+      ) : tile.stream && tile.kind === 'screen' ? (
+        <ZoomBox enabled={!!big && !tile.isMe} controls="hidden group-hover:flex">
+          <Video stream={tile.stream} contain onAspect={onAspect} />
+        </ZoomBox>
       ) : tile.stream ? (
         <Video
           stream={tile.stream}
@@ -377,6 +564,18 @@ function TileView({
         ) : null}
       </span>
       {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenMenu userId={tile.state.userId} />}
+      {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
+        <button
+          title="Tela cheia (só a transmissão)"
+          onClick={(e) => {
+            e.stopPropagation();
+            onFullscreen();
+          }}
+          className="absolute top-2 right-10 z-20 hidden rounded-md bg-black/60 p-1 hover:bg-black/80 group-hover:block"
+        >
+          <Icons.Fullscreen size={14} />
+        </button>
+      )}
       {onClick && (
         <span className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 group-hover:block">
           {big ? <Icons.Shrink size={14} /> : <Icons.Expand size={14} />}
@@ -527,6 +726,10 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
     requestStageFocus(null);
   }, [stageFocus]);
   const focused = tiles.find((t) => t.key === focus);
+  // Tela cheia total de uma transmissão (some quando ela acaba).
+  const [full, setFull] = useState<string | null>(null);
+  const fullTile = tiles.find((t) => t.key === full && t.kind === 'screen' && t.stream);
+  const fullNick = useLine((s) => (fullTile?.state.serverId ? s.members[fullTile.state.serverId]?.[fullTile.state.userId]?.nickname : null));
   const [aspect, setAspect] = useState<number | null>(null);
   useEffect(() => setAspect(null), [focus]);
   const others = focused ? tiles.filter((t) => t !== focused) : tiles;
@@ -579,6 +782,14 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
 
   return (
     <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
+      {fullTile && (
+        <StreamFullscreen
+          key={fullTile.key}
+          tile={fullTile}
+          name={fullNick || fullTile.user?.displayName || 'Alguém'}
+          onClose={() => setFull(null)}
+        />
+      )}
       {!compact && (
         <header className="relative flex h-12 shrink-0 items-center gap-2 px-4">
           <MobileBack />
@@ -609,7 +820,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             {/* Antes de saber a proporção da tela (aberta pelo chat, sem miniatura), usa 16:9 em vez de ocupar a largura toda. */}
             {/* Pessoa em destaque: sempre 16:9, com ou sem câmera, para o quadro não mudar de tamanho. */}
             <FitBox aspect={focused.kind === 'screen' ? (aspect ?? 16 / 9) : 16 / 9} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
-              <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} />
+              <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} onFullscreen={() => setFull(focused.key)} />
             </FitBox>
             {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
           </>
@@ -1449,6 +1660,16 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
     hideTimer.current = setTimeout(() => setAt(null), 150);
   };
   useEffect(() => () => void (hideTimer.current && clearTimeout(hideTimer.current)), []);
+  // Assistir: abre o canal de voz com a transmissão em destaque (não fica no chat de texto).
+  const watch = () => {
+    setWatching(userId, true);
+    setAt(null);
+    requestStageFocus(`screen:${userId}`);
+    const st = useVoice.getState().states[userId];
+    const serverId = st?.serverId ?? useLine.getState().channels[channelId]?.serverId;
+    if (serverId) actions.goServer(serverId, channelId);
+    else actions.goHome(channelId);
+  };
   return (
     <>
       <span onMouseEnter={show} onMouseLeave={hide} className="rounded bg-danger px-1 text-[10px] font-bold text-white">
@@ -1479,14 +1700,7 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
             )}
             <div
               // Clicar na miniatura também abre a transmissão, igual ao botão.
-              onClick={
-                !isMe && inSameCall
-                  ? () => {
-                      setWatching(userId, true);
-                      setAt(null);
-                    }
-                  : undefined
-              }
+              onClick={!isMe && inSameCall ? watch : undefined}
               className={cx(
                 'relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black',
                 !isMe && inSameCall && 'cursor-pointer',
@@ -1503,10 +1717,7 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
               <p className="mt-2 text-center text-xs text-muted">Você está transmitindo.</p>
             ) : inSameCall ? (
               <button
-                onClick={() => {
-                  setWatching(userId, true);
-                  setAt(null);
-                }}
+                onClick={watch}
                 className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/90 py-1.5 text-sm font-semibold text-[#141418] transition-colors hover:bg-white"
               >
                 <Icons.Eye size={14} /> Assistir transmissão

@@ -512,6 +512,8 @@ declare global {
         minimize: () => void;
         toggleMaximize: () => Promise<boolean>;
         isMaximized: () => Promise<boolean>;
+        /** Só nas versões novas do app. */
+        setFullscreen?: (on: boolean) => Promise<void>;
         close: () => void;
       };
       updates?: {
