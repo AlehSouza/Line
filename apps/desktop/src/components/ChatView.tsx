@@ -1419,7 +1419,7 @@ interface Pending {
 }
 
 const MAX_FILE = 100 * 1024 * 1024;
-const MAX_FILES = 5;
+const MAX_FILES = 10;
 /** Texto colado maior que isso vira um arquivo .txt (como no Discord). */
 const LONG_PASTE = 2000;
 
@@ -1455,10 +1455,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
       return;
     }
     const room = MAX_FILES - pendingRef.current.length;
-    if (files.length > room) {
-      setNotice(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`);
-      window.setTimeout(() => setNotice(''), 4000);
-    }
+    if (files.length > room) toast(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`, 'error');
     for (const file of files.slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
       const name = file.name || 'arquivo';

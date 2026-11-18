@@ -181,11 +181,19 @@ async function check(file: File, level: NsfwLevel): Promise<boolean> {
   }
 }
 
+/** Fila: com até 10 anexos de uma vez, verificar tudo junto estoura o tempo (vídeos
+ * decodificando em paralelo). Cada anexo espera o anterior e ganha seus próprios 30 s. */
+let queue: Promise<unknown> = Promise.resolve();
+
 /** true quando a imagem/GIF/vídeo parece conteúdo +18. Falha ou demora (30 s) conta como não. */
 export function looksNsfw(file: File, level: NsfwLevel = 'moderate'): Promise<boolean> {
   if (!/^(image|video)\//.test(file.type) || file.type === 'image/svg+xml') return Promise.resolve(false);
-  return Promise.race([
-    check(file, level).catch(() => false),
-    new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 30000)),
-  ]);
+  const run = queue.then(() =>
+    Promise.race([
+      check(file, level).catch(() => false),
+      new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 30000)),
+    ]),
+  );
+  queue = run.catch(() => false);
+  return run;
 }
