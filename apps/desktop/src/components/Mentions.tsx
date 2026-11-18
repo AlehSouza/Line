@@ -67,9 +67,10 @@ export function MentionPicker({
       .map((id) => state.users[id])
       .filter((u): u is NonNullable<typeof u> => !!u && u.id !== meId)
       .map((u) => ({ u, name: displayNameIn(state, serverId, u.id) }))
-      .filter(({ u, name }) => match(name, u.username, u.displayName))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(0, 8)
+      // O agente do servidor aparece sempre, em primeiro, mesmo que não bata com o que foi digitado.
+      .filter(({ u, name }) => (serverId && u.bot) || match(name, u.username, u.displayName))
+      .sort((a, b) => Number(!!b.u.bot) - Number(!!a.u.bot) || a.name.localeCompare(b.name))
+      .slice(0, 9)
       .map(({ u, name }) => ({ kind: 'user', id: u.id, label: name, sub: u.bot ? 'Agente' : u.username, insert: `${mentionTag(state, serverId, u.username)} ` }));
     if (!serverId) return users;
     const perms = permsOf(state, serverId, meId);
