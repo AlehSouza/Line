@@ -1084,6 +1084,27 @@ function reactorNames(userIds: string[], meId?: string) {
 }
 
 /** Pílulas de reação embaixo da mensagem. Destacadas na cor do Line só quando você está entre quem reagiu. */
+/** Reações da mensagem no visualizador de mídia (acima da imagem), com o seletor para adicionar. */
+export function ViewerReactions({ message }: { message: Message }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  if (!message.reactions?.length) return null;
+  return (
+    <>
+      <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />
+      {anchor && (
+        <EmojiPicker
+          anchor={anchor}
+          onClose={() => setAnchor(null)}
+          onPick={(emoji, keepOpen) => {
+            void toggleReaction(message, emoji);
+            if (!keepOpen) setAnchor(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: HTMLElement) => void; adding: boolean }) {
   const meId = useLine((s) => s.me?.id);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
@@ -1225,7 +1246,7 @@ function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSum
 }
 
 /** onClick troca o abrir/fechar padrão (o visualizador abre a thread e se fecha). */
-export function ThreadChip({ thread, onClick }: { thread: ThreadSummary; onClick?: () => void }) {
+export function ThreadChip({ thread, onClick, className }: { thread: ThreadSummary; onClick?: () => void; className?: string }) {
   const open = useLine((s) => s.threadId === thread.id);
   const users = useLine((s) => s.users);
   const n = thread.messageCount;
@@ -1234,7 +1255,7 @@ export function ThreadChip({ thread, onClick }: { thread: ThreadSummary; onClick
   return (
     <button
       onClick={onClick ?? (() => (open ? actions.closeThread() : actions.openThread(thread.id)))}
-      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
+      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10', className)}
     >
       {ids.length > 0 ? (
         <span className="flex items-center -space-x-1.5">

@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { hasPerm, Perm, type Channel, type Role } from '@line/shared';
 import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
-import { Composer, ThreadChip, threadsOf } from './ChatView';
+import { Composer, ThreadChip, threadsOf, ViewerReactions } from './ChatView';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel, Select } from './ui';
@@ -825,7 +825,7 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
     <div className="w-full max-w-[760px] text-left" onMouseDown={(e) => e.stopPropagation()}>
       {summary && parent?.type !== 'thread' && (
         <div className="mb-2 px-4">
-          <ThreadChip thread={summary} onClick={() => open(summary.id)} />
+          <ThreadChip thread={summary} onClick={() => open(summary.id)} className="mt-0 w-full rounded-xl bg-raise px-3 py-2 hover:bg-hover" />
         </div>
       )}
       <Composer
@@ -833,6 +833,17 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
         placeholder={target.id.startsWith('draft:') ? 'Começar uma thread…' : `Responder em ${target.name}…`}
         onSent={open}
       />
+    </div>
+  );
+}
+
+/** Reações da mensagem dona da mídia, acima dela. */
+function MediaReactions({ channelId, messageId }: { channelId?: string; messageId?: string }) {
+  const message = useLine((s) => (channelId && messageId ? s.messages[channelId]?.items.find((m) => m.id === messageId) : undefined));
+  if (!message?.reactions?.length) return null;
+  return (
+    <div className="flex max-w-[760px] justify-center" onMouseDown={(e) => e.stopPropagation()}>
+      <ViewerReactions message={message} />
     </div>
   );
 }
@@ -856,8 +867,9 @@ function ImageViewer({ url, filename, channelId, messageId, attachmentId, onClos
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
+      <MediaReactions channelId={channelId} messageId={messageId} />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={filename} className="max-h-[calc(100vh-170px)] min-h-0 max-w-full rounded-lg object-contain shadow-2xl"
+      <img src={url} alt={filename} className="max-h-[calc(100vh-210px)] min-h-0 max-w-full rounded-lg object-contain shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
         onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, filename))}
       />
@@ -890,9 +902,10 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
   const covered = !!item.sensitive && !revealed.includes(i);
-  const media = cx('max-h-[calc(100vh-170px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none blur-2xl brightness-75 select-none');
+  const media = cx('max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none blur-2xl brightness-75 select-none');
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
+      <MediaReactions channelId={channelId} messageId={item.messageId} />
       <div className="relative flex min-h-0 max-w-full items-center justify-center overflow-hidden rounded-lg" onMouseDown={(e) => e.stopPropagation()}>
         {video ? (
           <video key={item.url + covered} src={item.url} controls={!covered} autoPlay={!covered} muted={covered} className={media} />
