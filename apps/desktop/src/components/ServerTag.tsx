@@ -3,7 +3,7 @@
 import type { PublicUser, TagStyle } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, fileUrl, type ServerCardInfo } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
@@ -117,6 +117,15 @@ export function UserTagBadge({ user }: { user: Pick<PublicUser, 'id' | 'tag'> })
       {anchor && (
         <ServerCardPopover
           serverId={tag.serverId}
+          badge={
+            <span
+              className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
+              style={tagBadgeStyle(tag.style ?? server?.tagStyle)}
+            >
+              <TagIcon icon={tag.icon} iconUrl={tag.iconUrl ?? server?.iconUrl} style={tag.style ?? server?.tagStyle} />
+              {tag.text}
+            </span>
+          }
           anchor={anchor}
           tagEl={ref.current}
           onEnter={keep}
@@ -131,9 +140,10 @@ export function UserTagBadge({ user }: { user: Pick<PublicUser, 'id' | 'tag'> })
   );
 }
 
-/** Cartão do servidor logo abaixo da tag (acima, se não couber). Servidor privado (e eu fora dele): só foto e capa acinzentadas. */
+/** Cartão do servidor logo abaixo da tag (acima, se não couber). Servidor privado (e eu fora dele): cartão compacto sem capa, ícone cinza à esquerda e tag + "Servidor privado" à direita. */
 function ServerCardPopover({
   serverId,
+  badge,
   anchor,
   tagEl,
   onEnter,
@@ -141,6 +151,7 @@ function ServerCardPopover({
   onClose,
 }: {
   serverId: string;
+  badge: ReactNode;
   anchor: DOMRect;
   tagEl: HTMLElement | null;
   onEnter: () => void;
@@ -198,89 +209,101 @@ function ServerCardPopover({
         className="fixed z-50 overflow-hidden rounded-2xl border border-edge bg-side shadow-2xl"
         style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 0 }}
       >
-        <div className={cx('h-[110px] bg-raise', isPrivate && 'opacity-60 grayscale')}>
-          {info?.bannerUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={fileUrl(info.bannerUrl)} alt="" className="h-full w-full object-cover" />
-          )}
-        </div>
-        <div className="px-4 pb-4">
-          <span
-            className={cx(
-              '-mt-9 flex h-[68px] w-[68px] overflow-hidden rounded-[20px] border-4 border-side bg-side',
-              isPrivate && 'opacity-60 grayscale',
-            )}
-          >
-            {info?.iconUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={fileUrl(info.iconUrl)} alt="" className="h-full w-full rounded-[16px] object-cover" />
-            ) : (
-              <span className="h-full w-full overflow-hidden rounded-[16px]">
+        {isPrivate ? (
+          <div className="flex items-center gap-3 p-4">
+            <span className="flex h-[60px] w-[60px] shrink-0 overflow-hidden rounded-[18px] bg-raise opacity-60 grayscale">
+              {info?.iconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fileUrl(info.iconUrl)} alt="" className="h-full w-full object-cover" />
+              ) : (
                 <DefaultServerIcon />
-              </span>
-            )}
-          </span>
-
-          {!info && !error && <p className="mt-3 text-sm text-muted">Carregando…</p>}
-          <ErrorText>{error}</ErrorText>
-
-          {isPrivate && <p className="mt-4 mb-2 text-center text-sm font-semibold text-soft">Servidor privado.</p>}
-
-          {full && (
-            <>
-              <p className="mt-2 flex min-w-0 items-center gap-2 text-lg leading-tight font-bold">
-                <span className="truncate">{full.name}</span>
-                {full.tag && (
-                  <span
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
-                    style={tagBadgeStyle(full.tagStyle)}
-                  >
-                    <TagIcon icon={full.tagIcon} iconUrl={full.iconUrl} style={full.tagStyle} />
-                    {full.tag}
+              )}
+            </span>
+            <div className="flex min-w-0 flex-col items-start gap-1.5">
+              {badge}
+              <p className="text-sm font-semibold text-soft">Servidor privado</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="h-[110px] bg-raise">
+              {info?.bannerUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fileUrl(info.bannerUrl)} alt="" className="h-full w-full object-cover" />
+              )}
+            </div>
+            <div className="px-4 pb-4">
+              <span className="-mt-9 flex h-[68px] w-[68px] overflow-hidden rounded-[20px] border-4 border-side bg-side">
+                {info?.iconUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fileUrl(info.iconUrl)} alt="" className="h-full w-full rounded-[16px] object-cover" />
+                ) : (
+                  <span className="h-full w-full overflow-hidden rounded-[16px]">
+                    <DefaultServerIcon />
                   </span>
                 )}
-              </p>
-              <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-soft">
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-online" /> {full.onlineCount.toLocaleString('pt-BR')} online
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-full bg-offline" /> {full.memberCount.toLocaleString('pt-BR')}{' '}
-                  {full.memberCount === 1 ? 'membro' : 'membros'}
-                </span>
-              </p>
-              <p className="mt-0.5 text-xs text-muted">
-                Desde {new Date(full.createdAt).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
-              </p>
-              {full.description && <p className="mt-3 text-sm break-words whitespace-pre-wrap text-soft">{full.description}</p>}
-              <Button
-                className="mt-4 w-full"
-                disabled={busy}
-                onClick={async () => {
-                  if (full.member) {
-                    actions.goServer(full.id);
-                    mobile.showNav();
-                    return onClose();
-                  }
-                  setBusy(true);
-                  try {
-                    const server = await api.joinPublic(full.id);
-                    actions.upsertServer(server);
-                    actions.goServer(server.id);
-                    mobile.showNav();
-                    onClose();
-                  } catch (e) {
-                    showError(e);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {full.member ? 'Abrir servidor' : busy ? 'Entrando…' : 'Juntar-se'}
-              </Button>
-            </>
-          )}
-        </div>
+              </span>
+
+              {!info && !error && <p className="mt-3 text-sm text-muted">Carregando…</p>}
+              <ErrorText>{error}</ErrorText>
+
+              {full && (
+                <>
+                  <p className="mt-2 flex min-w-0 items-center gap-2 text-lg leading-tight font-bold">
+                    <span className="truncate">{full.name}</span>
+                    {full.tag && (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
+                        style={tagBadgeStyle(full.tagStyle)}
+                      >
+                        <TagIcon icon={full.tagIcon} iconUrl={full.iconUrl} style={full.tagStyle} />
+                        {full.tag}
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-soft">
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-online" /> {full.onlineCount.toLocaleString('pt-BR')} online
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="h-2 w-2 rounded-full bg-offline" /> {full.memberCount.toLocaleString('pt-BR')}{' '}
+                      {full.memberCount === 1 ? 'membro' : 'membros'}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    Desde {new Date(full.createdAt).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+                  </p>
+                  {full.description && <p className="mt-3 text-sm break-words whitespace-pre-wrap text-soft">{full.description}</p>}
+                  <Button
+                    className="mt-4 w-full"
+                    disabled={busy}
+                    onClick={async () => {
+                      if (full.member) {
+                        actions.goServer(full.id);
+                        mobile.showNav();
+                        return onClose();
+                      }
+                      setBusy(true);
+                      try {
+                        const server = await api.joinPublic(full.id);
+                        actions.upsertServer(server);
+                        actions.goServer(server.id);
+                        mobile.showNav();
+                        onClose();
+                      } catch (e) {
+                        showError(e);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    {full.member ? 'Abrir servidor' : busy ? 'Entrando…' : 'Juntar-se'}
+                  </Button>
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body,
