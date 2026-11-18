@@ -4,7 +4,7 @@ import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
 import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
-import { openContextMenu, openMenuAt, userMenu, type MenuEntry } from './ContextMenu';
+import { openContextMenu, openMenuAt, useContextMenuOpen, userMenu, type MenuEntry } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji, topEmojis } from './EmojiPicker';
 import { messageLink } from '@/lib/messageLink';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
@@ -564,6 +564,12 @@ function MessageRow({
   const [reveal, setReveal] = useState(false);
   const authorUser = useLine((s) => s.users[message.author.id]) ?? message.author;
   const isSaved = useIsSaved(message.id);
+  // Barra fica aberta enquanto o menu das reticências estiver aberto (some quando ele fecha).
+  const [moreOpen, setMoreOpen] = useState(false);
+  const menuOpen = useContextMenuOpen();
+  useEffect(() => {
+    if (!menuOpen) setMoreOpen(false);
+  }, [menuOpen]);
 
   // Ao entrar em edição (botão, menu ou seta para cima), começa do texto atual.
   useEffect(() => {
@@ -653,11 +659,6 @@ function MessageRow({
         icon: <Icons.Pin size={15} />,
         onClick: () => openPinMenu(message, menuAt),
       },
-      {
-        label: isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem',
-        icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
-        onClick: () => toggleSaved(message),
-      },
       { label: 'Copiar link da mensagem', icon: <Icons.Link size={15} />, onClick: () => copy(messageLink(message), 'Link da mensagem copiado.') },
       'sep',
       canDelete && { label: 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
@@ -687,6 +688,11 @@ function MessageRow({
           canReact && { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
           canReply && { label: message.thread ? 'Abrir thread' : 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: reply },
           canForward && { label: 'Encaminhar', icon: <Icons.Forward size={15} />, onClick: forward },
+          {
+            label: isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem',
+            icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
+            onClick: () => toggleSaved(message),
+          },
           mine && {
             label: 'Editar mensagem',
             icon: <Icons.Edit size={15} />,
@@ -707,6 +713,7 @@ function MessageRow({
       }}
       className={cx(
         'group relative flex gap-4 px-4 py-1.5 transition-colors duration-700 hover:bg-black/10',
+        moreOpen && 'bg-black/10',
         !grouped && (tight ? 'mt-2' : 'mt-4'),
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
         highlighted && 'bg-accent/15',
@@ -834,7 +841,7 @@ function MessageRow({
       )}
 
       {!editing && (
-        <div className={cx('absolute -top-4 right-4 hidden items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow group-hover:flex', reactAnchor && 'flex')}>
+        <div className={cx('absolute -top-4 right-4 hidden items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow group-hover:flex', (reactAnchor || moreOpen) && 'flex')}>
           {canReact && (
             <>
               {topEmojis(3).map((emoji) => (
@@ -861,6 +868,13 @@ function MessageRow({
               </button>
             </>
           )}
+          <button
+            title={isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem'}
+            onClick={() => toggleSaved(message)}
+            className={cx('flex size-8 items-center justify-center rounded-md hover:bg-hover hover:text-fg', isSaved ? 'text-accent' : 'text-muted')}
+          >
+            {isSaved ? <Icons.BookmarkCheck size={18} /> : <Icons.Bookmark size={18} />}
+          </button>
           {mine && (
             <button
               title="Editar"
@@ -893,6 +907,7 @@ function MessageRow({
               const r = e.currentTarget.getBoundingClientRect();
               const at = { x: Math.max(8, r.right - 232), y: r.bottom + 4 };
               openMenuAt(at, moreItems(at));
+              setMoreOpen(true);
             }}
             className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
           >
