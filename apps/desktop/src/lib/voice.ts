@@ -9,6 +9,7 @@ import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from
 import { hasPerm, Perm } from '@line/shared';
 import { actions, channelPermsOf, useLine } from './store';
 import { toast } from '@/components/Dialogs';
+import { needsNsfwGate } from './nsfwGate';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -524,6 +525,8 @@ function resumeVoice(list: VoiceState[]) {
 
 export async function joinVoice(channelId: string) {
   if (!socket) return;
+  // Canal +18 sem passar pelo aviso: a tela do canal mostra o aviso e entra no Prosseguir.
+  if (needsNsfwGate(channelId)) return;
   const current = getV();
   if (current.channelId === channelId) return;
   if (current.channelId) await leaveVoice();

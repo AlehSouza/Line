@@ -9,6 +9,9 @@ import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
 import { looksNsfw } from '@/lib/nsfw';
+import { acceptNsfwChannel, loadNsfwOk, useNsfwOk } from '@/lib/nsfwGate';
+import { isAdult } from '@/lib/age';
+import { goBack } from '@/lib/history';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
@@ -56,6 +59,11 @@ export function ChatView({ channel }: { channel: Channel }) {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [channel.id]);
+
+  const nsfwOk = useNsfwOk((g) => g.ids.includes(channel.id));
+  const adult = isAdult(me?.birthDate);
+  useEffect(() => loadNsfwOk(), [me?.id]);
+  if (channel.nsfw && (!adult || !nsfwOk)) return <NsfwChannelGate channel={channel} adult={adult} />;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
@@ -1044,6 +1052,60 @@ function nameFromUrl(url: string, type: string) {
   return `${base || (type.startsWith('video/') ? 'video' : 'imagem')}.${ext}`;
 }
 
+/** Primeira entrada num canal +18: aviso centralizado com Voltar e Prosseguir. Sem data de
+ * nascimento (ou menor de 18) não dá para prosseguir. */
+function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean }) {
+  const server = useLine((s) => (channel.serverId ? s.servers[channel.serverId] : undefined));
+  const hasBirth = !!useLine((s) => s.me?.birthDate);
+  const ChanIcon = channelIcon(channel);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        <MobileBack />
+        <ChanIcon size={20} className="text-muted" />
+        <h1 className="truncate font-bold">{channel.name}</h1>
+        <span className="rounded bg-danger/15 px-1.5 py-0.5 text-[11px] font-bold text-danger">+18</span>
+      </header>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-danger/15 text-xl font-extrabold text-danger">+18</span>
+        <h2 className="text-2xl font-bold">Canal com conteúdo sensível</h2>
+        <p className="max-w-[520px] text-[15px] leading-relaxed text-soft">
+          {adult
+            ? `Este canal foi marcado como +18 pela administração de ${server?.name ?? 'este servidor'} e pode ter conteúdo sensível. Prossiga só se você tem 18 anos ou mais.`
+            : hasBirth
+              ? 'Este canal foi marcado como +18 e só pode ser aberto por quem tem 18 anos ou mais.'
+              : 'Este canal foi marcado como +18. Para entrar, informe sua data de nascimento em Configurações, Minha conta.'}
+        </p>
+        <div className="mt-1 flex gap-3">
+          <button onClick={() => goBack()} className="rounded-lg bg-raise px-5 py-2.5 text-sm font-semibold text-fg hover:bg-hover">
+            Voltar
+          </button>
+          {adult ? (
+            <button
+              onClick={() => {
+                acceptNsfwChannel(channel.id);
+                if (channel.type === 'voice') void joinVoice(channel.id);
+              }}
+              className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-strong"
+            >
+              Prosseguir
+            </button>
+          ) : (
+            !hasBirth && (
+              <button
+                onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
+                className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-strong"
+              >
+                Informar data de nascimento
+              </button>
+            )
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface Pending {
   key: string;
   name: string;
@@ -1118,7 +1180,8 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
       setPending((list) => [...list, item]);
       if (item.error) continue;
       if (item.checking) {
-        void looksNsfw(file).then((hit) => {
+        const level = channel.serverId ? useLine.getState().servers[channel.serverId]?.nsfwLevel : undefined;
+        void looksNsfw(file, level ?? 'moderate').then((hit) => {
           patch(key, hit ? { checking: false, nsfw: true, autoNsfw: true } : { checking: false });
           if (hit) toast('Esse anexo parece conteúdo +18 e foi marcado como +18.');
         });

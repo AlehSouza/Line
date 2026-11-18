@@ -459,6 +459,8 @@ pub struct UpdateServer {
     pub banner_id: Option<Option<String>>,
     /// Só o dono: mostrar ou não a estrelinha de dono.
     pub show_owner_badge: Option<bool>,
+    /// Rigor da detecção de +18: light | moderate | high.
+    pub nsfw_level: Option<String>,
 }
 
 impl UpdateServer {
@@ -468,6 +470,11 @@ impl UpdateServer {
             text(d, 0, 300, "A descrição")?;
         }
         self.icon_color = self.icon_color.as_deref().map(color).transpose()?;
+        if let Some(l) = &self.nsfw_level
+            && !["light", "moderate", "high"].contains(&l.as_str())
+        {
+            return Err(validation("Nível de censura inválido"));
+        }
         if let Some(t) = &mut self.tag {
             *t = t.trim().to_uppercase();
             if t.chars().count() > 4 || !t.chars().all(char::is_alphanumeric) {
@@ -530,6 +537,8 @@ pub struct UpdateChannel {
     pub position: Option<u32>,
     /// Quem vê e quem interage (manda tudo de uma vez).
     pub access: Option<ChannelAccessInput>,
+    /// Canal +18.
+    pub nsfw: Option<bool>,
 }
 
 #[derive(Deserialize)]

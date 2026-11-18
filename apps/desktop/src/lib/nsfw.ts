@@ -38,13 +38,19 @@ function loadModels(): Promise<Model[]> {
   return models;
 }
 
-/** Explícito (pornografia/hentai) ou erótico (classe "Sexy"): qualquer um marca +18.
- * Limites baixos de propósito: melhor marcar demais do que deixar passar. */
-function isExplicit(p: Prediction[]) {
+export type NsfwLevel = 'light' | 'moderate' | 'high';
+
+/** Rigor por servidor (Configurações do servidor → Censura de mídias):
+ * - light: só o completamente explícito (sexo, genitália);
+ * - moderate: + o que incita sexo (insinuação, poses, se esfregar);
+ * - high: + qualquer sugestão sexual. */
+function isExplicit(p: Prediction[], level: NsfwLevel) {
   const prob = (c: string) => p.find((x) => x.className === c)?.probability ?? 0;
   const explicit = prob('Porn') + prob('Hentai');
   const sexy = prob('Sexy');
-  return explicit >= 0.3 || sexy >= 0.45 || explicit + sexy >= 0.55;
+  if (level === 'light') return explicit >= 0.55;
+  if (level === 'high') return explicit >= 0.2 || sexy >= 0.25 || explicit + sexy >= 0.35;
+  return explicit >= 0.3 || sexy >= 0.5 || explicit + sexy >= 0.55;
 }
 
 const SIZE = 320;
@@ -160,14 +166,14 @@ async function framesOf(file: File, url: string): Promise<HTMLCanvasElement[]> {
   return [frameOf(img, img.naturalWidth, img.naturalHeight, 1024)];
 }
 
-async function check(file: File): Promise<boolean> {
+async function check(file: File, level: NsfwLevel): Promise<boolean> {
   const url = URL.createObjectURL(file);
   try {
     const [nets, frames] = await Promise.all([loadModels(), framesOf(file, url)]);
     for (const frame of frames) {
       // Vídeo/GIF têm muitos quadros: neles basta inteira, espelhada e centro.
       const pieces = frames.length > 1 ? crops(frame, frame.width, frame.height).slice(0, 3) : crops(frame, frame.width, frame.height);
-      for (const piece of pieces) for (const net of nets) if (isExplicit(await net.classify(piece))) return true;
+      for (const piece of pieces) for (const net of nets) if (isExplicit(await net.classify(piece), level)) return true;
     }
     return false;
   } finally {
@@ -176,10 +182,10 @@ async function check(file: File): Promise<boolean> {
 }
 
 /** true quando a imagem/GIF/vídeo parece conteúdo +18. Falha ou demora (30 s) conta como não. */
-export function looksNsfw(file: File): Promise<boolean> {
+export function looksNsfw(file: File, level: NsfwLevel = 'moderate'): Promise<boolean> {
   if (!/^(image|video)\//.test(file.type) || file.type === 'image/svg+xml') return Promise.resolve(false);
   return Promise.race([
-    check(file).catch(() => false),
+    check(file, level).catch(() => false),
     new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 30000)),
   ]);
 }

@@ -93,6 +93,8 @@ pub struct Server {
     pub suspended: bool,
     /// Mostra a estrelinha de dono ao lado do nome do dono na lista de membros.
     pub show_owner_badge: bool,
+    /// Rigor da detecção automática de +18 nas mídias: light | moderate | high.
+    pub nsfw_level: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -127,6 +129,8 @@ pub struct Channel {
     pub role_ids: Option<Vec<String>>,
     /// Só quem está nas listas abaixo manda mensagem (texto) ou fala (voz).
     pub interact_restricted: bool,
+    /// Canal +18: aviso de conteúdo sensível na primeira entrada; só para 18 anos ou mais.
+    pub nsfw: bool,
     /// Canal base: 'rules' | 'announcements' | 'events' | 'activity'; vazio = canal comum.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub base: String,

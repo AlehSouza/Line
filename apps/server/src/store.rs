@@ -181,6 +181,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
             .flatten()
             .is_some(),
         show_owner_badge: r.get::<_, i64>("show_owner_badge").unwrap_or(1) != 0,
+        nsfw_level: r.get("nsfw_level").unwrap_or_else(|_| "moderate".into()),
     })
 }
 
@@ -210,6 +211,7 @@ struct ChannelRow {
     is_private: bool,
     interact_restricted: bool,
     base: String,
+    nsfw: bool,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -228,6 +230,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         is_private: r.get::<_, i64>("is_private")? != 0,
         interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
         base: r.get("base").unwrap_or_default(),
+        nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
     })
 }
 
@@ -1323,6 +1326,20 @@ impl Q<'_> {
         }
     }
 
+    pub fn set_server_nsfw_level(&self, server_id: &str, level: &str) {
+        ok(self.c.execute(
+            "UPDATE servers SET nsfw_level = ? WHERE id = ?",
+            params![level, server_id],
+        ));
+    }
+
+    pub fn set_channel_nsfw(&self, channel_id: &str, on: bool) {
+        ok(self.c.execute(
+            "UPDATE channels SET nsfw = ? WHERE id = ?",
+            params![on as i64, channel_id],
+        ));
+    }
+
     pub fn set_show_owner_badge(&self, server_id: &str, show: bool) {
         ok(self.c.execute(
             "UPDATE servers SET show_owner_badge = ? WHERE id = ?",
@@ -1366,6 +1383,7 @@ impl Q<'_> {
             member_ids,
             role_ids,
             interact_restricted: row.interact_restricted,
+            nsfw: row.nsfw,
             base: row.base,
             interact_member_ids,
             interact_role_ids,

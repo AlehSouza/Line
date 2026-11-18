@@ -174,6 +174,8 @@ export interface Server {
   suspended?: boolean;
   /** Estrelinha de dono ao lado do nome do dono (padrão: sim). */
   showOwnerBadge?: boolean;
+  /** Rigor da detecção automática de +18 nas mídias (padrão moderate). */
+  nsfwLevel?: 'light' | 'moderate' | 'high';
 }
 
 export interface Category {
@@ -211,6 +213,8 @@ export type BaseChannelKind = 'rules' | 'announcements' | 'events' | 'activity';
 export interface Channel {
   id: string;
   type: ChannelType;
+  /** Canal +18: aviso de conteúdo sensível na primeira entrada, só para 18 anos ou mais. */
+  nsfw?: boolean;
   serverId: string | null;
   categoryId: string | null;
   name: string;

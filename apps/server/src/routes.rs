@@ -1362,6 +1362,9 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
         }
         q.set_show_owner_badge(&id, show);
     }
+    if let Some(level) = &p.nsfw_level {
+        q.set_server_nsfw_level(&id, level);
+    }
     let before_tag = q
         .server(&id)
         .map(|s| (s.tag, s.tag_icon, s.tag_style, s.icon_url))
@@ -2228,6 +2231,11 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
         .into_iter()
         .filter(|u| q.can_access(u, &channel.id))
         .collect();
+    if let Some(on) = p.nsfw
+        && (channel.kind == "text" || channel.kind == "voice")
+    {
+        q.set_channel_nsfw(&channel.id, on);
+    }
     let updated = q.update_channel(
         &channel.id,
         ChannelPatch {

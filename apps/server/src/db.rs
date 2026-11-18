@@ -503,6 +503,11 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (attachment_id, reporter_id)
   );
 "#,
+    // Nível de censura das mídias por servidor (light | moderate | high) e canal +18.
+    r#"
+  ALTER TABLE servers ADD COLUMN nsfw_level TEXT NOT NULL DEFAULT 'moderate';
+  ALTER TABLE channels ADD COLUMN nsfw INTEGER NOT NULL DEFAULT 0;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -19,7 +19,7 @@ import { hasPerm, Perm, type Role } from '@line/shared';
 import { actions, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
-import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel } from './ui';
+import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel, Select } from './ui';
 import { EmojiButton, EmojiInput, EmojiTextarea } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 
@@ -401,6 +401,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
   const [restricted, setRestricted] = useState(!!channel?.interactRestricted);
   const [interactRoleIds, setInteractRoleIds] = useState<string[]>(channel?.interactRoleIds ?? []);
   const [interactMemberIds, setInteractMemberIds] = useState<string[]>(channel?.interactMemberIds ?? []);
+  const [nsfw, setNsfw] = useState(!!channel?.nsfw);
   const { busy, error, run } = useAction();
   if (!channel) return null;
   const isText = channel.type !== 'voice';
@@ -410,7 +411,8 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
     restricted !== !!channel.interactRestricted ||
     (isPrivate && (!sameSet(roleIds, channel.roleIds) || !sameSet(memberIds, channel.memberIds))) ||
     (restricted && (!sameSet(interactRoleIds, channel.interactRoleIds) || !sameSet(interactMemberIds, channel.interactMemberIds)));
-  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged;
+  const nsfwChanged = nsfw !== !!channel.nsfw;
+  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged || nsfwChanged;
   const emptyPrivate = isPrivate && !roleIds.length && !memberIds.length;
   return (
     <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose} width={520} tall>
@@ -422,6 +424,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
               await api.updateChannel(channelId, {
                 name: name.trim(),
                 topic: topic.trim(),
+                ...(hasAccess && nsfwChanged ? { nsfw } : {}),
                 ...(hasAccess && accessChanged
                   ? {
                       access: {
@@ -462,6 +465,26 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
         </Field>
         {hasAccess && channel.serverId && (
           <>
+            <div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <span className="rounded bg-danger/15 px-1 text-[11px] font-bold text-danger">+18</span>
+                  Canal +18
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={nsfw}
+                  onClick={() => setNsfw((v) => !v)}
+                  className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', nsfw ? 'bg-accent' : 'bg-edge')}
+                >
+                  <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', nsfw ? 'left-[22px]' : 'left-0.5')} />
+                </button>
+              </div>
+              <p className="mt-1 text-sm text-muted">
+                Na primeira vez que alguém abrir o canal aparece um aviso de conteúdo sensível. Só entra quem informou ter 18 anos ou mais.
+              </p>
+            </div>
             <div>
               <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Quem pode ver" />
               <p className="mt-1 text-sm text-muted">
@@ -761,6 +784,13 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
   );
 }
 
+/** Rigor da detecção automática de +18 nas mídias enviadas no servidor. */
+const NSFW_LEVELS = [
+  { value: 'light', label: 'Leve', hint: 'Marca +18 só o que é completamente explícito: sexo explícito, genitália à mostra e afins.' },
+  { value: 'moderate', label: 'Moderada', hint: 'Tudo do Leve, mais o que incita sexo: se esfregar, poses e situações insinuantes.' },
+  { value: 'high', label: 'Alta', hint: 'Tudo do Leve e do Moderado, mais qualquer mínima sugestão sexual.' },
+];
+
 export function ServerOverview({ serverId, onClose }: { serverId: string; onClose: () => void }) {
   const server = useLine((s) => s.servers[serverId]);
   const isOwner = useLine((s) => s.me?.id === s.servers[serverId]?.ownerId);
@@ -769,6 +799,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
   const [ownerBadge, setOwnerBadge] = useState(server?.showOwnerBadge ?? true);
+  const [nsfwLevel, setNsfwLevel] = useState<'light' | 'moderate' | 'high'>(server?.nsfwLevel ?? 'moderate');
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
   const [imageError, setImageError] = useState('');
@@ -796,6 +827,9 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
           <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
+        <Field label="Censura de mídias" group hint={NSFW_LEVELS.find((l) => l.value === nsfwLevel)?.hint}>
+          <Select value={nsfwLevel} onChange={(v) => setNsfwLevel(v as typeof nsfwLevel)} options={NSFW_LEVELS} />
+        </Field>
         {isOwner && (
           <label className="flex items-center gap-3 text-sm">
             <Checkbox checked={ownerBadge} onChange={setOwnerBadge} />
@@ -831,6 +865,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
                     description,
                     isPublic,
                     ...(isOwner && ownerBadge !== (server.showOwnerBadge ?? true) ? { showOwnerBadge: ownerBadge } : {}),
+                    ...(nsfwLevel !== (server.nsfwLevel ?? 'moderate') ? { nsfwLevel } : {}),
                     ...(icon.changed ? { iconId: icon.id } : {}),
                     ...(banner.changed ? { bannerId: banner.id } : {}),
                   }),
