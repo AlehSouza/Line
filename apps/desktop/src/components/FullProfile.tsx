@@ -16,6 +16,7 @@ import { CardColorButton, cardStyle, ImageEditMenu, InlineText, saveProfile, Son
 import { ConnectionList, GamesBoard, SongPlayer } from './ProfileExtras';
 import { UserTagBadge } from './ServerTag';
 import { MemberRoles, useHasMemberRoles } from './UserCard';
+import { BotTag } from './Music';
 import { Avatar, Button, cx, DefaultServerIcon, Icons, Logo } from './ui';
 
 const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
@@ -23,7 +24,21 @@ const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('p
 type Tab = 'mural' | 'activity' | 'friends' | 'servers';
 
 /** Perfil completo (clique direito → Perfil): cartão à esquerda e abas à direita. */
-export function FullProfile({ userId, serverId, onClose, embedded }: { userId: string; serverId?: string | null; onClose: () => void; /** Só o cartão, editável, dentro de Configurações → Perfil. */ embedded?: boolean }) {
+export function FullProfile({
+  userId,
+  serverId,
+  onClose,
+  embedded,
+  agentServerId,
+}: {
+  userId: string;
+  serverId?: string | null;
+  onClose: () => void;
+  /** Só o cartão, editável, dentro de Configurações → Perfil. */
+  embedded?: boolean;
+  /** Cartão do agente desse servidor, editável (Configurações do servidor → Agente → Personalizar). */
+  agentServerId?: string;
+}) {
   const me = useLine((s) => s.me);
   const other = useLine((s) => s.users[userId]);
   const friend = useLine((s) => s.friends[userId]);
@@ -67,12 +82,17 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
   const banner = bannerUrl ? fileUrl(bannerUrl) : null;
   const bio = (!main && look.bio) || user.bio;
   const ring = `color-mix(in srgb, ${user.avatarColor} 22%, var(--color-rail))`;
-  const presence = isMe ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
+  const presence = isMe && !user.bot ? (me.status === 'invisible' ? 'offline' : me.presence === 'offline' ? 'online' : me.presence) : user.presence;
   const serverName = !main && serverId ? displayNameIn(useLine.getState(), serverId, userId) : user.displayName;
   const hasGames = !!(profile?.favoriteGame || profile?.likedGames.length);
   // Próprio perfil: edita direto aqui. Aberto num servidor, mexe no perfil daquele servidor.
-  const editable = isMe && !user.bot;
-  const editServer = serverId && server ? serverId : null;
+  // O agente do servidor também é editado aqui, salvando pelas rotas dele.
+  const agent = !!agentServerId && !!user.bot;
+  const editable = (isMe && !user.bot) || agent;
+  const editServer = !agent && serverId && server ? serverId : null;
+  const saveAgent = async (patch: Parameters<typeof api.updateMusicBot>[1]) => actions.upsertUsers([await api.updateMusicBot(agentServerId!, patch)]);
+  const saveAgentExtras = (patch: Parameters<typeof api.updateAgentProfile>[1]) => api.updateAgentProfile(agentServerId!, patch);
+  const nameColor = user.botStyle?.nameColor ?? roleColor;
   const hasOwnBanner = !!(editServer ? look.bannerUrl : user.bannerUrl);
   const hasOwnAvatar = !!(editServer ? look.avatarUrl : user.avatarUrl);
 
@@ -113,7 +133,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                   <Icons.Edit size={15} />
                 </button>
                 {imgMenu?.kind === 'banner' && (
-                  <ImageEditMenu serverId={editServer} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} align="right" />
+                  <ImageEditMenu serverId={editServer} saveImage={agent ? (k, id) => saveAgent(k === 'avatar' ? { avatarId: id } : { bannerId: id }) : undefined} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} align="right" />
                 )}
               </>
             )}
@@ -133,7 +153,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                       <Icons.Edit size={24} />
                     </button>
                     {imgMenu?.kind === 'avatar' && (
-                      <ImageEditMenu serverId={editServer} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} />
+                      <ImageEditMenu serverId={editServer} saveImage={agent ? (k, id) => saveAgent(k === 'avatar' ? { avatarId: id } : { bannerId: id }) : undefined} hasBanner={hasOwnBanner} hasAvatar={hasOwnAvatar} onClose={() => setImgMenu(null)} anchor={imgMenu.el} />
                     )}
                   </>
                 )}
@@ -147,7 +167,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                     maxLength={80}
                     className="px-1 py-0.5"
                     inputClassName="text-xs"
-                    onSave={async (v) => actions.setMe(await api.updateMe({ thought: v || null }))}
+                    onSave={async (v) => (agent ? saveAgent({ thought: v || null }) : actions.setMe(await api.updateMe({ thought: v || null })))}
                   />
                 </span>
               ) : (
@@ -172,9 +192,13 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                   emoji
                   className="-mx-1 min-w-0 truncate px-1"
                   inputClassName="text-xl font-bold"
-                  onSave={(v) => saveProfile.name({ serverId: editServer }, me.id, v)}
+                  onSave={async (v) => {
+                    if (!agent) return saveProfile.name({ serverId: editServer }, me.id, v);
+                    if (!v) throw new Error('O nome do agente não pode ficar vazio.');
+                    await saveAgent({ displayName: v });
+                  }}
                 >
-                  <StyledName user={user} color={roleColor} className="truncate">
+                  <StyledName user={user} color={nameColor} className="truncate">
                     {serverName}
                   </StyledName>
                 </InlineText>
@@ -206,13 +230,13 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                     maxLength={40}
                     className="px-1"
                     inputClassName="w-40 text-sm"
-                    onSave={async (v) => actions.setMe(await api.updateMe({ pronouns: v }))}
+                    onSave={async (v) => (agent ? saveAgent({ pronouns: v }) : actions.setMe(await api.updateMe({ pronouns: v })))}
                   />
                 </span>
               ) : (
                 user.pronouns && <span className="text-muted">• <span data-tip="Pronomes" style={{ cursor: 'default' }}>{user.pronouns}</span></span>
               )}
-              {editable ? <TagPicker /> : <UserTagBadge user={user} />}
+              {agent ? <BotTag user={user} /> : editable ? <TagPicker /> : <UserTagBadge user={user} />}
             </p>
             {editable ? (
               <div className="mt-1.5 text-sm text-soft">
@@ -223,7 +247,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                   emoji
                   className="-mx-1 px-1"
                   inputClassName="text-sm"
-                  onSave={async (v) => actions.setMe(await api.updateMe({ customStatus: v || null }))}
+                  onSave={async (v) => (agent ? saveAgent({ customStatus: v || null }) : actions.setMe(await api.updateMe({ customStatus: v || null })))}
                 />
               </div>
             ) : (
@@ -275,7 +299,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
 
             {editable && profile ? (
               <div className="mt-5">
-                <SongSlot song={profile.favoriteSong ?? null} colors={profile.cardColors} onChange={(favoriteSong) => setProfile((p) => (p ? { ...p, favoriteSong } : p))} />
+                <SongSlot song={profile.favoriteSong ?? null} colors={profile.cardColors} save={agent ? saveAgentExtras : undefined} onChange={(favoriteSong) => setProfile((p) => (p ? { ...p, favoriteSong } : p))} />
               </div>
             ) : (
               profile?.favoriteSong && (
@@ -293,7 +317,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                   multiline
                   className="-mx-1 block w-[calc(100%+0.5rem)] px-1 py-0.5 break-words whitespace-pre-wrap"
                   inputClassName="text-sm"
-                  onSave={(v) => saveProfile.bio({ serverId: editServer }, v)}
+                  onSave={(v) => (agent ? saveAgent({ bio: v }) : saveProfile.bio({ serverId: editServer }, v))}
                 />
               </div>
             ) : (
@@ -329,7 +353,7 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
                 <ConnectionList list={profile.connections} />
               </Section>
             )}
-            {!isMe && profile && <NoteField userId={userId} initial={profile.note} />}
+            {!isMe && !agent && profile && <NoteField userId={userId} initial={profile.note} />}
 
           </div>
           {editable && profile && (
@@ -337,12 +361,27 @@ export function FullProfile({ userId, serverId, onClose, embedded }: { userId: s
             // Altura zero: não cria rolagem a mais.
             <div className="pointer-events-none sticky bottom-0 mt-auto h-0 shrink-0">
               <span className="pointer-events-auto absolute right-3 bottom-3">
-                <CardColorButton colors={profile.cardColors} fallback={user.avatarColor} onPreview={(cardColors) => setProfile((p) => (p ? { ...p, cardColors } : p))} />
+                <CardColorButton colors={profile.cardColors} fallback={user.avatarColor} save={agent ? (cardColors) => saveAgentExtras({ cardColors }) : undefined} onPreview={(cardColors) => setProfile((p) => (p ? { ...p, cardColors } : p))} />
               </span>
             </div>
           )}
           {/* Portal: o cartão fixo (sticky) prende o modal embaixo de outras coisas da tela. */}
-          {nameStyleOpen && createPortal(<NameStyleModal onClose={() => setNameStyleOpen(false)} />, document.body)}
+          {nameStyleOpen &&
+            createPortal(
+              <NameStyleModal
+                onClose={() => setNameStyleOpen(false)}
+                target={agent ? user : undefined}
+                onSave={
+                  agent
+                    ? async (nameStyle) => {
+                        await saveAgentExtras({ nameStyle });
+                        actions.upsertUsers([{ ...user, nameStyle }]);
+                      }
+                    : undefined
+                }
+              />,
+              document.body,
+            )}
         </div>
   );
   if (embedded) return card;

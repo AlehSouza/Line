@@ -147,8 +147,11 @@ export function ImageEditMenu({
   onClose,
   anchor,
   align = 'left',
+  saveImage,
 }: {
   serverId: string | null;
+  /** Onde salvar (o agente usa a rota dele); padrão: o meu perfil (ou o do servidor). */
+  saveImage?: (kind: 'avatar' | 'banner', id: string | null) => Promise<unknown>;
   hasBanner: boolean;
   hasAvatar: boolean;
   onClose: () => void;
@@ -178,7 +181,7 @@ export function ImageEditMenu({
     try {
       toast('Enviando imagem…');
       const a = await api.uploadAttachment(f, f.name || 'imagem');
-      await saveProfile.image({ serverId }, kind, a.id);
+      await (saveImage ? saveImage(kind, a.id) : saveProfile.image({ serverId }, kind, a.id));
       toast(kind === 'avatar' ? 'Avatar atualizado.' : 'Faixa atualizada.');
     } catch (e) {
       showError(e);
@@ -186,7 +189,7 @@ export function ImageEditMenu({
   }
   const remove = (k: 'avatar' | 'banner') => {
     onClose();
-    saveProfile.image({ serverId }, k, null).catch(showError);
+    (saveImage ? saveImage(k, null) : saveProfile.image({ serverId }, k, null)).catch(showError);
   };
 
   return (
