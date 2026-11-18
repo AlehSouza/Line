@@ -1041,6 +1041,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
           attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments}
           compact
           authorId={message.author.id}
+          owner={{ channelId: message.channelId, messageId: message.id }}
           below={only ? (a) => (a.reactions?.length ? <Reactions message={message} attachmentId={a.id} /> : null) : mediaThreadsBelow(message)}
         />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}

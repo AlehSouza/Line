@@ -77,7 +77,21 @@ export function AttachmentList({
       {attachments.map((a) => {
         const view =
           a.spoiler || a.nsfw ? (
-            <MediaGate attachment={a}>
+            <MediaGate
+              attachment={a}
+              onOpen={
+                attachmentKind(a.contentType, a.filename) === 'image'
+                  ? () =>
+                      // Coberta: abre em foco com o mesmo aviso (como na grade).
+                      actions.openModal({
+                        kind: 'gallery',
+                        items: [{ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, attachmentId: a.id, messageId: owner?.messageId, sensitive: a.nsfw ? 'nsfw' : 'spoiler' }],
+                        index: 0,
+                        channelId: owner?.channelId,
+                      })
+                  : undefined
+              }
+            >
               <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
             </MediaGate>
           ) : (
@@ -100,7 +114,7 @@ export function AttachmentList({
 /** Spoiler e +18. Spoiler fica coberto até clicar. +18 só abre para quem informou a data
  * de nascimento e tem 18 anos ou mais (sem isso nem carrega) e, com "Borrar conteúdo
  * sensível" ligado (padrão), aparece atrás de um aviso até clicar. */
-function MediaGate({ attachment: a, children }: { attachment: Attachment; children: React.ReactNode }) {
+function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment; children: React.ReactNode; onOpen?: () => void }) {
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const [shown, setShown] = useState(false);
@@ -152,7 +166,10 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
         {children}
       </div>
       {covered && (
-        <div className={cx('absolute inset-0 flex flex-col items-center justify-center bg-black/30 text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5')}>
+        <div
+          onClick={onOpen}
+          className={cx('absolute inset-0 flex flex-col items-center justify-center bg-black/30 text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
+        >
           {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-white/90" /> : <Icons.Warning size={small ? 22 : 40} className="text-white/90" />}
           <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
           {!small && (
@@ -163,7 +180,10 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
             </p>
           )}
           <button
-            onClick={() => setShown(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShown(true);
+            }}
             className={cx('rounded-full bg-black/70 font-semibold text-white hover:bg-black/85', small ? 'px-3 py-1 text-xs' : 'mt-2 px-5 py-2 text-sm')}
           >
             {small ? 'Mostrar' : a.nsfw ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
