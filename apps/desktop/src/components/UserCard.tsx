@@ -227,6 +227,7 @@ export function UserCard({
                   blocked={state === 'blocked'}
                   onClose={() => setMenu(false)}
                   align="right"
+                  beside
                 />
               )}
             </span>

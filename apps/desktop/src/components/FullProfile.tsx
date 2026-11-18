@@ -7,7 +7,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { setIgnored, useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
-import { placeAround, useFloating } from '@/lib/floating';
+import { placeAround, placeBeside, useFloating } from '@/lib/floating';
 import { actions, useServerLook, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
@@ -553,6 +553,7 @@ export function MoreMenu({
   blocked,
   onClose,
   align = 'left',
+  beside = false,
 }: {
   user: PublicUser;
   nickname: string | null;
@@ -564,6 +565,8 @@ export function MoreMenu({
   blocked: boolean;
   onClose: () => void;
   align?: 'left' | 'right';
+  /** Abre ao lado do botão (à direita se couber, senão à esquerda), para fora do cartão. */
+  beside?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [invite, setInvite] = useState(false);
@@ -572,10 +575,14 @@ export function MoreMenu({
   // O menu flutua solto na tela (portal), preso ao botão "⋯" (o elemento pai do marcador):
   // abaixo dele, ou acima se não couber, decidido antes de aparecer.
   const mark = useRef<HTMLSpanElement>(null);
-  const { style: pos } = useFloating(box, (w, h, lock) => {
+  const { pos: placedAt, style: pos } = useFloating(box, (w, h, lock) => {
     const r = mark.current?.parentElement?.getBoundingClientRect();
-    return r ? placeAround(r, w, h, { lock, align: align === 'left' ? 'start' : 'end' }) : null;
+    if (!r) return null;
+    return beside ? placeBeside(r, w, h, { lock }) : placeAround(r, w, h, { lock, align: align === 'left' ? 'start' : 'end' });
   });
+  // Submenu "Convidar para o servidor" vai para o mesmo lado em que o menu abriu.
+  const anchorRect = mark.current?.parentElement?.getBoundingClientRect();
+  const subRight = beside ? !placedAt || !anchorRect || placedAt.left >= anchorRect.left : align === 'left';
 
   useEffect(() => {
     const down = (e: MouseEvent) => {
@@ -624,7 +631,7 @@ export function MoreMenu({
             Convidar para o servidor
           </Item>
           {invite && (
-            <div className={cx('absolute top-0 z-30 max-h-80 w-56 overflow-y-auto rounded-xl border border-edge bg-rail p-1.5 shadow-2xl', align === 'left' ? 'left-full ml-1' : 'right-full mr-1')}>
+            <div className={cx('absolute top-0 z-30 max-h-80 w-56 overflow-y-auto rounded-xl border border-edge bg-rail p-1.5 shadow-2xl', subRight ? 'left-full ml-1' : 'right-full mr-1')}>
               {servers.map((sv) => (
                 <Item key={sv.id} onClick={act(() => sendInvite(sv))}>
                   <span className="flex min-w-0 items-center gap-2">
