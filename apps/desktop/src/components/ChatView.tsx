@@ -1112,10 +1112,10 @@ function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean 
         <MobileBack />
         <ChanIcon size={20} className="text-muted" />
         <h1 className="truncate font-bold">{channel.name}</h1>
-        <span className="rounded bg-danger/15 px-1.5 py-0.5 text-[11px] font-bold text-danger">+18</span>
+        <span className="flex items-center gap-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400"><Icons.Warning size={12} />Conteúdo Sensível</span>
       </header>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-danger/15 text-xl font-extrabold text-danger">+18</span>
+        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/15 text-amber-400"><Icons.Warning size={32} /></span>
         <h2 className="text-2xl font-bold">Canal com conteúdo sensível</h2>
         <p className="max-w-[520px] text-[15px] leading-relaxed text-soft">
           {adult

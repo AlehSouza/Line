@@ -191,7 +191,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               )}
             </span>
             <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-9')}>{c.type === 'thread' ? mentionsToText(c.name, c.serverId) : c.name}</span>
-            {c.nsfw && <span className="shrink-0 rounded bg-danger/15 px-1 text-[10px] font-bold text-danger">+18</span>}
+            {c.nsfw && <span title="Conteúdo Sensível" className="shrink-0 text-amber-400"><Icons.Warning size={14} /></span>}
             {muted && <MutedIcon className={cx(canChannels && 'group-hover:hidden')} />}
             {mentions > 0 && <MentionBadge count={mentions} className={cx('ml-auto', canChannels && 'group-hover:hidden')} />}
           </button>

@@ -91,6 +91,8 @@ export const updateChannelSchema = z.object({
   topic: z.string().max(1024).optional(),
   categoryId: z.string().nullable().optional(),
   position: z.number().int().min(0).optional(),
+  /** Canal +18 (aviso de conteúdo sensível na primeira entrada). */
+  nsfw: z.boolean().optional(),
   /** Quem vê (canal privado) e quem interage (manda mensagem / fala). Manda tudo de uma vez. */
   access: z
     .object({

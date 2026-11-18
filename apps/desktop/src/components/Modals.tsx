@@ -209,6 +209,7 @@ function CreateChannelModal({
   const [isPrivate, setIsPrivate] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [roleIds, setRoleIds] = useState<string[]>([]);
+  const [nsfw, setNsfw] = useState(false);
   const serverRoles = useLine((s) => s.roles[modal.serverId]);
   const category = useLine((s) => (modal.categoryId ? s.categories[modal.categoryId] : undefined));
   const server = useLine((s) => s.servers[modal.serverId]);
@@ -235,7 +236,7 @@ function CreateChannelModal({
         categoryId: modal.categoryId,
         ...(isPrivate ? { isPrivate: true, memberIds, roleIds } : {}),
       });
-      actions.upsertChannel(channel);
+      actions.upsertChannel(nsfw ? await api.updateChannel(channel.id, { nsfw: true }) : channel);
       if (channel.type === 'text') {
         actions.goServer(modal.serverId, channel.id);
         mobile.showMain();
@@ -330,6 +331,8 @@ function CreateChannelModal({
           )}
         </div>
 
+        <NsfwChannelSwitch on={nsfw} onToggle={() => setNsfw((v) => !v)} />
+
         <ErrorText>{error}</ErrorText>
         <div className="grid grid-cols-2 gap-2">
           <Button type="button" variant="subtle" onClick={onClose}>
@@ -341,6 +344,32 @@ function CreateChannelModal({
         </div>
       </form>
     </Modal>
+  );
+}
+
+/** Chave "Canal +18" (Criar canal e Editar canal). */
+function NsfwChannelSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="flex items-center gap-1.5 font-semibold">
+          <span className="flex items-center gap-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400"><Icons.Warning size={12} />Conteúdo Sensível</span>
+          Canal +18
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          onClick={onToggle}
+          className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', on ? 'bg-accent' : 'bg-edge')}
+        >
+          <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', on ? 'left-[22px]' : 'left-0.5')} />
+        </button>
+      </div>
+      <p className="mt-1 text-sm text-muted">
+        Na primeira vez que alguém abrir o canal aparece um aviso de conteúdo sensível. Só entra quem informou ter 18 anos ou mais.
+      </p>
+    </div>
   );
 }
 
@@ -469,26 +498,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
         </Field>
         {hasAccess && channel.serverId && (
           <>
-            <div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="flex items-center gap-1.5 font-semibold">
-                  <span className="rounded bg-danger/15 px-1 text-[11px] font-bold text-danger">+18</span>
-                  Canal +18
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={nsfw}
-                  onClick={() => setNsfw((v) => !v)}
-                  className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', nsfw ? 'bg-accent' : 'bg-edge')}
-                >
-                  <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', nsfw ? 'left-[22px]' : 'left-0.5')} />
-                </button>
-              </div>
-              <p className="mt-1 text-sm text-muted">
-                Na primeira vez que alguém abrir o canal aparece um aviso de conteúdo sensível. Só entra quem informou ter 18 anos ou mais.
-              </p>
-            </div>
+            <NsfwChannelSwitch on={nsfw} onToggle={() => setNsfw((v) => !v)} />
             <div>
               <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Quem pode ver" />
               <p className="mt-1 text-sm text-muted">
