@@ -418,7 +418,25 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
     } else if (stickToBottom.current && !useLine.getState().highlight) {
       el.scrollTop = el.scrollHeight;
     }
+    // As 40 primeiras não enchem a tela: busca mais 40 até aparecer a barra de rolagem.
+    if (bucket?.hasMore && el.scrollHeight <= el.clientHeight + 120) void loadOlder();
   }, [items]);
+
+  /** Busca as 40 mensagens anteriores à mais antiga da lista, mantendo a posição da rolagem. */
+  async function loadOlder() {
+    const el = scroller.current;
+    if (!el || loadingOlder.current || !useLine.getState().messages[channel.id]?.hasMore) return;
+    const first = useLine.getState().messages[channel.id]?.items[0]?.id;
+    loadingOlder.current = true;
+    prevHeight.current = el.scrollHeight;
+    try {
+      await loadMessages(channel.id, true);
+    } catch {
+      /* tenta de novo na próxima rolagem */
+    }
+    // Nada mudou (erro ou pedido repetido): libera para a próxima rolagem.
+    if (useLine.getState().messages[channel.id]?.items[0]?.id === first) loadingOlder.current = false;
+  }
 
   async function onScroll() {
     const el = scroller.current;
@@ -428,11 +446,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
     if (nearBottom) stickToBottom.current = true;
     else if (el.scrollTop < lastTop.current - 1) stickToBottom.current = false;
     lastTop.current = el.scrollTop;
-    if (el.scrollTop < 120 && bucket?.hasMore && !loadingOlder.current) {
-      loadingOlder.current = true;
-      prevHeight.current = el.scrollHeight;
-      await loadMessages(channel.id, true).catch(() => (loadingOlder.current = false));
-    }
+    if (el.scrollTop < 120 && bucket?.hasMore) await loadOlder();
   }
 
   return (

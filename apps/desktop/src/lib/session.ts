@@ -269,14 +269,39 @@ export async function jumpToMessage(message: Message) {
   actions.setHighlight({ channelId: channel.id, messageId: message.id });
 }
 
+/** Mensagens por página: abre com as 40 últimas e, rolando para cima, busca de 40 em 40. */
+export const MESSAGES_PAGE = 40;
+const loadingMessages = new Set<string>();
+
 export async function loadMessages(channelId: string, older = false) {
   const bucket = useLine.getState().messages[channelId];
   if (older && (!bucket || !bucket.hasMore)) return;
   if (!older && bucket?.loaded) return;
-  const before = older ? bucket?.items[0]?.id : undefined;
-  const limit = 50;
-  const items = await api.messages(channelId, before, limit);
-  actions.setMessages(channelId, items, items.length === limit, older);
+  const key = `${channelId}:${older ? bucket?.items[0]?.id ?? '' : ''}`;
+  if (loadingMessages.has(key)) return;
+  loadingMessages.add(key);
+  try {
+    const before = older ? bucket?.items[0]?.id : undefined;
+    const items = await api.messages(channelId, before, MESSAGES_PAGE);
+    ensureUsers(items.flatMap((m) => (m.threads ?? (m.thread ? [m.thread] : [])).flatMap((t) => t.participantIds ?? [])));
+    actions.setMessages(channelId, items, items.length === MESSAGES_PAGE, older);
+  } finally {
+    loadingMessages.delete(key);
+  }
+}
+
+const fetchingUsers = new Set<string>();
+/** Busca quem ainda não está na memória (ex.: avatares de quem respondeu numa conversa). */
+export function ensureUsers(ids: string[]) {
+  const known = useLine.getState().users;
+  for (const id of new Set(ids)) {
+    if (!id || known[id] || fetchingUsers.has(id)) continue;
+    fetchingUsers.add(id);
+    api.user(id).then(
+      (u) => actions.upsertUsers([u]),
+      () => fetchingUsers.delete(id),
+    );
+  }
 }
 
 let lastTypingSent = 0;
