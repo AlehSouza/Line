@@ -537,6 +537,16 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE users ADD COLUMN bot_command_notes TEXT;
 "#,
+    // Reações em cada mídia de uma mensagem (pelo visualizador).
+    r#"
+  CREATE TABLE IF NOT EXISTS attachment_reactions (
+    attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji         TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    PRIMARY KEY (attachment_id, emoji, user_id)
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

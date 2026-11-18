@@ -256,6 +256,7 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
         nsfw_locked: r.get::<_, i64>("nsfw_locked").unwrap_or(0) != 0,
         width: r.get::<_, Option<i64>>("width").unwrap_or(None),
         height: r.get::<_, Option<i64>>("height").unwrap_or(None),
+        reactions: Vec::new(),
     })
 }
 
@@ -2474,7 +2475,62 @@ impl Q<'_> {
         let mut st = ok(self.c.prepare_cached(
             "SELECT * FROM attachments WHERE message_id = ? ORDER BY position, id",
         ));
-        ok(ok(st.query_map([message_id], attachment_from_row)).collect())
+        let mut list: Vec<Attachment> =
+            ok(ok(st.query_map([message_id], attachment_from_row)).collect());
+        for a in &mut list {
+            a.reactions = self.attachment_reactions_of(&a.id);
+        }
+        list
+    }
+
+    fn attachment_reactions_of(&self, attachment_id: &str) -> Vec<Reaction> {
+        let rows: Vec<(String, String)> = ok(self
+            .c
+            .prepare_cached(
+                "SELECT emoji, user_id FROM attachment_reactions WHERE attachment_id = ? ORDER BY created_at, rowid",
+            )
+            .and_then(|mut st| st.query_map([attachment_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()));
+        let mut out: Vec<Reaction> = Vec::new();
+        for (emoji, user_id) in rows {
+            match out.iter_mut().find(|r| r.emoji == emoji) {
+                Some(r) => r.user_ids.push(user_id),
+                None => out.push(Reaction {
+                    emoji,
+                    user_ids: vec![user_id],
+                }),
+            }
+        }
+        out
+    }
+
+    /// (emojis diferentes na mídia, se já existe esse emoji nela)
+    pub fn attachment_reaction_info(&self, attachment_id: &str, emoji: &str) -> (i64, bool) {
+        ok(self.c.query_row(
+            "SELECT COUNT(DISTINCT emoji), COALESCE(SUM(emoji = ?2), 0) > 0 FROM attachment_reactions WHERE attachment_id = ?1",
+            params![attachment_id, emoji],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ))
+    }
+
+    pub fn set_attachment_reaction(
+        &self,
+        attachment_id: &str,
+        user_id: &str,
+        emoji: &str,
+        on: bool,
+    ) -> bool {
+        let n = if on {
+            ok(self.c.execute(
+                "INSERT OR IGNORE INTO attachment_reactions (attachment_id, user_id, emoji, created_at) VALUES (?, ?, ?, ?)",
+                params![attachment_id, user_id, emoji, now_iso()],
+            ))
+        } else {
+            ok(self.c.execute(
+                "DELETE FROM attachment_reactions WHERE attachment_id = ? AND user_id = ? AND emoji = ?",
+                params![attachment_id, user_id, emoji],
+            ))
+        };
+        n > 0
     }
 
     /// Ids dos arquivos de um canal inteiro (inclui threads), para apagar do disco.

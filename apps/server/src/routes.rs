@@ -172,6 +172,10 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
         )
         .route("/attachments/{id}/{name}", get(serve_attachment))
+        .route(
+            "/attachments/{id}/reactions/{emoji}",
+            put(add_attachment_reaction).delete(remove_attachment_reaction),
+        )
         .route("/voice/ice", get(ice_servers))
         .route("/soundboard", get(list_my_sounds))
         .route("/servers/{id}/sounds", post(create_sound))
@@ -2809,6 +2813,56 @@ async fn remove_reaction(
         return ok(message);
     }
     let message = q.message(&id).unwrap_or(message);
+    app.to_channel(&q, &message.channel_id, "message:update", &message);
+    ok(message)
+}
+
+async fn add_attachment_reaction(
+    State(app): S,
+    Me(me): Me,
+    Path((id, emoji)): Path<(String, String)>,
+) -> Res {
+    set_attachment_reaction(&app, &me, &id, emoji, true)
+}
+
+async fn remove_attachment_reaction(
+    State(app): S,
+    Me(me): Me,
+    Path((id, emoji)): Path<(String, String)>,
+) -> Res {
+    set_attachment_reaction(&app, &me, &id, emoji, false)
+}
+
+/// Reação numa mídia só da mensagem (mesmas regras das reações na mensagem).
+fn set_attachment_reaction(app: &App, me: &str, id: &str, emoji: String, on: bool) -> Res {
+    let q = app.store.q();
+    let message = q
+        .attachment_message_id(&id)
+        .and_then(|mid| q.message(&mid))
+        .filter(|m| !m.deleted)
+        .ok_or_else(|| bad_request("Mensagem não encontrada"))?;
+    require_access(&q, &message.channel_id, &me)?;
+    if on {
+        let emoji = validate::reaction_emoji(&emoji)?;
+        let (kinds, exists) = q.attachment_reaction_info(&id, &emoji);
+        if !exists
+            && !has(
+                q.channel_permissions(&me, &message.channel_id),
+                perms::ADD_REACTIONS,
+            )
+        {
+            return Err(forbidden("Você não tem permissão para adicionar reações"));
+        }
+        if !exists && kinds >= MAX_REACTION_KINDS {
+            return Err(bad_request("Essa mídia já tem reações demais"));
+        }
+        if !q.set_attachment_reaction(&id, &me, &emoji, true) {
+            return ok(message);
+        }
+    } else if !q.set_attachment_reaction(&id, &me, &emoji, false) {
+        return ok(message);
+    }
+    let message = q.message(&message.id).unwrap_or(message);
     app.to_channel(&q, &message.channel_id, "message:update", &message);
     ok(message)
 }

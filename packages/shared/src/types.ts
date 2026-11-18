@@ -270,6 +270,8 @@ export interface Attachment {
   nsfw?: boolean;
   /** +18 confirmado no painel admin. */
   nsfwLocked?: boolean;
+  /** Reações só nesta mídia (visualizador de imagens). */
+  reactions?: Reaction[];
   /** Tamanho real da imagem/vídeo em pixels (anexos antigos não têm). */
   width?: number;
   height?: number;

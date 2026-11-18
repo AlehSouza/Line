@@ -177,6 +177,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
   const meId = useLine((s) => s.me?.id);
   const canManage = useCan(thread.serverId, Perm.ManageChannels);
   const canDelete = !thread.id.startsWith("draft:") && (canManage || thread.ownerId === meId);
+  const back = useLine((s) => s.threadBack);
 
   useEffect(() => {
     actions.markRead(thread.id);
@@ -189,6 +190,15 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
     >
       {drop.over && <DropOverlay target={thread.name} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        {back && (
+          <button
+            title="Voltar para as conversas"
+            onClick={() => actions.openMediaThreads(back.channelId, back.messageIds)}
+            className="-ml-1.5 rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
+          >
+            <Icons.ChevronLeft size={20} />
+          </button>
+        )}
         <h2 className="font-bold">Conversa</h2>
         <span className="truncate text-sm text-muted">{mentionsToText(thread.name, thread.serverId)}</span>
         <div className="ml-auto flex gap-1">
@@ -1030,7 +1040,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
           attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments}
           compact
           authorId={message.author.id}
-          below={only ? undefined : mediaThreadsBelow(message)}
+          below={only ? (a) => (a.reactions?.length ? <Reactions message={message} attachmentId={a.id} /> : null) : mediaThreadsBelow(message)}
         />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
@@ -1061,13 +1071,19 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
 }
 
 /** Põe ou tira a sua reação com esse emoji (o resto da sala recebe pelo WebSocket). */
-async function toggleReaction(message: Message, emoji: string) {
+/** attachmentId: reação só naquela mídia da mensagem (visualizador). */
+async function toggleReaction(message: Message, emoji: string, attachmentId?: string) {
   const meId = useLine.getState().me?.id;
   const current = useLine.getState().messages[message.channelId]?.items.find((m) => m.id === message.id) ?? message;
-  const mine = !!meId && !!current.reactions?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
+  const list = attachmentId ? current.attachments.find((a) => a.id === attachmentId)?.reactions : current.reactions;
+  const mine = !!meId && !!list?.some((r) => r.emoji === emoji && r.userIds.includes(meId));
   if (!mine) pushRecentEmoji(emoji);
   try {
-    const updated = mine ? await api.removeReaction(message.id, emoji) : await api.addReaction(message.id, emoji);
+    const updated = attachmentId
+      ? await api.setAttachmentReaction(attachmentId, emoji, !mine)
+      : mine
+        ? await api.removeReaction(message.id, emoji)
+        : await api.addReaction(message.id, emoji);
     actions.updateMessage(updated);
   } catch (e) {
     showError(e);
@@ -1085,18 +1101,35 @@ function reactorNames(userIds: string[], meId?: string) {
 
 /** Pílulas de reação embaixo da mensagem. Destacadas na cor do Line só quando você está entre quem reagiu. */
 /** Reações da mensagem no visualizador de mídia (acima da imagem), com o seletor para adicionar. */
-export function ViewerReactions({ message }: { message: Message }) {
+export function ViewerReactions({ message, attachmentId }: { message: Message; attachmentId?: string }) {
+  const list = attachmentId ? message.attachments.find((a) => a.id === attachmentId)?.reactions : message.reactions;
+  if (!list?.length) return null;
+  return <Reactions message={message} attachmentId={attachmentId} />;
+}
+
+/** Caixa de emoji do visualizador (ao lado das respostas): reage à mídia aberta. */
+export function ViewerReactButton({ message, attachmentId }: { message: Message; attachmentId?: string }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  if (!message.reactions?.length) return null;
+  const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
+  if (!canReact) return null;
   return (
     <>
-      <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />
+      <button
+        title="Adicionar reação"
+        onClick={(e) => {
+          const el = e.currentTarget;
+          setAnchor((x) => (x ? null : el));
+        }}
+        className={cx('flex h-[42px] w-12 shrink-0 items-center justify-center rounded-xl bg-raise text-soft hover:bg-hover hover:text-fg', anchor && 'text-fg')}
+      >
+        <Icons.SmilePlus size={20} />
+      </button>
       {anchor && (
         <EmojiPicker
           anchor={anchor}
           onClose={() => setAnchor(null)}
           onPick={(emoji, keepOpen) => {
-            void toggleReaction(message, emoji);
+            void toggleReaction(message, emoji, attachmentId);
             if (!keepOpen) setAnchor(null);
           }}
         />
@@ -1105,18 +1138,19 @@ export function ViewerReactions({ message }: { message: Message }) {
   );
 }
 
-function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: HTMLElement) => void; adding: boolean }) {
+function Reactions({ message, onAdd, adding, attachmentId }: { message: Message; onAdd?: (el: HTMLElement) => void; adding?: boolean; attachmentId?: string }) {
+  const reactions = (attachmentId ? message.attachments.find((a) => a.id === attachmentId)?.reactions : message.reactions) ?? [];
   const meId = useLine((s) => s.me?.id);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
   useLine((s) => s.users);
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1">
-      {message.reactions!.map((r) => {
+      {reactions.map((r) => {
         const mine = !!meId && r.userIds.includes(meId);
         return (
           <span key={r.emoji} className="group/react relative">
             <button
-              onClick={() => void toggleReaction(message, r.emoji)}
+              onClick={() => void toggleReaction(message, r.emoji, attachmentId)}
               aria-pressed={mine}
               aria-label={`${r.emoji} ${r.userIds.length}: ${reactorNames(r.userIds, meId)}`}
               className={cx(
@@ -1140,7 +1174,7 @@ function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: H
           </span>
         );
       })}
-      {canReact && (
+      {canReact && onAdd && (
         <button
           title="Adicionar reação"
           onClick={(e) => onAdd(e.currentTarget)}
@@ -1204,10 +1238,18 @@ function mediaThreadsBelow(message: Message, withWhole = false) {
   const list = all.filter((t) => t.attachmentId);
   // No painel "Ver conversas", mensagem com uma mídia só mostra a thread dela embaixo da mídia.
   const whole = withWhole && message.attachments.length === 1 ? all.find((t) => !t.attachmentId) : undefined;
-  if (!list.length && !whole) return undefined;
+  const reacted = message.attachments.length > 1 && message.attachments.some((a) => a.reactions?.length);
+  if (!list.length && !whole && !reacted) return undefined;
   return (a: Attachment) => {
     const t = list.find((x) => x.attachmentId === a.id) ?? whole;
-    return t ? <ThreadChip thread={t} /> : null;
+    const r = message.attachments.length > 1 && !!a.reactions?.length;
+    if (!t && !r) return null;
+    return (
+      <>
+        {r && <Reactions message={message} attachmentId={a.id} />}
+        {t && <ThreadChip thread={t} />}
+      </>
+    );
   };
 }
 

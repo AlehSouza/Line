@@ -392,6 +392,8 @@ export const api = {
     request<Message>('PUT', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
   removeReaction: (messageId: string, emoji: string) =>
     request<Message>('DELETE', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
+  setAttachmentReaction: (attachmentId: string, emoji: string, on: boolean) =>
+    request<Message>(on ? 'PUT' : 'DELETE', `/attachments/${enc(attachmentId)}/reactions/${enc(emoji)}`),
   votePoll: (messageId: string, optionId: string) =>
     request<Message>('POST', `/messages/${enc(messageId)}/poll/votes`, { optionId }),
   /** Fixa a mensagem por `minutes` (null = sempre). */
