@@ -1,6 +1,6 @@
 import { isMessageLink, openMessageLink } from './messageLink';
 import type { ReactNode } from 'react';
-import type { MentionContext } from '@/components/Mentions';
+import { ChannelMention, type MentionContext } from '@/components/Mentions';
 import { UserMention } from '@/components/UserCard';
 
 /**
@@ -25,7 +25,7 @@ export function renderMarkdown(text: string, myUsername?: string, ctx?: MentionC
 }
 
 const INLINE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])|(@[a-z0-9_.]{2,32}(?:-[a-z0-9]+)*)|(<@&[\w-]+>)/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(~~[^~\n]+~~)|(\*[^*\n]+\*)|(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])|(@[a-z0-9_.]{2,32}(?:-[a-z0-9]+)*)|(<@&[\w-]+>)|(<#[\w-]+>)/g;
 
 function inline(text: string, key: string, me?: string, ctx?: MentionContext): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -87,7 +87,7 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
           </span>,
         );
       }
-    }
+    } else if (m[9]) nodes.push(<ChannelMention key={k} id={tok.slice(2, -1)} />);
     last = idx + tok.length;
   }
   if (last < text.length) nodes.push(text.slice(last));

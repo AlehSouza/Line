@@ -2,8 +2,8 @@
 
 import { hasPerm, Perm, type Role } from '@line/shared';
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react';
-import { displayNameIn, mentionTag, permsOf, useLine } from '@/lib/store';
-import { Avatar, cx } from './ui';
+import { actions, displayNameIn, mentionTag, mentionsToText, permsOf, useLine } from '@/lib/store';
+import { Avatar, Icons, cx } from './ui';
 
 export interface MentionContext {
   serverId: string | null;
@@ -29,9 +29,10 @@ export interface MentionPickerHandle {
 type Option =
   | { kind: 'user'; id: string; label: string; sub: string; insert: string }
   | { kind: 'special'; id: string; label: string; sub: string; insert: string }
-  | { kind: 'role'; id: string; label: string; sub: string; insert: string; color: string | null };
+  | { kind: 'role'; id: string; label: string; sub: string; insert: string; color: string | null }
+  | { kind: 'channel'; id: string; label: string; sub: string; insert: string };
 
-/** Lista que aparece ao digitar @ no campo de mensagem: membros, @aqui/@todos e cargos. */
+/** Lista que aparece ao digitar @ no campo de mensagem (membros, @aqui/@todos e cargos) ou # (canais do servidor). */
 export function MentionPicker({
   serverId,
   channelId,
@@ -52,8 +53,12 @@ export function MentionPicker({
 
   const before = text.slice(0, caret);
   const m = /(^|\s)@([^\s@]{0,32})$/.exec(before);
-  const query = m ? m[2]!.toLowerCase() : null;
-  const start = m ? caret - m[2]!.length - 1 : -1;
+  // #canal só existe dentro de servidor.
+  const h = !m && serverId ? /(^|\s)#([^\s#]{0,32})$/.exec(before) : null;
+  const hash = !!h;
+  const hit = m ?? h;
+  const query = hit ? hit[2]!.toLowerCase() : null;
+  const start = hit ? caret - hit[2]!.length - 1 : -1;
   const open = query !== null && closedAt !== start;
 
   const options = useMemo<Option[]>(() => {
@@ -61,6 +66,14 @@ export function MentionPicker({
     const state = useLine.getState();
     const meId = state.me?.id;
     const match = (...xs: string[]) => !query || xs.some((x) => x.toLowerCase().includes(query));
+    if (hash && serverId) {
+      const starts = (name: string) => (name.toLowerCase().startsWith(query) ? 0 : 1);
+      return Object.values(state.channels)
+        .filter((c) => c.serverId === serverId && c.type === 'text' && match(c.name))
+        .sort((a, b) => starts(a.name) - starts(b.name) || a.position - b.position)
+        .slice(0, 12)
+        .map((c) => ({ kind: 'channel' as const, id: c.id, label: `#${c.name}`, sub: (c.categoryId && state.categories[c.categoryId]?.name) || '', insert: `#${c.name} ` }));
+    }
     const channel = state.channels[channelId];
     const ids = serverId ? Object.keys(state.members[serverId] ?? {}) : (channel?.recipients ?? []).map((r) => r.id);
     const users: Option[] = ids
@@ -93,7 +106,7 @@ export function MentionPicker({
         color: r.color,
       }));
     return [...users, ...specials, ...roles];
-  }, [query, serverId, channelId]);
+  }, [query, hash, serverId, channelId]);
 
   useEffect(() => setIndex(0), [query]);
   const listRef = useRef<HTMLDivElement>(null);
@@ -138,6 +151,7 @@ export function MentionPicker({
     { title: 'Membros', items: options.filter((o) => o.kind === 'user') },
     { items: options.filter((o) => o.kind === 'special') },
     { title: 'Cargos', items: options.filter((o) => o.kind === 'role') },
+    { title: 'Canais de texto', items: options.filter((o) => o.kind === 'channel') },
   ].filter((g) => g.items.length);
 
   return (
@@ -160,6 +174,7 @@ export function MentionPicker({
                 data-active={active}
                 className={cx('flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left', active && 'bg-hover')}
               >
+                {o.kind === 'channel' && <Icons.Hash size={18} className="shrink-0 text-muted" />}
                 {u && <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={24} presence={u.presence} ring="rail" />}
                 <span
                   className="min-w-0 flex-1 truncate text-[15px] font-medium"
@@ -174,5 +189,24 @@ export function MentionPicker({
         </div>
       ))}
     </div>
+  );
+}
+
+/** `<#id>` no texto: tag #canal clicável que abre o canal (ou a conversa). */
+export function ChannelMention({ id }: { id: string }) {
+  const channel = useLine((s) => s.channels[id]);
+  if (!channel) return <span className="rounded px-0.5 font-medium text-muted">#canal-indisponível</span>;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (channel.type === 'thread') actions.openThread(channel.id);
+        else if (channel.serverId) actions.goServer(channel.serverId, channel.id);
+      }}
+      className="rounded bg-accent/15 px-0.5 font-medium text-accent hover:bg-accent/30"
+    >
+      #{mentionsToText(channel.name, channel.serverId)}
+    </button>
   );
 }

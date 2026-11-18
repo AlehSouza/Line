@@ -625,6 +625,12 @@ export function mentionsToText(content: string, serverId: string | null | undefi
       return r ? `@${r.name}` : all;
     });
   }
+  if (out.includes('<#')) {
+    out = out.replace(/<#([\w-]+)>/g, (all, id: string) => {
+      const c = s.channels[id];
+      return c ? `#${c.name}` : all;
+    });
+  }
   return out;
 }
 
@@ -663,7 +669,7 @@ export function textToMentions(content: string, serverId: string | null | undefi
   const roles = (s.roles[serverId] ?? []).filter((r) => r.id !== serverId).map((r) => [r.name, `<@&${r.id}>`] as const);
   const users = [...mentionNames(s, serverId)].map(([name, username]) => [name, `@${username}`] as const);
   const all = [...roles, ...users].sort((a, b) => b[0].length - a[0].length);
-  if (!all.length) return content;
+  if (!all.length) return channelsToMentions(s, serverId, content);
   // Uma passada só, nomes mais longos primeiro, para uma troca não ser trocada de novo.
   const tags = new Map(all.map(([name, tag]) => [name.toLowerCase(), tag]));
   const alt = all.map(([name]) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
@@ -671,7 +677,24 @@ export function textToMentions(content: string, serverId: string | null | undefi
     const tag = tags.get(name.toLowerCase());
     return tag ? `${pre}${tag}` : m;
   });
-  return out;
+  return channelsToMentions(s, serverId, out);
+}
+
+/** `#nome-do-canal` digitado vira `<#id>` (só canais de texto do servidor; nomes mais longos primeiro). */
+function channelsToMentions(s: LineState, serverId: string, content: string): string {
+  if (!content.includes('#')) return content;
+  const channels = Object.values(s.channels).filter((c) => c.serverId === serverId && c.type === 'text');
+  if (!channels.length) return content;
+  const ids = new Map<string, string>();
+  for (const c of channels) if (!ids.has(c.name.toLowerCase())) ids.set(c.name.toLowerCase(), c.id);
+  const alt = [...ids.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  return content.replace(new RegExp(`(^|[^\\w<&#/])#(${alt})(?![\\p{L}\\p{N}_-])`, 'giu'), (m, pre: string, name: string) => {
+    const id = ids.get(name.toLowerCase());
+    return id ? `${pre}<#${id}>` : m;
+  });
 }
 
 /** Nome mostrado dentro do servidor: o apelido de lá, senão o nome de exibição. */
