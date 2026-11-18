@@ -37,6 +37,8 @@ export const updateProfileSchema = z.object({
   botTagColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   botTagText: z.enum(['BOT', 'B']).optional(),
   botRingColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  /** Status do canal enquanto o agente toca, com {musica} e {artista} (null = padrão, "" = desligado). */
+  botNowPlaying: z.string().max(100).nullable().optional(),
 });
 
 export const createServerSchema = z.object({

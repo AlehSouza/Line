@@ -36,6 +36,8 @@ pub struct BotStyle {
     pub tag_text: String,
     /// Cor do anel de quando o agente "fala" na chamada (tocando música).
     pub ring_color: Option<String>,
+    /// Status do canal de voz enquanto toca, com {musica} e {artista} (null = padrão, "" = desligado).
+    pub now_playing: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

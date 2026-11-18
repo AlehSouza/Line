@@ -4,6 +4,7 @@ import { mobile } from "@/lib/mobile";
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { DEFAULT_NOW_PLAYING, formatNowPlaying, useMusic } from "@/lib/music";
 import { ensureServerLoaded } from "@/lib/session";
 import { actions, useLine } from "@/lib/store";
 import {
@@ -388,8 +389,11 @@ export function VoiceInviteCard({ invite }: { invite: VoiceInviteData }) {
 
 /** Linha embaixo do canal: mostra o status; quem está na chamada pode definir/editar. */
 export function VoiceStatusLine({ channelId }: { channelId: string }) {
-  const status = useVoice((v) => v.channelStatus[channelId]);
+  const own = useVoice((v) => v.channelStatus[channelId]);
   const inChannel = useVoice((v) => v.channelId === channelId);
+  const playing = useNowPlaying(channelId);
+  // Ninguém definiu um status e o agente está tocando: mostra a música (formato do agente).
+  const status = own || playing;
   if (!status && !inChannel) return null;
   const open = () => actions.openModal({ kind: "voice-status", channelId });
   return (
@@ -411,6 +415,19 @@ export function VoiceStatusLine({ channelId }: { channelId: string }) {
       )}
     </button>
   );
+}
+
+/** "▶ Nome da música" enquanto o agente toca no canal (vazio se ele estiver parado ou desligado). */
+function useNowPlaying(channelId: string): string {
+  const m = useMusic((s) => s.states[channelId]);
+  const format = useLine((s) => {
+    if (!m) return null;
+    const id = Object.keys(s.members[m.serverId] ?? {}).find((u) => s.users[u]?.bot);
+    return id ? s.users[id]?.botStyle?.nowPlaying ?? null : null;
+  });
+  const track = m?.tracks[m.index];
+  if (!track || format === '') return '';
+  return formatNowPlaying(format ?? DEFAULT_NOW_PLAYING, track.title, track.author);
 }
 
 export function VoiceStatusModal({

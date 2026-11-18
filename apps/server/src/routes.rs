@@ -1277,7 +1277,7 @@ fn require_owner(q: &Q, server_id: &str, user_id: &str) -> ApiResult<Server> {
 }
 
 /// Membro com a permissão `flag` (dono e administradores sempre passam).
-fn require_perm(q: &Q, server_id: &str, user_id: &str, flag: i64) -> ApiResult<Server> {
+pub(crate) fn require_perm(q: &Q, server_id: &str, user_id: &str, flag: i64) -> ApiResult<Server> {
     let server = require_member(q, server_id, user_id)?;
     if !has(q.permissions(server_id, user_id), flag) {
         return Err(forbidden("Você não tem permissão para fazer isso"));
@@ -2081,7 +2081,11 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     let updated = q.update_channel(
         &channel.id,
         ChannelPatch {
-            name: p.name,
+            name: p
+                .name
+                .as_deref()
+                .map(|n| validate::channel_name_for(&channel.kind, n))
+                .transpose()?,
             topic: p.topic,
             category_id: p.category_id,
             position: p.position.map(i64::from),
@@ -2415,6 +2419,7 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             bot_tag_color: p.bot_tag_color,
             bot_tag_text: p.bot_tag_text,
             bot_ring_color: p.bot_ring_color,
+            bot_now_playing: p.bot_now_playing,
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;

@@ -9,7 +9,7 @@ import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { ColorPicker } from './ColorPicker';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
-import { MusicSettings, SmartReplies } from './Music';
+import { MusicSettings, SmartReplies } from './AgentSettings';
 import { ServerTagSettings } from './ServerTag';
 import { SoundboardSettings } from './Soundboard';
 

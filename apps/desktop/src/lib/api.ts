@@ -263,6 +263,9 @@ export const api = {
   setActivitySettings: (s: ActivitySettings) => request<ActivitySettings>('PUT', '/users/@me/activity-settings', s),
   agentReplies: (serverId: string) => request<AgentReply[]>('GET', `/servers/${enc(serverId)}/agent/replies`),
   setAgentReplies: (serverId: string, list: AgentReply[]) => request<AgentReply[]>('PUT', `/servers/${enc(serverId)}/agent/replies`, list),
+  /** Cartão, estilo do nome, música favorita e visual de chamada do agente (igual ao perfil da pessoa). */
+  updateAgentProfile: (serverId: string, patch: { favoriteSong?: string | null; nameStyle?: NameStyle | null; cardColors?: string[] | null; callLook?: CallLook | null }) =>
+    request<{ favoriteSong?: FavoriteSong | null; cardColors?: string[] | null; callLook?: CallLook | null }>('PUT', `/servers/${enc(serverId)}/agent/profile`, patch),
   updateMusicBot: (serverId: string, patch: UpdateProfileInput) => request<PublicUser>('PATCH', `/servers/${enc(serverId)}/music/bot`, patch),
   deleteServer: (id: string) => request<void>('DELETE', `/servers/${enc(id)}`),
   leaveServer: (id: string) => request<void>('POST', `/servers/${enc(id)}/leave`),

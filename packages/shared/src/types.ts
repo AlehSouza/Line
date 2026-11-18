@@ -22,7 +22,7 @@ export interface PublicUser {
   /** Tag de servidor que a pessoa exibe ao lado do nome. */
   tag?: { serverId: string; text: string; icon?: string | null; iconUrl?: string | null; style?: TagStyle | null } | null;
   /** Só para bots: cor do nome, cor da etiqueta, texto dela ("BOT" ou "B") e cor do anel de fala. */
-  botStyle?: { nameColor: string | null; tagColor: string | null; tagText: 'BOT' | 'B'; ringColor?: string | null };
+  botStyle?: { nameColor: string | null; tagColor: string | null; tagText: 'BOT' | 'B'; ringColor?: string | null; nowPlaying?: string | null };
   /** Estilo do nome exibido (fonte, efeito e cores). */
   nameStyle?: NameStyle | null;
 }

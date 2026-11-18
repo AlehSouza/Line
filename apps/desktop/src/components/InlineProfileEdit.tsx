@@ -378,13 +378,26 @@ function TagRow({ active, onClick, children }: { active: boolean; onClick: () =>
 }
 
 /** Música favorita no próprio perfil: placeholder pontilhado quando não tem; o player com trocar/remover quando tem. */
-export function SongSlot({ song, onChange, colors }: { song: FavoriteSong | null; onChange: (s: FavoriteSong | null) => void; colors?: string[] | null }) {
+type SongSave = (patch: { favoriteSong: string | null }) => Promise<{ favoriteSong?: FavoriteSong | null }>;
+
+export function SongSlot({
+  song,
+  onChange,
+  colors,
+  save = api.updateProfileExtras,
+}: {
+  song: FavoriteSong | null;
+  onChange: (s: FavoriteSong | null) => void;
+  colors?: string[] | null;
+  /** Onde salvar (o agente usa a rota dele); padrão: o meu perfil. */
+  save?: SongSave;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
       {song ? (
         <div>
-          <SongPlayer song={song} colors={colors} onRemove={() => api.updateProfileExtras({ favoriteSong: null }).then(() => onChange(null), showError)} />
+          <SongPlayer song={song} colors={colors} onRemove={() => save({ favoriteSong: null }).then(() => onChange(null), showError)} />
           <button type="button" onClick={() => setOpen(true)} className="mt-1 text-xs text-soft hover:text-fg hover:underline">
             Trocar música
           </button>
@@ -399,13 +412,13 @@ export function SongSlot({ song, onChange, colors }: { song: FavoriteSong | null
           </span>
         </button>
       )}
-      {open && <SongSearchModal current={song} onClose={() => setOpen(false)} onPick={onChange} />}
+      {open && <SongSearchModal current={song} save={save} onClose={() => setOpen(false)} onPick={onChange} />}
     </>
   );
 }
 
 /** Modal de busca da música favorita: link do YouTube ou nome da música (o servidor acha no YouTube). */
-function SongSearchModal({ current, onClose, onPick }: { current: FavoriteSong | null; onClose: () => void; onPick: (s: FavoriteSong | null) => void }) {
+function SongSearchModal({ current, save, onClose, onPick }: { current: FavoriteSong | null; save: SongSave; onClose: () => void; onPick: (s: FavoriteSong | null) => void }) {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -428,7 +441,7 @@ function SongSearchModal({ current, onClose, onPick }: { current: FavoriteSong |
     setBusy(true);
     setError('');
     try {
-      const r = await api.updateProfileExtras({ favoriteSong: t });
+      const r = await save({ favoriteSong: t });
       setFound(r.favoriteSong ?? null);
       onPick(r.favoriteSong ?? null);
       if (!r.favoriteSong) setError('Não achei essa música no YouTube.');
@@ -475,12 +488,12 @@ function SongSearchModal({ current, onClose, onPick }: { current: FavoriteSong |
           {error && <p className="mb-2 text-sm text-danger">{error}</p>}
           {found ? (
             <>
-              <p className="mb-2 text-xs font-bold text-soft">No seu perfil</p>
+              <p className="mb-2 text-xs font-bold text-soft">No perfil</p>
               <SongPlayer song={found} />
               <p className="mt-2 text-xs text-muted">Pesquise de novo para trocar.</p>
             </>
           ) : (
-            !error && <p className="py-4 text-center text-xs text-muted">Pesquise uma música para colocar no seu perfil.</p>
+            !error && <p className="py-4 text-center text-xs text-muted">Pesquise uma música para colocar no perfil.</p>
           )}
         </div>
         <div className="flex justify-end">
@@ -531,7 +544,20 @@ export function cardStyle(colors: string[] | null | undefined, fallback: string)
 }
 
 /** Bolinha no fim do cartão: escolhe o degradê do cartão. Mostra na hora e salva ao fechar. */
-export function CardColorButton({ colors, fallback, onPreview }: { colors: string[] | null | undefined; fallback: string; onPreview: (c: string[] | null) => void }) {
+export function CardColorButton({
+  colors,
+  fallback,
+  onPreview,
+  save,
+  size = 'size-6',
+}: {
+  colors: string[] | null | undefined;
+  fallback: string;
+  onPreview: (c: string[] | null) => void;
+  /** Onde salvar ao fechar (o agente usa a rota dele); padrão: o meu perfil. */
+  save?: (c: string[] | null) => Promise<unknown>;
+  size?: string;
+}) {
   const btn = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -544,6 +570,7 @@ export function CardColorButton({ colors, fallback, onPreview }: { colors: strin
     setOpen(false);
     const next = cur.current;
     if (JSON.stringify(next) === JSON.stringify(start.current)) return;
+    if (save) return void save(next).catch(showError);
     api
       .updateProfileExtras({ cardColors: next })
       .then(async () => {
@@ -574,7 +601,7 @@ export function CardColorButton({ colors, fallback, onPreview }: { colors: strin
           start.current = colors ?? null;
           setOpen(true);
         }}
-        className="size-6 rounded-full border-2 border-white/70 shadow ring-offset-2 hover:ring-2 hover:ring-accent"
+        className={cx(size, 'rounded-full border-2 border-white/70 shadow ring-offset-2 hover:ring-2 hover:ring-accent')}
         style={{ background: `linear-gradient(to bottom, ${a}, ${b})` }}
       />
       {open && btn.current && (

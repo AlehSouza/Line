@@ -72,7 +72,6 @@ export function UserCard({
   }, [userId, isMe]);
 
   useEffect(() => {
-    if (other?.bot) return;
     api.profile(userId).then(
       (p) => {
         setSong(p.favoriteSong ?? null);

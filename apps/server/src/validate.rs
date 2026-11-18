@@ -114,6 +114,18 @@ pub fn channel_name(raw: &str) -> ApiResult<String> {
     Ok(SPACES_RE.replace_all(&s, "-").into_owned())
 }
 
+/// Canal de voz tem nome livre (maiúsculas, espaços, emojis); só os de texto
+/// viram minúsculo-com-hífen.
+pub fn channel_name_for(kind: &str, raw: &str) -> ApiResult<String> {
+    if kind == "voice" {
+        let s = SPACES_RE.replace_all(raw.trim(), " ").into_owned();
+        text(&s, 1, 100, "O nome do canal")?;
+        Ok(s)
+    } else {
+        channel_name(raw)
+    }
+}
+
 // ---------- corpos das rotas ----------
 
 #[derive(Deserialize)]
@@ -335,6 +347,9 @@ pub struct UpdateProfile {
     pub bot_tag_text: Option<String>,
     #[serde(default, deserialize_with = "nullable")]
     pub bot_ring_color: Option<Option<String>>,
+    /// Status do canal enquanto o agente toca (null = padrão, "" = desligado).
+    #[serde(default, deserialize_with = "nullable")]
+    pub bot_now_playing: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -374,6 +389,10 @@ impl UpdateProfile {
         .flatten()
         {
             *c = color(c)?;
+        }
+        if let Some(Some(t)) = &mut self.bot_now_playing {
+            *t = t.trim().to_string();
+            text(t, 0, 100, "O status de quando toca")?;
         }
         if let Some(t) = &self.bot_tag_text
             && t != "BOT"
@@ -468,11 +487,11 @@ pub struct CreateChannel {
 
 impl CreateChannel {
     pub fn check(mut self) -> ApiResult<Self> {
-        self.name = channel_name(&self.name)?;
         let kind = self.kind.get_or_insert_with(|| "text".into());
         if kind != "text" && kind != "voice" {
             return Err(validation("Tipo de canal inválido"));
         }
+        self.name = channel_name_for(kind, &self.name)?;
         if self.member_ids.as_ref().is_some_and(|m| m.len() > 500)
             || self.role_ids.as_ref().is_some_and(|m| m.len() > 250)
         {
@@ -515,8 +534,11 @@ pub struct ChannelAccessInput {
 }
 
 impl UpdateChannel {
-    pub fn check(mut self) -> ApiResult<Self> {
-        self.name = self.name.as_deref().map(channel_name).transpose()?;
+    pub fn check(self) -> ApiResult<Self> {
+        // O formato do nome depende do tipo do canal: a rota aplica channel_name_for.
+        if let Some(n) = &self.name {
+            text(n.trim(), 1, 100, "O nome do canal")?;
+        }
         if let Some(a) = &self.access
             && (a.member_ids.len() > 500
                 || a.interact_member_ids.len() > 500

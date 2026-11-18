@@ -76,6 +76,7 @@ pub struct UserRow {
     pub bot_tag_color: Option<String>,
     pub bot_tag_text: String,
     pub bot_ring_color: Option<String>,
+    pub bot_now_playing: Option<String>,
     /// Estilo do nome exibido (JSON: font, effect, colors).
     pub name_style: Option<String>,
 }
@@ -104,12 +105,13 @@ impl UserRow {
             bot_tag_color: r.get("bot_tag_color").unwrap_or(None),
             bot_tag_text: r.get("bot_tag_text").unwrap_or_else(|_| "BOT".into()),
             bot_ring_color: r.get("bot_ring_color").unwrap_or(None),
+            bot_now_playing: r.get("bot_now_playing").unwrap_or(None),
             name_style: r.get("name_style").unwrap_or(None),
         })
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color, u.name_style";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color, u.bot_now_playing, u.name_style";
 const SERVER_SELECT: &str =
     "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
@@ -245,6 +247,7 @@ pub struct ProfilePatch {
     pub bot_tag_color: Option<Option<String>>,
     pub bot_tag_text: Option<String>,
     pub bot_ring_color: Option<Option<String>>,
+    pub bot_now_playing: Option<Option<String>>,
 }
 
 #[derive(Default)]
@@ -408,6 +411,7 @@ impl Q<'_> {
                 tag_color: row.bot_tag_color.clone(),
                 tag_text: row.bot_tag_text.clone(),
                 ring_color: row.bot_ring_color.clone(),
+                now_playing: row.bot_now_playing.clone(),
             }),
             name_style: row
                 .name_style
@@ -793,6 +797,10 @@ impl Q<'_> {
         }
         if let Some(v) = patch.bot_ring_color {
             set("bot_ring_color", opt(v));
+        }
+        if let Some(v) = patch.bot_now_playing {
+            // "" fica salvo (desligado); null volta ao padrão.
+            set("bot_now_playing", v.map(Value::from).unwrap_or(Value::Null));
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());

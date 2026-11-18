@@ -153,7 +153,7 @@ export function nameStyleClass(s: NameStyle | null | undefined): string {
 
 /**
  * Nome exibido com o estilo escolhido pela pessoa. Sem estilo, usa `color` (cor do cargo/bot).
- * Bots não têm estilo próprio (usam a cor do agente).
+ * O agente também pode ter estilo (Configurações do servidor → Agente → Personalizar).
  */
 export function StyledName({
   user,
@@ -169,7 +169,7 @@ export function StyledName({
   className?: string;
   children: ReactNode;
 }) {
-  const s = style !== undefined ? style : user?.bot ? null : user?.nameStyle;
+  const s = style !== undefined ? style : user?.nameStyle;
   return (
     <span className={[className, nameStyleClass(s)].filter(Boolean).join(' ')} style={nameStyleCss(s, color)}>
       {children}

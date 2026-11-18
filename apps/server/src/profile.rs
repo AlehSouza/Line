@@ -31,6 +31,7 @@ pub fn router() -> Router<Arc<App>> {
         .route("/users/{id}/ignore", put(ignore).delete(unignore))
         .route("/games/search", get(search_games))
         .route("/servers/{id}/profile", put(put_server_profile))
+        .route("/servers/{id}/agent/profile", put(put_agent_profile))
 }
 
 /// Fontes e efeitos aceitos no estilo do nome (iguais aos de `apps/desktop/src/lib/nameStyle.ts`).
@@ -141,8 +142,52 @@ fn clean_style(v: &Value) -> ApiResult<Option<Value>> {
 /// `nameStyle` (null = sem estilo). Campos ausentes ficam como estão.
 async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
     let input = body::<Value>(&b)?;
-    // Música favorita: link do YouTube ou nome para buscar (resolvido antes de pegar o banco).
-    let song = match input.get("favoriteSong") {
+    let song = resolve_input_song(&input).await?;
+    let q = app.store.q();
+    let style_changed = apply_extras(&q, &me, &input, song)?;
+    if style_changed {
+        if let Some(user) = q.self_user(&me) {
+            app.to_user(&me, "self:update", &user);
+        }
+        if let Some(public) = q.public_user(&me) {
+            app.to_users(&q.audience_of(&me), "user:update", &public);
+        }
+    }
+    ok(extras_json(&q, &me))
+}
+
+/// PUT /servers/{id}/agent/profile: o mesmo de `/users/@me/profile` (cartão, estilo do nome,
+/// música favorita, visual da chamada), só que no agente do servidor. Pede Gerenciar servidor.
+async fn put_agent_profile(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let input = body::<Value>(&b)?;
+    let song = resolve_input_song(&input).await?;
+    let q = app.store.q();
+    crate::routes::require_perm(&q, &id, &me, crate::perms::MANAGE_SERVER)?;
+    let bot = app.music_bot(&q, &id).ok_or_else(|| not_found("Agente"))?;
+    if apply_extras(&q, &bot.id, &input, song)? {
+        if let Some(public) = q.public_user(&bot.id) {
+            app.to_server(&id, "user:update", &public);
+        }
+    }
+    ok(extras_json(&q, &bot.id))
+}
+
+fn extras_json(q: &crate::store::Q<'_>, user_id: &str) -> Value {
+    let (games, connections) = q.profile_extras(user_id);
+    json!({
+        "favoriteGame": games.get("favorite"),
+        "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
+        "favoriteSong": games.get("song"),
+        "cardColors": games.get("card"),
+        "callLook": games.get("call"),
+        "connections": connections,
+    })
+}
+
+/// Música favorita: link do YouTube ou nome para buscar (resolvido antes de pegar o banco).
+/// None = não mexe; Some(Null) = tira.
+async fn resolve_input_song(input: &Value) -> ApiResult<Option<Value>> {
+    Ok(match input.get("favoriteSong") {
         None => None,
         Some(Value::Null) => Some(Value::Null),
         Some(v) => {
@@ -153,9 +198,17 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
                     .ok_or_else(|| validation("Não achei essa música no YouTube"))?,
             )
         }
-    };
-    let q = app.store.q();
-    let (mut games, _) = q.profile_extras(&me);
+    })
+}
+
+/// Grava os extras do perfil de `me` (ou do agente). Devolve se o estilo do nome mudou.
+fn apply_extras(
+    q: &crate::store::Q<'_>,
+    me: &str,
+    input: &Value,
+    song: Option<Value>,
+) -> ApiResult<bool> {
+    let (mut games, _) = q.profile_extras(me);
     if !games.is_object() {
         games = json!({});
     }
@@ -227,7 +280,7 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
         changed_games = true;
     }
     if changed_games {
-        q.set_profile_games(&me, &games);
+        q.set_profile_games(me, &games);
     }
     if let Some(list) = input.get("connections") {
         let list = list
@@ -247,26 +300,13 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
                     .map(|name| json!({ "type": kind, "name": name }))
             })
             .collect();
-        q.set_connections(&me, &json!(conns));
+        q.set_connections(me, &json!(conns));
     }
     if let Some(style) = input.get("nameStyle") {
-        q.set_name_style(&me, clean_style(style)?.as_ref());
-        if let Some(user) = q.self_user(&me) {
-            app.to_user(&me, "self:update", &user);
-        }
-        if let Some(public) = q.public_user(&me) {
-            app.to_users(&q.audience_of(&me), "user:update", &public);
-        }
+        q.set_name_style(me, clean_style(style)?.as_ref());
+        return Ok(true);
     }
-    let (games, connections) = q.profile_extras(&me);
-    ok(json!({
-        "favoriteGame": games.get("favorite"),
-        "likedGames": games.get("liked").cloned().unwrap_or_else(|| json!([])),
-        "favoriteSong": games.get("song"),
-        "cardColors": games.get("card"),
-        "callLook": games.get("call"),
-        "connections": connections,
-    }))
+    Ok(false)
 }
 
 /// GET /users/{id}/profile?server=: o que o modal de perfil mostra além do PublicUser.

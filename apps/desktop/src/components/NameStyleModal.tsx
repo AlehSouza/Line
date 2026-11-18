@@ -1,6 +1,6 @@
 'use client';
 
-import type { NameEffect, NameStyle } from '@line/shared';
+import type { NameEffect, NameStyle, PublicUser } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { DEFAULT_NAME_STYLE, EFFECT_COLORS, NAME_EFFECTS, NAME_FONTS, NAME_PALETTES, nameDir, namePulse, nameStyleClass, nameStyleCss, nameWave, StyledName } from '@/lib/nameStyle';
@@ -29,8 +29,18 @@ function colorsFor(effect: NameEffect, current: string[]): string[] {
 }
 
 /** "Alterar estilo do nome exibido": fonte, efeito e cores, com prévia ao vivo. */
-export function NameStyleModal({ onClose }: { onClose: () => void }) {
-  const me = useLine((s) => s.me);
+export function NameStyleModal({
+  onClose,
+  target,
+  onSave,
+}: {
+  onClose: () => void;
+  /** Outro perfil (o agente do servidor); sem isso, edita o meu. */
+  target?: PublicUser;
+  onSave?: (style: NameStyle | null) => Promise<void>;
+}) {
+  const self = useLine((s) => s.me);
+  const me = target ?? self;
   const [style, setStyle] = useState<NameStyle>(me?.nameStyle ?? DEFAULT_NAME_STYLE);
   const [busy, setBusy] = useState(false);
 
@@ -49,8 +59,11 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
   async function save(next: NameStyle | null) {
     setBusy(true);
     try {
-      await api.updateProfileExtras({ nameStyle: next });
-      actions.setMe({ ...me!, nameStyle: next });
+      if (onSave) await onSave(next);
+      else {
+        await api.updateProfileExtras({ nameStyle: next });
+        actions.setMe({ ...self!, nameStyle: next });
+      }
       toast(next ? 'Estilo do nome aplicado.' : 'Estilo do nome removido.');
       onClose();
     } catch (e) {
@@ -244,7 +257,7 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                     <StyledName style={style}>{me.displayName}</StyledName>
                   </p>
                   <p className="flex items-center gap-1.5 text-xs text-soft">
-                    {me.username} <UserTagBadge user={me} />
+                    {target ? 'Agente do servidor' : me.username} <UserTagBadge user={me} />
                   </p>
                 </div>
               </div>
@@ -284,7 +297,7 @@ export function NameStyleModal({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
             </div>
-            <p className="text-xs text-muted">O estilo aparece no seu nome em mensagens, listas de membros, canais de voz e no seu perfil, para todo mundo.</p>
+            <p className="text-xs text-muted">{target ? 'O estilo aparece no nome do agente' : 'O estilo aparece no seu nome'} em mensagens, listas de membros, canais de voz e no perfil, para todo mundo.</p>
           </div>
         </div>
 
