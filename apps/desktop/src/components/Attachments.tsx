@@ -403,6 +403,27 @@ export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
                 </span>
               </span>
             )}
+            {!blocked && !covered && !more && seen.includes(a.id) && (
+              // Quadro sensível já revelado: olho no canto para borrar de novo.
+              <span
+                role="button"
+                tabIndex={0}
+                title="Borrar de novo"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSeen((l) => l.filter((id) => id !== a.id));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSeen((l) => l.filter((id) => id !== a.id));
+                }}
+                className="absolute top-2 right-2 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/90 shadow hover:bg-black/80 hover:text-white"
+              >
+                <Icons.EyeOff size={15} />
+              </span>
+            )}
             {more && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-3xl font-bold text-white">+{extra}</span>}
           </button>
         );
