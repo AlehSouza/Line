@@ -7,7 +7,7 @@ import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/sto
 import { hasPerm, Perm } from '@line/shared';
 import { joinVoice } from '@/lib/voice';
 import { cx, Icons } from './ui';
-import { showError } from './Dialogs';
+import { showError, toast } from './Dialogs';
 
 /**
  * Menus do clique direito do Line. O menu nativo do navegador/WebView2 (Voltar, Recarregar,
@@ -74,6 +74,64 @@ function clean(items: MenuEntry[]) {
 }
 
 const copy = (text: string) => navigator.clipboard.writeText(text).catch(() => {});
+
+/** A área de transferência só aceita PNG: converte o que vier (jpg, webp, gif...). */
+async function toPng(blob: Blob): Promise<Blob> {
+  if (blob.type === 'image/png') return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Não deu para copiar a imagem.'))), 'image/png'));
+}
+
+async function fetchBlob(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Não deu para baixar a imagem.');
+  return res.blob();
+}
+
+/** Itens do clique direito numa imagem: copiar, salvar e o link da mídia. */
+export function imageMenuItems(url: string, filename: string): MenuEntry[] {
+  const absolute = new URL(url, window.location.href).href;
+  return [
+    {
+      label: 'Copiar imagem',
+      icon: <Icons.Image size={15} />,
+      onClick: async () => {
+        try {
+          const png = await toPng(await fetchBlob(absolute));
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+          toast('Imagem copiada.');
+        } catch (e) {
+          showError(e instanceof Error && e.message ? e : new Error('Não deu para copiar a imagem.'));
+        }
+      },
+    },
+    {
+      label: 'Salvar imagem',
+      icon: <Icons.Download size={15} />,
+      onClick: async () => {
+        try {
+          const href = URL.createObjectURL(await fetchBlob(absolute));
+          const a = document.createElement('a');
+          a.href = href;
+          a.download = filename || 'imagem';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.setTimeout(() => URL.revokeObjectURL(href), 10_000);
+        } catch (e) {
+          showError(e);
+        }
+      },
+    },
+    'sep',
+    { label: 'Copiar link de mídia', icon: <Icons.Link size={15} />, onClick: () => copy(absolute).then(() => toast('Link copiado.')) },
+    { label: 'Abrir link de mídia', icon: <Icons.AppWindow size={15} />, onClick: () => window.open(absolute, '_blank', 'noopener') },
+  ];
+}
 
 function selectionItems(): MenuEntry[] {
   const text = window.getSelection()?.toString();

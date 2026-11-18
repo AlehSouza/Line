@@ -1,5 +1,6 @@
 'use client';
 
+import { imageMenuItems, openContextMenu } from './ContextMenu';
 import { ServerNotifyModal } from './Notifications';
 import { FullProfile } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
@@ -743,7 +744,10 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onMouseDown={onClose}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={filename} className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl" onMouseDown={(e) => e.stopPropagation()} />
+      <img src={url} alt={filename} className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+        onMouseDown={(e) => e.stopPropagation()}
+        onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, filename))}
+      />
       <a
         href={url}
         target="_blank"

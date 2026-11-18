@@ -365,6 +365,7 @@ export const Icons = {
   File: icon(L.File),
   FileText: icon(L.FileText),
   Download: icon(L.Download),
+  Image: icon(L.Image),
   Folder: icon(L.Folder),
   Lock: icon(L.Lock),
   Shield: icon(L.Shield),

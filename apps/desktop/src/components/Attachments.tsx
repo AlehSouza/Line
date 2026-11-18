@@ -7,6 +7,7 @@ import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
 import { cx, Icons, Skeleton } from './ui';
 import { VideoPlayer } from './VideoPlayer';
+import { imageMenuItems, openContextMenu } from './ContextMenu';
 import { AudioPlayer, isVoiceMessage, VoicePlayer } from './AudioPlayer';
 
 export function formatSize(bytes: number) {
@@ -99,6 +100,7 @@ function AttachmentView({ attachment: a, compact }: { attachment: Attachment; co
       return (
         <button
           onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename })}
+          onContextMenu={(e) => openContextMenu(e, imageMenuItems(url, a.filename))}
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
         >
