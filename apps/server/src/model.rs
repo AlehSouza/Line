@@ -147,6 +147,9 @@ pub struct Channel {
     pub parent_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_message_id: Option<Option<String>>,
+    /// Thread que responde a uma mídia só da mensagem (o topo da thread mostra só ela).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_attachment_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message_count: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]

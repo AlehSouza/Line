@@ -384,8 +384,8 @@ export const api = {
   uploadAttachment,
   fetchMedia,
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),
-  createThread: (channelId: string, name: string, messageId?: string) =>
-    request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId }),
+  createThread: (channelId: string, name: string, messageId?: string, attachmentId?: string) =>
+    request<Channel>('POST', `/channels/${enc(channelId)}/threads`, { name, messageId, attachmentId }),
   createPoll: (channelId: string, question: string, options: string[], multi: boolean) =>
     request<Message>('POST', `/channels/${enc(channelId)}/polls`, { question, options, multi }),
   addReaction: (messageId: string, emoji: string) =>

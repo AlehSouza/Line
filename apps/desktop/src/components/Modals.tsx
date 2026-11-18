@@ -70,7 +70,7 @@ export function Modals() {
     case 'create-thread':
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
-      return <ImageViewer url={modal.url} filename={modal.filename} channelId={modal.channelId} messageId={modal.messageId} onClose={close} />;
+      return <ImageViewer url={modal.url} filename={modal.filename} channelId={modal.channelId} messageId={modal.messageId} attachmentId={modal.attachmentId} onClose={close} />;
     case 'gallery':
       return <GalleryViewer items={modal.items} start={modal.index} channelId={modal.channelId} onClose={close} />;
     case 'voice-invite':
@@ -778,7 +778,7 @@ function CreatePollModal({ channelId, onClose }: { channelId: string; onClose: (
 
 /** Caixa de texto do chat embaixo do visualizador: manda a mensagem na thread da mensagem dona da
  * mídia (cria a thread se ainda não existe, como o "Responder em thread" da barra de ações). */
-function ViewerComposer({ channelId, messageId, onClose }: { channelId?: string; messageId?: string; onClose: () => void }) {
+function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { channelId?: string; messageId?: string; attachmentId?: string; onClose: () => void }) {
   const parent = useLine((s) => (channelId ? s.channels[channelId] : undefined));
   const message = useLine((s) => (channelId && messageId ? s.messages[channelId]?.items.find((m) => m.id === messageId) : undefined));
   const threadId = useLine((s) => {
@@ -795,9 +795,20 @@ function ViewerComposer({ channelId, messageId, onClose }: { channelId?: string;
     if (thread) return thread;
     if (parent.type !== 'text' || !parent.serverId || !canCreate) return null;
     const plain = message.content ? mentionsToText(message.content, parent.serverId) : '';
-    const name = (plain.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
-    return { ...parent, id: `draft:${message.id}`, type: 'thread', name, parentId: parent.id, threadMessageId: message.id, messageCount: 0 };
-  }, [parent, message, thread, canCreate]);
+    const media = message.attachments.length > 1 ? message.attachments.find((a) => a.id === attachmentId) : undefined;
+    const name = (plain.split('\n')[0] || media?.filename || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+    return {
+      ...parent,
+      id: `draft:${message.id}`,
+      type: 'thread',
+      name,
+      parentId: parent.id,
+      threadMessageId: message.id,
+      // Mensagem com várias mídias: a thread responde só a esta.
+      threadAttachmentId: media?.id ?? null,
+      messageCount: 0,
+    };
+  }, [parent, message, thread, canCreate, attachmentId]);
   if (!target) return null;
   return (
     <div className="w-full max-w-[760px] text-left" onMouseDown={(e) => e.stopPropagation()}>
@@ -824,7 +835,7 @@ function viewerKey(e: KeyboardEvent, onClose: () => void, go?: (d: number) => vo
   }
 }
 
-function ImageViewer({ url, filename, channelId, messageId, onClose }: { url: string; filename: string; channelId?: string; messageId?: string; onClose: () => void }) {
+function ImageViewer({ url, filename, channelId, messageId, attachmentId, onClose }: { url: string; filename: string; channelId?: string; messageId?: string; attachmentId?: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => viewerKey(e, onClose);
     window.addEventListener('keydown', onKey);
@@ -846,13 +857,13 @@ function ImageViewer({ url, filename, channelId, messageId, onClose }: { url: st
       >
         Abrir original
       </a>
-      <ViewerComposer channelId={channelId} messageId={messageId} onClose={onClose} />
+      <ViewerComposer channelId={channelId} messageId={messageId} attachmentId={attachmentId} onClose={onClose} />
     </div>
   );
 }
 
 /** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
-function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
+function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
   const [i, setI] = useState(start);
   const [revealed, setRevealed] = useState<number[]>([]);
   const n = items.length;
@@ -925,7 +936,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
           </a>
         )}
       </div>
-      <ViewerComposer channelId={channelId} messageId={item.messageId} onClose={onClose} />
+      <ViewerComposer channelId={channelId} messageId={item.messageId} attachmentId={item.attachmentId} onClose={onClose} />
     </div>
   );
 }

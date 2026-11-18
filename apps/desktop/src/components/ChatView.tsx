@@ -382,7 +382,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
         {bucket && !bucket.hasMore && isThread && (
           <div className="pt-3">
             {starter ? (
-              <ThreadStarter message={starter} myUsername={myUsername} mentionCtx={mentionCtx} />
+              <ThreadStarter message={starter} only={onlyMediaOf(channel, starter)} myUsername={myUsername} mentionCtx={mentionCtx} />
             ) : (
               <p className="px-4 py-1 text-sm text-muted">Começo da conversa em {title}.</p>
             )}
@@ -433,6 +433,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 mentionCtx={mentionCtx}
                 grouped={grouped}
                 gallery={mediaRuns.leaders.get(m.id)}
+                galleryThreads={mediaRuns.threads.get(m.id)}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
                 canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages || canPinMessages)}
@@ -455,7 +456,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
 
 /** Só mídia, sem texto, enquete ou thread: pode entrar numa grade. */
 const mediaOnly = (m: Message) =>
-  !m.deleted && !m.content && !m.poll && !m.thread && !!m.attachments.length && m.attachments.every(isMedia);
+  !m.deleted && !m.content && !m.poll && !!m.attachments.length && m.attachments.every(isMedia);
 
 /** Sequências de mensagens só com mídia, do mesmo autor, no mesmo dia e com no máximo
  * GROUP_WINDOW_MS entre uma e outra. Com GRID_MIN mídias ou mais, a primeira mensagem
@@ -463,6 +464,8 @@ const mediaOnly = (m: Message) =>
 function mediaRunsOf(items: Message[]) {
   const leaders = new Map<string, Attachment[]>();
   const hidden = new Set<string>();
+  /** Threads das mensagens escondidas na grade (aparecem embaixo dela). */
+  const threads = new Map<string, NonNullable<Message['thread']>[]>();
   let i = 0;
   while (i < items.length) {
     const first = items[i]!;
@@ -488,10 +491,12 @@ function mediaRunsOf(items: Message[]) {
     if (media.length >= GRID_MIN) {
       leaders.set(first.id, media);
       for (const m of run.slice(1)) hidden.add(m.id);
+      const extra = run.slice(1).flatMap((m) => (m.thread ? [m.thread] : []));
+      if (extra.length) threads.set(first.id, extra);
     }
     i = j;
   }
-  return { leaders, hidden };
+  return { leaders, hidden, threads };
 }
 
 function DayDivider({ date }: { date: string }) {
@@ -524,6 +529,7 @@ function MessageRow({
   mentionCtx,
   grouped,
   gallery,
+  galleryThreads,
   mine,
   canDelete,
   editing,
@@ -543,6 +549,7 @@ function MessageRow({
   grouped: boolean;
   /** Primeira de uma sequência de mídias: mostra a grade com todas. */
   gallery?: Attachment[];
+  galleryThreads?: NonNullable<Message['thread']>[];
   mine: boolean;
   canDelete: boolean;
   editing: boolean;
@@ -831,6 +838,7 @@ function MessageRow({
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
         {message.thread && <ThreadChip thread={message.thread} />}
+        {galleryThreads?.map((t) => <ThreadChip key={t.id} thread={t} />)}
       </div>
 
       {reactAnchor && (
@@ -924,7 +932,12 @@ function MessageRow({
 }
 
 /** Mensagem que abriu a thread, no topo do painel: com as mesmas reações da mensagem original. */
-function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; myUsername?: string; mentionCtx: ReturnType<typeof useMentionContext> }) {
+/** Topo da thread. `only`: a thread responde a uma mídia só da mensagem (pelo visualizador). */
+/** Mídia da thread, só se ela ainda estiver na mensagem. */
+const onlyMediaOf = (channel: Channel, m: Message) =>
+  channel.threadAttachmentId && m.attachments.some((a) => a.id === channel.threadAttachmentId) ? channel.threadAttachmentId : null;
+
+function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Message; only?: string | null; myUsername?: string; mentionCtx: ReturnType<typeof useMentionContext> }) {
   const author = useLine((s) => s.users[message.author.id]) ?? message.author;
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (message.deleted) {
@@ -947,7 +960,7 @@ function ThreadStarter({ message, myUsername, mentionCtx }: { message: Message; 
         </p>
         {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
         {message.content && !gifFromContent(message.content) && <LinkPreviews content={message.content} />}
-        <AttachmentList attachments={message.attachments} compact authorId={message.author.id} />
+        <AttachmentList attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments} compact authorId={message.author.id} />
         {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
       </div>
       <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', anchor && 'flex')}>
@@ -1416,7 +1429,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
   /** Primeira resposta de um "Responder": cria a thread agora e manda a mensagem nela. */
   async function resolveTarget() {
     if (channel.id.startsWith('draft:') && channel.parentId) {
-      const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined);
+      const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined, channel.threadAttachmentId ?? undefined);
       actions.upsertChannel(thread);
       return thread.id;
     }

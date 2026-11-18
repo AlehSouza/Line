@@ -2842,7 +2842,12 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
             return Err(conflict("Essa mensagem já tem uma thread"));
         }
     }
-    let thread = q.create_thread(&parent, &me, &input.name, input.message_id.as_deref());
+    // A mídia precisa ser da própria mensagem; senão é ignorada.
+    let attachment_id = input
+        .attachment_id
+        .as_deref()
+        .filter(|aid| input.message_id.is_some() && q.attachment_message_id(aid) == input.message_id);
+    let thread = q.create_thread(&parent, &me, &input.name, input.message_id.as_deref(), attachment_id);
     if thread.server_id.is_some() {
         app.to_channel(&q, &thread.id, "channel:create", &thread);
     }

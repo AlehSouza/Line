@@ -179,7 +179,7 @@ function AttachmentView({ attachment: a, compact, mine, owner }: { attachment: A
     case 'image':
       return (
         <button
-          onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename, ...owner })}
+          onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename, attachmentId: a.id, ...owner })}
           onContextMenu={(e) => openContextMenu(e, mediaMenu(a, url, !!mine))}
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
@@ -364,7 +364,7 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
                 const v = visible[k]!;
                 // Ainda coberta na grade: abre em foco, mas com o mesmo aviso do chat.
                 const sensitive = seen.includes(v.id) ? undefined : v.nsfw && blur ? ('nsfw' as const) : v.spoiler ? ('spoiler' as const) : undefined;
-                return { ...it, sensitive, messageId: list.find((m) => m.attachments.some((x) => x.id === v.id))?.id };
+                return { ...it, sensitive, attachmentId: v.id, messageId: list.find((m) => m.attachments.some((x) => x.id === v.id))?.id };
               });
               actions.openModal({ kind: 'gallery', items: withOwner, index: Math.max(0, visible.indexOf(a)), channelId });
             }}

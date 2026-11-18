@@ -210,6 +210,7 @@ struct ChannelRow {
     last_message_at: Option<String>,
     parent_id: Option<String>,
     thread_message_id: Option<String>,
+    thread_attachment_id: Option<String>,
     is_private: bool,
     interact_restricted: bool,
     base: String,
@@ -229,6 +230,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         last_message_at: r.get("last_message_at")?,
         parent_id: r.get("parent_id")?,
         thread_message_id: r.get("thread_message_id")?,
+        thread_attachment_id: r.get::<_, Option<String>>("thread_attachment_id").unwrap_or(None),
         is_private: r.get::<_, i64>("is_private")? != 0,
         interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
         base: r.get("base").unwrap_or_default(),
@@ -1396,6 +1398,7 @@ impl Q<'_> {
             owner_id: (is_dm || is_thread).then_some(row.owner_id),
             parent_id: if is_thread { row.parent_id } else { None },
             thread_message_id: is_thread.then_some(row.thread_message_id),
+            thread_attachment_id: if is_thread { row.thread_attachment_id } else { None },
             id: row.id,
             kind: row.kind,
             server_id: row.server_id,
@@ -2721,12 +2724,13 @@ impl Q<'_> {
         owner_id: &str,
         name: &str,
         message_id: Option<&str>,
+        attachment_id: Option<&str>,
     ) -> Channel {
         let id = new_id();
         ok(self.c.execute(
-            "INSERT INTO channels (id, type, server_id, name, owner_id, parent_id, thread_message_id, created_at)
-             VALUES (?, 'thread', ?, ?, ?, ?, ?, ?)",
-            params![id, parent.server_id, name, owner_id, parent.id, message_id, now_iso()],
+            "INSERT INTO channels (id, type, server_id, name, owner_id, parent_id, thread_message_id, thread_attachment_id, created_at)
+             VALUES (?, 'thread', ?, ?, ?, ?, ?, ?, ?)",
+            params![id, parent.server_id, name, owner_id, parent.id, message_id, attachment_id, now_iso()],
         ));
         self.channel(&id).unwrap()
     }

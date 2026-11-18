@@ -677,6 +677,8 @@ pub struct CreateThread {
     pub name: String,
     #[serde(default)]
     pub message_id: Option<String>,
+    #[serde(default)]
+    pub attachment_id: Option<String>,
 }
 
 impl CreateThread {

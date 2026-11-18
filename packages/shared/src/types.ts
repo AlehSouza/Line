@@ -248,6 +248,8 @@ export interface Channel {
   parentId?: string;
   /** Só para threads: mensagem que abriu a thread (null se foi criada solta). */
   threadMessageId?: string | null;
+  /** Thread aberta numa mídia específica da mensagem (resposta pelo visualizador). */
+  threadAttachmentId?: string | null;
   /** Só para threads. */
   messageCount?: number;
 }

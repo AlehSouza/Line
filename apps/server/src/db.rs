@@ -529,6 +529,10 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE messages ADD COLUMN forwarded_from TEXT;
 "#,
+    // Thread aberta a partir de uma mídia específica (resposta pelo visualizador).
+    r#"
+  ALTER TABLE channels ADD COLUMN thread_attachment_id TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {
