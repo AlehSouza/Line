@@ -322,6 +322,8 @@ export interface Message {
   pinnedBy?: string | null;
   /** Excluída, mas mantida porque a thread dela tem respostas. */
   deleted?: boolean;
+  /** Encaminhada: id do canal de onde a mensagem original veio. */
+  forwardedFrom?: string | null;
 }
 
 /** Item da aba Salvos. `message` vem null quando ela foi apagada (ou o canal sumiu pra mim). */

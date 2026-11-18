@@ -36,6 +36,8 @@ export type Modal =
   | { kind: 'voice-status'; channelId: string }
   /** Bug/sugestão (sem alvo) ou denúncia de usuário/mensagem. */
   | { kind: 'report'; target?: { userId: string; messageId?: string; preview?: string } }
+  /** Encaminhar mensagem (canais do mesmo servidor ou DM de amigos). */
+  | { kind: 'forward'; messageId: string; channelId: string }
   | null;
 
 interface MessageBucket {

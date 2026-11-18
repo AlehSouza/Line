@@ -4,8 +4,9 @@ import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
 import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message } from '@line/shared';
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
-import { openContextMenu, userMenu } from './ContextMenu';
-import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
+import { openContextMenu, openMenuAt, userMenu, type MenuEntry } from './ContextMenu';
+import { EMOJI_FONT, EmojiPicker, pushRecentEmoji, topEmojis } from './EmojiPicker';
+import { messageLink } from '@/lib/messageLink';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
 import { looksNsfw } from '@/lib/nsfw';
@@ -614,22 +615,78 @@ function MessageRow({
     );
   }
 
+  const plain = message.content ? mentionsToText(message.content, serverId) : '';
+  const forwardedFromName = useLine((s) => {
+    const c = message.forwardedFrom ? s.channels[message.forwardedFrom] : null;
+    return c?.serverId ? c.name : null;
+  });
+  const canReply = showThreadAction || !!message.thread;
+  const canForward = !message.poll;
+  const canReport = !mine && !message.author.bot;
+
+  function reply() {
+    if (message.thread) return actions.openThread(message.thread.id);
+    const parent = useLine.getState().channels[message.channelId];
+    const name = (plain.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+    if (parent) actions.openThreadDraft(parent, message.id, name);
+  }
+
+  function forward() {
+    actions.openModal({ kind: 'forward', messageId: message.id, channelId: message.channelId });
+  }
+
+  function copy(text: string, done: string) {
+    navigator.clipboard.writeText(text).then(() => toast(done), showError);
+  }
+
+  async function remove() {
+    if ((await confirmDialog({ title: 'Excluir mensagem', message: 'Tem certeza? Não dá para desfazer.', confirmLabel: 'Excluir', danger: true })))
+      await api.deleteMessage(message.id).catch(showError);
+  }
+
+  /** Menu das reticências (e fim do clique direito), na ordem pedida. */
+  function moreItems(menuAt: { x: number; y: number }): MenuEntry[] {
+    return [
+      !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => copy(plain, 'Texto copiado.') },
+      canPin && {
+        label: isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem',
+        icon: <Icons.Pin size={15} />,
+        onClick: () => openPinMenu(message, menuAt),
+      },
+      {
+        label: isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem',
+        icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
+        onClick: () => toggleSaved(message),
+      },
+      { label: 'Copiar link da mensagem', icon: <Icons.Link size={15} />, onClick: () => copy(messageLink(message), 'Link da mensagem copiado.') },
+      'sep',
+      canDelete && { label: 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
+      canReport && {
+        label: 'Denunciar mensagem',
+        icon: <Icons.Flag size={15} />,
+        danger: true,
+        onClick: () =>
+          actions.openModal({
+            kind: 'report',
+            target: { userId: message.author.id, messageId: message.id, preview: plain || message.attachments[0]?.filename },
+          }),
+      },
+      'sep',
+      { label: 'Copiar ID da mensagem', icon: <Icons.IdCard size={15} />, onClick: () => copy(message.id, 'ID da mensagem copiado.') },
+    ];
+  }
+
   return (
     <div
       data-mid={message.id}
       onContextMenu={(e) => {
         if (editing) return;
         const row = e.currentTarget;
-        const startThread = () => {
-          const parent = useLine.getState().channels[message.channelId];
-          const name = (mentionsToText(message.content, serverId).split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
-          if (parent) actions.openThreadDraft(parent, message.id, name);
-        };
-        const plain = message.content ? mentionsToText(message.content, serverId) : '';
         const menuAt = { x: e.clientX, y: e.clientY };
         openContextMenu(e, [
           canReact && { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
-          showThreadAction && { label: 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: startThread },
+          canReply && { label: message.thread ? 'Abrir thread' : 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: reply },
+          canForward && { label: 'Encaminhar', icon: <Icons.Forward size={15} />, onClick: forward },
           mine && {
             label: 'Editar mensagem',
             icon: <Icons.Edit size={15} />,
@@ -645,37 +702,7 @@ function MessageRow({
               window.dispatchEvent(new CustomEvent('line:mention', { detail: `@${message.author.bot ? message.author.displayName : message.author.username} ` })),
           },
           'sep',
-          !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(plain) },
-          { label: 'Copiar ID da mensagem', icon: <Icons.Copy size={15} />, onClick: () => navigator.clipboard.writeText(message.id) },
-          canPin && {
-            label: isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem',
-            icon: <Icons.Pin size={15} />,
-            onClick: () => openPinMenu(message, menuAt),
-          },
-          {
-            label: isSaved ? 'Remover dos salvos' : 'Salvar mensagem',
-            icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
-            onClick: () => toggleSaved(message),
-          },
-          !mine && !message.author.bot && {
-            label: 'Denunciar mensagem',
-            icon: <Icons.Flag size={15} />,
-            danger: true,
-            onClick: () =>
-              actions.openModal({
-                kind: 'report',
-                target: { userId: message.author.id, messageId: message.id, preview: plain || message.attachments[0]?.filename },
-              }),
-          },
-          canDelete && 'sep',
-          canDelete && {
-            label: 'Apagar mensagem',
-            icon: <Icons.Trash size={15} />,
-            danger: true,
-            onClick: async () => {
-              if ((await confirmDialog({ title: 'Apagar mensagem', message: 'Tem certeza? Não dá para desfazer.', confirmLabel: 'Apagar', danger: true }))) await api.deleteMessage(message.id);
-            },
-          },
+          ...moreItems(menuAt),
         ]);
       }}
       className={cx(
@@ -717,6 +744,12 @@ function MessageRow({
           </div>
         )}
         <PinnedNote message={message} />
+        {message.forwardedFrom && (
+          <p className="flex items-center gap-1 pt-0.5 text-xs text-muted italic">
+            <Icons.Forward size={13} />
+            Encaminhada{forwardedFromName ? ` de #${forwardedFromName}` : ''}
+          </p>
+        )}
         {missingFeatures(message.requires).length ? (
           <UpdateRequired />
         ) : editing ? (
@@ -801,85 +834,70 @@ function MessageRow({
       )}
 
       {!editing && (
-        <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', reactAnchor && 'flex')}>
+        <div className={cx('absolute -top-4 right-4 hidden items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow group-hover:flex', reactAnchor && 'flex')}>
           {canReact && (
-            <button
-              title="Adicionar reação"
-              onClick={(e) => {
-                const el = e.currentTarget;
-                setReactAnchor((a) => (a ? null : el));
-              }}
-              className="p-1.5 text-muted hover:text-fg"
-            >
-              <Icons.SmilePlus size={16} />
-            </button>
-          )}
-          {showThreadAction && (
-            <button
-              title="Responder"
-              onClick={() => {
-                const parent = useLine.getState().channels[message.channelId];
-                const name = (mentionsToText(message.content, serverId).split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
-                if (parent) actions.openThreadDraft(parent, message.id, name);
-              }}
-              className="p-1.5 text-muted hover:text-fg"
-            >
-              <Icons.Reply size={16} />
-            </button>
+            <>
+              {topEmojis(3).map((emoji) => (
+                <button
+                  key={emoji}
+                  title={`Reagir com ${emoji}`}
+                  onClick={() => void toggleReaction(message, emoji)}
+                  className="flex size-8 items-center justify-center rounded-md text-lg leading-none hover:bg-hover"
+                  style={{ fontFamily: EMOJI_FONT }}
+                >
+                  {emoji}
+                </button>
+              ))}
+              <span className="mx-1 h-5 w-px bg-edge" />
+              <button
+                title="Adicionar reação"
+                onClick={(e) => {
+                  const el = e.currentTarget;
+                  setReactAnchor((a) => (a ? null : el));
+                }}
+                className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
+              >
+                <Icons.SmilePlus size={18} />
+              </button>
+            </>
           )}
           {mine && (
-            <button title="Editar" onClick={() => { setDraft(mentionsToText(message.content, serverId)); onEdit(); }} className="p-1.5 text-muted hover:text-fg">
-              <Icons.Edit size={16} />
+            <button
+              title="Editar"
+              onClick={() => {
+                setDraft(plain);
+                onEdit();
+              }}
+              className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
+            >
+              <Icons.Edit size={17} />
             </button>
           )}
-          {canPin && (
+          {canReply && (
             <button
-              title={isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem'}
-              onClick={(e) => {
-                const r = e.currentTarget.getBoundingClientRect();
-                openPinMenu(message, { x: r.right - 208, y: r.bottom + 4 });
-              }}
-              className={cx('p-1.5 hover:text-fg', isPinned(message) ? 'text-accent' : 'text-muted')}
+              title={message.thread ? 'Abrir thread' : 'Responder em thread'}
+              onClick={reply}
+              className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
             >
-              <Icons.Pin size={16} />
+              <Icons.Reply size={18} />
+            </button>
+          )}
+          {canForward && (
+            <button title="Encaminhar" onClick={forward} className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg">
+              <Icons.Forward size={18} />
             </button>
           )}
           <button
-            title={isSaved ? 'Remover dos salvos' : 'Salvar mensagem'}
-            onClick={() => toggleSaved(message)}
-            className={cx('p-1.5 hover:text-fg', isSaved ? 'text-accent' : 'text-muted')}
+            title="Mais opções"
+            onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const at = { x: Math.max(8, r.right - 232), y: r.bottom + 4 };
+              openMenuAt(at, moreItems(at));
+            }}
+            className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
           >
-            {isSaved ? <Icons.BookmarkCheck size={16} /> : <Icons.Bookmark size={16} />}
+            <Icons.More size={18} />
           </button>
-          {!mine && !message.author.bot && (
-            <button
-              title="Denunciar mensagem"
-              onClick={() =>
-                actions.openModal({
-                  kind: 'report',
-                  target: {
-                    userId: message.author.id,
-                    messageId: message.id,
-                    preview: (message.content ? mentionsToText(message.content, serverId) : '') || message.attachments[0]?.filename,
-                  },
-                })
-              }
-              className="p-1.5 text-muted hover:text-danger"
-            >
-              <Icons.Flag size={16} />
-            </button>
-          )}
-          {canDelete && (
-            <button
-              title="Apagar"
-              onClick={async (e) => {
-                if (e.shiftKey || (await confirmDialog({ title: 'Apagar mensagem', message: 'Tem certeza? Não dá para desfazer. Dica: segure Shift para apagar sem confirmar.', confirmLabel: 'Apagar', danger: true }))) await api.deleteMessage(message.id).catch(showError);
-              }}
-              className="p-1.5 text-muted hover:text-danger"
-            >
-              <Icons.Trash size={16} />
-            </button>
-          )}
         </div>
       )}
     </div>

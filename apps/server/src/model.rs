@@ -217,6 +217,9 @@ pub struct Message {
     pub pinned_by: Option<String>,
     /// Excluída, mas mantida porque a thread dela tem respostas.
     pub deleted: bool,
+    /// Encaminhada: canal de onde a mensagem original veio.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forwarded_from: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

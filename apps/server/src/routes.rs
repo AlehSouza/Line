@@ -215,7 +215,8 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             api.merge(crate::admin::router())
                 .merge(crate::profile::router())
                 .merge(crate::notify::router())
-                .merge(crate::saved::router()),
+                .merge(crate::saved::router())
+                .merge(crate::forward::router()),
         )
         .fallback(web_fallback)
         .with_state(app)
@@ -2798,7 +2799,7 @@ async fn remove_reaction(
 }
 
 /// Atualiza o contador de respostas mostrado embaixo da mensagem que abriu a thread.
-fn refresh_thread_starter(app: &App, q: &Q, thread: &Channel) {
+pub(crate) fn refresh_thread_starter(app: &App, q: &Q, thread: &Channel) {
     let Some(Some(mid)) = &thread.thread_message_id else {
         return;
     };

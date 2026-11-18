@@ -1,3 +1,4 @@
+import { isMessageLink, openMessageLink } from './messageLink';
 import type { ReactNode } from 'react';
 import type { MentionContext } from '@/components/Mentions';
 import { UserMention } from '@/components/UserCard';
@@ -42,7 +43,18 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
     else if (m[5]) nodes.push(<em key={k}>{inline(tok.slice(1, -1), k, me, ctx)}</em>);
     else if (m[6])
       nodes.push(
-        <a key={k} href={tok} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+        <a
+          key={k}
+          href={tok}
+          target="_blank"
+          rel="noreferrer"
+          onClick={(e) => {
+            if (!isMessageLink(tok)) return;
+            e.preventDefault();
+            void openMessageLink(tok);
+          }}
+          className="text-accent hover:underline"
+        >
           {tok}
         </a>,
       );

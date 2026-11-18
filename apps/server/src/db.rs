@@ -525,6 +525,10 @@ const MIGRATIONS: &[&str] = &[
   );
   CREATE INDEX saved_messages_user ON saved_messages(user_id, saved_at);
 "#,
+    // Mensagem encaminhada: canal de onde veio (o app mostra "Encaminhada").
+    r#"
+  ALTER TABLE messages ADD COLUMN forwarded_from TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

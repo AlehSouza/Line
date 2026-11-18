@@ -184,6 +184,17 @@ function openSharedProfile() {
   );
 }
 
+/** Link de mensagem (useline.tech/app/?mensagem=...): abre o canal na mensagem e limpa a URL. */
+function openSharedMessage() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const value = url.searchParams.get('mensagem');
+  if (!value) return;
+  url.searchParams.delete('mensagem');
+  window.history.replaceState(window.history.state, '', url.toString());
+  void import('./messageLink').then((m) => m.openMessageLink(value));
+}
+
 async function bootstrap() {
   const [servers, dms, friends] = await Promise.all([api.servers(), api.dms(), api.friends()]);
   actions.setServers(servers);
@@ -194,6 +205,7 @@ async function bootstrap() {
   void loadSaved();
   restoreView();
   openSharedProfile();
+  openSharedMessage();
   connectSocket();
   setupIdleDetection();
   if (!typingTicker) typingTicker = setInterval(actions.pruneTyping, 2000);
@@ -383,7 +395,7 @@ function refreshServer(serverId: string) {
 export function mentionsMe(message: Message): boolean {
   const st = useLine.getState();
   const me = st.me;
-  if (!me || message.author.id === me.id) return false;
+  if (!me || message.author.id === me.id || message.forwardedFrom) return false;
   if (message.content.toLowerCase().includes(`@${me.username}`)) return true;
   if (message.mentionEveryone) return true;
   const serverId = st.channels[message.channelId]?.serverId;

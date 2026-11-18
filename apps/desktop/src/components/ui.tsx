@@ -421,6 +421,8 @@ export const Icons = {
   Bookmark: icon(L.Bookmark),
   BookmarkCheck: icon(L.BookmarkCheck),
   BookmarkX: icon(L.BookmarkX),
+  Forward: icon(L.Forward),
+  IdCard: icon(L.IdCard),
   PinOff: icon(L.PinOff),
   Bell: icon(L.Bell),
   BellOff: icon(L.BellOff),

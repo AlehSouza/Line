@@ -15,6 +15,7 @@ use std::sync::{Mutex, MutexGuard};
 pub mod activity;
 pub mod admin;
 pub mod events;
+pub mod forward;
 pub mod notify;
 pub mod profile;
 pub mod saved;
@@ -151,7 +152,7 @@ fn image_url(r: &Row, id_col: &str, name_col: &str) -> Option<String> {
 fn message_select() -> String {
     format!(
         "SELECT {USER_COLS}, m.id AS m_id, m.channel_id, m.author_id, m.content, m.created_at AS m_created_at, m.edited_at,
-                m.mention_everyone, m.mention_roles, m.requires, m.pinned_at, m.pinned_until, m.pinned_by, m.deleted_at
+                m.mention_everyone, m.mention_roles, m.requires, m.pinned_at, m.pinned_until, m.pinned_by, m.deleted_at, m.forwarded_from
          FROM messages m JOIN users u ON u.id = m.author_id"
     )
 }
@@ -2148,6 +2149,7 @@ impl Q<'_> {
                     pinned_until: r.get("pinned_until")?,
                     pinned_by: r.get("pinned_by")?,
                     deleted: r.get::<_, Option<String>>("deleted_at")?.is_some(),
+                    forwarded_from: r.get("forwarded_from")?,
                 };
                 Ok((user, msg))
             }))
@@ -2501,7 +2503,14 @@ impl Q<'_> {
     /// Copia um anexo (o arquivo é copiado por quem chama) para uma linha nova de `uploader`.
     pub fn clone_attachment(&self, src: &Attachment, new_id: &str, uploader: &str) -> Attachment {
         let dims = src.width.zip(src.height);
-        self.create_attachment_sized(new_id, uploader, &src.filename, &src.content_type, src.size, dims)
+        self.create_attachment_sized(
+            new_id,
+            uploader,
+            &src.filename,
+            &src.content_type,
+            src.size,
+            dims,
+        )
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {

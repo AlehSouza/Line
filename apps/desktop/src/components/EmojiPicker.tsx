@@ -120,11 +120,44 @@ export function readRecent(): string[] {
   }
 }
 
-/** Guarda o emoji no topo dos "Recentes" (vale para o seletor e para as reações). */
+const USE_KEY = 'line:emoji-uso';
+const DEFAULT_TOP = ['👍', '❤️', '😂'];
+let topCache: string[] | null = null;
+
+function readUse(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(USE_KEY) ?? '{}');
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Os emojis que a pessoa mais usa (reações rápidas da barra da mensagem). Completa com 👍 ❤️ 😂. */
+export function topEmojis(n = 3): string[] {
+  if (topCache && topCache.length >= n) return topCache.slice(0, n);
+  const use = readUse();
+  const recent = readRecent();
+  const rank = (e: string) => (recent.indexOf(e) === -1 ? 999 : recent.indexOf(e));
+  const list = Object.keys(use)
+    .filter((e) => use[e] > 0)
+    .sort((a, b) => use[b] - use[a] || rank(a) - rank(b));
+  for (const e of DEFAULT_TOP) if (list.length < Math.max(n, 3) && !list.includes(e)) list.push(e);
+  topCache = list.slice(0, Math.max(n, 3));
+  return topCache.slice(0, n);
+}
+
+/** Guarda o emoji no topo dos "Recentes" e conta o uso (vale para o seletor e para as reações). */
 export function pushRecentEmoji(emoji: string) {
+  topCache = null;
   try {
     const list = [emoji, ...readRecent().filter((e) => e !== emoji)].slice(0, RECENT_MAX);
     localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+    const use = readUse();
+    use[emoji] = (use[emoji] ?? 0) + 1;
+    // Guarda só os 60 mais usados para não crescer sem fim.
+    const kept = Object.fromEntries(Object.entries(use).sort((a, b) => b[1] - a[1]).slice(0, 60));
+    localStorage.setItem(USE_KEY, JSON.stringify(kept));
   } catch {
     /* sem armazenamento: só não lembra */
   }

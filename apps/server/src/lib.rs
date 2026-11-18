@@ -9,6 +9,7 @@ pub mod captcha;
 pub mod db;
 pub mod embeds;
 pub mod errors;
+pub mod forward;
 pub mod gateway;
 pub mod gifs;
 pub mod google;

@@ -397,6 +397,9 @@ export const api = {
   /** Fixa a mensagem por `minutes` (null = sempre). */
   pinMessage: (id: string, minutes: number | null) => request<Message>('PUT', `/messages/${enc(id)}/pin`, { minutes }),
   unpinMessage: (id: string) => request<Message>('DELETE', `/messages/${enc(id)}/pin`),
+  /** Encaminha para canais do mesmo servidor ou DMs de amigos (até 5), com comentário opcional. */
+  forwardMessage: (id: string, channelIds: string[], note = '') =>
+    request<Message[]>('POST', `/messages/${enc(id)}/forward`, { channelIds, note }),
   saved: () => request<SavedMessage[]>('GET', '/users/@me/saved'),
   savedIds: () => request<string[]>('GET', '/users/@me/saved/ids'),
   saveMessage: (id: string) => request<unknown>('PUT', `/messages/${enc(id)}/save`),

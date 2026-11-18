@@ -12,6 +12,7 @@ import { NicknameDialog, ServerSettings } from './ServerSettings';
 import { MutualServersModal, UserCard } from './UserCard';
 import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 import { ReportModal } from './ReportModal';
+import { ForwardModal } from './Forward';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api } from '@/lib/api';
@@ -77,6 +78,8 @@ export function Modals() {
       return <VoiceStatusModal channelId={modal.channelId} onClose={close} />;
     case 'report':
       return <ReportModal target={modal.target} onClose={close} />;
+    case 'forward':
+      return <ForwardModal messageId={modal.messageId} channelId={modal.channelId} onClose={close} />;
   }
 }
 
