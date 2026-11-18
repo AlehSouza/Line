@@ -245,16 +245,47 @@ static TITLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?is)<title[^>]*>(.*?)</title>").unwrap());
 
 fn decode(s: &str) -> String {
-    let s = s
-        .replace("&amp;", "&")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#x27;", "'")
-        .replace("&apos;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&nbsp;", " ");
-    let s = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let end = rest[..rest.len().min(12)].find(';');
+        let ch = end.and_then(|e| {
+            let name = &rest[1..e];
+            let c = match name {
+                "amp" => Some('&'),
+                "quot" => Some('"'),
+                "apos" => Some('\''),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "nbsp" => Some(' '),
+                _ => {
+                    let n = if let Some(h) = name.strip_prefix("#x").or_else(|| name.strip_prefix("#X")) {
+                        u32::from_str_radix(h, 16).ok()
+                    } else if let Some(d) = name.strip_prefix('#') {
+                        d.parse().ok()
+                    } else {
+                        None
+                    };
+                    n.and_then(char::from_u32)
+                }
+            };
+            c.map(|c| (c, e))
+        });
+        match ch {
+            Some((c, e)) => {
+                out.push(c);
+                rest = &rest[e + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    let s = out.split_whitespace().collect::<Vec<_>>().join(" ");
     s.chars().take(300).collect()
 }
 

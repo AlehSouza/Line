@@ -34,9 +34,9 @@ export function LinkPreviews({ content }: { content: string }) {
   );
 }
 
-type Social = { kind: 'instagram' | 'tiktok' | 'x'; src: string; label: string; width: number; height: number };
+type Social = { kind: 'instagram' | 'tiktok' | 'x' | 'facebook' | 'reddit'; src: string; label: string; width: number; height: number };
 
-/** Links de Instagram, TikTok e X viram o player oficial de cada plataforma (nada é baixado). */
+/** Links de Instagram, TikTok, X, Facebook (vídeos) e Reddit viram o player oficial de cada plataforma (nada é baixado). */
 function socialEmbed(raw: string): Social | null {
   let u: URL;
   try {
@@ -73,9 +73,49 @@ function socialEmbed(raw: string): Social | null {
     const dark = !['claro', 'pink', 'azul-pastel', 'verde-pastel'].includes(t);
     return {
       kind: 'x',
-      src: `https://platform.twitter.com/embed/Tweet.html?id=${id}&theme=${dark ? 'dark' : 'light'}&dnt=true&lang=pt`,
+      src: `https://platform.twitter.com/embed/Tweet.html?id=${id}&embedId=line-x-${id}&theme=${dark ? 'dark' : 'light'}&dnt=true&lang=pt`,
       label: 'X',
       width: 400,
+      height: 640,
+    };
+  }
+  if (host === 'facebook.com' || host === 'fb.watch' || host === 'web.facebook.com') {
+    const reel = seg[0] === 'reel' || (seg[0] === 'share' && seg[1] === 'r');
+    const video =
+      reel ||
+      host === 'fb.watch' ||
+      seg.includes('videos') ||
+      (seg[0] === 'watch' && u.searchParams.has('v')) ||
+      (seg[0] === 'share' && seg[1] === 'v');
+    if (!video) return null;
+    const href = encodeURIComponent(raw);
+    return reel
+      ? {
+          kind: 'facebook',
+          src: `https://www.facebook.com/plugins/video.php?href=${href}&show_text=false&width=300&height=533&locale=pt_BR`,
+          label: 'Facebook',
+          width: 300,
+          height: 533,
+        }
+      : {
+          kind: 'facebook',
+          src: `https://www.facebook.com/plugins/video.php?href=${href}&show_text=false&width=432&locale=pt_BR`,
+          label: 'Facebook',
+          width: 432,
+          height: 243,
+        };
+  }
+  if (host === 'reddit.com' || host === 'old.reddit.com' || host === 'new.reddit.com') {
+    const i = seg.indexOf('comments');
+    if (seg[0] !== 'r' || i < 0 || !/^\w{3,12}$/.test(seg[i + 1] ?? '')) return null;
+    const path = seg.slice(0, i + 3).join('/');
+    const t = document.documentElement.dataset.theme ?? '';
+    const dark = !['claro', 'pink', 'azul-pastel', 'verde-pastel'].includes(t);
+    return {
+      kind: 'reddit',
+      src: `https://embed.reddit.com/${path}/?embed=true&theme=${dark ? 'dark' : 'light'}&showmedia=true&showmore=false`,
+      label: 'Reddit',
+      width: 432,
       height: 520,
     };
   }
@@ -103,6 +143,7 @@ function useFrameHeight(frame: React.RefObject<HTMLIFrameElement | null>, initia
       };
       let next: number | undefined;
       if (o?.type === 'MEASURE') next = o.details?.height;
+      if (o?.type === 'resize.embed') next = Number((o as { data?: unknown }).data);
       const tw = o?.['twttr.embed'];
       if (tw?.method === 'twttr.private.resize') next = tw.params?.[0]?.height;
       if (typeof next === 'number' && next > 80 && next < 2000) setH(Math.ceil(next));
@@ -126,8 +167,9 @@ function SocialPlayer({ url, s }: { url: string; s: Social }) {
         allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
         allowFullScreen
         referrerPolicy="strict-origin-when-cross-origin"
+        scrolling="no"
         className="block w-full border-0 bg-transparent"
-        style={{ height: s.kind === 'tiktok' ? s.height : height }}
+        style={{ height: s.kind === 'tiktok' || s.kind === 'facebook' ? s.height : height, colorScheme: 'normal' }}
       />
       <a
         href={url}
