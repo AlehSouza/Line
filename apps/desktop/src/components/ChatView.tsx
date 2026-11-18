@@ -1460,7 +1460,6 @@ function mediaThreadsBelow(message: Message, withWhole = false) {
 
 /** Grade com respostas: avatares de quem respondeu (até 3 e +N) e "Ver conversas". */
 function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSummary[]; channelId: string; messageIds: string[] }) {
-  const users = useLine((s) => s.users);
   const open = useLine((s) => s.mediaThreads?.messageIds[0] === messageIds[0]);
   const ids = [...new Set(threads.flatMap((t) => t.participantIds ?? []))];
   const total = Math.max(ids.length, ...threads.map((t) => t.participantCount ?? 0));
@@ -1471,37 +1470,17 @@ function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSum
       onClick={() => (open ? actions.closeThread() : actions.openMediaThreads(channelId, messageIds))}
       className={cx('group/thread mt-1 flex h-8 items-center gap-2 rounded-lg px-2.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
     >
-      {shown.length > 0 ? (
-        <span className="flex items-center -space-x-1.5">
-          {shown.map((id) => (
-            <span key={id} className="rounded-full ring-2 ring-main">
-              <Avatar name={users[id]?.displayName ?? '?'} color={users[id]?.avatarColor ?? '#55555f'} src={users[id]?.avatarUrl} size={22} />
-            </span>
-          ))}
-          {extra > 0 && (
-            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft ring-2 ring-main">
-              +{extra}
-            </span>
-          )}
-        </span>
-      ) : (
-        <Icons.Thread size={18} className="text-accent" />
-      )}
+      {shown.length > 0 ? <ReplyAvatars ids={shown} extra={extra} /> : <Icons.Thread size={18} className="text-accent" />}
       <span className="font-semibold text-accent group-hover/thread:underline">Ver conversas</span>
     </button>
   );
 }
 
-/** onClick troca o abrir/fechar padrão (o visualizador abre a thread e se fecha). */
 const fetchingUsers = new Set<string>();
 
-export function ThreadChip({ thread, onClick, className }: { thread: ThreadSummary; onClick?: () => void; className?: string }) {
-  const open = useLine((s) => s.threadId === thread.id);
+/** Fotos de quem respondeu (sem borda). Perfil ainda não carregado: busca na hora e mostra um círculo neutro enquanto isso. */
+function ReplyAvatars({ ids, extra }: { ids: string[]; extra: number }) {
   const users = useLine((s) => s.users);
-  const n = thread.messageCount;
-  const ids = (thread.participantIds ?? []).slice(0, 3);
-  const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
-  // Quem respondeu e ainda não está carregado: busca o perfil para já mostrar a foto certa.
   const missing = ids.filter((id) => !users[id]).join(',');
   useEffect(() => {
     for (const id of missing ? missing.split(',') : []) {
@@ -1511,29 +1490,33 @@ export function ThreadChip({ thread, onClick, className }: { thread: ThreadSumma
     }
   }, [missing]);
   return (
+    <span className="flex items-center -space-x-1">
+      {ids.map((id) =>
+        users[id] ? (
+          <Avatar key={id} name={users[id].displayName} color={users[id].avatarColor} src={users[id].avatarUrl} size={22} />
+        ) : (
+          <span key={id} className="size-[22px] shrink-0 rounded-full bg-raise" />
+        ),
+      )}
+      {extra > 0 && (
+        <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft">+{extra}</span>
+      )}
+    </span>
+  );
+}
+
+/** onClick troca o abrir/fechar padrão (o visualizador abre a thread e se fecha). */
+export function ThreadChip({ thread, onClick, className }: { thread: ThreadSummary; onClick?: () => void; className?: string }) {
+  const open = useLine((s) => s.threadId === thread.id);
+  const n = thread.messageCount;
+  const ids = (thread.participantIds ?? []).slice(0, 3);
+  const extra = Math.max(0, (thread.participantCount ?? ids.length) - ids.length);
+  return (
     <button
       onClick={onClick ?? (() => (open ? actions.closeThread() : actions.openThread(thread.id)))}
       className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10', className)}
     >
-      {ids.length > 0 ? (
-        <span className="flex items-center -space-x-1">
-          {ids.map((id) =>
-            users[id] ? (
-              <Avatar key={id} name={users[id].displayName} color={users[id].avatarColor} src={users[id].avatarUrl} size={22} />
-            ) : (
-              // Perfil ainda chegando: círculo neutro em vez de um ícone que depois troca.
-              <span key={id} className="size-[22px] shrink-0 rounded-full bg-raise" />
-            ),
-          )}
-          {extra > 0 && (
-            <span className="flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-raise px-1 text-[10px] font-bold text-soft">
-              +{extra}
-            </span>
-          )}
-        </span>
-      ) : (
-        <Icons.Thread size={18} className="text-accent" />
-      )}
+      {ids.length > 0 ? <ReplyAvatars ids={ids} extra={extra} /> : <Icons.Thread size={18} className="text-accent" />}
       <span className="font-semibold text-accent group-hover/thread:underline">
         {n === 0 ? 'Responder' : n === 1 ? '1 resposta' : `${n} respostas`}
       </span>

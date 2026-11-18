@@ -170,7 +170,8 @@ export function Avatar({
     <span className={cx('relative inline-block shrink-0', className)} style={{ width: size, height: size }}>
       <span
         className="flex h-full w-full items-center justify-center rounded-full font-semibold text-rail select-none"
-        style={{ background: color, fontSize: size * 0.38 }}
+        // Com foto, sem fundo: a cor vazava como um anel fino na borda.
+        style={{ background: src ? 'transparent' : color, fontSize: size * 0.38 }}
         title={src ? undefined : name}
       >
         {src ? (
