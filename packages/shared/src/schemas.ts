@@ -49,7 +49,14 @@ export const createServerSchema = z.object({
   isPublic: z.boolean().optional(),
 });
 
-export const updateServerSchema = createServerSchema.partial().extend({
+/** Orientação, movimento e velocidade de uma parte da tag. */
+const tagAnimSchema = z.object({
+  dir: z.enum(['h', 'v']).optional(),
+  motion: z.enum(['static', 'wave', 'pulse']).optional(),
+  speed: z.enum(['slow', 'medium', 'fast']).optional(),
+});
+
+export const updateServerSchema =createServerSchema.partial().extend({
   iconColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   tag: z.string().max(4).optional(),
   tagIcon: z.string().max(40).optional(),
@@ -65,6 +72,7 @@ export const updateServerSchema = createServerSchema.partial().extend({
       font: z.string().max(20).optional(),
       effect: z.string().max(20).optional(),
       speed: z.enum(['slow', 'medium', 'fast']).optional(),
+      anim: z.record(z.string(), tagAnimSchema).optional(),
     })
     .nullable()
     .optional(),

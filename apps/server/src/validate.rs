@@ -121,6 +121,34 @@ fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
             out.insert(key.into(), s.into());
         }
     }
+    // Orientação, movimento e velocidade de cada parte (bg, fg, border, iconColor).
+    if let Some(anim) = obj.get("anim").and_then(|a| a.as_object()) {
+        let mut parts = serde_json::Map::new();
+        for part in ["bg", "fg", "border", "iconColor"] {
+            let Some(p) = anim.get(part).and_then(|p| p.as_object()) else {
+                continue;
+            };
+            let mut one = serde_json::Map::new();
+            for (key, allowed) in [
+                ("dir", &["h", "v"][..]),
+                ("motion", &["static", "wave", "pulse"][..]),
+                ("speed", &["slow", "medium", "fast"][..]),
+            ] {
+                if let Some(s) = p.get(key).and_then(|s| s.as_str()) {
+                    if !allowed.contains(&s) {
+                        return Err(validation("Estilo da tag inválido"));
+                    }
+                    one.insert(key.into(), s.into());
+                }
+            }
+            if !one.is_empty() {
+                parts.insert(part.into(), one.into());
+            }
+        }
+        if !parts.is_empty() {
+            out.insert("anim".into(), parts.into());
+        }
+    }
     Ok(if out.is_empty() {
         serde_json::Value::Null
     } else {

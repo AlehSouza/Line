@@ -3,6 +3,7 @@
 import { createPortal } from 'react-dom';
 import { placeAround, useFloating } from '@/lib/floating';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { Pipette } from 'lucide-react';
 
 const cx = (...p: (string | false | null | undefined)[]) => p.filter(Boolean).join(' ');
 
@@ -61,6 +62,110 @@ function useDrag(onMove: (x: number, y: number) => void) {
     window.addEventListener('pointerup', up);
   };
   return { ref, start };
+}
+
+/** "rgb(r, g, b)" ou "#rrggbb" → #rrggbb (null se transparente ou ilegível). */
+function cssToHex(css: string): string | null {
+  const hex = normalizeHex(css);
+  if (hex) return hex;
+  const m = css.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:\s*[,/]\s*([\d.]+%?))?/i);
+  if (!m) return null;
+  if (m[4] !== undefined && parseFloat(m[4]) === 0) return null;
+  return '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join('');
+}
+
+type NativeEyeDropper = { open: () => Promise<{ sRGBHex: string }> };
+
+/**
+ * Conta-gotas: no Windows (WebView2/Chromium) usa o nativo, que pega a cor de qualquer pixel da tela.
+ * Onde não existe (macOS, Linux), entra num modo do próprio app: clicar em qualquer coisa pega a cor dela
+ * (o pixel da imagem quando dá para ler, senão o fundo ou a cor do texto do elemento).
+ */
+async function pickColor(): Promise<string | null> {
+  const Native = (window as unknown as { EyeDropper?: new () => NativeEyeDropper }).EyeDropper;
+  if (Native) {
+    try {
+      return cssToHex((await new Native().open()).sRGBHex);
+    } catch {
+      return null; // Esc cancela.
+    }
+  }
+  return new Promise((resolve) => {
+    const veil = document.createElement('div');
+    veil.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:transparent';
+    const tip = document.createElement('div');
+    tip.textContent = 'Clique em qualquer coisa para pegar a cor (Esc cancela)';
+    tip.style.cssText =
+      'position:fixed;top:12px;left:50%;transform:translateX(-50%);padding:6px 12px;border-radius:8px;background:#000c;color:#fff;font:600 12px system-ui;pointer-events:none';
+    const swatch = document.createElement('div');
+    swatch.style.cssText = 'position:fixed;width:28px;height:28px;border-radius:8px;border:2px solid #fff;box-shadow:0 0 0 1px #0006;pointer-events:none;display:none';
+    veil.append(tip, swatch);
+    const at = (x: number, y: number) => {
+      veil.style.pointerEvents = 'none';
+      const el = document.elementFromPoint(x, y);
+      veil.style.pointerEvents = 'auto';
+      return el ? colorAt(el, x, y) : null;
+    };
+    const done = (hex: string | null) => {
+      veil.remove();
+      window.removeEventListener('keydown', onKey, true);
+      resolve(hex);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      e.preventDefault();
+      done(null);
+    };
+    veil.addEventListener('pointermove', (e) => {
+      const hex = at(e.clientX, e.clientY);
+      swatch.style.display = hex ? 'block' : 'none';
+      swatch.style.left = `${e.clientX + 14}px`;
+      swatch.style.top = `${e.clientY + 14}px`;
+      if (hex) swatch.style.background = hex;
+    });
+    // Não deixa o clique chegar no app (nem fechar o seletor de cor).
+    veil.addEventListener('mousedown', (e) => e.stopPropagation(), true);
+    veil.addEventListener('click', (e) => {
+      e.stopPropagation();
+      done(at(e.clientX, e.clientY));
+    });
+    window.addEventListener('keydown', onKey, true);
+    document.body.append(veil);
+  });
+}
+
+/** Cor do que está no ponto: pixel da imagem/canvas, senão o fundo do elemento (ou dos pais), senão o texto. */
+function colorAt(el: Element, x: number, y: number): string | null {
+  if (el instanceof HTMLImageElement || el instanceof HTMLCanvasElement || el instanceof HTMLVideoElement) {
+    try {
+      const r = el.getBoundingClientRect();
+      const c = document.createElement('canvas');
+      c.width = 1;
+      c.height = 1;
+      const g = c.getContext('2d', { willReadFrequently: true })!;
+      const w = el instanceof HTMLImageElement ? el.naturalWidth : el instanceof HTMLVideoElement ? el.videoWidth : el.width;
+      const h = el instanceof HTMLImageElement ? el.naturalHeight : el instanceof HTMLVideoElement ? el.videoHeight : el.height;
+      g.drawImage(el, ((x - r.left) / r.width) * w, ((y - r.top) / r.height) * h, 1, 1, 0, 0, 1, 1);
+      const [pr, pg, pb, pa] = g.getImageData(0, 0, 1, 1).data;
+      if (pa) return '#' + [pr, pg, pb].map((n) => n!.toString(16).padStart(2, '0')).join('');
+    } catch {
+      // Imagem de outro domínio: cai no fundo do elemento.
+    }
+  }
+  const own = getComputedStyle(el);
+  // Texto e ícones: a cor deles quando não há fundo próprio.
+  const isGlyph = el instanceof SVGElement || (el.childNodes.length > 0 && [...el.childNodes].every((n) => n.nodeType === Node.TEXT_NODE));
+  if (isGlyph) {
+    const fill = el instanceof SVGElement ? cssToHex(own.fill) ?? cssToHex(own.stroke) : null;
+    const text = fill ?? cssToHex(own.color);
+    if (text && !cssToHex(own.backgroundColor)) return text;
+  }
+  for (let cur: Element | null = el; cur; cur = cur.parentElement) {
+    const bg = cssToHex(getComputedStyle(cur).backgroundColor);
+    if (bg) return bg;
+  }
+  return cssToHex(getComputedStyle(document.body).backgroundColor);
 }
 
 /** Painel do seletor (área SV + matiz + campo hex). */
@@ -140,6 +245,23 @@ export function ColorPanel({ value, onChange }: { value: string; onChange: (hex:
             valid ? 'border-edge focus:border-accent' : 'border-danger',
           )}
         />
+        <button
+          type="button"
+          title="Conta-gotas: pegar uma cor da tela"
+          aria-label="Conta-gotas"
+          onClick={async () => {
+            const picked = await pickColor();
+            if (!picked) return;
+            const h = picked.toLowerCase();
+            last.current = h;
+            setHsv(hexToHsv(h));
+            setText(h.toUpperCase());
+            onChange(h);
+          }}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-edge bg-rail text-soft hover:border-accent hover:text-fg"
+        >
+          <Pipette size={15} />
+        </button>
       </div>
     </div>
   );

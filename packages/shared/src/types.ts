@@ -117,6 +117,17 @@ export interface TagStyle {
   /** Fonte e efeito do texto (os mesmos do estilo do nome exibido). */
   font?: NameFont;
   effect?: NameEffect;
+  /** Orientação, movimento e velocidade de cada parte; a parte sem isso usa dir/motion/speed acima. */
+  anim?: Partial<Record<TagPart, TagAnim>>;
+}
+
+export type TagPart = 'bg' | 'fg' | 'border' | 'iconColor';
+
+export interface TagAnim {
+  dir?: 'h' | 'v';
+  /** pulse = neon piscando (só no texto). */
+  motion?: 'static' | 'wave' | 'pulse';
+  speed?: 'slow' | 'medium' | 'fast';
 }
 
 /** Uma faixa na fila do bot de música. */

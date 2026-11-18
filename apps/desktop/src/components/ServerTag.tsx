@@ -1,6 +1,6 @@
 'use client';
 
-import type { NameStyle, PublicUser, TagPaint, TagStyle } from '@line/shared';
+import type { NameStyle, PublicUser, TagAnim, TagPaint, TagPart, TagStyle } from '@line/shared';
 import { NAME_EFFECTS, NAME_FONTS, NAME_PALETTES, nameStyleClass, nameStyleCss, StyledName } from '@/lib/nameStyle';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -32,17 +32,21 @@ const WAVE_SECS = { slow: '12s', medium: '6s', fast: '4s' } as const;
 const isGrad = (p: TagPaint | undefined): p is string[] => Array.isArray(p) && p.length > 1;
 /** Uma cor só (a primeira, se vier lista de uma). */
 const solidOf = (p: TagPaint | undefined): string | undefined => (Array.isArray(p) ? p[0] : p) || undefined;
-const vertical = (st: TagStyle | null | undefined) => st?.dir === 'v';
-const waving = (st: TagStyle | null | undefined) => st?.motion === 'wave';
-const waveClass = (st: TagStyle | null | undefined) => (waving(st) ? (vertical(st) ? 'line-name-wave-v' : 'line-name-prism') : '');
+/** Orientação, movimento e velocidade de uma parte (sem configuração própria: os valores gerais de antes). */
+export function animOf(st: TagStyle | null | undefined, part: TagPart): TagAnim {
+  return st?.anim?.[part] ?? { dir: st?.dir, motion: st?.motion, speed: st?.speed };
+}
+const vertical = (a: TagAnim) => a.dir === 'v';
+const waving = (a: TagAnim) => a.motion === 'wave';
+const waveClass = (a: TagAnim) => (waving(a) ? (vertical(a) ? 'line-name-wave-v' : 'line-name-prism') : '');
 
 /** Fundo em degradê (em onda repete a primeira cor no fim e corre). */
-function gradCss(cols: string[], st: TagStyle | null | undefined): CSSProperties {
-  const wave = waving(st);
-  const v = vertical(st);
+function gradCss(cols: string[], a: TagAnim): CSSProperties {
+  const wave = waving(a);
+  const v = vertical(a);
   return {
     backgroundImage: `linear-gradient(${v ? '180deg' : '90deg'}, ${(wave ? [...cols, cols[0]!] : cols).join(', ')})`,
-    ...(wave ? { backgroundSize: v ? '100% 200%' : '200% 100%', animationDuration: WAVE_SECS[st?.speed ?? 'medium'] } : {}),
+    ...(wave ? { backgroundSize: v ? '100% 200%' : '200% 100%', animationDuration: WAVE_SECS[a.speed ?? 'medium'] } : {}),
   };
 }
 
@@ -50,7 +54,7 @@ function gradCss(cols: string[], st: TagStyle | null | undefined): CSSProperties
 export function tagBadgeStyle(style: TagStyle | null | undefined): CSSProperties | undefined {
   if (!style) return undefined;
   const out: CSSProperties = {};
-  if (isGrad(style.bg)) Object.assign(out, gradCss(style.bg, style));
+  if (isGrad(style.bg)) Object.assign(out, gradCss(style.bg, animOf(style, 'bg')));
   else if (solidOf(style.bg)) out.background = solidOf(style.bg);
   const fg = solidOf(style.fg);
   if (fg && !isGrad(style.fg) && fg !== 'transparent') out.color = fg;
@@ -70,7 +74,8 @@ function textLook(st: TagStyle | null | undefined): { className: string; style: 
     return font ? { className: '', style: { fontFamily: font.family } } : null;
   }
   if (effect === 'solid' && colors.length === 1 && (!st.font || st.font === 'default')) return null;
-  const ns: NameStyle = { font: st.font ?? 'default', effect, colors, dir: st.dir, motion: st.motion, speed: st.speed };
+  const a = animOf(st, 'fg');
+  const ns: NameStyle = { font: st.font ?? 'default', effect, colors, dir: a.dir, motion: a.motion, speed: a.speed };
   return { className: nameStyleClass(ns), style: nameStyleCss(ns) };
 }
 
@@ -99,15 +104,15 @@ export function TagPill({
   hideIcon?: boolean;
 } & HTMLAttributes<HTMLSpanElement>) {
   const st = tagStyle;
-  const bgWave = isGrad(st?.bg) ? waveClass(st) : '';
+  const bgWave = isGrad(st?.bg) ? waveClass(animOf(st, 'bg')) : '';
   return (
     <span {...rest} className={cx('relative', className, bgWave)} style={{ ...tagBadgeStyle(st), ...style }}>
       {isGrad(st?.border) && (
         <span
           aria-hidden
-          className={cx('pointer-events-none absolute inset-0 rounded-[inherit] p-px', waveClass(st))}
+          className={cx('pointer-events-none absolute inset-0 rounded-[inherit] p-px', waveClass(animOf(st, 'border')))}
           style={{
-            ...gradCss(st.border, st),
+            ...gradCss(st.border, animOf(st, 'border')),
             WebkitMask: 'linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)',
             WebkitMaskComposite: 'xor',
             maskComposite: 'exclude',
@@ -147,6 +152,7 @@ export function TagIcon({
     if (solidOf(style?.iconColor) === 'transparent') return null;
     const solid = style?.iconStyle === 'solid';
     const grad = isGrad(style?.iconColor) ? style.iconColor : null;
+    const anim = animOf(style, 'iconColor');
     const paint = grad ? `url(#tg${gid})` : 'currentColor';
     const color = grad ? undefined : solidOf(style?.iconColor);
     return (
@@ -160,10 +166,28 @@ export function TagIcon({
       >
         {grad && (
           <defs>
-            <linearGradient id={`tg${gid}`} x1="0" y1="0" x2={vertical(style) ? '0' : '1'} y2={vertical(style) ? '1' : '0'}>
-              {grad.map((c, i) => (
-                <stop key={i} offset={`${(i / (grad.length - 1)) * 100}%`} stopColor={c} />
+            <linearGradient
+              id={`tg${gid}`}
+              x1="0"
+              y1="0"
+              x2={vertical(anim) ? '0' : '1'}
+              y2={vertical(anim) ? '1' : '0'}
+              spreadMethod={waving(anim) ? 'repeat' : 'pad'}
+            >
+              {/* Em onda: repete a primeira cor no fim e o degradê corre (o repeat emenda as voltas). */}
+              {(waving(anim) ? [...grad, grad[0]!] : grad).map((c, i, list) => (
+                <stop key={i} offset={`${(i / (list.length - 1)) * 100}%`} stopColor={c} />
               ))}
+              {waving(anim) && (
+                <animateTransform
+                  attributeName="gradientTransform"
+                  type="translate"
+                  from="0 0"
+                  to={vertical(anim) ? '0 1' : '1 0'}
+                  dur={WAVE_SECS[anim.speed ?? 'medium']}
+                  repeatCount="indefinite"
+                />
+              )}
             </linearGradient>
           </defs>
         )}
@@ -421,6 +445,8 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
   if (!server) return null;
   const dirty =
     tag !== (server.tag ?? '') || icon !== (server.tagIcon ?? '') || JSON.stringify(style) !== JSON.stringify(server.tagStyle ?? {});
+  const setAnim = (part: TagPart) => (patch: TagAnim) =>
+    setStyle((st) => ({ ...st, anim: { ...st.anim, [part]: { ...animOf(st, part), ...patch } } }));
   const setColor = (key: 'bg' | 'fg' | 'border' | 'iconColor') => (c: TagPaint | null) =>
     setStyle((st) => {
       const next = { ...st };
@@ -429,7 +455,6 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
       return next;
     });
 
-  const anyGrad = (['bg', 'fg', 'border', 'iconColor'] as const).some((k) => isGrad(style[k]));
 
   async function save() {
     setBusy(true);
@@ -547,7 +572,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                 <button
                   key={e.id}
                   type="button"
-                  onClick={() => setStyle((st) => ({ ...st, effect: e.id, ...(e.id !== 'neon' && st.motion === 'pulse' ? { motion: 'static' as const } : {}) }))}
+                  onClick={() => setStyle((st) => (e.id !== 'neon' && animOf(st, 'fg').motion === 'pulse' ? { ...st, effect: e.id, anim: { ...st.anim, fg: { ...animOf(st, 'fg'), motion: 'static' } } } : { ...st, effect: e.id }))}
                   className={cx(
                     'flex h-11 items-center justify-center rounded-lg border bg-rail text-sm font-semibold',
                     (style.effect ?? 'solid') === e.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
@@ -563,7 +588,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
         </Field>
 
         <Field label="Cores da tag" group>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {(
               [
                 ['bg', 'Fundo'],
@@ -571,48 +596,28 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                 ['border', 'Borda'],
                 ['iconColor', 'Ícone'],
               ] as const
-            ).map(([key, label]) => (
-              <div key={key}>
-                <p className="mb-1.5 text-xs text-muted">{label}</p>
-                <TagPaintRow value={style[key] ?? null} onChange={setColor(key)} transparent={key !== 'fg'} />
-              </div>
-            ))}
-            {/* Fica no layout mesmo sem degradê, para a página não pular. */}
-            <div className={cx('flex flex-wrap items-end gap-3', !anyGrad && style.effect !== 'neon' && 'hidden')}>
-              <span className={cx(!anyGrad && 'invisible')}>
-              <Toggle
-                label="Orientação"
-                value={style.dir ?? 'h'}
-                options={[
-                  ['h', 'Horizontal'],
-                  ['v', 'Vertical'],
-                ]}
-                onChange={(dir) => setStyle((st) => ({ ...st, dir }))}
-              />
-              </span>
-              <Toggle
-                label="Movimento"
-                value={style.motion ?? 'static'}
-                options={[
-                  ['static', 'Estático'],
-                  ...(anyGrad ? [['wave', 'Onda'] as ['wave', string]] : []),
-                  ...(style.effect === 'neon' ? [['pulse', 'Piscar'] as ['pulse', string]] : []),
-                ]}
-                onChange={(motion) => setStyle((st) => ({ ...st, motion }))}
-              />
-              <span className={cx((style.motion ?? 'static') === 'static' && 'invisible')}>
-                <Toggle
-                  label="Velocidade"
-                  value={style.speed ?? 'medium'}
-                  options={[
-                    ['slow', '0.5x'],
-                    ['medium', '1x'],
-                    ['fast', '1.5x'],
-                  ]}
-                  onChange={(speed) => setStyle((st) => ({ ...st, speed }))}
-                />
-              </span>
-            </div>
+            ).map(([key, label]) => {
+              const effect = style.effect ?? 'solid';
+              // O texto com efeito e cor Padrão usa a paleta do efeito (pode ser degradê).
+              const multi =
+                isGrad(style[key]) || (key === 'fg' && !solidOf(style.fg) && effect !== 'solid' && NAME_PALETTES[effect][0]!.length > 1);
+              const pulse = key === 'fg' && effect === 'neon';
+              return (
+                <div key={key} className="rounded-xl border border-edge bg-rail p-3.5">
+                  <p className="mb-2 text-sm font-semibold">{label}</p>
+                  <TagPaintRow value={style[key] ?? null} onChange={setColor(key)} transparent={key !== 'fg'} />
+                  {(multi || pulse) && (
+                    <AnimRow
+                      // Prism sem movimento escolhido corre em onda (igual ao nome).
+                      anim={key === 'fg' && effect === 'prism' && !animOf(style, 'fg').motion ? { ...animOf(style, 'fg'), motion: 'wave' } : animOf(style, key)}
+                      wave={multi}
+                      pulse={pulse}
+                      onChange={setAnim(key)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         </Field>
 
@@ -843,6 +848,48 @@ function TagPaintRow({ value, onChange, transparent }: { value: TagPaint | null;
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Orientação, movimento e velocidade de uma parte da tag (dentro do card dela). */
+function AnimRow({ anim, wave, pulse, onChange }: { anim: TagAnim; wave: boolean; pulse: boolean; onChange: (a: TagAnim) => void }) {
+  const motion = anim.motion === 'pulse' && !pulse ? 'static' : anim.motion === 'wave' && !wave ? 'static' : (anim.motion ?? 'static');
+  return (
+    <div className="mt-3 flex flex-wrap items-end gap-3 border-t border-edge pt-3">
+      {wave && (
+        <Toggle
+          label="Orientação"
+          value={anim.dir ?? 'h'}
+          options={[
+            ['h', 'Horizontal'],
+            ['v', 'Vertical'],
+          ]}
+          onChange={(dir) => onChange({ dir })}
+        />
+      )}
+      <Toggle
+        label="Movimento"
+        value={motion}
+        options={[
+          ['static', 'Estático'],
+          ...(wave ? [['wave', 'Onda'] as ['wave', string]] : []),
+          ...(pulse ? [['pulse', 'Piscar'] as ['pulse', string]] : []),
+        ]}
+        onChange={(m) => onChange({ motion: m })}
+      />
+      <span className={cx(motion === 'static' && 'invisible')}>
+        <Toggle
+          label="Velocidade"
+          value={anim.speed ?? 'medium'}
+          options={[
+            ['slow', '0.5x'],
+            ['medium', '1x'],
+            ['fast', '1.5x'],
+          ]}
+          onChange={(speed) => onChange({ speed })}
+        />
+      </span>
     </div>
   );
 }
