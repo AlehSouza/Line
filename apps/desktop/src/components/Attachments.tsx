@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment } from '@line/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
@@ -81,16 +81,73 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const [shown, setShown] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const [small, setSmall] = useState(false);
   const age = ageOf(birthDate);
   const blocked = !!a.nsfw && (age === null || age < 18);
   const covered = !blocked && !shown && (a.spoiler || (a.nsfw && blur));
 
-  if (!blocked && !covered) {
-    // Já aberto pela pessoa: botão de olho no canto para borrar de novo.
-    if (!shown) return <>{children}</>;
+  // Mídia pequena: o aviso encolhe para caber dentro dela.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setSmall(e.contentRect.width < 280 || e.contentRect.height < 200));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [blocked]);
+
+  if (blocked) {
     return (
-      <div className="relative w-fit max-w-full">
+      <div className="relative flex min-h-[220px] w-[420px] max-w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-edge bg-[#3d3d40] px-5 py-5 text-center text-white">
+        <Icons.EyeOff size={40} className="text-white/90" />
+        <p className="mt-1 text-sm font-bold tracking-wide uppercase">Aviso: conteúdo sensível</p>
+        <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+          {age === null
+            ? 'Esta mídia é +18. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
+            : 'Esta mídia é +18 e só aparece para quem tem 18 anos ou mais.'}
+        </p>
+        {age === null && (
+          <button
+            onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
+            className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85"
+          >
+            Informar data de nascimento
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // A mídia fica sempre no mesmo lugar da árvore (só muda o borrado): revelar não recarrega
+  // a imagem nem pisca, e o aviso tem exatamente o formato dela.
+  return (
+    <div ref={ref} className={cx('relative w-fit max-w-full overflow-hidden rounded-lg', covered && 'bg-[#3d3d40]')}>
+      <div
+        aria-hidden={covered || undefined}
+        className={cx(covered && 'pointer-events-none blur-2xl brightness-75 select-none [&_*]:pointer-events-none')}
+      >
         {children}
+      </div>
+      {covered && (
+        <div className={cx('absolute inset-0 flex flex-col items-center justify-center bg-black/30 text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5')}>
+          {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-white/90" /> : <Icons.Warning size={small ? 22 : 40} className="text-white/90" />}
+          <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
+          {!small && (
+            <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+              {a.nsfw
+                ? 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
+                : 'Quem enviou marcou esta mídia como spoiler.'}
+            </p>
+          )}
+          <button
+            onClick={() => setShown(true)}
+            className={cx('rounded-full bg-black/70 font-semibold text-white hover:bg-black/85', small ? 'px-3 py-1 text-xs' : 'mt-2 px-5 py-2 text-sm')}
+          >
+            {small ? 'Mostrar' : a.nsfw ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
+          </button>
+        </div>
+      )}
+      {shown && (
         <button
           onClick={() => setShown(false)}
           title="Borrar de novo"
@@ -98,56 +155,22 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
         >
           <Icons.EyeOff size={15} />
         </button>
-      </div>
-    );
-  }
-  return (
-    <div
-      className={cx(
-        'relative max-w-full overflow-hidden rounded-lg border border-edge bg-[#3d3d40]',
-        blocked ? 'min-h-[220px] w-[420px]' : 'w-fit min-h-[200px] min-w-[280px]',
       )}
-    >
-      {!blocked && (
-        // A mídia fica no fluxo (borrada e invisível ao clique): o cartão tem o mesmo formato dela.
-        <div aria-hidden className="pointer-events-none blur-2xl brightness-75 select-none [&_*]:pointer-events-none">
-          {children}
-        </div>
-      )}
-      <div
-        className={cx(
-          'flex flex-col items-center justify-center gap-2 px-5 py-5 text-center text-white',
-          blocked ? 'relative min-h-[220px]' : 'absolute inset-0 bg-black/30',
-        )}
-      >
-        {a.nsfw ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
-        <p className="mt-1 text-sm font-bold tracking-wide uppercase">{a.nsfw ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
-        <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
-          {a.nsfw
-            ? blocked
-              ? age === null
-                ? 'Esta mídia é +18. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
-                : 'Esta mídia é +18 e só aparece para quem tem 18 anos ou mais.'
-              : 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
-            : 'Quem enviou marcou esta mídia como spoiler.'}
-        </p>
-        {blocked ? (
-          age === null && (
-            <button
-              onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
-              className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85"
-            >
-              Informar data de nascimento
-            </button>
-          )
-        ) : (
-          <button onClick={() => setShown(true)} className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85">
-            {a.nsfw ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
-          </button>
-        )}
-      </div>
     </div>
   );
+}
+
+/** Tamanhos já vistos de mídias sem largura/altura salvas (anexos antigos). */
+const seenSize = new Map<string, { w: number; h: number }>();
+
+function mediaDims(a: Attachment, url: string) {
+  return a.width && a.height ? { w: a.width, h: a.height } : seenSize.get(url);
+}
+
+/** Cabe a mídia em maxW x maxH sem distorcer (nunca aumenta). */
+function fitBox(d: { w: number; h: number }, maxW: number, maxH: number) {
+  const k = Math.min(1, maxW / d.w, maxH / d.h);
+  return { width: Math.max(1, Math.round(d.w * k)), aspectRatio: `${d.w} / ${d.h}` };
 }
 
 function AttachmentView({ attachment: a, compact, mine }: { attachment: Attachment; compact?: boolean; mine?: boolean }) {
@@ -161,7 +184,7 @@ function AttachmentView({ attachment: a, compact, mine }: { attachment: Attachme
           className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
           title={a.filename}
         >
-          <LoadingImage src={url} alt={a.filename} compact={compact} />
+          <LoadingImage src={url} alt={a.filename} compact={compact} dims={mediaDims(a, url)} />
         </button>
       );
     case 'video':
@@ -170,7 +193,8 @@ function AttachmentView({ attachment: a, compact, mine }: { attachment: Attachme
           <VideoPlayer
             src={url}
             filename={a.filename}
-            className={compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
+            className={a.width && a.height ? 'max-w-full' : compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
+            style={a.width && a.height ? (compact ? fitBox({ w: a.width, h: a.height }, 280, 180) : fitBox({ w: a.width, h: a.height }, 520, 360)) : undefined}
           />
         </div>
       );
@@ -259,9 +283,31 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
   );
 }
 
-/** Imagem com skeleton animado até carregar. */
-function LoadingImage({ src, alt, compact }: { src: string; alt: string; compact?: boolean }) {
+/** Imagem com skeleton animado até carregar. Com o tamanho conhecido, o espaço já nasce
+ * no formato exato da imagem (nada pula quando ela chega). */
+function LoadingImage({ src, alt, compact, dims }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number } }) {
   const [loaded, setLoaded] = useState(false);
+  const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    if (img.naturalWidth && img.naturalHeight) seenSize.set(src, { w: img.naturalWidth, h: img.naturalHeight });
+    setLoaded(true);
+  };
+  if (dims) {
+    return (
+      <span className="relative block max-w-full" style={compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)}>
+        {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          onLoad={onLoad}
+          onError={() => setLoaded(true)}
+          className={cx('absolute inset-0 block h-full w-full object-contain', !loaded && 'opacity-0')}
+        />
+      </span>
+    );
+  }
   return (
     <span className={cx('relative block', !loaded && (compact ? 'h-[120px] w-[200px]' : 'h-[220px] w-[320px]'))}>
       {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
@@ -270,7 +316,7 @@ function LoadingImage({ src, alt, compact }: { src: string; alt: string; compact
         src={src}
         alt={alt}
         loading="lazy"
-        onLoad={() => setLoaded(true)}
+        onLoad={onLoad}
         onError={() => setLoaded(true)}
         className={cx('block object-contain', compact ? 'max-h-[160px] max-w-[220px]' : 'max-h-[350px] max-w-[420px]', !loaded && 'absolute opacity-0')}
       />

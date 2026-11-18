@@ -2928,12 +2928,22 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
         return Err(validation("Arquivo vazio"));
     }
     app.upload_quota.add(&me, size as u64);
-    let attachment = app.store.q().create_attachment(
+    // Largura/altura medidas pelo app (só para reservar espaço na tela).
+    let dim = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|n| (1..=20000).contains(n))
+    };
+    let dims = dim("x-width").zip(dim("x-height"));
+    let attachment = app.store.q().create_attachment_sized(
         &id,
         &me,
         &filename,
         content_type.essence_str(),
         size as i64,
+        dims,
     );
     created(attachment)
 }

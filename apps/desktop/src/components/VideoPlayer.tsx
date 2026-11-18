@@ -1,7 +1,7 @@
 'use client';
 
 import * as L from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { cx } from './ui';
 
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -22,7 +22,7 @@ const speedLabel = (r: number) => (r === 1 ? 'Normal' : `${String(r).replace('.'
  * Player de vídeo do Line: controles próprios no tema do app (grafite + violeta),
  * com barra de progresso arrastável, volume, tela cheia e menu de opções.
  */
-export function VideoPlayer({ src, filename, className }: { src: string; filename?: string; className?: string }) {
+export function VideoPlayer({ src, filename, className, style }: { src: string; filename?: string; className?: string; style?: CSSProperties }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -178,6 +178,7 @@ export function VideoPlayer({ src, filename, className }: { src: string; filenam
         !showControls && 'cursor-none',
         !fullscreen && className,
       )}
+      style={fullscreen ? undefined : style}
     >
       <video
         ref={videoRef}
@@ -213,7 +214,7 @@ export function VideoPlayer({ src, filename, className }: { src: string; filenam
         onPlaying={() => setWaiting(false)}
         onCanPlay={() => setWaiting(false)}
         onError={() => setError(true)}
-        className={cx('block', fullscreen ? 'max-h-full max-w-full' : 'max-h-[inherit] w-full')}
+        className={cx('block', fullscreen ? 'max-h-full max-w-full' : style ? 'h-full w-full object-contain' : 'max-h-[inherit] w-full')}
       />
 
       {/* Botão central grande antes de começar / quando pausado. */}

@@ -508,6 +508,11 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE servers ADD COLUMN nsfw_level TEXT NOT NULL DEFAULT 'moderate';
   ALTER TABLE channels ADD COLUMN nsfw INTEGER NOT NULL DEFAULT 0;
 "#,
+    // Largura e altura da imagem/vídeo, para o app reservar o espaço exato antes de carregar.
+    r#"
+  ALTER TABLE attachments ADD COLUMN width INTEGER;
+  ALTER TABLE attachments ADD COLUMN height INTEGER;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

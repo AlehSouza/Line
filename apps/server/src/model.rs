@@ -258,6 +258,11 @@ pub struct Attachment {
     pub nsfw: bool,
     /// +18 confirmado no painel admin: ninguém tira.
     pub nsfw_locked: bool,
+    /// Tamanho real da imagem/vídeo em pixels (quando o app informou no envio).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

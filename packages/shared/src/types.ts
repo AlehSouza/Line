@@ -257,6 +257,9 @@ export interface Attachment {
   nsfw?: boolean;
   /** +18 confirmado no painel admin. */
   nsfwLocked?: boolean;
+  /** Tamanho real da imagem/vídeo em pixels (anexos antigos não têm). */
+  width?: number;
+  height?: number;
 }
 
 export interface ThreadSummary {

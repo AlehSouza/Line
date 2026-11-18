@@ -246,6 +246,8 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
         spoiler: r.get::<_, i64>("spoiler").unwrap_or(0) != 0,
         nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
         nsfw_locked: r.get::<_, i64>("nsfw_locked").unwrap_or(0) != 0,
+        width: r.get::<_, Option<i64>>("width").unwrap_or(None),
+        height: r.get::<_, Option<i64>>("height").unwrap_or(None),
     })
 }
 
@@ -2393,9 +2395,22 @@ impl Q<'_> {
         content_type: &str,
         size: i64,
     ) -> Attachment {
+        self.create_attachment_sized(id, uploader_id, filename, content_type, size, None)
+    }
+
+    /// Igual a create_attachment, guardando largura e altura da mídia.
+    pub fn create_attachment_sized(
+        &self,
+        id: &str,
+        uploader_id: &str,
+        filename: &str,
+        content_type: &str,
+        size: i64,
+        dims: Option<(i64, i64)>,
+    ) -> Attachment {
         ok(self.c.execute(
-            "INSERT INTO attachments (id, uploader_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            params![id, uploader_id, filename, content_type, size, now_iso()],
+            "INSERT INTO attachments (id, uploader_id, filename, content_type, size, created_at, width, height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![id, uploader_id, filename, content_type, size, now_iso(), dims.map(|d| d.0), dims.map(|d| d.1)],
         ));
         self.attachment(id).unwrap()
     }
@@ -2484,7 +2499,8 @@ impl Q<'_> {
 
     /// Copia um anexo (o arquivo é copiado por quem chama) para uma linha nova de `uploader`.
     pub fn clone_attachment(&self, src: &Attachment, new_id: &str, uploader: &str) -> Attachment {
-        self.create_attachment(new_id, uploader, &src.filename, &src.content_type, src.size)
+        let dims = src.width.zip(src.height);
+        self.create_attachment_sized(new_id, uploader, &src.filename, &src.content_type, src.size, dims)
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {

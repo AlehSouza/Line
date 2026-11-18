@@ -136,13 +136,46 @@ export interface AgentReply {
 }
 
 /** Envia um arquivo cru (sem multipart) e acompanha o progresso. */
-function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fraction: number) => void) {
+/** Largura e altura reais de uma imagem/vídeo (para o chat reservar o espaço exato). */
+function mediaSize(file: Blob): Promise<{ w: number; h: number } | null> {
+  const type = file.type;
+  if (!/^(image|video)\//.test(type) || type === 'image/svg+xml' || typeof document === 'undefined') return Promise.resolve(null);
+  const url = URL.createObjectURL(file);
+  const done = (v: { w: number; h: number } | null) => {
+    URL.revokeObjectURL(url);
+    return v && v.w > 0 && v.h > 0 ? v : null;
+  };
+  const measure = new Promise<{ w: number; h: number } | null>((resolve) => {
+    if (type.startsWith('video/')) {
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      v.onloadedmetadata = () => resolve({ w: v.videoWidth, h: v.videoHeight });
+      v.onerror = () => resolve(null);
+      v.src = url;
+    } else {
+      const img = new Image();
+      img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+      img.onerror = () => resolve(null);
+      img.src = url;
+    }
+  });
+  const timeout = new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 5000));
+  return Promise.race([measure, timeout]).then(done);
+}
+
+async function uploadAttachment(file: File | Blob, filename: string, onProgress?: (fraction: number) => void) {
+  const dims = await mediaSize(file).catch(() => null);
   return new Promise<Attachment>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${baseUrl}/api/attachments`);
     if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
     xhr.setRequestHeader('x-filename', enc(filename));
     xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    if (dims) {
+      xhr.setRequestHeader('x-width', String(Math.round(dims.w)));
+      xhr.setRequestHeader('x-height', String(Math.round(dims.h)));
+    }
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
     xhr.onload = () => {
       let data: { message?: string } | null = null;
