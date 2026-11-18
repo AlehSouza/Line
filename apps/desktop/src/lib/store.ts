@@ -519,20 +519,25 @@ export function permsOf(s: LineState, serverId: string | null | undefined, userI
   return hasPerm(p, Perm.Administrator) ? ALL_PERMS : p;
 }
 
-/** Permissões dentro de um canal: as do servidor, menos mandar mensagem / falar quando o canal
- *  restringe quem interage e a pessoa (ou um cargo dela) não está na lista. Threads seguem o pai. */
+/** Permissões dentro de um canal (igual ao servidor): quem está em "Quem pode ver" ganha ver, enviar e
+ *  entrar/falar; com "quem pode interagir" ligado, quem está na lista ganha enviar/falar e quem não está
+ *  perde. Dono e admin podem tudo. Threads seguem o pai. */
 export function channelPermsOf(s: LineState, channelId: string | null | undefined, userId: string | undefined): number {
   let c = channelId ? s.channels[channelId] : undefined;
   if (c?.type === 'thread' && c.parentId) c = s.channels[c.parentId] ?? c;
   let p = permsOf(s, c?.serverId, userId);
+  if (c?.serverId && userId && !hasPerm(p, Perm.Administrator)) {
+    const serverId = c.serverId;
+    const mine = s.members[serverId]?.[userId]?.roleIds ?? [];
+    const listed = (members: string[] = [], roles: string[] = []) =>
+      members.includes(userId) || roles.includes(serverId) || roles.some((r) => mine.includes(r));
+    if (c.isPrivate && listed(c.memberIds, c.roleIds)) p |= Perm.ViewChannels | INTERACT_PERMS | Perm.Connect;
+    if (c.interactRestricted)
+      p = listed(c.interactMemberIds, c.interactRoleIds) ? p | INTERACT_PERMS | Perm.Connect : p & ~INTERACT_PERMS;
+  }
   // Canais base: Atividades não é chat; Regras/Anúncios/Eventos só para quem pode publicar.
   if (c?.base === 'activity' || (c?.base && !hasPerm(p, Perm.PostNotes))) p &= ~INTERACT_PERMS;
-  if (!c?.serverId || !c.interactRestricted || !userId || hasPerm(p, Perm.Administrator)) return p;
-  const mine = s.members[c.serverId]?.[userId]?.roleIds ?? [];
-  const roles = c.interactRoleIds ?? [];
-  const allowed =
-    (c.interactMemberIds ?? []).includes(userId) || roles.includes(c.serverId) || roles.some((r) => mine.includes(r));
-  return allowed ? p : p & ~INTERACT_PERMS;
+  return p;
 }
 
 /** Minhas permissões no servidor (fora de servidor, tudo). */

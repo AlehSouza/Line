@@ -20,6 +20,8 @@ export function MemberList({ serverId }: { serverId: string }) {
   const roles = useLine((s) => s.roles[serverId]);
   // Canal de texto aberto: a lista mostra só quem tem acesso a ele (canal/categoria exclusivos).
   const channelId = useLine((s) => (s.view.kind === 'server' && s.view.serverId === serverId ? s.view.channelId : null));
+  // Quando o canal muda quem vê / quem interage, a lista precisa ser buscada de novo.
+  const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
   const [audience, setAudience] = useState<{ channelId: string; ids: Set<string> | null } | null>(null);
   useEffect(() => {
     if (!channelId) return setAudience(null);
@@ -32,7 +34,7 @@ export function MemberList({ serverId }: { serverId: string }) {
       alive = false;
     };
     // Cargos e membros mudam quem enxerga o canal: busca de novo.
-  }, [channelId, roles, members]);
+  }, [channelId, channel, roles, members]);
   const allowed = audience && audience.channelId === channelId ? audience.ids : null;
   // Cor do cargo mais alto (com cor) de cada um.
   const colorOf = (roleIds: string[]) => (roles ?? []).find((r) => r.color && roleIds.includes(r.id))?.color ?? undefined;

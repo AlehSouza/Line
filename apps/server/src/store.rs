@@ -1525,34 +1525,73 @@ impl Q<'_> {
         self.channel(id).unwrap()
     }
 
-    /// Permissões de alguém dentro de um canal: as do servidor, menos mandar mensagem /
-    /// falar quando o canal restringe isso e a pessoa (ou um cargo dela) não está na lista.
+    /// Permissões de alguém dentro de um canal. Parte das do servidor e aplica as listas do canal:
+    /// quem está em "Quem pode ver" (pessoa ou cargo) ganha ver, enviar e entrar/falar; quando o
+    /// canal restringe quem interage, quem está na lista ganha enviar/falar e quem não está perde.
     /// Dono e administradores podem tudo. Threads seguem o canal pai. Fora de servidor = tudo.
     pub fn channel_permissions(&self, user_id: &str, channel_id: &str) -> i64 {
-        let row: Option<(Option<String>, String, bool, String)> = ok(self
+        let row: Option<(Option<String>, String, bool, bool, String)> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.interact_restricted, r.base FROM channels r
+                "SELECT r.server_id, r.id, r.is_private, r.interact_restricted, r.base FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get::<_, i64>(2)? != 0,
+                        r.get::<_, i64>(3)? != 0,
+                        r.get(4)?,
+                    ))
+                },
             )
             .optional());
-        let Some((Some(server_id), root, restricted, base)) = row else {
+        let Some((Some(server_id), root, is_private, restricted, base)) = row else {
             return perms::ALL;
         };
-        let p = self.permissions(&server_id, user_id);
+        let mut p = self.permissions(&server_id, user_id);
+        if perms::has(p, perms::ADMINISTRATOR) {
+            return p;
+        }
+        if is_private && self.in_view_list(&root, &server_id, user_id) {
+            p |= perms::VIEW_CHANNELS | perms::INTERACT | perms::CONNECT;
+        }
+        if restricted {
+            if self.in_interact_list(&root, &server_id, user_id) {
+                p |= perms::INTERACT | perms::CONNECT;
+            } else {
+                p &= !perms::INTERACT;
+            }
+        }
         // Canais base: Atividades não é chat; Regras/Anúncios/Eventos só para quem pode publicar.
-        let p = match base.as_str() {
+        match base.as_str() {
             "" => p,
             "activity" => p & !perms::INTERACT,
             _ if perms::has(p, perms::POST_NOTES) => p,
             _ => p & !perms::INTERACT,
-        };
-        if !restricted || perms::has(p, perms::ADMINISTRATOR) {
-            return p;
         }
-        let allowed = ok(self
+    }
+
+    /// A pessoa (ou um cargo dela) está em "Quem pode ver" do canal (raiz, não thread).
+    fn in_view_list(&self, root: &str, server_id: &str, user_id: &str) -> bool {
+        ok(self
+            .c
+            .query_row(
+                "SELECT 1 WHERE EXISTS (SELECT 1 FROM channel_recipients WHERE channel_id = ?1 AND user_id = ?2)
+                    OR EXISTS (SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id = cr.role_id
+                               WHERE cr.channel_id = ?1 AND mr.user_id = ?2)
+                    OR EXISTS (SELECT 1 FROM channel_roles WHERE channel_id = ?1 AND role_id = ?3)",
+                params![root, user_id, server_id],
+                |_| Ok(()),
+            )
+            .optional())
+        .is_some()
+    }
+
+    /// A pessoa (ou um cargo dela, ou o @everyone) está em "Quem pode enviar mensagens / falar".
+    fn in_interact_list(&self, root: &str, server_id: &str, user_id: &str) -> bool {
+        ok(self
             .c
             .query_row(
                 "SELECT 1 WHERE EXISTS (SELECT 1 FROM channel_interact WHERE channel_id = ?1 AND kind = 'user' AND target_id = ?2)
@@ -1563,8 +1602,7 @@ impl Q<'_> {
                 |_| Ok(()),
             )
             .optional())
-        .is_some();
-        if allowed { p } else { p & !perms::INTERACT }
+        .is_some()
     }
 
     pub fn delete_channel(&self, id: &str) {
@@ -1575,10 +1613,19 @@ impl Q<'_> {
     /// escolhido (pessoa ou cargo); canal aberto para quem tem "Ver canais". Dono e
     /// administradores veem tudo. Threads seguem o canal pai.
     pub fn can_access(&self, user_id: &str, channel_id: &str) -> bool {
-        let row: Option<(Option<String>, String, bool, String, Option<String>, String)> = ok(self
+        type Row = (
+            Option<String>,
+            String,
+            bool,
+            bool,
+            String,
+            Option<String>,
+            String,
+        );
+        let row: Option<Row> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.is_private, r.type, r.category_id, r.base FROM channels r
+                "SELECT r.server_id, r.id, r.is_private, r.interact_restricted, r.type, r.category_id, r.base FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
                 |r| {
@@ -1586,19 +1633,18 @@ impl Q<'_> {
                         r.get(0)?,
                         r.get(1)?,
                         r.get::<_, i64>(2)? != 0,
-                        r.get(3)?,
+                        r.get::<_, i64>(3)? != 0,
                         r.get(4)?,
                         r.get(5)?,
+                        r.get(6)?,
                     ))
                 },
             )
             .optional());
         match row {
             None => false,
-            Some((None, _, _, _, _, _)) => {
-                self.recipient_ids(channel_id).iter().any(|r| r == user_id)
-            }
-            Some((Some(server_id), root, is_private, kind, category_id, base)) => {
+            Some((None, ..)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((Some(server_id), root, is_private, restricted, kind, category_id, base)) => {
                 if !self.is_member(&server_id, user_id) {
                     return false;
                 }
@@ -1612,29 +1658,23 @@ impl Q<'_> {
                 {
                     return false;
                 }
-                // Quem não pode interagir (mandar mensagem / entrar na voz) nem vê o canal.
-                // Quem gerencia canais continua vendo para poder editar.
-                // Canais base são para leitura: todo mundo vê, mesmo sem poder mandar mensagem.
-                if base.is_empty()
-                    && !perms::has(p, perms::MANAGE_CHANNELS)
-                    && !perms::has(p, interact_perm(&kind))
-                {
+                // Canal privado: só quem foi escolhido (pessoa ou cargo). Aberto: "Ver canais".
+                let listed = is_private && self.in_view_list(&root, &server_id, user_id);
+                if is_private && !listed {
                     return false;
                 }
-                if !is_private {
-                    return perms::has(p, perms::VIEW_CHANNELS);
+                if !is_private && !perms::has(p, perms::VIEW_CHANNELS) {
+                    return false;
                 }
-                ok(self
-                    .c
-                    .query_row(
-                        "SELECT 1 WHERE EXISTS (SELECT 1 FROM channel_recipients WHERE channel_id = ?1 AND user_id = ?2)
-                            OR EXISTS (SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id = cr.role_id
-                                       WHERE cr.channel_id = ?1 AND mr.user_id = ?2)",
-                        [&root, user_id],
-                        |_| Ok(()),
-                    )
-                    .optional())
-                .is_some()
+                // Quem não pode interagir (mandar mensagem / entrar na voz) nem vê o canal, a não ser
+                // que o canal libere para ela (está em "Quem pode ver" ou em "Quem pode enviar/falar").
+                // Quem gerencia canais continua vendo para poder editar.
+                // Canais base são para leitura: todo mundo vê, mesmo sem poder mandar mensagem.
+                !base.is_empty()
+                    || perms::has(p, perms::MANAGE_CHANNELS)
+                    || perms::has(p, interact_perm(&kind))
+                    || listed
+                    || (restricted && self.in_interact_list(&root, &server_id, user_id))
             }
         }
     }
@@ -2274,7 +2314,15 @@ impl Q<'_> {
         attachment_ids: &[String],
         requires: &[String],
     ) -> Message {
-        self.create_message_flagged(channel_id, author_id, content, attachment_ids, requires, &[], &[])
+        self.create_message_flagged(
+            channel_id,
+            author_id,
+            content,
+            attachment_ids,
+            requires,
+            &[],
+            &[],
+        )
     }
 
     /// Igual a `create_message`, marcando anexos como spoiler ou +18.

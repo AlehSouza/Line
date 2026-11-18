@@ -1557,6 +1557,35 @@ fn roles_changed(app: &App, q: &Q, server_id: &str) {
     );
 }
 
+/// Canais que cada pessoa não enxerga no servidor, para comparar antes e depois de mexer em cargos.
+fn hidden_snapshot(q: &Q, server_id: &str, users: &[String]) -> Vec<(String, Vec<String>)> {
+    users
+        .iter()
+        .map(|u| (u.clone(), q.hidden_channel_ids(server_id, u)))
+        .collect()
+}
+
+/// Depois de mudar cargos/permissões: quem passou a ver um canal recebe channel:create e
+/// quem deixou de ver recebe channel:delete, sem precisar recarregar o app.
+fn sync_visibility(app: &App, q: &Q, server_id: &str, before: Vec<(String, Vec<String>)>) {
+    for (user, was_hidden) in before {
+        let now_hidden = q.hidden_channel_ids(server_id, &user);
+        let to = [user];
+        for id in was_hidden.iter().filter(|c| !now_hidden.contains(c)) {
+            if let Some(c) = q.channel(id) {
+                app.to_users(&to, "channel:create", &c);
+            }
+        }
+        for id in now_hidden.iter().filter(|c| !was_hidden.contains(c)) {
+            app.to_users(
+                &to,
+                "channel:delete",
+                &json!({ "id": id, "serverId": server_id }),
+            );
+        }
+    }
+}
+
 async fn list_roles(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     require_member(&q, &id, &me)?;
@@ -1597,6 +1626,10 @@ async fn update_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
         check_grant(mine, role.permissions, p)?;
     }
     let server_id = role.server_id.clone();
+    let before = permissions
+        .is_some_and(|p| p != role.permissions)
+        .then(|| hidden_snapshot(&q, &server_id, &q.member_ids(&server_id)))
+        .unwrap_or_default();
     let updated = q.update_role(
         &role.id,
         RolePatch {
@@ -1608,6 +1641,7 @@ async fn update_role(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
         },
     );
     roles_changed(&app, &q, &server_id);
+    sync_visibility(&app, &q, &server_id, before);
     ok(updated)
 }
 
@@ -1618,13 +1652,15 @@ async fn delete_role(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
         return Err(bad_request("O @everyone não pode ser excluído"));
     }
     let holders = q.role_member_ids(&role.id);
+    let before = hidden_snapshot(&q, &role.server_id, &holders);
     q.delete_role(&role.id);
     roles_changed(&app, &q, &role.server_id);
-    for u in holders {
-        if let Some(m) = q.member(&role.server_id, &u) {
+    for u in &holders {
+        if let Some(m) = q.member(&role.server_id, u) {
             app.to_server(&role.server_id, "member:update", &m);
         }
     }
+    sync_visibility(&app, &q, &role.server_id, before);
     no_content()
 }
 
@@ -1674,12 +1710,14 @@ async fn set_member_role(
     if !q.is_member(server_id, user_id) {
         return Err(not_found("Membro"));
     }
+    let before = hidden_snapshot(&q, server_id, &[user_id.to_string()]);
     q.set_member_role(server_id, user_id, &role.id, on);
     let member = q
         .member(server_id, user_id)
         .ok_or_else(|| not_found("Membro"))?;
     app.to_server(server_id, "member:update", &member);
     roles_changed(app, &q, server_id);
+    sync_visibility(app, &q, server_id, before);
     ok(member)
 }
 
