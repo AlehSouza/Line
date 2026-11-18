@@ -99,23 +99,95 @@ fn client() -> Option<reqwest::Client> {
         .ok()
 }
 
+/// Siglas dos estados (a lista de sugestões do app manda "Natal, RN").
+const UFS: [(&str, &str); 27] = [
+    ("AC", "Acre"),
+    ("AL", "Alagoas"),
+    ("AP", "Amapá"),
+    ("AM", "Amazonas"),
+    ("BA", "Bahia"),
+    ("CE", "Ceará"),
+    ("DF", "Distrito Federal"),
+    ("ES", "Espírito Santo"),
+    ("GO", "Goiás"),
+    ("MA", "Maranhão"),
+    ("MT", "Mato Grosso"),
+    ("MS", "Mato Grosso do Sul"),
+    ("MG", "Minas Gerais"),
+    ("PA", "Pará"),
+    ("PB", "Paraíba"),
+    ("PR", "Paraná"),
+    ("PE", "Pernambuco"),
+    ("PI", "Piauí"),
+    ("RJ", "Rio de Janeiro"),
+    ("RN", "Rio Grande do Norte"),
+    ("RS", "Rio Grande do Sul"),
+    ("RO", "Rondônia"),
+    ("RR", "Roraima"),
+    ("SC", "Santa Catarina"),
+    ("SP", "São Paulo"),
+    ("SE", "Sergipe"),
+    ("TO", "Tocantins"),
+];
+
+/// Minúsculas e sem acento, para comparar nomes.
+fn fold(s: &str) -> String {
+    s.trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| match c {
+            'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'í' | 'ì' | 'î' | 'ï' => 'i',
+            'ó' | 'ò' | 'ô' | 'õ' | 'ö' => 'o',
+            'ú' | 'ù' | 'û' | 'ü' => 'u',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
 async fn weather(city: &str) -> Option<String> {
     let http = client()?;
+    // "Cidade, UF" ou "Cidade, País": a parte depois da vírgula escolhe entre cidades de mesmo nome.
+    let (name, hint) = match city.split_once(',') {
+        Some((n, h)) => (n.trim(), h.trim()),
+        None => (city.trim(), ""),
+    };
+    let state = UFS
+        .iter()
+        .find(|(uf, _)| uf.eq_ignore_ascii_case(hint))
+        .map(|(_, s)| *s);
+    let mut query = vec![
+        ("name", name),
+        ("count", "10"),
+        ("language", "pt"),
+        ("format", "json"),
+    ];
+    if state.is_some() {
+        query.push(("countryCode", "BR"));
+    }
     let geo: serde_json::Value = http
         .get("https://geocoding-api.open-meteo.com/v1/search")
-        .query(&[
-            ("name", city),
-            ("count", "1"),
-            ("language", "pt"),
-            ("format", "json"),
-        ])
+        .query(&query)
         .send()
         .await
         .ok()?
         .json()
         .await
         .ok()?;
-    let place = geo.get("results")?.get(0)?;
+    let results = geo.get("results")?.as_array()?;
+    let want = fold(state.unwrap_or(hint));
+    let field =
+        |p: &serde_json::Value, k: &str| fold(p.get(k).and_then(|v| v.as_str()).unwrap_or(""));
+    let place = (!want.is_empty())
+        .then(|| {
+            results
+                .iter()
+                .find(|p| field(p, "admin1") == want || field(p, "country") == want)
+        })
+        .flatten()
+        .or_else(|| results.first())?;
     let (lat, lon) = (
         place.get("latitude")?.as_f64()?,
         place.get("longitude")?.as_f64()?,

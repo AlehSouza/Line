@@ -105,7 +105,71 @@ const COMMANDS = [
   { name: 'hoje', args: '[cidade]', desc: 'O agente conta a data, se é feriado, a previsão do tempo e uma curiosidade do dia.' },
 ];
 
-/** Lista de comandos do bot que aparece ao digitar "/" no começo da mensagem. */
+/** Cidades sugeridas no `/hoje`: Brasil primeiro (capitais e maiores), depois as principais do mundo. */
+const CITIES: [string, string][] = [
+  ['São Paulo', 'SP'], ['Rio de Janeiro', 'RJ'], ['Brasília', 'DF'], ['Salvador', 'BA'], ['Fortaleza', 'CE'],
+  ['Belo Horizonte', 'MG'], ['Manaus', 'AM'], ['Curitiba', 'PR'], ['Recife', 'PE'], ['Goiânia', 'GO'],
+  ['Belém', 'PA'], ['Porto Alegre', 'RS'], ['Guarulhos', 'SP'], ['Campinas', 'SP'], ['São Luís', 'MA'],
+  ['Maceió', 'AL'], ['Campo Grande', 'MS'], ['São Gonçalo', 'RJ'], ['Teresina', 'PI'], ['João Pessoa', 'PB'],
+  ['São Bernardo do Campo', 'SP'], ['Duque de Caxias', 'RJ'], ['Nova Iguaçu', 'RJ'], ['Natal', 'RN'],
+  ['Santo André', 'SP'], ['Osasco', 'SP'], ['Sorocaba', 'SP'], ['Uberlândia', 'MG'], ['Ribeirão Preto', 'SP'],
+  ['São José dos Campos', 'SP'], ['Cuiabá', 'MT'], ['Jaboatão dos Guararapes', 'PE'], ['Contagem', 'MG'],
+  ['Joinville', 'SC'], ['Feira de Santana', 'BA'], ['Aracaju', 'SE'], ['Londrina', 'PR'], ['Juiz de Fora', 'MG'],
+  ['Florianópolis', 'SC'], ['Aparecida de Goiânia', 'GO'], ['Serra', 'ES'], ['Campos dos Goytacazes', 'RJ'],
+  ['Belford Roxo', 'RJ'], ['Niterói', 'RJ'], ['São José do Rio Preto', 'SP'], ['Ananindeua', 'PA'],
+  ['Vila Velha', 'ES'], ['Caxias do Sul', 'RS'], ['Porto Velho', 'RO'], ['Mogi das Cruzes', 'SP'],
+  ['Macapá', 'AP'], ['Jundiaí', 'SP'], ['Piracicaba', 'SP'], ['Santos', 'SP'], ['Maringá', 'PR'],
+  ['Montes Claros', 'MG'], ['Rio Branco', 'AC'], ['Vitória', 'ES'], ['Boa Vista', 'RR'], ['Palmas', 'TO'],
+  ['Bauru', 'SP'], ['Pelotas', 'RS'], ['Blumenau', 'SC'], ['Foz do Iguaçu', 'PR'], ['Ponta Grossa', 'PR'],
+  ['Cascavel', 'PR'], ['Petrópolis', 'RJ'], ['Campina Grande', 'PB'], ['Caruaru', 'PE'], ['Uberaba', 'MG'],
+  ['Santa Maria', 'RS'], ['Gramado', 'RS'], ['Balneário Camboriú', 'SC'], ['Porto Seguro', 'BA'],
+  ['Lisboa', 'Portugal'], ['Porto', 'Portugal'], ['Buenos Aires', 'Argentina'], ['Santiago', 'Chile'],
+  ['Montevidéu', 'Uruguai'], ['Lima', 'Peru'], ['Bogotá', 'Colômbia'], ['Cidade do México', 'México'],
+  ['Nova York', 'Estados Unidos'], ['Los Angeles', 'Estados Unidos'], ['Miami', 'Estados Unidos'],
+  ['Orlando', 'Estados Unidos'], ['Chicago', 'Estados Unidos'], ['Toronto', 'Canadá'], ['Londres', 'Reino Unido'],
+  ['Paris', 'França'], ['Madri', 'Espanha'], ['Barcelona', 'Espanha'], ['Roma', 'Itália'], ['Milão', 'Itália'],
+  ['Berlim', 'Alemanha'], ['Amsterdã', 'Países Baixos'], ['Dublin', 'Irlanda'], ['Moscou', 'Rússia'],
+  ['Dubai', 'Emirados Árabes Unidos'], ['Tóquio', 'Japão'], ['Seul', 'Coreia do Sul'], ['Pequim', 'China'],
+  ['Xangai', 'China'], ['Hong Kong', 'China'], ['Singapura', 'Singapura'], ['Bangcoc', 'Tailândia'],
+  ['Nova Délhi', 'Índia'], ['Sydney', 'Austrália'], ['Cairo', 'Egito'], ['Joanesburgo', 'África do Sul'],
+  ['Luanda', 'Angola'], ['Maputo', 'Moçambique'],
+];
+
+const fold = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+interface SlashOption {
+  key: string;
+  insert: string;
+  title: string;
+  args?: string;
+  desc?: string;
+  /** Sugestão de cidade do `/hoje` (ícone + nome + estado/país). */
+  city?: boolean;
+}
+
+function slashOptions(text: string): SlashOption[] {
+  const cmd = /^\/(\S*)$/.exec(text);
+  if (cmd) {
+    const q = cmd[1]!.toLowerCase();
+    return COMMANDS.filter((c) => c.name.startsWith(q)).map((c) => ({ key: c.name, insert: `/${c.name} `, title: `/${c.name}`, args: c.args, desc: c.desc }));
+  }
+  const hoje = /^\/hoje\s+(.*)$/i.exec(text);
+  if (!hoje) return [];
+  const q = fold(hoje[1]!);
+  // Cidade já escolhida da lista ("Natal, RN"): some para o Enter enviar.
+  if (q.includes(',')) return [];
+  const starts: SlashOption[] = [];
+  const contains: SlashOption[] = [];
+  for (const [name, where] of CITIES) {
+    const f = fold(name);
+    const o = { key: `${name}-${where}`, insert: `/hoje ${name}, ${where}`, title: name, desc: where, city: true };
+    if (f.startsWith(q)) starts.push(o);
+    else if (q && f.includes(q)) contains.push(o);
+  }
+  return [...starts, ...contains];
+}
+
+/** Lista de comandos do bot que aparece ao digitar "/" no começo da mensagem; no `/hoje`, sugere cidades. */
 export function SlashPicker({
   serverId,
   text,
@@ -124,15 +188,15 @@ export function SlashPicker({
   useEffect(() => {
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
   }, [index]);
-  const m = serverId ? /^\/(\S*)$/.exec(text) : null;
-  const query = m ? m[1]!.toLowerCase() : null;
-  const options = query === null ? [] : COMMANDS.filter((c) => c.name.startsWith(query));
+  const active = !!serverId && text.startsWith('/');
+  const options = useMemo(() => (active ? slashOptions(text) : []), [active, text]);
+  const cityMode = options[0]?.city === true;
   const visible = !closed && options.length > 0;
-  useEffect(() => setIndex(0), [query]);
+  useEffect(() => setIndex(0), [text]);
   useEffect(() => {
-    if (query === null) setClosed(false);
-  }, [query]);
-  const pick = (c: (typeof COMMANDS)[number]) => onPick(`/${c.name} `);
+    if (!active) setClosed(false);
+  }, [active]);
+  const pick = (o: SlashOption) => onPick(o.insert);
 
   useImperativeHandle(ref, () => ({
     onKeyDown(e) {
@@ -143,10 +207,10 @@ export function SlashPicker({
         setIndex((i) => (i + d + options.length) % options.length);
         return true;
       }
-      if (e.key === 'Tab' || (e.key === 'Enter' && options[index] && `/${options[index]!.name}` !== text)) {
+      const cur = options[Math.min(index, options.length - 1)];
+      if (e.key === 'Tab' || (e.key === 'Enter' && cur && cur.insert.trim() !== text.trim())) {
         e.preventDefault();
-        const c = options[Math.min(index, options.length - 1)];
-        if (c) pick(c);
+        if (cur) pick(cur);
         return true;
       }
       if (e.key === 'Escape') {
@@ -160,28 +224,47 @@ export function SlashPicker({
 
   if (!visible) return null;
   return (
-    <div ref={listRef} className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
-      <p className="flex items-center gap-2 px-2 pt-1 pb-1.5 text-xs">
-        <BotBadge serverId={serverId} size={16} />
-      </p>
-      {options.map((c, i) => (
-        <button
-          key={c.name}
-          type="button"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            pick(c);
-          }}
-          onMouseEnter={() => setIndex(i)}
-          data-active={i === index}
-          className={cx('flex w-full flex-col rounded-md px-2 py-1.5 text-left', i === index && 'bg-hover')}
-        >
-          <span className="text-[15px] font-semibold">
-            /{c.name} {c.args && <span className="font-normal text-muted">{c.args}</span>}
-          </span>
-          <span className="text-xs text-muted">{c.desc}</span>
-        </button>
-      ))}
+    <div className="absolute right-0 bottom-full left-0 z-30 mb-2 overflow-hidden rounded-xl border border-edge bg-rail shadow-2xl">
+      <div ref={listRef} className="max-h-80 overflow-y-auto p-2">
+        <p className="flex items-center gap-2 px-2 pt-1 pb-1.5 text-xs">
+          {cityMode ? <span className="font-semibold text-muted">Opções</span> : <BotBadge serverId={serverId} size={16} />}
+        </p>
+        {options.map((o, i) => (
+          <button
+            key={o.key}
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              pick(o);
+            }}
+            onMouseEnter={() => setIndex(i)}
+            data-active={i === index}
+            className={cx('flex w-full rounded-md px-2 py-1.5 text-left', o.city ? 'items-center gap-2' : 'flex-col', i === index && 'bg-hover')}
+          >
+            {o.city ? (
+              <>
+                <L.MapPin size={15} className="shrink-0 text-accent" />
+                <span className="min-w-0 truncate text-[15px]">
+                  {o.title} <span className="text-muted">· {o.desc}</span>
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-[15px] font-semibold">
+                  {o.title} {o.args && <span className="font-normal text-muted">{o.args}</span>}
+                </span>
+                <span className="text-xs text-muted">{o.desc}</span>
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+      {cityMode && (
+        <div className="flex items-center gap-2 border-t border-edge px-4 py-2 text-xs">
+          <span className="font-semibold">cidade</span>
+          <span className="text-muted">Escolha uma cidade ou digite o nome de qualquer outra.</span>
+        </div>
+      )}
     </div>
   );
 }
