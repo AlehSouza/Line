@@ -478,17 +478,46 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
       </p>
 
       <div className="flex flex-col-reverse gap-8 lg:flex-row lg:items-start">
-      <div className="min-w-0 flex-1 space-y-6">
-        <Field label="Nome da tag" hint="Até 4 letras ou números. Deixe vazio para desativar a tag.">
+      <div className="min-w-0 flex-1 space-y-4">
+        {/* Nome da tag: centralizado e fixo no topo enquanto a coluna rola, para trocar e testar a qualquer momento. */}
+        <div className="sticky top-0 z-10 -mx-1 flex flex-col items-center gap-1.5 rounded-xl border border-edge bg-main/95 px-4 py-3 text-center shadow-lg backdrop-blur">
+          <label htmlFor="tag-name" className="text-xs font-bold tracking-wide text-muted uppercase">
+            Nome da tag
+          </label>
           <Input
+            id="tag-name"
             value={tag}
             onChange={(e) => setTag(e.target.value.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase().slice(0, 4))}
             placeholder="Ex.: LINE"
-            className="w-32 font-bold tracking-wide"
+            className="w-36 text-center text-lg font-bold tracking-widest"
           />
-        </Field>
+          <p className="text-xs text-muted">Até 4 letras ou números. Deixe vazio para desativar a tag.</p>
+        </div>
 
-        <Field label="Ícone da tag">
+        <section className="rounded-xl border border-edge bg-rail p-3.5">
+          <p className="text-sm font-semibold">Estilo do ícone</p>
+          <p className="mb-2 text-xs text-muted">Vale para os ícones; a foto do servidor fica igual.</p>
+          <div className="flex gap-2">
+            {(
+              [
+                ['outline', 'Contorno'],
+                ['solid', 'Sólido'],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setStyle((st) => ({ ...st, iconStyle: v }))}
+                className={cx(
+                  'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm',
+                  (style.iconStyle ?? 'outline') === v ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
+                )}
+              >
+                <L.Star size={15} fill={v === 'solid' ? 'currentColor' : 'none'} /> {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-4 mb-2 text-sm font-semibold">Ícone da tag</p>
           <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
@@ -519,32 +548,10 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
               );
             })}
           </div>
-        </Field>
+        </section>
 
-        <Field label="Estilo do ícone" hint="Vale para os ícones; a foto do servidor fica igual.">
-          <div className="flex gap-2">
-            {(
-              [
-                ['outline', 'Contorno'],
-                ['solid', 'Sólido'],
-              ] as const
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setStyle((st) => ({ ...st, iconStyle: v }))}
-                className={cx(
-                  'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm',
-                  (style.iconStyle ?? 'outline') === v ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise',
-                )}
-              >
-                <L.Star size={15} fill={v === 'solid' ? 'currentColor' : 'none'} /> {label}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Fonte do texto" group>
+        <section className="rounded-xl border border-edge bg-rail p-3.5">
+          <p className="mb-2 text-sm font-semibold">Fonte do texto</p>
           <div className="grid grid-cols-6 gap-1.5">
             {NAME_FONTS.map((f) => (
               <button
@@ -553,7 +560,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                 title={f.label}
                 onClick={() => setStyle((st) => ({ ...st, font: f.id }))}
                 className={cx(
-                  'flex h-11 items-center justify-center rounded-lg border bg-rail text-lg font-bold',
+                  'flex h-11 items-center justify-center rounded-lg border bg-side text-lg font-bold',
                   (style.font ?? 'default') === f.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
                 )}
                 style={{ fontFamily: f.family }}
@@ -562,9 +569,11 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
               </button>
             ))}
           </div>
-        </Field>
+        </section>
 
-        <Field label="Efeito do texto" hint="As cores do efeito vêm de Texto, logo abaixo (Padrão usa as cores sugeridas do efeito)." group>
+        <section className="rounded-xl border border-edge bg-rail p-3.5">
+          <p className="text-sm font-semibold">Efeito do texto</p>
+          <p className="mb-2 text-xs text-muted">As cores do efeito vêm de Texto, logo abaixo (Padrão usa as cores sugeridas do efeito).</p>
           <div className="grid grid-cols-4 gap-1.5">
             {NAME_EFFECTS.map((e) => {
               const sample: NameStyle = { font: 'default', effect: e.id, colors: NAME_PALETTES[e.id][0]! };
@@ -574,7 +583,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                   type="button"
                   onClick={() => setStyle((st) => (e.id !== 'neon' && animOf(st, 'fg').motion === 'pulse' ? { ...st, effect: e.id, anim: { ...st.anim, fg: { ...animOf(st, 'fg'), motion: 'static' } } } : { ...st, effect: e.id }))}
                   className={cx(
-                    'flex h-11 items-center justify-center rounded-lg border bg-rail text-sm font-semibold',
+                    'flex h-11 items-center justify-center rounded-lg border bg-side text-sm font-semibold',
                     (style.effect ?? 'solid') === e.id ? 'border-accent bg-accent/10' : 'border-edge hover:bg-raise',
                   )}
                 >
@@ -585,7 +594,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
               );
             })}
           </div>
-        </Field>
+        </section>
 
         <Field label="Cores da tag" group>
           <div className="space-y-3">
@@ -621,15 +630,14 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
           </div>
         </Field>
 
-        <div className="flex justify-end border-t border-edge pt-4">
-          <Button disabled={busy || !dirty} onClick={save} className="px-6">
-            {busy ? 'Salvando…' : 'Salvar'}
-          </Button>
-        </div>
       </div>
 
       <aside className="shrink-0 lg:sticky lg:top-0 lg:w-[300px]">
         <TagPreviews tag={tag} icon={icon} iconUrl={server.iconUrl} style={style} server={server} />
+        {/* Salvar fica na coluna fixa, logo abaixo da última prévia. */}
+        <Button disabled={busy || !dirty} onClick={save} className="mt-4 w-full">
+          {busy ? 'Salvando…' : 'Salvar'}
+        </Button>
       </aside>
       </div>
     </div>
