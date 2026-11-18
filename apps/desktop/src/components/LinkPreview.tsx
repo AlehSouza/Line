@@ -59,10 +59,10 @@ function socialEmbed(raw: string): Social | null {
     if (!id || !/^\d{8,25}$/.test(id)) return null;
     return {
       kind: 'tiktok',
-      src: `https://www.tiktok.com/player/v1/${id}?description=1&music_info=1&rel=0`,
+      src: `https://www.tiktok.com/embed/v2/${id}?lang=pt-BR`,
       label: 'TikTok',
       width: 325,
-      height: 578,
+      height: 740,
     };
   }
   if (host === 'twitter.com' || host === 'x.com') {
