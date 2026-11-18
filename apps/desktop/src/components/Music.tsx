@@ -2,7 +2,7 @@
 
 import type { PublicUser } from '@line/shared';
 import * as L from 'lucide-react';
-import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { formatDuration, musicControl, positionOf, setMusicVolume, stopMusic, thumbOf, toggleMusicMute, useMusic, type LiveMusic } from '@/lib/music';
 import { actions, displayNameIn, useLine } from '@/lib/store';
 import { StyledName } from '@/lib/nameStyle';
@@ -119,6 +119,11 @@ export function SlashPicker({
 }) {
   const [index, setIndex] = useState(0);
   const [closed, setClosed] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Mantém o item selecionado pelas setas sempre visível na lista.
+  useEffect(() => {
+    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
   const m = serverId ? /^\/(\S*)$/.exec(text) : null;
   const query = m ? m[1]!.toLowerCase() : null;
   const options = query === null ? [] : COMMANDS.filter((c) => c.name.startsWith(query));
@@ -155,7 +160,7 @@ export function SlashPicker({
 
   if (!visible) return null;
   return (
-    <div className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
+    <div ref={listRef} className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
       <p className="flex items-center gap-2 px-2 pt-1 pb-1.5 text-xs">
         <BotBadge serverId={serverId} size={16} />
       </p>
@@ -168,6 +173,7 @@ export function SlashPicker({
             pick(c);
           }}
           onMouseEnter={() => setIndex(i)}
+          data-active={i === index}
           className={cx('flex w-full flex-col rounded-md px-2 py-1.5 text-left', i === index && 'bg-hover')}
         >
           <span className="text-[15px] font-semibold">

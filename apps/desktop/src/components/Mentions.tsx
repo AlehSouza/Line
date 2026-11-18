@@ -1,7 +1,7 @@
 'use client';
 
 import { hasPerm, Perm, type Role } from '@line/shared';
-import { useEffect, useImperativeHandle, useMemo, useState, type KeyboardEvent, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react';
 import { displayNameIn, mentionTag, permsOf, useLine } from '@/lib/store';
 import { Avatar, cx } from './ui';
 
@@ -96,6 +96,11 @@ export function MentionPicker({
   }, [query, serverId, channelId]);
 
   useEffect(() => setIndex(0), [query]);
+  const listRef = useRef<HTMLDivElement>(null);
+  // Mantém o item selecionado pelas setas sempre visível na lista.
+  useEffect(() => {
+    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
   useEffect(() => {
     if (query === null) setClosedAt(null);
   }, [query]);
@@ -136,7 +141,7 @@ export function MentionPicker({
   ].filter((g) => g.items.length);
 
   return (
-    <div className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
+    <div ref={listRef} className="absolute right-0 bottom-full left-0 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-edge bg-rail p-2 shadow-2xl">
       {groups.map((g, gi) => (
         <div key={gi} className={cx(gi > 0 && 'mt-1 border-t border-edge pt-1')}>
           {g.title && <p className="px-2 pt-1 pb-1.5 text-xs font-semibold text-muted">{g.title}</p>}
@@ -152,6 +157,7 @@ export function MentionPicker({
                   pick(o);
                 }}
                 onMouseEnter={() => setIndex(options.indexOf(o))}
+                data-active={active}
                 className={cx('flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left', active && 'bg-hover')}
               >
                 {u && <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={24} presence={u.presence} ring="rail" />}
