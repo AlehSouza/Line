@@ -366,7 +366,7 @@ function AudienceList({
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
   const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   return (
-    <div className="mt-3 max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
+    <div className="mt-3 max-h-80 space-y-0.5 overflow-y-auto rounded-lg border border-edge p-1.5">
       {roles.length > 0 && <p className="px-2 pt-1 pb-0.5 text-xs font-bold text-muted uppercase">Cargos</p>}
       {roles.map((r) => (
         <RoleOption key={r.id} role={r} checked={roleIds.includes(r.id)} onToggle={() => onRoles(toggle(roleIds, r.id))} />
@@ -413,7 +413,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
   const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged;
   const emptyPrivate = isPrivate && !roleIds.length && !memberIds.length;
   return (
-    <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose}>
+    <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose} width={520} tall>
       <form
         onSubmit={(e) => {
           e.preventDefault();

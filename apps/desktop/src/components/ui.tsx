@@ -245,6 +245,7 @@ export function Modal({
   footer,
   width = 440,
   fixedBody,
+  tall,
 }: {
   title: string;
   subtitle?: string;
@@ -254,6 +255,8 @@ export function Modal({
   width?: number;
   /** O corpo não rola inteiro: quem usa escolhe a parte que rola (ex.: só a lista do "Transmitir tela"). */
   fixedBody?: boolean;
+  /** Corpo mais alto (formulários longos, ex.: Editar canal). */
+  tall?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -274,7 +277,7 @@ export function Modal({
           <h2 className="text-xl font-bold">{title}</h2>
           {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
         </div>
-        <div className={fixedBody ? 'flex max-h-[70vh] min-h-0 flex-col px-6 py-4' : 'max-h-[60vh] overflow-y-auto px-6 py-4'}>{children}</div>
+        <div className={fixedBody ? 'flex max-h-[70vh] min-h-0 flex-col px-6 py-4' : cx(tall ? 'max-h-[80vh]' : 'max-h-[60vh]', 'overflow-y-auto px-6 py-4')}>{children}</div>
         {footer && <div className="flex justify-end gap-2 bg-rail/60 px-6 py-4">{footer}</div>}
       </div>
     </div>
