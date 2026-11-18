@@ -384,6 +384,7 @@ function DmRailItem({ dmId, count }: { dmId: string; count: number }) {
         name={isGroup || !u ? title : u.displayName}
         color={isGroup || !u ? '#3a3a42' : u.avatarColor}
         src={isGroup || !u ? null : u.avatarUrl}
+        group={isGroup}
         size={48}
         className="rounded-full"
       />

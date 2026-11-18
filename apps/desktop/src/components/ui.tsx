@@ -149,8 +149,11 @@ export function Avatar({
   src,
   dotSize,
   dotRingColor,
+  group,
 }: {
   name: string;
+  /** DM em grupo: sem foto, mostra o ícone de grupo no lugar do logo do Line. */
+  group?: boolean;
   color: string;
   src?: string | null;
   size?: number;
@@ -172,6 +175,8 @@ export function Avatar({
         {src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fileUrl(src)} alt="" className="h-full w-full rounded-full object-cover" draggable={false} />
+        ) : group ? (
+          <L.UsersRound size={Math.round(size * 0.55)} className="text-soft" strokeWidth={2} />
         ) : (
           // Sem foto: o ícone do Line acinzentado, igual ao dos servidores sem imagem.
           <span className="h-full w-full overflow-hidden rounded-full">
