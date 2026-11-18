@@ -2319,18 +2319,8 @@ fn remove_channel(app: &App, q: &Q, channel: &Channel, server_id: &str) {
     if let Some(Some(mid)) = &channel.thread_message_id
         && let Some(starter) = q.message(mid)
     {
-        if starter.deleted && !starter.threads.iter().any(|t| t.message_count > 0) {
-            // Sem conversa com respostas, a mensagem excluída não tem mais por que ficar.
-            q.delete_message(&starter.id);
-            app.to_channel(
-                q,
-                &starter.channel_id,
-                "message:delete",
-                &json!({ "id": starter.id, "channelId": starter.channel_id }),
-            );
-        } else {
-            app.to_channel(q, &starter.channel_id, "message:update", &starter);
-        }
+        // O item apagado de onde a conversa saiu continua (com as reações).
+        app.to_channel(q, &starter.channel_id, "message:update", &starter);
     }
 }
 
@@ -2782,7 +2772,6 @@ async fn add_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String
     let q = app.store.q();
     let message = q
         .message(&id)
-        .filter(|m| !m.deleted)
         .ok_or_else(|| bad_request("Mensagem não encontrada"))?;
     require_access(&q, &message.channel_id, &me)?;
     // Sem "Adicionar reações" só dá para entrar numa reação que já existe.
@@ -3279,27 +3268,16 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
     let files = q.attachment_ids_of_message(&message.id);
-    // Com respostas em alguma thread (da mensagem ou de uma mídia), fica como "A mensagem foi excluída.".
-    if message.threads.iter().any(|t| t.message_count > 0) {
-        q.soft_delete_message(&message.id);
-        app.remove_upload_files(&files);
-        if let Some(updated) = q.message(&message.id) {
-            app.to_channel(&q, &channel.id, "message:update", &updated);
-        }
-        return no_content();
-    }
-    q.delete_message(&message.id);
+    // Sempre fica como item apagado ("Esse item foi apagado..."), com reações e conversas.
+    q.soft_delete_message(&message.id);
     app.remove_upload_files(&files);
-    app.to_channel(
-        &q,
-        &channel.id,
-        "message:delete",
-        &json!({ "id": message.id, "channelId": channel.id }),
-    );
-    // Última resposta apagada: a conversa some (e a mensagem excluída de onde ela saiu também).
+    if let Some(updated) = q.message(&message.id) {
+        app.to_channel(&q, &channel.id, "message:update", &updated);
+    }
+    // Conversa sem nenhuma resposta de pé: ela some (o item apagado de onde saiu continua).
     if channel.kind == "thread"
         && let Some(server_id) = channel.server_id.clone()
-        && q.messages(&channel.id, None, 1).is_empty()
+        && q.live_message_count(&channel.id) == 0
     {
         remove_channel(&app, &q, &channel, &server_id);
     } else if channel.kind == "thread" {

@@ -559,14 +559,12 @@ async fn delete_message(State(app): S, Admin(me): Admin, Path(id): Path<String>)
     let q = app.store.q();
     let message = q.message(&id).ok_or_else(|| not_found("Mensagem"))?;
     let files = q.attachment_ids_of_message(&message.id);
-    q.delete_message(&message.id);
+    // Igual ao autor: fica como item apagado, com reações e conversas.
+    q.soft_delete_message(&message.id);
     app.remove_upload_files(&files);
-    app.to_channel(
-        &q,
-        &message.channel_id,
-        "message:delete",
-        &json!({ "id": message.id, "channelId": message.channel_id }),
-    );
+    if let Some(updated) = q.message(&message.id) {
+        app.to_channel(&q, &message.channel_id, "message:update", &updated);
+    }
     q.log_admin(
         &me,
         "delete_message",

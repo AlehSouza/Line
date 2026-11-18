@@ -657,29 +657,14 @@ function MessageRow({
     }
   }
 
-  if (message.deleted) {
-    return (
-      <div
-        data-mid={message.id}
-        className={cx('flex gap-4 px-4', tight ? 'py-[9px]' : 'py-[11px]', highlighted && 'bg-accent/15')}
-      >
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
-          <Icons.Trash size={18} />
-        </div>
-        <div className="min-w-0 flex-1">
-          {/* Cada conversa fica logo abaixo do item apagado de onde ela saiu. */}
-          {(threadsOf(message).length ? threadsOf(message) : [null]).map((t, i) => (
-            <div key={t?.id ?? i} className={cx('flex flex-col items-start', i > 0 && 'mt-2')}>
-              <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
-              {t && <ThreadChip thread={t} />}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const forwardedFromName = useLine((s) => {
+    const c = message.forwardedFrom ? s.channels[message.forwardedFrom] : null;
+    return c?.serverId ? c.name : null;
+  });
+  // Item apagado: continua com reações, conversa, favoritar e links; só perde o conteúdo.
+  const del = !!message.deleted;
 
-  if (ignored && !reveal) {
+  if (ignored && !reveal && !del) {
     return (
       <div className={cx('flex items-center gap-2 px-4 py-1 text-xs text-muted', !grouped && 'mt-3')}>
         <Icons.EyeOff size={14} />
@@ -692,13 +677,10 @@ function MessageRow({
   }
 
   const plain = message.content ? mentionsToText(message.content, serverId) : '';
-  const forwardedFromName = useLine((s) => {
-    const c = message.forwardedFrom ? s.channels[message.forwardedFrom] : null;
-    return c?.serverId ? c.name : null;
-  });
   const canReply = showThreadAction || !!whole;
-  const canForward = !message.poll;
-  const canReport = !mine && !message.author.bot;
+  const canForward = !message.poll && !del;
+  const canReport = !mine && !message.author.bot && !del;
+  const canEdit = mine && !del;
 
   function reply() {
     if (whole) return actions.openThread(whole.id);
@@ -735,14 +717,14 @@ function MessageRow({
   function moreItems(menuAt: { x: number; y: number }): MenuEntry[] {
     return [
       !!plain && { label: 'Copiar texto', icon: <Icons.Copy size={15} />, onClick: () => copy(plain, 'Texto copiado.') },
-      canPin && {
+      canPin && !del && {
         label: isPinned(message) ? 'Fixada: mudar ou desafixar' : 'Fixar mensagem',
         icon: <Icons.Pin size={15} />,
         onClick: () => openPinMenu(message, menuAt),
       },
       { label: 'Copiar link da mensagem', icon: <Icons.Link size={15} />, onClick: () => copy(messageLink(message), 'Link da mensagem copiado.') },
       'sep',
-      canDelete && { label: gallery && (galleryIds?.length ?? 0) > 1 ? 'Excluir grade' : 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
+      canDelete && !del && { label: gallery && (galleryIds?.length ?? 0) > 1 ? 'Excluir grade' : 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
       canReport && {
         label: 'Denunciar mensagem',
         icon: <Icons.Flag size={15} />,
@@ -774,7 +756,7 @@ function MessageRow({
             icon: isSaved ? <Icons.BookmarkX size={15} /> : <Icons.Bookmark size={15} />,
             onClick: () => toggleSaved(message),
           },
-          mine && {
+          canEdit && {
             label: 'Editar mensagem',
             icon: <Icons.Edit size={15} />,
             onClick: () => {
@@ -782,7 +764,7 @@ function MessageRow({
               onEdit();
             },
           },
-          !mine && {
+          !mine && !del && {
             label: 'Mencionar autor',
             icon: <Icons.AtSign size={15} />,
             onClick: () =>
@@ -803,7 +785,11 @@ function MessageRow({
       )}
     >
       <div className="w-10 shrink-0">
-        {grouped ? (
+        {del ? (
+          <div className="flex size-10 items-center justify-center rounded-lg bg-raise text-muted">
+            <Icons.Trash size={18} />
+          </div>
+        ) : grouped ? (
           <span className="invisible block pt-1 text-right text-[10px] text-muted group-hover:visible">
             {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -817,6 +803,19 @@ function MessageRow({
         )}
       </div>
       <div className="min-w-0 flex-1">
+        {del ? (
+          <>
+            {/* Cada conversa fica logo abaixo do item apagado de onde ela saiu. */}
+            {(threadsOf(message).length ? threadsOf(message) : [null]).map((t, i) => (
+              <div key={t?.id ?? i} className={cx('flex flex-col items-start', i > 0 && 'mt-2')}>
+                <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
+                {t && <ThreadChip thread={t} />}
+              </div>
+            ))}
+            {!!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />}
+          </>
+        ) : (
+          <>
         {!grouped && (
           <div className="flex items-baseline gap-2">
             <button
@@ -921,6 +920,8 @@ function MessageRow({
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
         {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} /> : null : whole && <ThreadChip thread={whole} />}
+          </>
+        )}
       </div>
 
       {reactAnchor && (
@@ -969,7 +970,7 @@ function MessageRow({
           >
             {isSaved ? <Icons.BookmarkCheck size={18} /> : <Icons.Bookmark size={18} />}
           </button>
-          {mine && (
+          {canEdit && (
             <button
               title="Editar"
               onClick={() => {
@@ -1028,7 +1029,20 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
           <Icons.Trash size={16} />
         </div>
-        <p className="text-[15px] text-soft">{DELETED_ITEM}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] text-soft">{DELETED_ITEM}</p>
+          {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
+        </div>
+        {anchor && (
+          <EmojiPicker
+            anchor={anchor}
+            onClose={() => setAnchor(null)}
+            onPick={(emoji, keepOpen) => {
+              void toggleReaction(message, emoji);
+              if (!keepOpen) setAnchor(null);
+            }}
+          />
+        )}
       </div>
     );
   }

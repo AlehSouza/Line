@@ -2849,10 +2849,19 @@ impl Q<'_> {
         ok(self.c.execute("DELETE FROM messages WHERE id = ?", [id]));
     }
 
+    /// Respostas que não foram apagadas (a conversa some quando chega a zero).
+    pub fn live_message_count(&self, channel_id: &str) -> i64 {
+        ok(self.c.query_row(
+            "SELECT COUNT(*) FROM messages WHERE channel_id = ? AND deleted_at IS NULL",
+            [channel_id],
+            |r| r.get(0),
+        ))
+    }
+
     /// Exclui só o conteúdo: a mensagem fica como "A mensagem foi excluída." para não
     /// perder a thread que tem respostas.
     pub fn soft_delete_message(&self, id: &str) {
-        for table in ["attachments", "message_reactions", "poll_options", "polls"] {
+        for table in ["attachments", "poll_options", "polls"] {
             ok(self
                 .c
                 .execute(&format!("DELETE FROM {table} WHERE message_id = ?"), [id]));
