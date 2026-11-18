@@ -23,7 +23,7 @@ import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
-import { Avatar, channelIcon, cx, Icons, MessageSkeletons } from './ui';
+import { Avatar, channelIcon, cx, Icons, MessageSkeletons, Modal } from './ui';
 import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
 import { UserTagBadge } from './ServerTag';
@@ -1140,8 +1140,59 @@ export function ViewerReactButton({ message, attachmentId }: { message: Message;
   );
 }
 
+/** Quem reagiu: aba Tudo (cada pessoa com o emoji dela) e uma aba por emoji com a contagem. */
+function ReactionsListModal({ reactions, onClose }: { reactions: NonNullable<Message['reactions']>; onClose: () => void }) {
+  const [tab, setTab] = useState<string | null>(null);
+  const users = useLine((s) => s.users);
+  const meId = useLine((s) => s.me?.id);
+  const rows = (tab ? reactions.filter((r) => r.emoji === tab) : reactions).flatMap((r) => r.userIds.map((id) => ({ id, emoji: r.emoji })));
+  const total = reactions.reduce((n, r) => n + r.userIds.length, 0);
+  const tabCls = (on: boolean) =>
+    cx('-mb-px flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm font-semibold', on ? 'border-accent text-accent' : 'border-transparent text-soft hover:text-fg');
+  return (
+    <Modal title="Reações" onClose={onClose} width={460} fixedBody>
+      <div className="flex overflow-x-auto border-b border-edge">
+        <button onClick={() => setTab(null)} className={tabCls(tab === null)}>
+          Tudo <span className="tabular-nums">{total}</span>
+        </button>
+        {reactions.map((r) => (
+          <button key={r.emoji} onClick={() => setTab(r.emoji)} className={tabCls(tab === r.emoji)}>
+            <span className="text-lg leading-none" style={{ fontFamily: EMOJI_FONT }}>{r.emoji}</span>
+            <span className="tabular-nums">{r.userIds.length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="max-h-[50vh] overflow-y-auto py-2">
+        {rows.map(({ id, emoji }) => {
+          const u = users[id];
+          return (
+            <div key={`${emoji}:${id}`} className="flex items-center gap-3 rounded-md px-2 py-1.5">
+              <span className="relative shrink-0">
+                <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#55555f'} src={u?.avatarUrl} size={36} />
+                <span
+                  className="absolute -right-1 -bottom-1 flex h-5 w-5 items-center justify-center rounded-full bg-side text-[13px] leading-none ring-2 ring-side"
+                  style={{ fontFamily: EMOJI_FONT }}
+                >
+                  {emoji}
+                </span>
+              </span>
+              <span className="truncate font-semibold">{id === meId ? 'Você' : (u?.displayName ?? 'Alguém')}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
+/** Reações da mídia: até 3 e "+N reações" (abre a lista de quem reagiu). */
+const MEDIA_REACTIONS_SHOWN = 3;
+
 function Reactions({ message, onAdd, adding, attachmentId }: { message: Message; onAdd?: (el: HTMLElement) => void; adding?: boolean; attachmentId?: string }) {
-  const reactions = (attachmentId ? message.attachments.find((a) => a.id === attachmentId)?.reactions : message.reactions) ?? [];
+  const all = (attachmentId ? message.attachments.find((a) => a.id === attachmentId)?.reactions : message.reactions) ?? [];
+  const reactions = attachmentId ? all.slice(0, MEDIA_REACTIONS_SHOWN) : all;
+  const hidden = all.length - reactions.length;
+  const [listOpen, setListOpen] = useState(false);
   const meId = useLine((s) => s.me?.id);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
   useLine((s) => s.users);
@@ -1176,6 +1227,19 @@ function Reactions({ message, onAdd, adding, attachmentId }: { message: Message;
           </span>
         );
       })}
+      {hidden > 0 && (
+        <button
+          onClick={() => setListOpen(true)}
+          className="flex h-7 items-center rounded-lg bg-raise px-2 text-sm font-semibold text-soft hover:text-fg"
+        >
+          +{hidden} {hidden === 1 ? 'reação' : 'reações'}
+        </button>
+      )}
+      {listOpen && (
+        <div className="contents" onMouseDown={(e) => e.stopPropagation()}>
+          <ReactionsListModal reactions={all} onClose={() => setListOpen(false)} />
+        </div>
+      )}
       {canReact && onAdd && (
         <button
           title="Adicionar reação"
