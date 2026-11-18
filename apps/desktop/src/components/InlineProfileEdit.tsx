@@ -7,6 +7,7 @@ import type { FavoriteSong, Server } from '@line/shared';
 import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
+import { placeAround, useFloating } from '@/lib/floating';
 import { TagPill } from './ServerTag';
 import { showError, toast } from './Dialogs';
 import { EmojiButton } from './EmojiField';
@@ -238,25 +239,14 @@ export function ImageEditMenu({
 
 /** Menu solto na tela (portal), preso abaixo do botão, para não ser cortado nem empurrar o cartão. */
 function Floating({ anchor, align, boxRef, className, children }: { anchor: HTMLElement; align: 'left' | 'right'; boxRef: RefObject<HTMLDivElement | null>; className?: string; children: ReactNode }) {
-  const [, redraw] = useState(0);
-  useEffect(() => {
-    const on = () => redraw((n) => n + 1);
-    window.addEventListener('resize', on);
-    window.addEventListener('scroll', on, true);
-    return () => {
-      window.removeEventListener('resize', on);
-      window.removeEventListener('scroll', on, true);
-    };
-  }, []);
+  // Abaixo do botão, ou acima perto do fim da tela: medido antes de aparecer (sem pular de lado).
+  const { pos, style: placed } = useFloating(boxRef, (w, h, lock) =>
+    placeAround(anchor.getBoundingClientRect(), w, h, { lock, align: align === 'right' ? 'end' : 'start' }),
+  );
   const r = anchor.getBoundingClientRect();
-  // Perto do fim da tela abre para cima, para não precisar rolar.
-  const up = window.innerHeight - r.bottom < 300 && r.top > window.innerHeight - r.bottom;
-  const style = {
-    ...(up
-      ? { bottom: window.innerHeight - r.top + 6, maxHeight: r.top - 12 }
-      : { top: r.bottom + 6, maxHeight: window.innerHeight - r.bottom - 18 }),
-    ...(align === 'right' ? { right: Math.max(8, window.innerWidth - r.right) } : { left: Math.max(8, Math.min(r.left, window.innerWidth - 340)) }),
-  };
+  const spaceAbove = r.top - 14;
+  const spaceBelow = window.innerHeight - r.bottom - 14;
+  const style = { ...placed, maxHeight: !pos ? Math.max(spaceAbove, spaceBelow) : pos.top < r.top ? spaceAbove : spaceBelow };
   return createPortal(
     <div
       ref={boxRef}

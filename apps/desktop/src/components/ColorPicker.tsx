@@ -1,6 +1,7 @@
 // Seletor de cor próprio do Line (substitui o <input type="color"> nativo).
 // Área de saturação/brilho, barra de matiz e campo que aceita só hexadecimal (#RRGGBB).
 import { createPortal } from 'react-dom';
+import { placeAround, useFloating } from '@/lib/floating';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 const cx = (...p: (string | false | null | undefined)[]) => p.filter(Boolean).join(' ');
@@ -161,14 +162,11 @@ export function ColorPicker({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<DOMRect | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const place = () => button.current && setRect(button.current.getBoundingClientRect());
-    place();
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!button.current?.contains(t) && !pop.current?.contains(t)) setOpen(false);
@@ -182,24 +180,17 @@ export function ColorPicker({
     // Captura: modais param a propagação do clique, e aí o seletor não fechava.
     window.addEventListener('mousedown', onDown, true);
     window.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
     return () => {
       window.removeEventListener('mousedown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
     };
   }, [open]);
 
-  const W = 264;
-  const H = 250;
-  let pos: CSSProperties = {};
-  if (rect) {
-    const left = Math.max(8, Math.min(rect.left, window.innerWidth - W - 8));
-    const up = window.innerHeight - rect.bottom < H + 12 && rect.top > H + 12;
-    pos = { left, ...(up ? { bottom: window.innerHeight - rect.top + 6 } : { top: Math.min(rect.bottom + 6, window.innerHeight - H - 8) }) };
-  }
+  // Abaixo do botão, ou acima se não couber: medido antes de aparecer.
+  const { style: pos } = useFloating(pop, (w, h, lock) => {
+    const r = button.current?.getBoundingClientRect();
+    return r ? placeAround(r, w, h, { lock }) : null;
+  });
 
   return (
     <>
@@ -207,7 +198,6 @@ export function ColorPicker({
         {children}
       </button>
       {open &&
-        rect &&
         createPortal(
           <div ref={pop} data-color-panel className="fixed z-[250] rounded-xl border border-edge bg-side p-3 shadow-2xl" style={pos}>
             <ColorPanel value={value ?? '#7c6af2'} onChange={onChange} />

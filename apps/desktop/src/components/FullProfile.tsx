@@ -1,12 +1,13 @@
 'use client';
 
 import type { PublicUser, Server, UserProfile } from '@line/shared';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { setIgnored, useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
+import { placeAround, useFloating } from '@/lib/floating';
 import { actions, useServerLook, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
@@ -568,19 +569,13 @@ export function MoreMenu({
   const [invite, setInvite] = useState(false);
   const servers = useLine(useShallow((s) => s.serverOrder.map((id) => s.servers[id]).filter((sv): sv is Server => !!sv && !sv.suspended)));
 
-  // O menu flutua solto na tela (portal), preso abaixo do botão "⋯" (o elemento pai do marcador).
+  // O menu flutua solto na tela (portal), preso ao botão "⋯" (o elemento pai do marcador):
+  // abaixo dele, ou acima se não couber, decidido antes de aparecer.
   const mark = useRef<HTMLSpanElement>(null);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  useLayoutEffect(() => {
-    const place = () => mark.current?.parentElement && setRect(mark.current.parentElement.getBoundingClientRect());
-    place();
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
-    return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
-    };
-  }, []);
+  const { style: pos } = useFloating(box, (w, h, lock) => {
+    const r = mark.current?.parentElement?.getBoundingClientRect();
+    return r ? placeAround(r, w, h, { lock, align: align === 'left' ? 'start' : 'end' }) : null;
+  });
 
   useEffect(() => {
     const down = (e: MouseEvent) => {
@@ -604,10 +599,6 @@ export function MoreMenu({
     toast(`Convite de ${sv.name} enviado para ${user.displayName}.`);
   }
 
-  const W = 240;
-  const pos = rect
-    ? { top: rect.bottom + 6, left: Math.max(8, Math.min(align === 'left' ? rect.left : rect.right - W, window.innerWidth - W - 8)) }
-    : { top: -9999, left: -9999 };
   return (
     <>
     <span ref={mark} hidden />

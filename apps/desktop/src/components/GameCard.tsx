@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { api, type ServerActivity } from '@/lib/api';
 import { actions, displayNameIn, useLine } from '@/lib/store';
+import { clamp, useFloating } from '@/lib/floating';
 import { ago, GameArt } from './Activity';
 import { toast, showError } from './Dialogs';
 import { EmojiPicker, readRecent, pushRecentEmoji } from './EmojiPicker';
@@ -181,15 +182,15 @@ export function ActivityHoverCard({
   const [sending, setSending] = useState(false);
   const [picker, setPicker] = useState<HTMLElement | null>(null);
   const box = useRef<HTMLDivElement>(null);
-  const [top, setTop] = useState(anchor.top);
   const mine = a.userId === meId;
   const week = weekOf(a);
   const quick = [...new Set([...readRecent(), ...QUICK])].slice(0, 5);
 
-  useEffect(() => {
-    const h = box.current?.offsetHeight ?? 0;
-    setTop(Math.max(8, Math.min(anchor.top, window.innerHeight - h - 8)));
-  }, [anchor]);
+  // À esquerda do item, alinhado ao topo dele; medido antes de aparecer.
+  const { style: placed } = useFloating(box, (w, h) => ({
+    left: Math.max(8, anchor.left - 10 - w),
+    top: clamp(anchor.top, 8, window.innerHeight - h - 8),
+  }));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !picker && onClose();
@@ -232,7 +233,7 @@ export function ActivityHoverCard({
       onMouseLeave={() => onLeave(!!text || !!picker || document.activeElement?.closest('[data-game-card]') != null)}
       data-game-card
       className="fixed z-50 w-[340px] rounded-xl border border-edge bg-rail p-3.5 shadow-2xl"
-      style={{ top, right: Math.max(8, window.innerWidth - anchor.left + 10) }}
+      style={placed}
     >
       <div className="mb-3 flex items-center gap-2">
         {user && <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={22} />}

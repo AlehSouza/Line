@@ -3,11 +3,12 @@
 import type { PublicUser, TagPaint, TagStyle } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { api, fileUrl, type ServerCardInfo } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { mobile } from '@/lib/mobile';
+import { placeAround, useFloating } from '@/lib/floating';
 import { showError, toast } from './Dialogs';
 import { ColorPicker } from './ColorPicker';
 import { Button, cx, DefaultServerIcon, ErrorText, Field, Icons, Input, SWATCHES } from './ui';
@@ -257,22 +258,14 @@ function ServerCardPopover({
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const W = 300;
 
   useEffect(() => {
     api.serverCard(serverId).then(setInfo, (e) => setError((e as Error).message));
   }, [serverId]);
 
-  useLayoutEffect(() => {
-    const h = box.current?.offsetHeight ?? 320;
-    const gap = 6;
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - W - 8));
-    const below = anchor.bottom + gap;
-    const above = anchor.top - gap - h;
-    const top = below + h <= window.innerHeight - 8 || above < 8 ? Math.max(8, Math.min(below, window.innerHeight - h - 8)) : above;
-    setPos({ left, top });
-  }, [anchor, info, error]);
+  // Só aparece depois de carregar e medir: abre direto no lado que cabe.
+  const { style: placed } = useFloating(box, (w, h, lock) => placeAround(anchor, w, h, { lock }), !!info || !!error);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -302,7 +295,7 @@ function ServerCardPopover({
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
         className="fixed z-50 overflow-hidden rounded-2xl border border-edge bg-side shadow-2xl"
-        style={{ width: W, left: pos?.left ?? -9999, top: pos?.top ?? 0 }}
+        style={{ width: W, ...placed }}
       >
         {isPrivate ? (
           <div className="flex items-center gap-3 p-4">

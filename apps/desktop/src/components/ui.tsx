@@ -4,6 +4,7 @@ import type { Presence } from '@line/shared';
 import * as L from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { fileUrl } from '@/lib/api';
+import { placeAround, useFloating } from '@/lib/floating';
 import { createPortal } from 'react-dom';
 import { ColorPicker } from './ColorPicker';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
@@ -481,15 +482,12 @@ export function Select({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [rect, setRect] = useState<DOMRect | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const current = options.find((o) => o.value === value) ?? options[0];
 
   useEffect(() => {
     if (!open) return;
-    const place = () => button.current && setRect(button.current.getBoundingClientRect());
-    place();
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (!button.current?.contains(t) && !list.current?.contains(t)) setOpen(false);
@@ -502,19 +500,17 @@ export function Select({
     };
     window.addEventListener('mousedown', onDown);
     window.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', place);
-    window.addEventListener('scroll', place, true);
     return () => {
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
     };
   }, [open]);
 
-  // Abre para cima quando não cabe embaixo.
-  const below = rect ? window.innerHeight - rect.bottom : 0;
-  const up = rect ? below < 260 && rect.top > below : false;
+  // Abre para cima quando não cabe embaixo, decidido antes de aparecer.
+  const { style: placed } = useFloating(list, (w, h, lock) => {
+    const r = button.current?.getBoundingClientRect();
+    return r ? placeAround(r, w, h, { lock }) : null;
+  });
 
   return (
     <>
@@ -532,13 +528,12 @@ export function Select({
         <L.ChevronDown size={18} className={cx('shrink-0 text-muted transition-transform', open && 'rotate-180')} aria-hidden />
       </button>
       {open &&
-        rect &&
         createPortal(
           <div
             ref={list}
             role="listbox"
             className="fixed z-[80] max-h-64 overflow-y-auto rounded-lg border border-edge bg-side p-1 shadow-2xl"
-            style={{ left: rect.left, width: rect.width, ...(up ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }) }}
+            style={{ width: button.current?.offsetWidth, ...placed }}
           >
             {options.map((o) => {
               const active = o.value === value;
