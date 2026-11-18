@@ -423,8 +423,8 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
           idle ? 'pointer-events-none opacity-0' : 'opacity-100',
         )}
       >
-        <span className="flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium text-white">
-          <Icons.Screen size={14} /> Tela de {name}
+        <span className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium whitespace-nowrap text-white">
+          <Icons.Screen size={14} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
         </span>
         <button
           title="Sair da tela cheia (Esc)"
@@ -556,13 +556,15 @@ function TileView({
           </CallLookAvatar>
         </>
       )}
-      <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium">
-        {tile.kind === 'screen' && <Icons.Screen size={14} />}
-        {tile.kind === 'screen' ? `Tela de ${name}` : <StyledName user={tile.user}>{name}</StyledName>}
+      <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-sm font-medium">
+        {tile.kind === 'screen' && <Icons.Screen size={14} className="shrink-0" />}
+        <span className="min-w-0 truncate">
+          {tile.kind === 'screen' ? `Tela de ${name}` : <StyledName user={tile.user}>{name}</StyledName>}
+        </span>
         {tile.kind === 'person' && tile.state.deafened ? (
-          <Icons.HeadphonesOff size={14} className="text-danger" />
+          <Icons.HeadphonesOff size={14} className="shrink-0 text-danger" />
         ) : tile.kind === 'person' && tile.state.muted ? (
-          <Icons.MicOff size={14} className="text-danger" />
+          <Icons.MicOff size={14} className="shrink-0 text-danger" />
         ) : null}
       </span>
       {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenMenu userId={tile.state.userId} />}
@@ -897,8 +899,8 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
       className="group absolute top-16 right-4 z-30 aspect-video w-80 cursor-pointer overflow-hidden rounded-xl border border-edge bg-black shadow-2xl max-md:hidden"
     >
       <Video stream={stream} contain />
-      <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-xs font-medium text-white">
-        <Icons.Screen size={12} /> Tela de {name}
+      <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-xs font-medium text-white">
+        <Icons.Screen size={12} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
       </span>
       <button
         title="Fechar"

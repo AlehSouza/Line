@@ -123,8 +123,8 @@ export function CallLookEditor() {
         >
           {uploading ? <Icons.Refresh size={14} className="animate-spin" /> : <Icons.Edit size={15} />}
         </button>
-        <span className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium">
-          <StyledName user={me}>{me.displayName}</StyledName>
+        <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium whitespace-nowrap">
+          <span className="min-w-0 truncate"><StyledName user={me}>{me.displayName}</StyledName></span>
         </span>
       </div>
       <p className="-mt-3 text-xs text-muted">Como os outros te veem na chamada quando a câmera está desligada. Fica sempre meio transparente para a sua foto aparecer.</p>
