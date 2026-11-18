@@ -692,10 +692,26 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     let window = builder.build()?;
 
     // Windows: sem a barra de status do WebView2 (mostraria "tauri.localhost/..." ao passar em links).
+    // E sem a prevenção de rastreamento do WebView2 (ligada por padrão no modo "Balanceado"): ela
+    // bloqueia os cookies do TikTok dentro do player embutido no chat, a API do player responde 403
+    // e aparece "Player authentication failed". O app só abre o próprio Line, não é um navegador.
     #[cfg(windows)]
     let _ = window.with_webview(|pw| unsafe {
-        if let Ok(settings) = pw.controller().CoreWebView2().and_then(|c| c.Settings()) {
-            let _ = settings.SetIsStatusBarEnabled(false);
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2Profile3, ICoreWebView2_13, COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE,
+        };
+        use windows::core::Interface;
+        if let Ok(core) = pw.controller().CoreWebView2() {
+            if let Ok(settings) = core.Settings() {
+                let _ = settings.SetIsStatusBarEnabled(false);
+            }
+            if let Ok(profile) = core
+                .cast::<ICoreWebView2_13>()
+                .and_then(|c| c.Profile())
+                .and_then(|p| p.cast::<ICoreWebView2Profile3>())
+            {
+                let _ = profile.SetPreferredTrackingPreventionLevel(COREWEBVIEW2_TRACKING_PREVENTION_LEVEL_NONE);
+            }
         }
     });
 

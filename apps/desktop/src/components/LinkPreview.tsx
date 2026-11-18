@@ -34,10 +34,6 @@ export function LinkPreviews({ content }: { content: string }) {
   );
 }
 
-/** O TikTok só aceita o player dentro de um site; o app desktop roda de endereço local, então
- *  passa por uma página do useline.tech que embute o player oficial. */
-const TIKTOK_BRIDGE = 'https://useline.tech/api/embed/tiktok';
-
 type Social = { kind: 'instagram' | 'tiktok' | 'x' | 'facebook' | 'reddit'; src: string; label: string; width: number; height: number };
 
 /** Links de Instagram, TikTok, X, Facebook (vídeos) e Reddit viram o player oficial de cada plataforma (nada é baixado). */
@@ -63,10 +59,11 @@ function socialEmbed(raw: string): Social | null {
     if (!id || !/^\d{8,25}$/.test(id)) return null;
     return {
       kind: 'tiktok',
-      src: `${TIKTOK_BRIDGE}/${id}${seg[0]?.startsWith('@') ? `?u=${encodeURIComponent(seg[0].slice(1))}` : ''}`,
+      // Mesmo endereço que o oEmbed oficial do TikTok devolve (player/v1 com embed_from=oembed).
+      src: `https://www.tiktok.com/player/v1/${id}?embed_from=oembed&music_info=1&description=1`,
       label: 'TikTok',
       width: 325,
-      height: 580,
+      height: 578,
     };
   }
   if (host === 'twitter.com' || host === 'x.com') {
@@ -126,12 +123,21 @@ function socialEmbed(raw: string): Social | null {
   return null;
 }
 
-/** Instagram e X avisam a altura do conteúdo por postMessage; o iframe acompanha. */
-function useFrameHeight(frame: React.RefObject<HTMLIFrameElement | null>, initial: number) {
+/** Instagram, X e Reddit avisam a altura do conteúdo por postMessage; o iframe acompanha.
+ *  O player do TikTok avisa quando não consegue tocar (onPlayerError). */
+function useFrameMessages(frame: React.RefObject<HTMLIFrameElement | null>, initial: number) {
   const [h, setH] = useState(initial);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow) return;
+      const tt = e.data as { 'x-tiktok-player'?: boolean; type?: string; value?: { errorCode?: number } } | null;
+      if (tt && typeof tt === 'object' && tt['x-tiktok-player']) {
+        // 3002 = o navegador só bloqueou o autoplay; o resto (login do player, vídeo indisponível...) não toca.
+        if (tt.type === 'onPlayerError' && tt.value?.errorCode !== 3002) setFailed(true);
+        if (tt.type === 'onPlayerReady') setFailed(false);
+        return;
+      }
       let d: unknown = e.data;
       if (typeof d === 'string') {
         try {
@@ -155,26 +161,54 @@ function useFrameHeight(frame: React.RefObject<HTMLIFrameElement | null>, initia
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
   }, [frame]);
-  return h;
+  return [h, failed, () => setFailed(false)] as const;
 }
 
 function SocialPlayer({ url, s }: { url: string; s: Social }) {
   const frame = useRef<HTMLIFrameElement>(null);
-  const height = useFrameHeight(frame, s.height);
+  const [height, failed, retry] = useFrameMessages(frame, s.height);
+  const [attempt, setAttempt] = useState(0);
+  const fixed = s.kind === 'facebook' || s.kind === 'tiktok';
   return (
     <div className="mt-1.5 max-w-full overflow-hidden rounded-lg border border-edge bg-side" style={{ width: s.width }}>
-      <iframe
-        ref={frame}
-        src={s.src}
-        title={s.label}
-        loading="lazy"
-        allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
-        allowFullScreen
-        referrerPolicy="strict-origin-when-cross-origin"
-        scrolling="no"
-        className="block w-full border-0 bg-transparent"
-        style={{ height: s.kind === 'facebook' ? s.height : height, colorScheme: 'normal' }}
-      />
+      {failed ? (
+        <div className="flex flex-col items-center justify-center gap-3 px-6 py-10 text-center" style={{ minHeight: 220 }}>
+          <p className="text-sm text-soft">Não deu para tocar este vídeo aqui.</p>
+          <div className="flex gap-2">
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            >
+              Assistir no {s.label}
+            </a>
+            <button
+              onClick={() => {
+                retry();
+                setAttempt((a) => a + 1);
+              }}
+              className="rounded-md border border-edge px-3 py-1.5 text-sm text-soft hover:text-accent"
+            >
+              Tentar de novo
+            </button>
+          </div>
+        </div>
+      ) : (
+        <iframe
+          key={attempt}
+          ref={frame}
+          src={s.src}
+          title={s.label}
+          loading="lazy"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+          allowFullScreen
+          referrerPolicy="strict-origin-when-cross-origin"
+          scrolling="no"
+          className="block w-full border-0 bg-transparent"
+          style={{ height: fixed ? s.height : height, colorScheme: 'normal' }}
+        />
+      )}
       <a
         href={url}
         target="_blank"

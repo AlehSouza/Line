@@ -64,7 +64,6 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/auth/register", post(register))
         .route("/auth/config", get(auth_config))
         .route("/auth/captcha", get(captcha_page))
-        .route("/embed/tiktok/{id}", get(tiktok_page))
         .route("/auth/login", post(login))
         .route("/auth/forgot", post(forgot_password))
         .route("/auth/reset", post(reset_password))
@@ -245,47 +244,6 @@ async fn auth_config(State(app): S) -> Res {
 
 /// Página do captcha servida pelo próprio domínio: o app desktop (origem tauri.localhost, que a
 /// Cloudflare não aceita) a abre num iframe e recebe o token por postMessage.
-/// Página-ponte do player oficial do TikTok. O TikTok recusa o player quando a página que o
-/// embute não é um site (app desktop carrega de um endereço local), então o app embute esta
-/// página do useline.tech, que embute o TikTok. Nada do vídeo passa pelo servidor.
-async fn tiktok_page(Path(id): Path<String>, Query(q): Query<HashMap<String, String>>) -> Response {
-    if !(8..=25).contains(&id.len()) || !id.chars().all(|c| c.is_ascii_digit()) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    // Usuário só entra no link "cite" do embed; só letras, números, ponto e _.
-    let user: String = q
-        .get("u")
-        .map(|u| {
-            u.chars()
-                .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '_')
-                .take(40)
-                .collect()
-        })
-        .unwrap_or_default();
-    let cite = if user.is_empty() {
-        format!("https://www.tiktok.com/video/{id}")
-    } else {
-        format!("https://www.tiktok.com/@{user}/video/{id}")
-    };
-    // Embed oficial do TikTok (blockquote + embed.js): o script deles gera o player autenticado.
-    let html = format!(
-        r##"<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<meta name="referrer" content="strict-origin-when-cross-origin">
-<style>html,body{{margin:0;background:transparent;overflow:hidden}}blockquote{{margin:0!important}}</style>
-</head><body><blockquote class="tiktok-embed" cite="{cite}" data-video-id="{id}" style="max-width:605px;min-width:325px"><section></section></blockquote>
-<script async src="https://www.tiktok.com/embed.js"></script>
-<script>new ResizeObserver(function(){{parent.postMessage(JSON.stringify({{type:"MEASURE",details:{{height:document.body.scrollHeight}}}}),"*")}}).observe(document.body)</script></body></html>"##
-    );
-    (
-        [
-            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (axum::http::header::CACHE_CONTROL, "no-store"),
-        ],
-        html,
-    )
-        .into_response()
-}
-
 async fn captcha_page(State(app): S) -> Res {
     let Some(t) = &app.turnstile else {
         return Err(ApiError::new(
