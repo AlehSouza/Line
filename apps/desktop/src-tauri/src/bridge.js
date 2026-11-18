@@ -69,6 +69,17 @@
         return internals ? internals.invoke('startup_set', { enabled, minimized }) : Promise.reject(new Error('indisponível'));
       },
     },
+    /** Aceleração de hardware. get() devolve null quando o sistema decide (macOS). */
+    gpu: {
+      get: () => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('gpu_get') : Promise.resolve(null);
+      },
+      set: (enabled, restart) => {
+        const internals = window.__TAURI_INTERNALS__;
+        return internals ? internals.invoke('gpu_set', { enabled, restart: !!restart }) : Promise.reject(new Error('indisponível'));
+      },
+    },
     window: {
       minimize: () => void invoke('window_minimize'),
       toggleMaximize: () => invoke('window_toggle_maximize'),

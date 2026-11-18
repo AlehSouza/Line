@@ -241,6 +241,60 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
     --disable-background-timer-throttling --disable-renderer-backgrounding \
     --disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
 
+/// Sem aceleração de hardware: o Chromium do WebView2 desenha tudo na CPU.
+const NO_GPU_ARGS: &str = " --disable-gpu --disable-gpu-compositing";
+
+fn browser_args(app: &tauri::AppHandle) -> String {
+    if hardware_accel(app) {
+        BROWSER_ARGS.to_string()
+    } else {
+        format!("{BROWSER_ARGS}{NO_GPU_ARGS}")
+    }
+}
+
+fn gpu_prefs_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("gpu.json"))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GpuPrefs {
+    #[serde(default = "yes")]
+    enabled: bool,
+}
+
+/// Aceleração de hardware (ligada por padrão). Lida ao abrir as janelas; mudar pede reiniciar.
+fn hardware_accel(app: &tauri::AppHandle) -> bool {
+    gpu_prefs_path(app)
+        .and_then(|p| std::fs::read(p).ok())
+        .and_then(|b| serde_json::from_slice::<GpuPrefs>(&b).ok())
+        .map_or(true, |p| p.enabled)
+}
+
+/// Estado da aceleração de hardware. Nada (null) no macOS, onde o sistema decide sozinho.
+#[tauri::command]
+fn gpu_get(app: tauri::AppHandle) -> Option<bool> {
+    if cfg!(target_os = "macos") {
+        return None;
+    }
+    Some(hardware_accel(&app))
+}
+
+/// Grava a escolha; vale na próxima abertura (restart = true reabre o Line agora).
+#[tauri::command]
+fn gpu_set(app: tauri::AppHandle, enabled: bool, restart: bool) -> Result<(), String> {
+    let path = gpu_prefs_path(&app).ok_or("Não deu para salvar a preferência.")?;
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(path, serde_json::to_vec(&GpuPrefs { enabled }).unwrap_or_default())
+        .map_err(|e| format!("Não deu para salvar a preferência: {e}"))?;
+    if restart {
+        app.restart();
+    }
+    Ok(())
+}
+
 fn create_splash(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
     WebviewWindowBuilder::new(app, SPLASH, WebviewUrl::App("splash.html".into()))
         .title("Line")
@@ -251,7 +305,7 @@ fn create_splash(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .center()
         .skip_taskbar(false)
         .background_color(tauri::webview::Color(0x1a, 0x1a, 0x1f, 0xff))
-        .additional_browser_args(BROWSER_ARGS)
+        .additional_browser_args(&browser_args(app))
         .build()
 }
 
@@ -649,7 +703,7 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         .visible(false)
         // Arrastar arquivos para o chat usa o drop do HTML (o do Tauri esconderia os arquivos da página).
         .disable_drag_drop_handler()
-        .additional_browser_args(BROWSER_ARGS)
+        .additional_browser_args(&browser_args(app))
         .initialization_script(
             include_str!("bridge.js")
                 .replace("__LINE_VERSION__", &app.package_info().version.to_string())
@@ -777,6 +831,8 @@ pub fn run() {
             google_login,
             startup_get,
             startup_set,
+            gpu_get,
+            gpu_set,
             #[cfg(target_os = "linux")]
             rtc::rtc_attach,
             #[cfg(target_os = "linux")]
@@ -820,6 +876,12 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             app.manage(rtc::Rtc::new());
             let handle = app.handle().clone();
+            // Linux (WebKitGTK): sem aceleração, o WebKit compõe a página na CPU.
+            #[cfg(target_os = "linux")]
+            if !hardware_accel(&handle) {
+                // SAFETY: ainda não há outras threads lendo o ambiente (nenhuma janela aberta).
+                unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1") };
+            }
             #[cfg(any(windows, target_os = "macos"))]
             create_tray(&handle)?;
             // Aberto ao ligar o computador com "minimizado": fica quieto na bandeja, sem a

@@ -609,6 +609,11 @@ declare global {
         get: () => Promise<{ enabled: boolean; minimized: boolean } | null>;
         set: (enabled: boolean, minimized: boolean) => Promise<void>;
       };
+      /** Aceleração de hardware (GPU). get() devolve null no macOS. Mudar vale ao reabrir. */
+      gpu?: {
+        get: () => Promise<boolean | null>;
+        set: (enabled: boolean, restart?: boolean) => Promise<void>;
+      };
       /** Seletor de tela do Line (captura em Rust). No Linux só no X11; no Wayland vale o do sistema. */
       nativeScreen?: boolean;
     };

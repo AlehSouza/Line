@@ -34,7 +34,7 @@ const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] =
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim pink rosa daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
   { id: 'notifications', label: 'Notificações', icon: <Icons.Bell size={18} />, keywords: 'notificações som sons silenciar menções badge área de trabalho não perturbe ocupado' },
-  { id: 'app', label: 'Aplicativo', icon: <Icons.Monitor size={18} />, keywords: 'aplicativo iniciar inicialização computador ligar sistema abrir junto minimizado bandeja windows' },
+  { id: 'app', label: 'Aplicativo', icon: <Icons.Monitor size={18} />, keywords: 'aplicativo iniciar inicialização computador ligar sistema abrir junto minimizado bandeja windows aceleração hardware gpu desempenho placa de vídeo' },
   { id: 'blocked', label: 'Bloqueados', icon: <Icons.Ban size={18} />, keywords: 'bloqueados bloquear desbloquear usuários privacidade' },
   { id: 'games', label: 'Jogos registrados', icon: <Icons.Gamepad size={18} />, keywords: 'jogos apps registrados jogo atual adicionados atividade' },
   { id: 'activity', label: 'Privacidade nas atividades', icon: <Icons.Users size={18} />, keywords: 'jogos apps atividade privacidade compartilhar servidores' },
@@ -226,16 +226,20 @@ function AppSection() {
   if (s === undefined) return <p className="text-sm text-muted">Carregando…</p>;
   if (s === null)
     return (
-      <div>
-        <h2 className="mb-4 text-xl font-bold">Inicialização</h2>
-        <p className="text-sm text-muted">
-          Nesta versão do Line, quem cuida disso é o Windows: abra Configurações do Windows → Aplicativos → Inicialização e ligue o Line.
-        </p>
+      <div className="space-y-10">
+        <div>
+          <h2 className="mb-4 text-xl font-bold">Inicialização</h2>
+          <p className="text-sm text-muted">
+            Nesta versão do Line, quem cuida disso é o Windows: abra Configurações do Windows → Aplicativos → Inicialização e ligue o Line.
+          </p>
+        </div>
+        <HardwareAccel />
       </div>
     );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
+      <div className="space-y-6">
       <h2 className="text-xl font-bold">Inicialização</h2>
       <div className="flex items-start gap-6">
         <div className="flex-1">
@@ -255,6 +259,73 @@ function AppSection() {
         </div>
         <Toggle on={s.minimized} disabled={busy || !s.enabled} label="Começar minimizado" onChange={(v) => void save({ ...s, minimized: v })} />
       </div>
+      </div>
+      <HardwareAccel />
+    </div>
+  );
+}
+
+/** Aceleração de hardware: a GPU desenha a interface e os vídeos. Mudar vale ao reabrir o Line. */
+function HardwareAccel() {
+  const [on, setOn] = useState<boolean | null | undefined>(undefined);
+  // Valor com que o Line abriu: se a escolha for diferente, oferece reiniciar.
+  const [startedWith, setStartedWith] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const gpu = window.line?.gpu;
+    if (!gpu) return setOn(null);
+    gpu.get().then(
+      (v) => {
+        setOn(v);
+        setStartedWith(v);
+      },
+      () => setOn(null),
+    );
+  }, []);
+
+  if (on === undefined || on === null) return null;
+
+  const save = async (v: boolean, restart = false) => {
+    const prev = on;
+    setOn(v);
+    setBusy(true);
+    try {
+      await window.line?.gpu?.set(v, restart);
+    } catch (e) {
+      setOn(prev);
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold">Desempenho</h2>
+      <div className="flex items-start gap-6">
+        <div className="flex-1">
+          <p className="font-medium">Aceleração de hardware</p>
+          <p className="text-sm text-muted">
+            Usa a placa de vídeo (GPU) para desenhar o Line, os vídeos e as transmissões, deixando tudo mais leve e fluido. Desative caso note
+            tela piscando, travadas ou queda na taxa de quadros.
+          </p>
+        </div>
+        <Toggle on={on} disabled={busy} label="Aceleração de hardware" onChange={(v) => void save(v)} />
+      </div>
+      {startedWith !== null && on !== startedWith && (
+        <div className="flex items-center gap-4 rounded-lg border border-edge bg-raise/40 px-4 py-3">
+          <p className="flex-1 text-sm">A mudança vale quando o Line abrir de novo.</p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void save(on, true)}
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+          >
+            Reiniciar agora
+          </button>
+        </div>
+      )}
     </div>
   );
 }
