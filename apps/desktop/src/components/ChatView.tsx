@@ -673,7 +673,7 @@ function MessageRow({
     return (
       <div
         data-mid={message.id}
-        className={cx('flex gap-4 px-4 py-1.5', tight ? 'mt-2' : 'mt-4', highlighted && 'bg-accent/15')}
+        className={cx('flex gap-4 px-4 pb-1.5', tight ? 'pt-3' : 'pt-4', highlighted && 'bg-accent/15')}
       >
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
           <Icons.Trash size={18} />
@@ -789,9 +789,10 @@ function MessageRow({
         ]);
       }}
       className={cx(
-        'group relative flex gap-4 px-4 py-1.5 transition-colors duration-700 hover:bg-black/10',
+        // Sem margem entre as linhas: o espaço é padding, então o hover pega a linha inteira.
+        'group relative flex gap-4 px-4 pb-1.5 transition-colors duration-700 hover:bg-hover/30 hover:duration-100',
         moreOpen && 'bg-black/10',
-        !grouped && (tight ? 'mt-2' : 'mt-4'),
+        grouped ? 'pt-1.5' : tight ? 'pt-3' : 'pt-4',
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
         highlighted && 'bg-accent/15',
       )}
@@ -1027,7 +1028,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
     );
   }
   return (
-    <div className="group relative flex gap-3 px-4 py-1 hover:bg-black/10">
+    <div className="group relative flex gap-3 px-4 py-1 hover:bg-hover/30">
       <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={36} />
       <div className="min-w-0 flex-1">
         <p className="flex items-baseline gap-2">
