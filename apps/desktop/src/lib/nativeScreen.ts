@@ -147,19 +147,61 @@ export async function startNativeScreen(
     return new VideoFrame(fitCanvas, { timestamp });
   };
   let pausedCanvas: OffscreenCanvas | null = null;
+  // A fonte do app (Geist) só carrega quando algo a usa: garante antes de desenhar e redesenha quando chegar.
+  if (typeof document !== 'undefined' && document.fonts && !document.fonts.check('500 16px Geist')) {
+    void Promise.all([document.fonts.load('500 16px Geist'), document.fonts.load('400 16px Geist')])
+      .catch(() => {})
+      .then(() => (pausedCanvas = null));
+  }
+  const drawPaused = (w: number, h: number) => {
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+    const u = Math.min(w, h * (16 / 9)) / 100; // 1% da largura útil (16:9)
+    const cx = w / 2;
+    const cy = h / 2;
+    // Fundo escuro com um brilho suave no centro.
+    ctx.fillStyle = '#0e0e11';
+    ctx.fillRect(0, 0, w, h);
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.55);
+    glow.addColorStop(0, 'rgba(255,255,255,0.045)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+    // Ícone: círculo com as duas barras do pause.
+    const r = u * 3.6;
+    const iy = cy - u * 2.6;
+    ctx.beginPath();
+    ctx.arc(cx, iy, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, u * 0.12);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.stroke();
+    const bw = r * 0.2;
+    const bh = r * 0.78;
+    const gap = r * 0.18;
+    ctx.fillStyle = '#f4f4f5';
+    for (const x of [cx - gap - bw, cx + gap]) {
+      ctx.beginPath();
+      ctx.roundRect(x, iy - bh / 2, bw, bh, bw / 2);
+      ctx.fill();
+    }
+    // Textos na fonte do app, menores.
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#e4e4e7';
+    ctx.font = `500 ${Math.round(u * 1.7)}px Geist, system-ui, sans-serif`;
+    ctx.fillText('Transmissão pausada', cx, iy + r + u * 2.4);
+    ctx.fillStyle = '#71717a';
+    ctx.font = `400 ${Math.round(u * 1.15)}px Geist, system-ui, sans-serif`;
+    ctx.fillText('A imagem volta assim que a janela reabrir', cx, iy + r + u * 4.6);
+    return canvas;
+  };
   const writePaused = () => {
     if (!last || stopped) return;
     if (!pausedCanvas || pausedCanvas.width !== last.w || pausedCanvas.height !== last.h) {
-      pausedCanvas = new OffscreenCanvas(last.w, last.h);
-      const ctx = pausedCanvas.getContext('2d');
-      if (!ctx) return;
-      ctx.fillStyle = '#111114';
-      ctx.fillRect(0, 0, last.w, last.h);
-      ctx.fillStyle = '#e4e4e7';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = `600 ${Math.round(last.h / 18)}px Geist, system-ui, sans-serif`;
-      ctx.fillText('Transmissão pausada', last.w / 2, last.h / 2);
+      pausedCanvas = drawPaused(last.w, last.h);
     }
     // Mesmo relógio dos quadros do Rust, sempre andando para frente.
     const timestamp = nextClock(last.ts + (performance.now() - last.at) * 1000);
