@@ -1699,6 +1699,18 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
     hideTimer.current = setTimeout(() => setAt(null), 150);
   };
   useEffect(() => () => void (hideTimer.current && clearTimeout(hideTimer.current)), []);
+  // Clicou em qualquer outro lugar (ex.: no nome, para abrir o perfil): some na hora, sem esperar.
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!at) return;
+    const down = (e: PointerEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      setAt(null);
+    };
+    document.addEventListener('pointerdown', down, true);
+    return () => document.removeEventListener('pointerdown', down, true);
+  }, [at]);
   // Assistir: abre o canal de voz com a transmissão em destaque (não fica no chat de texto).
   // A própria transmissão também abre em destaque (sem pedir para "assistir" a si mesmo).
   const watch = () => {
@@ -1718,6 +1730,7 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
       {at &&
         createPortal(
           <div
+            ref={popRef}
             onMouseEnter={() => hideTimer.current && clearTimeout(hideTimer.current)}
             onMouseLeave={hide}
             // O portal ainda borbulha no React: não deixa o clique abrir o cartão do usuário.
