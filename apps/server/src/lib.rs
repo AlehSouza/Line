@@ -297,6 +297,8 @@ pub fn build(
         admin_requests: captcha::SignupLimiter::with(600, std::time::Duration::from_secs(10 * 60)),
         report_requests: captcha::SignupLimiter::with(10, std::time::Duration::from_secs(60 * 60)),
     });
+    // Servidores antigos ganham a categoria "Notas e Atualizações".
+    app.store.q().ensure_all_base_channels();
     let _ = cell.set(app.clone());
     gateway::register(&io);
     let router = routes::router(app.clone(), layer);

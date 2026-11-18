@@ -240,6 +240,9 @@ export const api = {
   createServer: (input: CreateServerInput) => request<Server>('POST', '/servers', input),
   server: (id: string) => request<ServerDetail>('GET', `/servers/${enc(id)}`),
   updateServer: (id: string, patch: UpdateServerInput) => request<Server>('PATCH', `/servers/${enc(id)}`, patch),
+  /** Notas e Atualizações: mostrar/esconder a categoria e cada canal base. */
+  setNotes: (id: string, body: { categoryVisible?: boolean; channels?: Record<string, boolean> }) =>
+    request<void>('PUT', `/servers/${enc(id)}/notes`, body),
   /** `/play <link>` no chat: põe o vídeo na fila do canal de voz em que você está. */
   musicPlay: (channelId: string, url: string) => request<void>('POST', `/channels/${enc(channelId)}/music/play`, { url }),
   musicBot: (serverId: string) => request<PublicUser>('GET', `/servers/${enc(serverId)}/music/bot`),

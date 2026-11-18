@@ -5,7 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { api } from '@/lib/api';
 import { actions, displayNameIn, permsOf, topPosition, useLine } from '@/lib/store';
 import { ServerOverview } from './Modals';
-import { Avatar, Button, cx, ErrorText, Icons, Input, Modal } from './ui';
+import { Avatar, Button, channelIcon, cx, ErrorText, Icons, Input, Modal } from './ui';
 import { ColorPicker } from './ColorPicker';
 import { EmojiInput } from './EmojiField';
 import { confirmDialog } from './Dialogs';
@@ -13,7 +13,7 @@ import { MusicSettings, SmartReplies } from './AgentSettings';
 import { ServerTagSettings } from './ServerTag';
 import { SoundboardSettings } from './Soundboard';
 
-type Section = 'overview' | 'tag' | 'roles' | 'members' | 'sounds' | 'music' | 'replies';
+type Section = 'overview' | 'tag' | 'roles' | 'members' | 'notes' | 'sounds' | 'music' | 'replies';
 
 const ROLE_COLORS = [
   '#1abc9c', '#2ecc71', '#3498db', '#9b59b6', '#e91e63', '#f1c40f', '#e67e22', '#e74c3c', '#95a5a6', '#607d8b',
@@ -39,6 +39,8 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
   const server = useLine((s) => s.servers[serverId]);
   const perms = useLine((s) => permsOf(s, serverId, s.me?.id));
   const canServer = hasPerm(perms, Perm.ManageServer);
+  const canSounds = hasPerm(perms, Perm.ManageSoundboard);
+  const canAgent = hasPerm(perms, Perm.ManageAgent);
   const canRoles = hasPerm(perms, Perm.ManageRoles);
   const canMembers = canRoles || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
   const nav: { id: Section; label: string; show: boolean }[] = [
@@ -46,9 +48,10 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
     { id: 'tag', label: 'Tag do servidor', show: canServer },
     { id: 'roles', label: 'Cargos', show: canRoles },
     { id: 'members', label: 'Membros', show: canMembers },
-    { id: 'sounds', label: 'Painel de efeitos sonoros', show: canServer },
-    { id: 'music', label: 'Personalizar', show: canServer },
-    { id: 'replies', label: 'Respostas inteligentes', show: canServer },
+    { id: 'notes', label: 'Notas e Atualizações', show: canServer },
+    { id: 'sounds', label: 'Painel de efeitos sonoros', show: canSounds },
+    { id: 'music', label: 'Personalizar', show: canAgent },
+    { id: 'replies', label: 'Respostas inteligentes', show: canAgent },
   ];
   const visible = nav.filter((n) => n.show);
   const [section, setSection] = useState<Section>(initial && visible.some((n) => n.id === initial) ? initial : (visible[0]?.id ?? 'members'));
@@ -108,9 +111,10 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
             <RoleEditor serverId={serverId} roleId={editing} onSelect={setEditing} onBack={() => setEditing(null)} />
           )}
           {section === 'members' && canMembers && <MembersSection serverId={serverId} />}
-          {section === 'sounds' && canServer && <SoundboardSettings serverId={serverId} />}
-          {section === 'music' && canServer && <MusicSettings serverId={serverId} />}
-          {section === 'replies' && canServer && <SmartReplies serverId={serverId} />}
+          {section === 'notes' && canServer && <NotesSettings serverId={serverId} />}
+          {section === 'sounds' && canSounds && <SoundboardSettings serverId={serverId} />}
+          {section === 'music' && canAgent && <MusicSettings serverId={serverId} />}
+          {section === 'replies' && canAgent && <SmartReplies serverId={serverId} />}
         </main>
 
         <button
@@ -909,5 +913,75 @@ export function NicknameDialog({ serverId, userId, onClose }: { serverId: string
         <ErrorText>{error}</ErrorText>
       </form>
     </Modal>
+  );
+}
+
+// ---------- Notas e Atualizações ----------
+
+const NOTES_HINTS: Record<string, string> = {
+  rules: 'As regras do servidor. Só quem pode publicar escreve; os outros leem e reagem.',
+  announcements: 'Novidades e avisos importantes para todo mundo.',
+  events: 'O que vem por aí: encontros, campeonatos, lives.',
+  activity: 'Quem está jogando agora e o que rolou nas últimas 24 horas.',
+};
+
+/** Mostrar/esconder a categoria base e cada canal dela. Escondido = só dono e administradores veem. */
+function NotesSettings({ serverId }: { serverId: string }) {
+  const category = useLine((s) => Object.values(s.categories).find((c) => c.serverId === serverId && c.base));
+  const allChannels = useLine((s) => s.channels);
+  const channels = useMemo(
+    () =>
+      Object.values(allChannels)
+        .filter((c) => c.serverId === serverId && c.base)
+        .sort((a, b) => a.position - b.position),
+    [allChannels, serverId],
+  );
+  const [error, setError] = useState('');
+  const save = (body: { categoryVisible?: boolean; channels?: Record<string, boolean> }) => {
+    setError('');
+    api.setNotes(serverId, body).catch((e: Error) => setError(e.message));
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-xl font-bold">Notas e Atualizações</h2>
+      <p className="mt-1 mb-6 text-sm text-muted">
+        Canais fixos do servidor. Por padrão todo mundo vê, mas só você e quem tem a permissão <strong className="text-soft">Publicar em Notas e Atualizações</strong>{' '}
+        escreve neles. Escondido, só você e os administradores enxergam.
+      </p>
+      {!category ? (
+        <p className="text-sm text-muted">Carregando…</p>
+      ) : (
+        <>
+          <div className="flex items-center gap-4 rounded-xl border border-edge bg-rail/60 p-4">
+            <Icons.Folder size={20} className="shrink-0 text-muted" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Mostrar a categoria “{category.name}”</p>
+              <p className="text-sm text-muted">Desligada, a categoria inteira some da lista de canais dos membros.</p>
+            </div>
+            <Toggle on={!category.isPrivate} onChange={(v) => save({ categoryVisible: v })} />
+          </div>
+          <div className={cx('mt-3 space-y-2', category.isPrivate && 'opacity-50')}>
+            {channels.map((c) => {
+              const I = channelIcon(c);
+              return (
+                <div key={c.id} className="flex items-center gap-4 rounded-xl border border-edge p-4">
+                  <I size={20} className="shrink-0 text-muted" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{c.name}</p>
+                    <p className="text-sm text-muted">{NOTES_HINTS[c.base!]}</p>
+                  </div>
+                  <Toggle on={!c.isPrivate} onChange={(v) => save({ channels: { [c.id]: v } })} />
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-4 text-xs text-muted">
+            Para dar a permissão de publicar, vá em Cargos e ligue <strong>Publicar em Notas e Atualizações</strong> no cargo que quiser.
+          </p>
+        </>
+      )}
+      <ErrorText>{error}</ErrorText>
+    </div>
   );
 }

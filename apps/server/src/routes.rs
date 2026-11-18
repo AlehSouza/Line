@@ -106,6 +106,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
         .route("/servers/{id}/join", post(join_public))
         .route("/servers/{id}/channels", post(create_channel))
         .route("/servers/{id}/layout", put(set_layout))
+        .route("/servers/{id}/notes", put(set_notes))
         .route("/servers/{id}/roles", get(list_roles).post(create_role))
         .route("/servers/{id}/roles/order", put(reorder_roles))
         .route(
@@ -1344,6 +1345,12 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let q = app.store.q();
     require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
     let p = body::<validate::UpdateServer>(&b)?.check()?;
+    if let Some(show) = p.show_owner_badge {
+        if q.server(&id).is_none_or(|s| s.owner_id != me) {
+            return Err(forbidden("Só o dono do servidor pode mudar o emblema de dono"));
+        }
+        q.set_show_owner_badge(&id, show);
+    }
     let before_tag = q
         .server(&id)
         .map(|s| (s.tag, s.tag_icon, s.tag_style, s.icon_url))
@@ -1796,6 +1803,63 @@ fn to_category(app: &App, q: &Q, category: &Category, event: &str) {
     }
 }
 
+/// Notas e Atualizações: mostrar/esconder a categoria e cada canal base.
+/// Corpo: { categoryVisible?: bool, channels?: { [id]: bool } }. Escondido = só dono e admins veem.
+async fn set_notes(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
+    let v: serde_json::Value = body(&b)?;
+    let q = app.store.q();
+    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    let cat = q
+        .categories(&id)
+        .into_iter()
+        .find(|c| c.base)
+        .ok_or_else(|| not_found("Categoria"))?;
+    let chans: Vec<String> = q
+        .channels(&id)
+        .into_iter()
+        .filter(|c| !c.base.is_empty())
+        .map(|c| c.id)
+        .collect();
+    let members = q.member_ids(&id);
+    let see_cat = |q: &Q| -> Vec<String> {
+        members.iter().filter(|u| q.can_see_category(u, &cat.id)).cloned().collect()
+    };
+    let see = |q: &Q, cid: &str| -> Vec<String> {
+        members.iter().filter(|u| q.can_access(u, cid)).cloned().collect()
+    };
+    let before_cat = see_cat(&q);
+    let before: Vec<Vec<String>> = chans.iter().map(|c| see(&q, c)).collect();
+    if let Some(vis) = v.get("categoryVisible").and_then(|x| x.as_bool()) {
+        q.set_base_visible("category", &cat.id, vis);
+    }
+    if let Some(map) = v.get("channels").and_then(|x| x.as_object()) {
+        for (cid, vis) in map {
+            if let Some(vis) = vis.as_bool()
+                && chans.contains(cid)
+            {
+                q.set_base_visible("channel", cid, vis);
+            }
+        }
+    }
+    let fresh = q.category(&cat.id).ok_or_else(|| not_found("Categoria"))?;
+    let after_cat = see_cat(&q);
+    let lost: Vec<String> = before_cat.iter().filter(|u| !after_cat.contains(u)).cloned().collect();
+    let gained: Vec<String> = after_cat.iter().filter(|u| !before_cat.contains(u)).cloned().collect();
+    app.to_users(&lost, "category:delete", &json!({ "id": cat.id, "serverId": id }));
+    app.to_users(&gained, "category:create", &fresh);
+    app.to_users(&after_cat, "category:update", &fresh);
+    for (cid, before) in chans.iter().zip(before) {
+        let Some(c) = q.channel(cid) else { continue };
+        let after = see(&q, cid);
+        let lost: Vec<String> = before.iter().filter(|u| !after.contains(u)).cloned().collect();
+        let gained: Vec<String> = after.iter().filter(|u| !before.contains(u)).cloned().collect();
+        app.to_users(&lost, "channel:delete", &json!({ "id": cid, "serverId": id }));
+        app.to_users(&gained, "channel:create", &c);
+        app.to_users(&after, "channel:update", &c);
+    }
+    no_content()
+}
+
 /// Arrastar e soltar na lista de canais: nova ordem das categorias e dos canais (e a
 /// categoria de cada canal). Quem não enxerga um canal/categoria não o manda; os que
 /// ficaram de fora mantêm o lugar e os mandados se reorganizam nos lugares que ocupavam.
@@ -1931,6 +1995,9 @@ async fn delete_category(State(app): S, Me(me): Me, Path(id): Path<String>) -> R
     let q = app.store.q();
     let category = q.category(&id).ok_or_else(|| not_found("Categoria"))?;
     require_perm(&q, &category.server_id, &me, perms::MANAGE_CHANNELS)?;
+    if category.base {
+        return Err(bad_request("A categoria Notas e Atualizações não pode ser excluída. Dá para escondê-la nas configurações do servidor."));
+    }
     // Os canais da categoria ficam "soltos" (ON DELETE SET NULL).
     let affected: Vec<String> = q
         .channels(&category.server_id)
@@ -2129,6 +2196,9 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
 async fn delete_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
     let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
+    if !channel.base.is_empty() {
+        return Err(bad_request("Canais de Notas e Atualizações não podem ser excluídos. Dá para escondê-los nas configurações do servidor."));
+    }
     app.drop_voice(
         &q,
         VoiceFilter {
@@ -2239,7 +2309,9 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if channel.kind == "thread" {
         refresh_thread_starter(&app, &q, &channel);
     }
-    if let Some(server_id) = &channel.server_id {
+    if let Some(server_id) = &channel.server_id
+        && has(q.channel_permissions(&me, &channel.id), perms::USE_AGENT)
+    {
         let text = input.content.trim();
         let lower = text.to_lowercase();
         if lower == "/hoje" || lower.starts_with("/hoje ") {
@@ -2292,13 +2364,14 @@ async fn music_play(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes)
             return Err(bad_request("Use o /play num canal de texto"));
         }
         let _ = &server_id;
-        if !has(
-            q.channel_permissions(&me, &channel.id),
-            perms::SEND_MESSAGES,
-        ) {
+        let p = q.channel_permissions(&me, &channel.id);
+        if !has(p, perms::SEND_MESSAGES) {
             return Err(forbidden(
                 "Você não tem permissão para enviar mensagens aqui",
             ));
+        }
+        if !has(p, perms::USE_AGENT) {
+            return Err(forbidden("Você não tem permissão para chamar o agente"));
         }
     }
     // Link do YouTube toca direto; qualquer outro texto vira busca no YouTube (primeiro resultado).
@@ -2394,7 +2467,7 @@ async fn get_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res
 async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let p = body::<validate::UpdateProfile>(&b)?.check()?;
     let q = app.store.q();
-    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    require_perm(&q, &id, &me, perms::MANAGE_AGENT)?;
     for img in [&p.avatar_id, &p.banner_id].into_iter().flatten().flatten() {
         if !q.own_image(&me, img) {
             return Err(bad_request("Imagem inválida"));
@@ -2429,7 +2502,7 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
 
 async fn get_bot_replies(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     let q = app.store.q();
-    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    require_perm(&q, &id, &me, perms::MANAGE_AGENT)?;
     ok(q.bot_replies(&id))
 }
 
@@ -2443,7 +2516,7 @@ async fn set_bot_replies(State(app): S, Me(me): Me, Path(id): Path<String>, b: B
         return Err(validation("No máximo 100 respostas"));
     }
     let q = app.store.q();
-    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    require_perm(&q, &id, &me, perms::MANAGE_AGENT)?;
     // Mídias que já estavam salvas continuam valendo mesmo que outra pessoa tenha enviado.
     let current: std::collections::HashSet<String> = q
         .bot_replies(&id)
@@ -2519,7 +2592,7 @@ async fn get_music_settings(State(app): S, Me(me): Me, Path(id): Path<String>) -
 async fn update_music_settings(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let v: serde_json::Value = body(&b)?;
     let q = app.store.q();
-    require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+    require_perm(&q, &id, &me, perms::MANAGE_AGENT)?;
     if let Some(m) = v.get("idleMessage") {
         let m = m
             .as_str()
@@ -2540,13 +2613,14 @@ async fn create_poll(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
     }
-    if !has(
-        q.channel_permissions(&me, &channel.id),
-        perms::SEND_MESSAGES,
-    ) {
+    let p = q.channel_permissions(&me, &channel.id);
+    if !has(p, perms::SEND_MESSAGES) {
         return Err(forbidden(
             "Você não tem permissão para enviar mensagens aqui",
         ));
+    }
+    if !has(p, perms::CREATE_POLLS) {
+        return Err(forbidden("Você não tem permissão para criar enquetes aqui"));
     }
     let created_msg = q.create_message(&channel.id, &me, "", &[], &[]);
     q.create_poll(
@@ -2589,6 +2663,12 @@ async fn add_reaction(State(app): S, Me(me): Me, Path((id, emoji)): Path<(String
         .filter(|m| !m.deleted)
         .ok_or_else(|| bad_request("Mensagem não encontrada"))?;
     require_access(&q, &message.channel_id, &me)?;
+    // Sem "Adicionar reações" só dá para entrar numa reação que já existe.
+    if !q.has_reaction_emoji(&id, &emoji)
+        && !has(q.channel_permissions(&me, &message.channel_id), perms::ADD_REACTIONS)
+    {
+        return Err(forbidden("Você não tem permissão para adicionar reações"));
+    }
     if !q.has_reaction_emoji(&id, &emoji) && q.reaction_kinds(&id) >= MAX_REACTION_KINDS {
         return Err(bad_request("Essa mensagem já tem reações demais"));
     }
@@ -2919,9 +2999,10 @@ fn pinnable(q: &Q, me: &str, id: &str) -> ApiResult<Message> {
         .ok_or_else(|| not_found("Mensagem"))?;
     if let Some(server_id) = channel.server_id.as_deref()
         && !has(q.permissions(server_id, me), perms::MANAGE_MESSAGES)
+        && !has(q.permissions(server_id, me), perms::PIN_MESSAGES)
     {
         return Err(forbidden(
-            "Você precisa da permissão Gerenciar mensagens para fixar",
+            "Você precisa da permissão Fixar mensagens para fixar",
         ));
     }
     Ok(message)
@@ -3332,7 +3413,8 @@ impl SoundInput {
 }
 
 fn can_manage_sound(q: &Q, server_id: &str, me: &str, sound: &crate::store::sounds::Sound) -> bool {
-    sound.user_id.as_deref() == Some(me) || has(q.permissions(server_id, me), perms::MANAGE_SERVER)
+    sound.user_id.as_deref() == Some(me)
+        || has(q.permissions(server_id, me), perms::MANAGE_SOUNDBOARD)
 }
 
 async fn list_my_sounds(State(app): S, Me(me): Me) -> Res {
@@ -3349,7 +3431,7 @@ async fn create_sound(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     // Confere tudo e solta o banco antes de ler o arquivo do disco.
     {
         let q = app.store.q();
-        require_perm(&q, &id, &me, perms::MANAGE_SERVER)?;
+        require_perm(&q, &id, &me, perms::MANAGE_SOUNDBOARD)?;
         if q.sound_count(&id) >= crate::store::sounds::MAX_SOUNDS {
             return Err(validation("Este servidor já chegou no limite de sons"));
         }

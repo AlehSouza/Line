@@ -168,6 +168,8 @@ export interface Server {
   createdAt: string;
   /** Suspenso pela equipe do Line: sem mensagens nem voz, só o aviso "Servidor suspenso.". */
   suspended?: boolean;
+  /** Estrelinha de dono ao lado do nome do dono (padrão: sim). */
+  showOwnerBadge?: boolean;
 }
 
 export interface Category {
@@ -177,7 +179,11 @@ export interface Category {
   position: number;
   /** Exclusiva de cargos: só eles (e dono/admin) veem a categoria e os canais dela. */
   isPrivate?: boolean;
+  /** Categoria base "Notas e Atualizações". */
+  base?: boolean;
 }
+
+export type BaseChannelKind = 'rules' | 'announcements' | 'events' | 'activity';
 
 export interface Channel {
   id: string;
@@ -194,6 +200,8 @@ export interface Channel {
   roleIds?: string[];
   /** Só quem está em interactMemberIds / interactRoleIds manda mensagem (texto) ou fala (voz). */
   interactRestricted?: boolean;
+  /** Canal base de Notas e Atualizações. */
+  base?: BaseChannelKind;
   interactMemberIds?: string[];
   interactRoleIds?: string[];
   /** Só para dm / group_dm. */

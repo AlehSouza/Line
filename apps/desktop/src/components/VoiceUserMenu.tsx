@@ -113,7 +113,7 @@ export function VoiceUserMenu({
     (s) =>
       !!music &&
       (music.djId === s.me?.id ||
-        hasPerm(permsOf(s, music.serverId, s.me?.id), Perm.ManageServer)),
+        hasPerm(permsOf(s, music.serverId, s.me?.id), Perm.ManageAgent)),
   );
   const [moveOpen, setMoveOpen] = useState(false);
   const [error, setError] = useState("");

@@ -443,6 +443,8 @@ pub struct UpdateServer {
     pub icon_id: Option<Option<String>>,
     #[serde(default, deserialize_with = "nullable")]
     pub banner_id: Option<Option<String>>,
+    /// Só o dono: mostrar ou não a estrelinha de dono.
+    pub show_owner_badge: Option<bool>,
 }
 
 impl UpdateServer {

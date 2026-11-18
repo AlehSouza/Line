@@ -6,6 +6,8 @@ import { actions, displayNameIn, useLine } from '@/lib/store';
 import { showError } from './Dialogs';
 import { ActivityHoverCard } from './GameCard';
 import { Avatar, cx, DefaultServerIcon, Icons } from './ui';
+import { MobileBack, MobileMembersButton } from './Mobile';
+import type { Channel } from '@line/shared';
 
 export function formatPlayed(secs?: number | null) {
   const s = secs ?? 0;
@@ -49,8 +51,16 @@ export function GameArt({ cover, icon, size = 48 }: { cover?: string | null; ico
   );
 }
 
-/** "Atividade" no topo da lista de pessoas do servidor: quem está jogando (ou jogou nas últimas 24 h). */
-export function ActivitySection({ serverId }: { serverId: string }) {
+/** Quantas atividades cabem no topo da lista de membros; o resto fica no canal Atividades. */
+const ACTIVITY_PREVIEW = 3;
+
+/** "Atividades" no topo da lista de pessoas do servidor: quem está jogando (ou jogou nas últimas 24 h).
+ *  `full`: todas, em grade (canal base Atividades); senão só as 3 primeiras e o título abre o canal. */
+export function ActivitySection({ serverId, full }: { serverId: string; full?: boolean }) {
+  const activityChannel = useLine((s) => {
+    for (const c of Object.values(s.channels)) if (c.serverId === serverId && c.base === 'activity') return c.id;
+    return null;
+  });
   const [items, setItems] = useState<ServerActivity[]>([]);
   const users = useLine((s) => s.users);
   const [, tick] = useState(0);
@@ -91,14 +101,32 @@ export function ActivitySection({ serverId }: { serverId: string }) {
     };
   }, [serverId]);
 
-  const shown = items.filter((a) => users[a.userId]);
-  if (!shown.length) return null;
+  const all = items.filter((a) => users[a.userId]);
+  const shown = full ? all : all.slice(0, ACTIVITY_PREVIEW);
+  if (!all.length)
+    return full ? (
+      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-muted">
+        <Icons.Gamepad size={40} />
+        <p className="font-semibold text-soft">Ninguém jogou nada nas últimas 24 horas.</p>
+        <p className="text-sm">Quando alguém do servidor abrir um jogo, ele aparece aqui.</p>
+      </div>
+    ) : null;
   const open = card && shown.find((a) => a.userId === card.userId);
 
   return (
     <div>
-      <h3 className="flex items-center gap-1.5 px-2 pb-1.5 text-xs font-bold tracking-wide text-muted uppercase">
-        Atividade — {shown.length}
+      <h3 className={cx('flex items-center gap-1.5 px-2 pb-1.5 text-xs font-bold tracking-wide text-muted uppercase', full && 'hidden')}>
+        {activityChannel ? (
+          <button
+            title="Ver todas as atividades"
+            onClick={() => actions.goServer(serverId, activityChannel)}
+            className="uppercase hover:text-fg hover:underline"
+          >
+            Atividades — {all.length}
+          </button>
+        ) : (
+          <>Atividades — {all.length}</>
+        )}
         <button
           title="Privacidade nas atividades"
           onClick={() => actions.openModal({ kind: 'settings', section: 'activity' })}
@@ -107,7 +135,7 @@ export function ActivitySection({ serverId }: { serverId: string }) {
           <Icons.Settings size={13} />
         </button>
       </h3>
-      <div className="space-y-1.5">
+      <div className={full ? 'grid gap-2 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-1.5'}>
         {shown.map((a) => {
           const u = users[a.userId]!;
           return (
@@ -163,6 +191,32 @@ export function ActivitySection({ serverId }: { serverId: string }) {
           onClose={() => setCard(null)}
         />
       )}
+    </div>
+  );
+}
+
+/** Canal base "Atividades": todas as atividades do servidor, em tela cheia. */
+export function ActivityChannel({ channel }: { channel: Channel }) {
+  if (!channel.serverId) return null;
+  return (
+    <div className="flex h-full min-w-0 flex-1 flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+        <MobileBack />
+        <Icons.Gamepad size={20} className="text-muted" />
+        <h1 className="truncate font-bold">{channel.name}</h1>
+        {channel.topic && (
+          <>
+            <span className="mx-2 h-6 w-px bg-edge max-md:hidden" />
+            <p className="truncate text-sm text-muted max-md:hidden">{channel.topic}</p>
+          </>
+        )}
+        <div className="ml-auto flex items-center gap-1">
+          <MobileMembersButton />
+        </div>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <ActivitySection serverId={channel.serverId} full />
+      </div>
     </div>
   );
 }

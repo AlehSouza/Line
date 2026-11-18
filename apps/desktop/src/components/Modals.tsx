@@ -764,6 +764,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [name, setName] = useState(server?.name ?? '');
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
+  const [ownerBadge, setOwnerBadge] = useState(server?.showOwnerBadge ?? true);
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
   const [imageError, setImageError] = useState('');
@@ -791,6 +792,12 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
           <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
+        {isOwner && (
+          <label className="flex items-center gap-3 text-sm">
+            <Checkbox checked={ownerBadge} onChange={setOwnerBadge} />
+            Mostrar o emblema de dono (★) ao lado do meu nome na lista de membros
+          </label>
+        )}
         <ErrorText>{error}</ErrorText>
         <div className="flex items-center justify-end gap-2 border-t border-edge pt-4">
           {isOwner && (
@@ -819,6 +826,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
                     name,
                     description,
                     isPublic,
+                    ...(isOwner && ownerBadge !== (server.showOwnerBadge ?? true) ? { showOwnerBadge: ownerBadge } : {}),
                     ...(icon.changed ? { iconId: icon.id } : {}),
                     ...(banner.changed ? { bannerId: banner.id } : {}),
                   }),

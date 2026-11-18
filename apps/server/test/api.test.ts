@@ -113,7 +113,7 @@ describe('Line server', () => {
     expect(created.status).toBe(201);
 
     const detail = await api<ServerDetail>('GET', `/servers/${created.data.id}`, ana.token);
-    expect(detail.data.categories.map((c) => c.name)).toEqual(['Canais de texto', 'Canais de voz']);
+    expect(detail.data.categories.map((c) => c.name)).toEqual(['Notas e Atualizações', 'Canais de texto', 'Canais de voz']);
     const geral = detail.data.channels.find((c) => c.name === 'geral')!;
 
     // Bia ainda não é membro

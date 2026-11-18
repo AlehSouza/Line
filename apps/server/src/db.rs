@@ -437,6 +437,20 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE users ADD COLUMN bot_now_playing TEXT;
 "#,
+    // Canais base ("Notas e Atualizações"), emblema de dono opcional e permissões novas.
+    // Quem já podia fazer algo continua podendo: @everyone ganha os usos do dia a dia,
+    // quem tinha Vídeo ganha Transmitir, Gerenciar servidor ganha sons e agente, e
+    // Gerenciar mensagens ganha Fixar.
+    r#"
+  ALTER TABLE categories ADD COLUMN base INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE channels ADD COLUMN base TEXT NOT NULL DEFAULT '';
+  ALTER TABLE servers ADD COLUMN show_owner_badge INTEGER NOT NULL DEFAULT 1;
+  UPDATE roles SET permissions = permissions | (1 << 19) | (1 << 21) | (1 << 23) | (1 << 26) | (1 << 28)
+    WHERE id = server_id;
+  UPDATE roles SET permissions = permissions | (1 << 25) WHERE (permissions & (1 << 13)) != 0;
+  UPDATE roles SET permissions = permissions | (1 << 22) | (1 << 24) WHERE (permissions & (1 << 3)) != 0;
+  UPDATE roles SET permissions = permissions | (1 << 20) WHERE (permissions & (1 << 6)) != 0;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

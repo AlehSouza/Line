@@ -112,6 +112,14 @@ impl UserRow {
 }
 
 const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color, u.bot_now_playing, u.name_style";
+/// Canais base: (tipo, nome, descrição), na ordem em que aparecem.
+pub const BASE_CHANNELS: [(&str, &str, &str); 4] = [
+    ("rules", "Regras", "As regras do servidor."),
+    ("announcements", "Anúncios", "Novidades e avisos importantes."),
+    ("events", "Eventos", "O que vem por aí no servidor."),
+    ("activity", "Atividades", "Quem está jogando agora e o que rolou nas últimas 24 h."),
+];
+
 const SERVER_SELECT: &str =
     "SELECT s.*, (SELECT COUNT(*) FROM members m WHERE m.server_id = s.id) AS member_count,
   (SELECT filename FROM attachments a WHERE a.id = s.icon_id) AS icon_filename,
@@ -158,6 +166,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
             .ok()
             .flatten()
             .is_some(),
+        show_owner_badge: r.get::<_, i64>("show_owner_badge").unwrap_or(1) != 0,
     })
 }
 
@@ -168,6 +177,7 @@ fn category_from_row(r: &Row) -> rusqlite::Result<Category> {
         name: r.get("name")?,
         position: r.get("position")?,
         is_private: r.get::<_, i64>("is_private")? != 0,
+        base: r.get::<_, i64>("base").unwrap_or(0) != 0,
     })
 }
 
@@ -185,6 +195,7 @@ struct ChannelRow {
     thread_message_id: Option<String>,
     is_private: bool,
     interact_restricted: bool,
+    base: String,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -202,6 +213,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         thread_message_id: r.get("thread_message_id")?,
         is_private: r.get::<_, i64>("is_private")? != 0,
         interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
+        base: r.get("base").unwrap_or_default(),
     })
 }
 
@@ -920,6 +932,7 @@ impl Q<'_> {
             let voice = self.create_category(&id, "Canais de voz");
             self.create_channel(&id, "geral", "text", Some(&text.id), "Bem-vindo ao servidor!");
             self.create_channel(&id, "Geral", "voice", Some(&voice.id), "");
+            self.ensure_base_channels(&id);
         });
         self.server(&id).unwrap()
     }
@@ -1200,6 +1213,78 @@ impl Q<'_> {
         ok(self.c.execute("DELETE FROM categories WHERE id = ?", [id]));
     }
 
+    // ---------- canais base ("Notas e Atualizações") ----------
+
+    /// Cria a categoria "Notas e Atualizações" com Regras, Anúncios, Eventos e Atividades,
+    /// no topo da lista, se o servidor ainda não tem. Visível para todos por padrão.
+    pub fn ensure_base_channels(&self, server_id: &str) {
+        let has: bool = ok(self.c.query_row(
+            "SELECT EXISTS (SELECT 1 FROM categories WHERE server_id = ? AND base = 1)",
+            [server_id],
+            |r| r.get(0),
+        ));
+        if has {
+            return;
+        }
+        let cat = new_id();
+        let top: i64 = ok(self.c.query_row(
+            "SELECT COALESCE(MIN(position), 0) - 1 FROM categories WHERE server_id = ?",
+            [server_id],
+            |r| r.get(0),
+        ));
+        ok(self.c.execute(
+            "INSERT INTO categories (id, server_id, name, position, is_private, base) VALUES (?, ?, 'Notas e Atualizações', ?, 0, 1)",
+            params![cat, server_id, top],
+        ));
+        for (i, (base, name, topic)) in BASE_CHANNELS.iter().enumerate() {
+            // Posições altas: dentro da categoria a ordem é essa, e os canais comuns vêm antes na lista crua.
+            ok(self.c.execute(
+                "INSERT INTO channels (id, type, server_id, category_id, name, topic, position, base, created_at)
+                 VALUES (?, 'text', ?, ?, ?, ?, ?, ?, ?)",
+                params![new_id(), server_id, cat, name, topic, 1000 + i as i64, base, now_iso()],
+            ));
+        }
+    }
+
+    /// Servidores que existiam antes dos canais base ganham os seus.
+    pub fn ensure_all_base_channels(&self) {
+        let ids = self.ids(
+            "SELECT id FROM servers s WHERE NOT EXISTS (SELECT 1 FROM categories c WHERE c.server_id = s.id AND c.base = 1)",
+            [],
+        );
+        if ids.is_empty() {
+            return;
+        }
+        self.tx(|| {
+            for id in &ids {
+                self.ensure_base_channels(id);
+            }
+        });
+    }
+
+    /// Mostra ou esconde a categoria base ou um canal base. Escondido = só dono e
+    /// administradores enxergam (vira privado sem ninguém na lista).
+    pub fn set_base_visible(&self, table: &str, id: &str, visible: bool) {
+        let (main, cond, key, links) = match table {
+            "category" => ("categories", "base = 1", "category_id", ["category_roles", "category_roles"]),
+            _ => ("channels", "base != ''", "channel_id", ["channel_recipients", "channel_roles"]),
+        };
+        ok(self.c.execute(
+            &format!("UPDATE {main} SET is_private = ? WHERE id = ? AND {cond}"),
+            params![(!visible) as i64, id],
+        ));
+        for t in links {
+            ok(self.c.execute(&format!("DELETE FROM {t} WHERE {key} = ?"), [id]));
+        }
+    }
+
+    pub fn set_show_owner_badge(&self, server_id: &str, show: bool) {
+        ok(self.c.execute(
+            "UPDATE servers SET show_owner_badge = ? WHERE id = ?",
+            params![show as i64, server_id],
+        ));
+    }
+
     // ---------- canais ----------
 
     fn to_channel(&self, row: ChannelRow) -> Channel {
@@ -1236,6 +1321,7 @@ impl Q<'_> {
             member_ids,
             role_ids,
             interact_restricted: row.interact_restricted,
+            base: row.base,
             interact_member_ids,
             interact_role_ids,
             recipients: is_dm.then(|| self.recipients(&row.id)),
@@ -1399,19 +1485,26 @@ impl Q<'_> {
     /// falar quando o canal restringe isso e a pessoa (ou um cargo dela) não está na lista.
     /// Dono e administradores podem tudo. Threads seguem o canal pai. Fora de servidor = tudo.
     pub fn channel_permissions(&self, user_id: &str, channel_id: &str) -> i64 {
-        let row: Option<(Option<String>, String, bool)> = ok(self
+        let row: Option<(Option<String>, String, bool, String)> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.interact_restricted FROM channels r
+                "SELECT r.server_id, r.id, r.interact_restricted, r.base FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get::<_, i64>(2)? != 0, r.get(3)?)),
             )
             .optional());
-        let Some((Some(server_id), root, restricted)) = row else {
+        let Some((Some(server_id), root, restricted, base)) = row else {
             return perms::ALL;
         };
         let p = self.permissions(&server_id, user_id);
+        // Canais base: Atividades não é chat; Regras/Anúncios/Eventos só para quem pode publicar.
+        let p = match base.as_str() {
+            "" => p,
+            "activity" => p & !perms::INTERACT,
+            _ if perms::has(p, perms::POST_NOTES) => p,
+            _ => p & !perms::INTERACT,
+        };
         if !restricted || perms::has(p, perms::ADMINISTRATOR) {
             return p;
         }
@@ -1438,10 +1531,10 @@ impl Q<'_> {
     /// escolhido (pessoa ou cargo); canal aberto para quem tem "Ver canais". Dono e
     /// administradores veem tudo. Threads seguem o canal pai.
     pub fn can_access(&self, user_id: &str, channel_id: &str) -> bool {
-        let row: Option<(Option<String>, String, bool, String, Option<String>)> = ok(self
+        let row: Option<(Option<String>, String, bool, String, Option<String>, String)> = ok(self
             .c
             .query_row(
-                "SELECT r.server_id, r.id, r.is_private, r.type, r.category_id FROM channels r
+                "SELECT r.server_id, r.id, r.is_private, r.type, r.category_id, r.base FROM channels r
                  WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
                 |r| {
@@ -1451,14 +1544,15 @@ impl Q<'_> {
                         r.get::<_, i64>(2)? != 0,
                         r.get(3)?,
                         r.get(4)?,
+                        r.get(5)?,
                     ))
                 },
             )
             .optional());
         match row {
             None => false,
-            Some((None, _, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
-            Some((Some(server_id), root, is_private, kind, category_id)) => {
+            Some((None, _, _, _, _, _)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
+            Some((Some(server_id), root, is_private, kind, category_id, base)) => {
                 if !self.is_member(&server_id, user_id) {
                     return false;
                 }
@@ -1474,7 +1568,11 @@ impl Q<'_> {
                 }
                 // Quem não pode interagir (mandar mensagem / entrar na voz) nem vê o canal.
                 // Quem gerencia canais continua vendo para poder editar.
-                if !perms::has(p, perms::MANAGE_CHANNELS) && !perms::has(p, interact_perm(&kind)) {
+                // Canais base são para leitura: todo mundo vê, mesmo sem poder mandar mensagem.
+                if base.is_empty()
+                    && !perms::has(p, perms::MANAGE_CHANNELS)
+                    && !perms::has(p, interact_perm(&kind))
+                {
                     return false;
                 }
                 if !is_private {
@@ -1498,23 +1596,23 @@ impl Q<'_> {
     /// Quem enxerga um canal de servidor, quando não é o servidor inteiro (canal privado ou
     /// @everyone sem "Ver canais" / sem poder interagir). None = todos os membros veem (pode usar a sala do servidor).
     pub fn private_audience(&self, channel_id: &str) -> Option<Vec<String>> {
-        let (server_id, is_private, kind, category_private): (String, bool, String, bool) = ok(self
+        let (server_id, is_private, kind, category_private, base): (String, bool, String, bool, String) = ok(self
             .c
             .query_row(
                 "SELECT r.server_id, r.is_private, r.type,
-                        COALESCE((SELECT k.is_private FROM categories k WHERE k.id = r.category_id), 0)
+                        COALESCE((SELECT k.is_private FROM categories k WHERE k.id = r.category_id), 0), r.base
                  FROM channels r
                  WHERE r.server_id IS NOT NULL
                    AND r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)",
                 [channel_id],
-                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?, r.get::<_, i64>(3)? != 0)),
+                |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?, r.get::<_, i64>(3)? != 0, r.get(4)?)),
             )
             .optional())?;
         let everyone = self.everyone_permissions(&server_id);
         if !is_private
             && !category_private
             && perms::has(everyone, perms::VIEW_CHANNELS)
-            && perms::has(everyone, interact_perm(&kind))
+            && (!base.is_empty() || perms::has(everyone, interact_perm(&kind)))
         {
             return None;
         }

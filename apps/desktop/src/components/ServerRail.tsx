@@ -307,7 +307,9 @@ function serverMenu(serverId: string): MenuEntry[] {
     hasPerm(perms, Perm.ManageServer) ||
     hasPerm(perms, Perm.ManageRoles) ||
     hasPerm(perms, Perm.KickMembers) ||
-    hasPerm(perms, Perm.ManageNicknames);
+    hasPerm(perms, Perm.ManageNicknames) ||
+    hasPerm(perms, Perm.ManageSoundboard) ||
+    hasPerm(perms, Perm.ManageAgent);
   return [
     {
       label: 'Marcar como lido',

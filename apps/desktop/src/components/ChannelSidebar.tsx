@@ -7,7 +7,7 @@ import { actions, permsOf, useLine, mentionsToText } from '@/lib/store';
 import { mobile } from '@/lib/mobile';
 import { joinVoice, leaveVoice, useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
-import { cx, Icons, ListSkeleton } from './ui';
+import { channelIcon, cx, Icons, ListSkeleton } from './ui';
 import { CollapsedVoiceChannel, VoiceChannelMembers } from './Voice';
 import { CallTimer } from './VoiceInvite';
 import { confirmDialog, showError } from './Dialogs';
@@ -63,7 +63,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
   const isOwner = me?.id === server.ownerId;
   // "Gerenciar canais" libera criar/editar/excluir canais e categorias.
   const canChannels = hasPerm(perms, Perm.ManageChannels);
-  const canSettings = hasPerm(perms, Perm.ManageServer) || hasPerm(perms, Perm.ManageRoles) || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames);
+  const canSettings = hasPerm(perms, Perm.ManageServer) || hasPerm(perms, Perm.ManageRoles) || hasPerm(perms, Perm.KickMembers) || hasPerm(perms, Perm.ManageNicknames) || hasPerm(perms, Perm.ManageSoundboard) || hasPerm(perms, Perm.ManageAgent);
   const canNick = hasPerm(perms, Perm.ChangeNickname) || hasPerm(perms, Perm.ManageNicknames);
 
   /** Metade de cima ou de baixo do item, para saber se solta antes ou depois dele. */
@@ -141,7 +141,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     if (muted && hideMuted && !active) return null;
     const hasUnread = !!unread[c.id] && !active && !isMutedAnywhere(st, c.id);
     const mentions = active ? 0 : mentionCount(st, c.id);
-    const Icon = c.type === 'voice' ? Icons.Speaker : Icons.Hash;
+    const Icon = channelIcon(c);
     return (
       <div key={c.id}>
         <div
@@ -185,8 +185,8 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             <span className="relative shrink-0">
               <Icon size={18} className="opacity-70" />
               {c.isPrivate && (
-                <span className="absolute -top-1 -right-1 rounded-full bg-side p-px" title="Canal privado">
-                  <Icons.Lock size={9} />
+                <span className="absolute -top-1 -right-1 rounded-full bg-side p-px" title={c.base ? 'Escondido: só você e os administradores veem' : 'Canal privado'}>
+                  {c.base ? <Icons.EyeOff size={9} /> : <Icons.Lock size={9} />}
                 </span>
               )}
             </span>
@@ -210,7 +210,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               <Icons.Settings size={14} />
             </button>
           )}
-          {canChannels && (
+          {canChannels && !c.base && (
             <button
               title="Excluir canal"
               onClick={async () => {
@@ -395,7 +395,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 className="flex items-center gap-0.5 text-xs font-bold tracking-wide text-muted uppercase hover:text-soft"
               >
                 <Icons.Chevron size={12} className={cx('transition-transform', collapsed[cat.id] && '-rotate-90')} />
-                {cat.isPrivate && <Icons.Lock size={10} className="mr-0.5" />}
+                {cat.isPrivate && (cat.base ? <Icons.EyeOff size={10} className="mr-0.5" /> : <Icons.Lock size={10} className="mr-0.5" />)}
                 {cat.name}
               </button>
               {canChannels && (
@@ -407,13 +407,15 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                   >
                     <Icons.Edit size={13} />
                   </button>
-                  <button
-                    title="Criar canal"
-                    onClick={() => actions.openModal({ kind: 'create-channel', serverId, categoryId: cat.id })}
-                    className="text-muted hover:text-fg"
-                  >
-                    <Icons.Plus size={16} />
-                  </button>
+                  {!cat.base && (
+                    <button
+                      title="Criar canal"
+                      onClick={() => actions.openModal({ kind: 'create-channel', serverId, categoryId: cat.id })}
+                      className="text-muted hover:text-fg"
+                    >
+                      <Icons.Plus size={16} />
+                    </button>
+                  )}
                 </span>
               )}
             </div>
@@ -483,7 +485,7 @@ function channelMenu(c: Channel, canChannels: boolean, canInvite: boolean): Menu
       icon: <Icons.Settings size={15} />,
       onClick: () => actions.openModal({ kind: 'edit-channel', channelId: c.id }),
     },
-    canChannels && {
+    canChannels && !c.base && {
       label: 'Excluir canal',
       icon: <Icons.Trash size={15} />,
       danger: true,

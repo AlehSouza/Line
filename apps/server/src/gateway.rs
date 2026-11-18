@@ -491,17 +491,15 @@ async fn voice_state(
         .map(|cid| q.channel_permissions(&me, cid))
         .unwrap_or(perms::ALL);
     let mut patch = VoicePatch::from_json(&patch);
-    // Sem "Falar" fica sempre mudo; sem "Vídeo" não liga câmera nem compartilha tela.
+    // Sem "Falar" fica sempre mudo; sem "Vídeo" não liga a câmera; sem "Transmitir" não compartilha tela.
     if !has(p, perms::SPEAK) && patch.muted == Some(false) {
         patch.muted = None;
     }
-    if !has(p, perms::VIDEO) {
-        if matches!(patch.camera_stream_id, Some(Some(_))) {
-            patch.camera_stream_id = None;
-        }
-        if matches!(patch.screen_stream_id, Some(Some(_))) {
-            patch.screen_stream_id = None;
-        }
+    if !has(p, perms::VIDEO) && matches!(patch.camera_stream_id, Some(Some(_))) {
+        patch.camera_stream_id = None;
+    }
+    if !has(p, perms::STREAM) && matches!(patch.screen_stream_id, Some(Some(_))) {
+        patch.screen_stream_id = None;
     }
     let state = {
         let mut voice = lock(&app.voice);
@@ -533,6 +531,9 @@ async fn voice_status(
         return;
     };
     let q = app.store.q();
+    if !has(q.channel_permissions(&me, channel_id), perms::SET_VOICE_STATUS) {
+        return;
+    }
     let set = lock(&app.voice).set_status(&me, channel_id, status);
     if let Some(status) = set {
         app.to_channel(
@@ -649,7 +650,8 @@ async fn voice_sound(
     if entry.sid != s.id || st.muted || st.deafened || st.server_muted || st.server_deafened {
         return;
     }
-    if !has(q.channel_permissions(&me, &st.channel_id), perms::SPEAK) {
+    let p = q.channel_permissions(&me, &st.channel_id);
+    if !has(p, perms::SPEAK) || !has(p, perms::USE_SOUNDBOARD) {
         return;
     }
     let targets: Vec<Sid> = {

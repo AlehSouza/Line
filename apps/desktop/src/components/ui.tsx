@@ -295,8 +295,26 @@ const icon = (C: LucideIcon) =>
     return <C size={size} strokeWidth={2} className={className} aria-hidden />;
   };
 
+/** Ícone de um canal na lista: canais base têm o seu; voz = alto-falante; texto = #. */
+export function channelIcon(c: { type: string; base?: string }) {
+  switch (c.base) {
+    case 'rules':
+      return Icons.BookCheck;
+    case 'announcements':
+      return Icons.Megaphone;
+    case 'events':
+      return Icons.CalendarCheck;
+    case 'activity':
+      return Icons.Gamepad;
+  }
+  return c.type === 'voice' ? Icons.Speaker : Icons.Hash;
+}
+
 export const Icons = {
   Hash: icon(L.Hash),
+  BookCheck: icon(L.BookCheck),
+  Megaphone: icon(L.Megaphone),
+  CalendarCheck: icon(L.CalendarCheck2),
   Speaker: icon(L.Volume2),
   SpeakerOff: icon(L.VolumeX),
   Plus: icon(L.Plus),

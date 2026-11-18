@@ -1079,7 +1079,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }): Pro
     stopScreen();
     return null;
   }
-  if (!voiceCan(Perm.Video)) return 'Você não tem permissão para compartilhar a tela neste canal.';
+  if (!voiceCan(Perm.Stream)) return 'Você não tem permissão para transmitir neste canal.';
   const gen = ++screenGen;
   try {
     const opened = await openScreen(source, gen);

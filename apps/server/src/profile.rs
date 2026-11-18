@@ -157,12 +157,12 @@ async fn update_extras(State(app): S, Me(me): Me, b: Bytes) -> Res {
 }
 
 /// PUT /servers/{id}/agent/profile: o mesmo de `/users/@me/profile` (cartão, estilo do nome,
-/// música favorita, visual da chamada), só que no agente do servidor. Pede Gerenciar servidor.
+/// música favorita, visual da chamada), só que no agente do servidor. Pede Personalizar o agente.
 async fn put_agent_profile(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let input = body::<Value>(&b)?;
     let song = resolve_input_song(&input).await?;
     let q = app.store.q();
-    crate::routes::require_perm(&q, &id, &me, crate::perms::MANAGE_SERVER)?;
+    crate::routes::require_perm(&q, &id, &me, crate::perms::MANAGE_AGENT)?;
     let bot = app.music_bot(&q, &id).ok_or_else(|| not_found("Agente"))?;
     if apply_extras(&q, &bot.id, &input, song)? {
         if let Some(public) = q.public_user(&bot.id) {

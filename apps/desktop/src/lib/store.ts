@@ -488,7 +488,8 @@ export function firstTextChannel(s: LineState, serverId: string): string | null 
   const list = Object.values(s.channels)
     .filter((c) => c.serverId === serverId && c.type === 'text')
     .sort((a, b) => catPos(a.categoryId) - catPos(b.categoryId) || a.position - b.position);
-  return list[0]?.id ?? null;
+  // Abre num canal de conversa; os de Notas e Atualizações só se não tiver outro.
+  return (list.find((c) => !c.base) ?? list[0])?.id ?? null;
 }
 
 export function currentChannelId(s: LineState): string | null {
@@ -523,8 +524,10 @@ export function permsOf(s: LineState, serverId: string | null | undefined, userI
 export function channelPermsOf(s: LineState, channelId: string | null | undefined, userId: string | undefined): number {
   let c = channelId ? s.channels[channelId] : undefined;
   if (c?.type === 'thread' && c.parentId) c = s.channels[c.parentId] ?? c;
-  const p = permsOf(s, c?.serverId, userId);
-  if (!c?.serverId || !c.interactRestricted || !userId || p === ALL_PERMS) return p;
+  let p = permsOf(s, c?.serverId, userId);
+  // Canais base: Atividades não é chat; Regras/Anúncios/Eventos só para quem pode publicar.
+  if (c?.base === 'activity' || (c?.base && !hasPerm(p, Perm.PostNotes))) p &= ~INTERACT_PERMS;
+  if (!c?.serverId || !c.interactRestricted || !userId || hasPerm(p, Perm.Administrator)) return p;
   const mine = s.members[c.serverId]?.[userId]?.roleIds ?? [];
   const roles = c.interactRoleIds ?? [];
   const allowed =

@@ -15,7 +15,8 @@ import { ActivitySection } from './Activity';
 export function MemberList({ serverId }: { serverId: string }) {
   const members = useLine((s) => s.members[serverId]);
   const users = useLine((s) => s.users);
-  const ownerId = useLine((s) => s.servers[serverId]?.ownerId);
+  // Dono pode esconder a estrelinha de dono.
+  const ownerId = useLine((s) => (s.servers[serverId]?.showOwnerBadge === false ? undefined : s.servers[serverId]?.ownerId));
   const roles = useLine((s) => s.roles[serverId]);
   // Canal de texto aberto: a lista mostra só quem tem acesso a ele (canal/categoria exclusivos).
   const channelId = useLine((s) => (s.view.kind === 'server' && s.view.serverId === serverId ? s.view.channelId : null));

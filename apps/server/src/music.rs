@@ -568,7 +568,7 @@ fn is_dj(app: &App, q: &Q, channel_id: &str, user_id: &str) -> bool {
         };
         (s.dj_id.clone(), s.server_id.clone())
     };
-    dj == user_id || has(q.permissions(&server, user_id), perms::MANAGE_SERVER)
+    dj == user_id || has(q.permissions(&server, user_id), perms::MANAGE_AGENT)
 }
 
 /// Controle vindo do app (`music:control`). Quem deu o /play (ou gerencia o servidor) manda direto;
@@ -579,7 +579,10 @@ pub fn control(app: &Arc<App>, me: &str, d: &Value) {
     };
     let action = d.get("action").and_then(|c| c.as_str()).unwrap_or("");
     let q = app.store.q();
-    if !q.can_access(me, channel_id) || !lock(&app.music).sessions.contains_key(channel_id) {
+    if !q.can_access(me, channel_id)
+        || !has(q.channel_permissions(me, channel_id), perms::USE_AGENT)
+        || !lock(&app.music).sessions.contains_key(channel_id)
+    {
         return;
     }
     let dj = is_dj(app, &q, channel_id, me);

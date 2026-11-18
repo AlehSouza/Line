@@ -63,6 +63,7 @@ export const updateServerSchema = createServerSchema.partial().extend({
     .optional(),
   iconId: z.string().nullable().optional(),
   bannerId: z.string().nullable().optional(),
+  showOwnerBadge: z.boolean().optional(),
 });
 
 export const channelNameSchema = z

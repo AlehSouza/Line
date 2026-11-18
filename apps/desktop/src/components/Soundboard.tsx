@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, fileUrl } from "@/lib/api";
 import { hasPerm, Perm } from "@line/shared";
-import { permsOf, useLine } from "@/lib/store";
+import { channelPermsOf, permsOf, useLine } from "@/lib/store";
 import {
   decodeFile,
   loadSounds,
@@ -46,10 +46,13 @@ export function SoundboardButton({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
+  const voiceChannel = useVoice((v) => v.channelId);
+  const allowed = useLine((s) => !voiceChannel || hasPerm(channelPermsOf(s, voiceChannel, s.me?.id), Perm.UseSoundboard));
   return (
     <>
       <button
-        title={title}
+        title={allowed ? title : "Você não tem permissão para usar efeitos sonoros neste canal"}
+        disabled={!allowed}
         onClick={(e) => {
           const el = e.currentTarget;
           setAnchor((a) => (a ? null : el));
@@ -122,7 +125,7 @@ function SoundboardPanel({
   const manageable = useLine((s) =>
     Object.keys(s.servers)
       .filter((id) =>
-        hasPerm(permsOf(s, id, s.me?.id), Perm.ManageServer),
+        hasPerm(permsOf(s, id, s.me?.id), Perm.ManageSoundboard),
       )
       .join(","),
   );
@@ -505,7 +508,7 @@ export function SoundboardSettings({ serverId }: { serverId: string }) {
   const loaded = useSounds((s) => s.loaded);
   const meId = useLine((s) => s.me?.id);
   const canManage = useLine((s) =>
-    hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageServer),
+    hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageSoundboard),
   );
   const [uploading, setUploading] = useState(false);
   const sounds = useMemo(

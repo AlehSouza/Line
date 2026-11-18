@@ -87,6 +87,8 @@ pub struct Server {
     pub created_at: String,
     /// Suspenso pelo admin do Line: ninguém fala, manda mensagem nem entra na voz.
     pub suspended: bool,
+    /// Mostra a estrelinha de dono ao lado do nome do dono na lista de membros.
+    pub show_owner_badge: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -97,6 +99,8 @@ pub struct Category {
     pub name: String,
     pub position: i64,
     pub is_private: bool,
+    /// Categoria base "Notas e Atualizações" (não pode ser excluída).
+    pub base: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -119,6 +123,9 @@ pub struct Channel {
     pub role_ids: Option<Vec<String>>,
     /// Só quem está nas listas abaixo manda mensagem (texto) ou fala (voz).
     pub interact_restricted: bool,
+    /// Canal base: 'rules' | 'announcements' | 'events' | 'activity'; vazio = canal comum.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub base: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interact_member_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]

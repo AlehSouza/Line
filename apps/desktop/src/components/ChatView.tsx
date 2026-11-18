@@ -18,7 +18,7 @@ import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
-import { Avatar, cx, Icons, MessageSkeletons } from './ui';
+import { Avatar, channelIcon, cx, Icons, MessageSkeletons } from './ui';
 import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
 import { UserTagBadge } from './ServerTag';
@@ -37,12 +37,16 @@ export function ChatView({ channel }: { channel: Channel }) {
   const isDm = !channel.serverId;
   const title = isDm ? dmTitle(channel, me?.id, users) : channel.name;
   const other = isDm && channel.type === 'dm' ? channel.recipients?.find((r) => r.id !== me?.id) : undefined;
+  const ChanIcon = channelIcon(channel);
 
   const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
   const inCall = useVoice((v) => v.channelId === channel.id);
   const composer = useRef<ComposerHandle>(null);
   const drop = useFileDrop(composer);
-  const canPin = useCan(channel.serverId, Perm.ManageMessages);
+  const canPin = useLine((s) => {
+    const p = channelPermsOf(s, channel.id, s.me?.id);
+    return hasPerm(p, Perm.ManageMessages) || hasPerm(p, Perm.PinMessages);
+  });
 
   useEffect(() => {
     actions.markRead(channel.id);
@@ -63,7 +67,7 @@ export function ChatView({ channel }: { channel: Channel }) {
             <Icons.Users size={20} className="text-muted" />
           )
         ) : (
-          <Icons.Hash size={20} className="text-muted" />
+          <ChanIcon size={20} className="text-muted" />
         )}
         <h1 className="truncate font-bold">{title}</h1>
         {channel.topic && (
@@ -249,6 +253,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
   const canManageMessages = useCan(channel.serverId, Perm.ManageMessages);
+  const canPinMessages = useCan(channel.serverId, Perm.PinMessages);
   const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.CreateThreads));
   // Apelido e cor do cargo mais alto de quem escreveu (só em servidor).
   const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
@@ -373,11 +378,13 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
         {bucket && !bucket.hasMore && !isThread && (
           <div className="px-4 pt-8 pb-4">
             <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-raise text-accent">
-              {channel.serverId ? <Icons.Hash size={36} /> : <Icons.Message size={32} />}
+              {channel.serverId ? (() => { const I = channelIcon(channel); return <I size={36} />; })() : <Icons.Message size={32} />}
             </div>
-            <h2 className="text-3xl font-bold">{channel.serverId ? `Bem-vindo a #${title}!` : title}</h2>
+            <h2 className="text-3xl font-bold">{channel.base ? title : channel.serverId ? `Bem-vindo a #${title}!` : title}</h2>
             <p className="mt-1 text-muted">
-              {channel.serverId
+              {channel.base
+                ? `${channel.topic || 'Canal de Notas e Atualizações.'} Só quem tem permissão publica aqui.`
+                : channel.serverId
                 ? `Este é o começo do canal #${title}.`
                 : `Este é o começo da sua conversa com ${title}.`}
             </p>
@@ -409,7 +416,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 grouped={grouped}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
-                canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages)}
+                canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages || canPinMessages)}
                 editing={editing === m.id}
                 onEdit={() => setEditing(m.id)}
                 onDoneEditing={() => setEditing(null)}
@@ -487,6 +494,7 @@ function MessageRow({
   const [draft, setDraft] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
+  const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
   const showThreadAction = canThread && !message.thread;
   const mentionsMe = !mine && messageMentionsMe(message);
   const ignored = useIgnored((s) => s.ids.includes(message.author.id));
@@ -557,7 +565,7 @@ function MessageRow({
         const plain = message.content ? mentionsToText(message.content, serverId) : '';
         const menuAt = { x: e.clientX, y: e.clientY };
         openContextMenu(e, [
-          { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
+          canReact && { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
           showThreadAction && { label: 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: startThread },
           mine && {
             label: 'Editar mensagem',
@@ -726,16 +734,18 @@ function MessageRow({
 
       {!editing && (
         <div className={cx('absolute -top-3 right-4 hidden rounded-lg border border-edge bg-side shadow group-hover:flex', reactAnchor && 'flex')}>
-          <button
-            title="Adicionar reação"
-            onClick={(e) => {
-              const el = e.currentTarget;
-              setReactAnchor((a) => (a ? null : el));
-            }}
-            className="p-1.5 text-muted hover:text-fg"
-          >
-            <Icons.SmilePlus size={16} />
-          </button>
+          {canReact && (
+            <button
+              title="Adicionar reação"
+              onClick={(e) => {
+                const el = e.currentTarget;
+                setReactAnchor((a) => (a ? null : el));
+              }}
+              className="p-1.5 text-muted hover:text-fg"
+            >
+              <Icons.SmilePlus size={16} />
+            </button>
+          )}
           {showThreadAction && (
             <button
               title="Responder"
@@ -880,6 +890,7 @@ function reactorNames(userIds: string[], meId?: string) {
 /** Pílulas de reação embaixo da mensagem. Destacadas na cor do Line só quando você está entre quem reagiu. */
 function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: HTMLElement) => void; adding: boolean }) {
   const meId = useLine((s) => s.me?.id);
+  const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
   useLine((s) => s.users);
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -912,16 +923,18 @@ function Reactions({ message, onAdd, adding }: { message: Message; onAdd: (el: H
           </span>
         );
       })}
-      <button
-        title="Adicionar reação"
-        onClick={(e) => onAdd(e.currentTarget)}
-        className={cx(
-          'flex h-7 items-center rounded-lg bg-raise px-2 text-muted transition-opacity hover:text-fg',
-          adding ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-        )}
-      >
-        <Icons.SmilePlus size={16} />
-      </button>
+      {canReact && (
+        <button
+          title="Adicionar reação"
+          onClick={(e) => onAdd(e.currentTarget)}
+          className={cx(
+            'flex h-7 items-center rounded-lg bg-raise px-2 text-muted transition-opacity hover:text-fg',
+            adding ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        >
+          <Icons.SmilePlus size={16} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1369,7 +1382,7 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
               onClose={() => setMenu(false)}
               items={[
                 ...(canAttach ? [{ icon: <Icons.Upload size={18} />, label: 'Enviar um arquivo', run: () => picker.current?.click() }] : []),
-                ...(!channel.id.startsWith('draft:')
+                ...(!channel.id.startsWith('draft:') && hasPerm(myPerms, Perm.CreatePolls)
                   ? [{ icon: <Icons.Poll size={18} />, label: 'Criar enquete', run: () => actions.openModal({ kind: 'create-poll', channelId: channel.id }) }]
                   : []),
                 ...(canAttach ? [{ icon: <Icons.Mic size={18} />, label: 'Gravar mensagem de voz', run: () => setRecording(true) }] : []),
@@ -1397,7 +1410,9 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
             }}
           />
         ) : !canSend ? (
-          <p className="flex-1 py-0.5 text-[15px] text-muted">Você não tem permissão para enviar mensagens neste canal.</p>
+          <p className="flex-1 py-0.5 text-[15px] text-muted">
+            {channel.base ? `Só quem tem permissão publica em ${channel.name}. Você pode ler e reagir.` : 'Você não tem permissão para enviar mensagens neste canal.'}
+          </p>
         ) : (
         <textarea
           ref={ref}

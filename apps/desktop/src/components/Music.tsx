@@ -17,13 +17,13 @@ import { permsOf } from '@/lib/store';
 
 function useIsDj(m: LiveMusic | null | undefined) {
   const meId = useLine((s) => s.me?.id);
-  const manage = useLine((s) => (m ? hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageServer) : false));
+  const manage = useLine((s) => (m ? hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageAgent) : false));
   return !!m && (m.djId === meId || manage);
 }
 
 function isDj(m: LiveMusic) {
   const s = useLine.getState();
-  return m.djId === s.me?.id || hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageServer);
+  return m.djId === s.me?.id || hasPerm(permsOf(s, m.serverId, s.me?.id), Perm.ManageAgent);
 }
 
 /** `/stop` no chat: para a música do canal de voz em que estou. Devolve true se parou. */

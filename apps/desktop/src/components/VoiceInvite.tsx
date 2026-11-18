@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { DEFAULT_NOW_PLAYING, formatNowPlaying, useMusic } from "@/lib/music";
 import { ensureServerLoaded } from "@/lib/session";
-import { actions, useLine } from "@/lib/store";
+import { actions, channelPermsOf, useLine } from "@/lib/store";
+import { hasPerm, Perm } from "@line/shared";
 import {
   joinVoice,
   participants,
@@ -390,7 +391,9 @@ export function VoiceInviteCard({ invite }: { invite: VoiceInviteData }) {
 /** Linha embaixo do canal: mostra o status; quem está na chamada pode definir/editar. */
 export function VoiceStatusLine({ channelId }: { channelId: string }) {
   const own = useVoice((v) => v.channelStatus[channelId]);
-  const inChannel = useVoice((v) => v.channelId === channelId);
+  const inVoice = useVoice((v) => v.channelId === channelId);
+  const canSet = useLine((s) => hasPerm(channelPermsOf(s, channelId, s.me?.id), Perm.SetVoiceStatus));
+  const inChannel = inVoice && canSet;
   const playing = useNowPlaying(channelId);
   // Ninguém definiu um status e o agente está tocando: mostra a música (formato do agente).
   const status = own || playing;
