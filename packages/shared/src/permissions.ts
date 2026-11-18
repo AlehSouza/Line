@@ -84,9 +84,9 @@ export const PERMISSION_GROUPS: { title: string; items: { flag: number; name: st
   {
     title: 'Permissões de canais de texto',
     items: [
-      { flag: Perm.SendMessages, name: 'Enviar mensagens', hint: 'Permite mandar mensagens e enquetes nos canais de texto e responder em threads.' },
+      { flag: Perm.SendMessages, name: 'Enviar mensagens', hint: 'Permite mandar mensagens e enquetes nos canais de texto e responder em conversas.' },
       { flag: Perm.AttachFiles, name: 'Anexar arquivos', hint: 'Permite enviar imagens, vídeos e outros arquivos.' },
-      { flag: Perm.CreateThreads, name: 'Criar threads', hint: 'Permite abrir threads a partir de mensagens.' },
+      { flag: Perm.CreateThreads, name: 'Criar conversas', hint: 'Permite abrir conversas a partir de mensagens.' },
       { flag: Perm.CreatePolls, name: 'Criar enquetes', hint: 'Permite criar enquetes nos canais de texto.' },
       { flag: Perm.AddReactions, name: 'Adicionar reações', hint: 'Permite reagir com emojis novos. Sem ela, a pessoa só entra nas reações que já estão na mensagem.' },
       { flag: Perm.PinMessages, name: 'Fixar mensagens', hint: 'Permite fixar e desafixar mensagens no canal, com ou sem duração.' },

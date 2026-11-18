@@ -204,9 +204,9 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
         <div className="ml-auto flex gap-1">
           {canDelete && (
             <button
-              title="Apagar thread"
+              title="Apagar conversa"
               onClick={async () => {
-                if (await confirmDialog({ title: 'Apagar thread', message: `A thread "${thread.name}" e as mensagens dela serão apagadas.`, confirmLabel: 'Apagar', danger: true })) {
+                if (await confirmDialog({ title: 'Apagar conversa', message: `A conversa "${thread.name}" e as mensagens dela serão apagadas.`, confirmLabel: 'Apagar', danger: true })) {
                   await api.deleteChannel(thread.id).catch(showError);
                 }
               }}
@@ -215,7 +215,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
               <Icons.Trash size={18} />
             </button>
           )}
-          <button title="Fechar thread" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
+          <button title="Fechar conversa" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
             <Icons.X size={20} />
           </button>
         </div>
@@ -513,6 +513,9 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   );
 }
 
+/** Mensagem/mídia apagada que tinha conversa com respostas. */
+const DELETED_ITEM = 'Esse item foi apagado pelo autor ou administração';
+
 /** Threads da mensagem (servidor antigo só manda `thread`). */
 export const threadsOf = (m: Message): ThreadSummary[] => m.threads ?? (m.thread ? [m.thread] : []);
 /** Thread da mensagem inteira (não de uma mídia só). */
@@ -679,8 +682,13 @@ function MessageRow({
           <Icons.Trash size={18} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="pt-2 text-[15px] text-soft">A mensagem foi excluída.</p>
-          {threadsOf(message).map((t) => <ThreadChip key={t.id} thread={t} />)}
+          {/* Cada conversa fica logo abaixo do item apagado de onde ela saiu. */}
+          {(threadsOf(message).length ? threadsOf(message) : [null]).map((t, i) => (
+            <div key={t?.id ?? i} className={cx('flex flex-col items-start', i > 0 && 'mt-2')}>
+              <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
+              {t && <ThreadChip thread={t} />}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -722,7 +730,7 @@ function MessageRow({
     navigator.clipboard.writeText(text).then(() => toast(done), showError);
   }
 
-  /** Na grade, excluir apaga todas as mensagens dela (as que têm thread com respostas ficam como "A mensagem foi excluída."). */
+  /** Na grade, excluir apaga todas as mensagens dela (as que têm conversa com respostas ficam como item apagado, com a conversa embaixo). */
   async function remove() {
     const ids = gallery && galleryIds?.length ? galleryIds : [message.id];
     const many = ids.length > 1;
@@ -774,7 +782,7 @@ function MessageRow({
         const menuAt = { x: e.clientX, y: e.clientY };
         openContextMenu(e, [
           canReact && { label: 'Adicionar reação', icon: <Icons.SmilePlus size={15} />, onClick: () => setReactAnchor(row) },
-          canReply && { label: whole ? 'Abrir thread' : 'Responder em thread', icon: <Icons.Reply size={15} />, onClick: reply },
+          canReply && { label: whole ? 'Abrir conversa' : 'Responder em conversa', icon: <Icons.Reply size={15} />, onClick: reply },
           canForward && { label: 'Encaminhar', icon: <Icons.Forward size={15} />, onClick: forward },
           {
             label: isSaved ? 'Remover dos favoritos' : 'Favoritar mensagem',
@@ -989,7 +997,7 @@ function MessageRow({
           )}
           {canReply && (
             <button
-              title={whole ? 'Abrir thread' : 'Responder em thread'}
+              title={whole ? 'Abrir conversa' : 'Responder em conversa'}
               onClick={reply}
               className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
             >
@@ -1034,7 +1042,7 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
           <Icons.Trash size={16} />
         </div>
-        <p className="text-[15px] text-soft">A mensagem foi excluída.</p>
+        <p className="text-[15px] text-soft">{DELETED_ITEM}</p>
       </div>
     );
   }

@@ -2893,14 +2893,14 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     let parent = require_access(&q, &id, &me)?;
     if parent.kind != "text" {
         return Err(bad_request(
-            "Threads só podem ser criadas em canais de texto",
+            "Conversas só podem ser criadas em canais de texto",
         ));
     }
     if !has(
         q.channel_permissions(&me, &parent.id),
         perms::CREATE_THREADS,
     ) {
-        return Err(forbidden("Você não tem permissão para criar threads"));
+        return Err(forbidden("Você não tem permissão para criar conversas"));
     }
     let input = body::<validate::CreateThread>(&b)?.check()?;
     if let Some(mid) = &input.message_id {
@@ -2917,9 +2917,9 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
         && q.thread_for_message(mid, attachment_id).is_some()
     {
         return Err(conflict(if attachment_id.is_some() {
-            "Essa mídia já tem uma thread"
+            "Essa mídia já tem uma conversa"
         } else {
-            "Essa mensagem já tem uma thread"
+            "Essa mensagem já tem uma conversa"
         }));
     }
     let thread = q.create_thread(

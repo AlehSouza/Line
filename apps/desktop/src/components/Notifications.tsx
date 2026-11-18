@@ -181,7 +181,7 @@ export function channelNotifyItems(channelId: string): MenuEntry[] {
   const s = useLine.getState();
   const muted = isChannelMuted(s, channelId) && channelNotify(s, channelId).muted;
   const isThread = s.channels[channelId]?.type === 'thread';
-  const noun = isThread ? 'thread' : 'canal';
+  const noun = isThread ? 'conversa' : 'canal';
   return [
     muted
       ? { label: `Reativar ${noun}`, icon: <Icons.Bell size={15} />, onClick: () => unmuteChannel(channelId) }

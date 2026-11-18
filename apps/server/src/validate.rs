@@ -729,7 +729,7 @@ pub struct CreateThread {
 impl CreateThread {
     pub fn check(mut self) -> ApiResult<Self> {
         self.name = self.name.trim().to_string();
-        text(&self.name, 1, 100, "O nome da thread")?;
+        text(&self.name, 1, 100, "O nome da conversa")?;
         Ok(self)
     }
 }

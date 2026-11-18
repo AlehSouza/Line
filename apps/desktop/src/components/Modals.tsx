@@ -520,7 +520,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
               <p className="mt-1 text-sm text-muted">
                 {restricted
                   ? isText
-                    ? 'Só os marcados (e os administradores) enviam mensagens, anexos e threads. Os outros só leem.'
+                    ? 'Só os marcados (e os administradores) enviam mensagens, anexos e conversas. Os outros só leem.'
                     : 'Só os marcados (e os administradores) falam e ligam câmera ou tela. Os outros entram e só escutam.'
                   : 'Desligado: vale o que cada cargo pode fazer no servidor.'}
               </p>
@@ -680,7 +680,7 @@ function CreateThreadModal({
   const { busy, error, run } = useAction();
   return (
     <Modal
-      title="Criar thread"
+      title="Criar conversa"
       subtitle={modal.messageId ? 'A conversa sobre essa mensagem continua num painel ao lado.' : 'Uma conversa paralela dentro deste canal.'}
       onClose={onClose}
     >
@@ -696,7 +696,7 @@ function CreateThreadModal({
         }}
         className="space-y-4"
       >
-        <Field label="Nome da thread">
+        <Field label="Nome da conversa">
           <EmojiInput autoFocus required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="Sobre o assunto" />
         </Field>
         <ErrorText>{error}</ErrorText>
@@ -705,7 +705,7 @@ function CreateThreadModal({
             Cancelar
           </Button>
           <Button type="submit" disabled={busy || !name.trim()}>
-            Criar thread
+            Criar conversa
           </Button>
         </div>
       </form>
@@ -834,7 +834,7 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
       </div>
       <Composer
         channel={target}
-        placeholder={target.id.startsWith('draft:') ? 'Começar uma thread…' : `Responder em ${target.name}…`}
+        placeholder={target.id.startsWith('draft:') ? 'Começar uma conversa…' : `Responder em ${target.name}…`}
         onSent={open}
       />
     </div>
