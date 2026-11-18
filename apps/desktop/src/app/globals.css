@@ -333,6 +333,25 @@ body {
   background: var(--color-fg);
   box-shadow: 0 0 0 3px var(--color-accent);
 }
+/* Volume do agente no player da chamada (Music.tsx → CallVolume): linha fina igual à barra de progresso da música. */
+.line-slider.line-slider-thin {
+  height: 2px;
+  background: linear-gradient(to right, var(--color-accent) var(--fill, 0%), rgb(255 255 255 / 0.1) var(--fill, 0%));
+}
+.line-slider.line-slider-thin::-webkit-slider-thumb {
+  width: 8px;
+  height: 8px;
+  background: var(--color-accent);
+  box-shadow: none;
+}
+.line-slider.line-slider-thin:hover::-webkit-slider-thumb { transform: scale(1.25); }
+.line-slider.line-slider-thin::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--color-accent);
+  box-shadow: none;
+}
 .line-range::-moz-range-thumb {
   width: 12px;
   height: 12px;

@@ -304,8 +304,8 @@ function CallVolume() {
       >
         {volume === 0 ? <L.VolumeX size={14} /> : volume < 50 ? <L.Volume1 size={14} /> : <L.Volume2 size={14} />}
       </button>
-      <div className="w-0 overflow-hidden transition-[width] duration-200 group-hover/vol:w-20 group-focus-within/vol:w-20">
-        <Slider value={volume} onChange={setMusicVolume} className="w-20 pr-1" label="Volume do agente" />
+      <div className="flex w-0 items-center overflow-hidden transition-[width] duration-200 group-hover/vol:w-[5.5rem] group-focus-within/vol:w-[5.5rem]">
+        <Slider value={volume} onChange={setMusicVolume} className="line-slider-thin mx-1 my-1 w-20 shrink-0" label="Volume do agente" />
       </div>
     </div>
   );
