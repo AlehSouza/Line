@@ -89,7 +89,7 @@ function MediaGate({ attachment: a, children }: { attachment: Attachment; childr
     // Já aberto pela pessoa: botão de olho no canto para borrar de novo.
     if (!shown) return <>{children}</>;
     return (
-      <div className="group/gate relative max-w-full">
+      <div className="relative w-fit max-w-full">
         {children}
         <button
           onClick={() => setShown(false)}
