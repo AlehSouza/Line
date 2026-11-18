@@ -465,6 +465,15 @@ export function keepVoiceForUpdate() {
   saveResume('local', 10 * 60_000);
 }
 
+/** A atualização não aconteceu (já estava na mais nova ou falhou): esquece a chamada guardada. */
+export function forgetVoiceForUpdate() {
+  try {
+    localStorage.removeItem(RESUME_KEY);
+  } catch {
+    // nada
+  }
+}
+
 if (typeof window !== 'undefined') {
   // Mantém o registro vivo enquanto estou numa chamada; ao recarregar, ele ainda está no prazo.
   setInterval(() => saveResume(), 10_000);

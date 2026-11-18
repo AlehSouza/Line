@@ -10,6 +10,7 @@ import { VoiceSettingsPage } from './VoiceSettings';
 import { ActivityPrivacySection, GamesSection } from './Activity';
 import { NotificationsSection } from './Notifications';
 import { showError, toast } from './Dialogs';
+import { forgetVoiceForUpdate, keepVoiceForUpdate } from '@/lib/voice';
 import {
   CUSTOM_FIELDS,
   DEFAULT_CUSTOM,
@@ -137,8 +138,12 @@ export function SettingsModal({ onClose, initial }: { onClose: () => void; initi
                 try {
                   // Só abre a janelinha de download se houver versão nova; senão, só avisa no topo.
                   if (!(await updates.check())) return toast('Você já está na versão mais nova.');
+                  // Guarda a chamada para voltar nela quando o app reabrir na versão nova.
+                  keepVoiceForUpdate();
                   await updates.run?.();
+                  forgetVoiceForUpdate();
                 } catch (e) {
+                  forgetVoiceForUpdate();
                   showError(e);
                 }
               }}

@@ -106,9 +106,39 @@ fn startup_set(app: tauri::AppHandle, enabled: bool, minimized: bool) -> Result<
     res.map_err(|e| format!("Não deu para mudar a inicialização: {e}"))
 }
 
+/// Marca "acabei de instalar uma atualização". O instalador reabre o Line com os mesmos
+/// argumentos da abertura anterior: se ela veio do sistema (`--autostart`), sem esta marca o app
+/// novo voltaria escondido na bandeja em vez de mostrar a janela.
+fn updated_marker_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|d| d.join("just-updated"))
+}
+
+fn mark_updating(app: &tauri::AppHandle) {
+    if let Some(path) = updated_marker_path(app) {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, b"1");
+    }
+}
+
+/// Abriu logo depois de uma atualização? Apaga a marca (vale uma vez só) e diz se ela era recente.
+fn take_updated_marker(app: &tauri::AppHandle) -> bool {
+    let Some(path) = updated_marker_path(app) else { return false };
+    let fresh = std::fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < std::time::Duration::from_secs(15 * 60));
+    let _ = std::fs::remove_file(&path);
+    fresh
+}
+
 /// Aberto pelo sistema ao ligar o computador, com "abrir minimizado" ligado?
+/// Depois de uma atualização a janela sempre aparece, mesmo que a abertura anterior tenha sido essa.
 fn start_hidden(app: &tauri::AppHandle) -> bool {
-    std::env::args().any(|a| a == AUTOSTART_ARG) && load_startup_prefs(app).minimized
+    let updated = take_updated_marker(app);
+    !updated && std::env::args().any(|a| a == AUTOSTART_ARG) && load_startup_prefs(app).minimized
 }
 
 /// Servidor embutido (se subiu). Fica no estado do app para desligar ao sair.
@@ -190,10 +220,14 @@ async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Nenhuma atualização disponível.".to_string())?;
+    mark_updating(&app);
     update
         .download_and_install(|_, _| {}, || {})
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            let _ = take_updated_marker(&app);
+            e.to_string()
+        })?;
     app.restart();
 }
 
@@ -260,6 +294,7 @@ async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool 
     let mut got = 0usize;
     let mut last = -1.0f64;
     let s2 = splash.clone();
+    mark_updating(app);
     let result = update
         .download_and_install(
             |chunk, total| {
@@ -279,6 +314,7 @@ async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool 
         // macOS: a versão nova já está no lugar, só reabrir.
         Ok(()) => app.restart(),
         Err(err) => {
+            let _ = take_updated_marker(app);
             tracing::warn!("falha ao instalar atualização: {err}");
             splash_status(splash, "Não deu para atualizar agora. Abrindo o Line...", Some(-1.0));
             tokio::time::sleep(Duration::from_millis(1500)).await;
