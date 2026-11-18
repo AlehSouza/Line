@@ -161,10 +161,11 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
     <div ref={ref} className={cx('relative w-fit max-w-full overflow-hidden rounded-lg', covered && 'bg-[#3d3d40]')}>
       <div
         aria-hidden={covered || undefined}
-        className={cx(covered && 'pointer-events-none blur-2xl brightness-75 select-none [&_*]:pointer-events-none')}
+        className={cx(covered && 'pointer-events-none invisible select-none [&_*]:pointer-events-none')}
       >
         {children}
       </div>
+      {covered && attachmentKind(a.contentType, a.filename) === 'image' && <BlurThumb src={fileUrl(a.url)} className="absolute inset-0" />}
       {covered && (
         <div
           onClick={onOpen}
@@ -201,6 +202,60 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
       )}
     </div>
   );
+}
+
+/** Miniaturas de 32 px das mídias cobertas, já decodificadas (voltar a rolar não refaz nada). */
+const thumbs = new Map<string, ImageBitmap | HTMLCanvasElement>();
+const THUMB = 32;
+
+/** Mídia coberta (spoiler/+18) "borrada" sem filtro CSS: uma miniatura de 32 px esticada.
+ * blur() de raio grande em várias imagens repinta a cada quadro do scroll e trava a página;
+ * a miniatura esticada fica com o mesmo aspecto borrado e custa quase nada. */
+function BlurThumb({ src, className }: { src: string; className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    let cancelled = false;
+    const paint = (t: ImageBitmap | HTMLCanvasElement) => {
+      if (cancelled) return;
+      canvas.width = t.width;
+      canvas.height = t.height;
+      canvas.getContext('2d')?.drawImage(t, 0, 0);
+    };
+    const cached = thumbs.get(src);
+    if (cached) return paint(cached);
+    // Só carrega quando chega perto da tela.
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e?.isIntersecting) return;
+        io.disconnect();
+        const img = new Image();
+        img.decoding = 'async';
+        img.onload = () => {
+          const k = THUMB / Math.max(img.naturalWidth, img.naturalHeight, 1);
+          const w = Math.max(1, Math.round(img.naturalWidth * k));
+          const h = Math.max(1, Math.round(img.naturalHeight * k));
+          const c = document.createElement('canvas');
+          c.width = w;
+          c.height = h;
+          c.getContext('2d')?.drawImage(img, 0, 0, w, h);
+          img.src = '';
+          if (thumbs.size > 300) thumbs.delete(thumbs.keys().next().value!);
+          thumbs.set(src, c);
+          paint(c);
+        };
+        img.src = src;
+      },
+      { rootMargin: '400px' },
+    );
+    io.observe(canvas);
+    return () => {
+      cancelled = true;
+      io.disconnect();
+    };
+  }, [src]);
+  return <canvas ref={ref} aria-hidden className={cx('block bg-[#3d3d40] object-cover brightness-75', className)} style={{ width: '100%', height: '100%' }} />;
 }
 
 /** Tamanhos já vistos de mídias sem largura/altura salvas (anexos antigos). */
@@ -420,10 +475,16 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
                 <span className="px-2 text-[11px] text-white/80">Informe sua idade para ver</span>
               </span>
             ) : video ? (
-              <video src={`${url}#t=0.1`} muted preload="metadata" className={cx('h-full w-full object-cover', covered && 'scale-110 blur-xl')} />
+              covered ? (
+                <span className="block h-full w-full bg-[#3d3d40]" />
+              ) : (
+                <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />
+              )
+            ) : covered ? (
+              <BlurThumb src={url} className="h-full w-full" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={url} alt={a.filename} loading="lazy" className={cx('h-full w-full object-cover', covered && 'scale-110 blur-xl')} />
+              <img src={url} alt={a.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
             )}
             {video && !blocked && !covered && !more && (
               <span className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white">
