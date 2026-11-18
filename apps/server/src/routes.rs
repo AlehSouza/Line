@@ -3273,8 +3273,8 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
     let files = q.attachment_ids_of_message(&message.id);
-    // Com respostas na thread, a mensagem fica como "A mensagem foi excluída.".
-    if message.thread.as_ref().is_some_and(|t| t.message_count > 0) {
+    // Com respostas em alguma thread (da mensagem ou de uma mídia), fica como "A mensagem foi excluída.".
+    if message.threads.iter().any(|t| t.message_count > 0) {
         q.soft_delete_message(&message.id);
         app.remove_upload_files(&files);
         if let Some(updated) = q.message(&message.id) {

@@ -722,9 +722,20 @@ function MessageRow({
     navigator.clipboard.writeText(text).then(() => toast(done), showError);
   }
 
+  /** Na grade, excluir apaga todas as mensagens dela (as que têm thread com respostas ficam como "A mensagem foi excluída."). */
   async function remove() {
-    if ((await confirmDialog({ title: 'Excluir mensagem', message: 'Tem certeza? Não dá para desfazer.', confirmLabel: 'Excluir', danger: true })))
-      await api.deleteMessage(message.id).catch(showError);
+    const ids = gallery && galleryIds?.length ? galleryIds : [message.id];
+    const many = ids.length > 1;
+    const ok = await confirmDialog({
+      title: many ? 'Excluir grade' : 'Excluir mensagem',
+      message: many ? `As ${gallery!.length} mídias desta grade serão excluídas. Não dá para desfazer.` : 'Tem certeza? Não dá para desfazer.',
+      confirmLabel: 'Excluir',
+      danger: true,
+    });
+    if (!ok) return;
+    const results = await Promise.allSettled(ids.map((id) => api.deleteMessage(id)));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failed) showError(failed.reason);
   }
 
   /** Menu das reticências (e fim do clique direito), na ordem pedida. */
@@ -738,7 +749,7 @@ function MessageRow({
       },
       { label: 'Copiar link da mensagem', icon: <Icons.Link size={15} />, onClick: () => copy(messageLink(message), 'Link da mensagem copiado.') },
       'sep',
-      canDelete && { label: 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
+      canDelete && { label: gallery && (galleryIds?.length ?? 0) > 1 ? 'Excluir grade' : 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
       canReport && {
         label: 'Denunciar mensagem',
         icon: <Icons.Flag size={15} />,
