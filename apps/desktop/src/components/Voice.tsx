@@ -891,7 +891,7 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
     else actions.goHome(state.channelId);
   };
   return (
-    <FloatingCorner onClick={open} title="Voltar para a transmissão (arraste para mudar de canto)">
+    <FloatingCorner onClick={open} title="Voltar para a transmissão (arraste para mudar de lugar)">
       <Video stream={stream} contain />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-xs font-medium text-white">
         <Icons.Screen size={12} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
@@ -910,8 +910,26 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
   );
 }
 
-type Corner = 'tl' | 'tr' | 'bl' | 'br';
-const CORNER_KEY = 'line.miniStream.corner';
+/** Lado da área central em que o quadro fica grudado e onde nele (0 = começo, 1 = fim). */
+type Spot = { edge: 'l' | 'r' | 't' | 'b'; at: number };
+const SPOT_KEY = 'line.miniStream.spot';
+const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+function spotXY(spot: Spot, b: ReturnType<typeof floatBounds>) {
+  const along = (min: number, max: number) => min + spot.at * Math.max(0, max - min);
+  if (spot.edge === 'l') return { x: b.minX, y: along(b.minY, b.maxY) };
+  if (spot.edge === 'r') return { x: b.maxX, y: along(b.minY, b.maxY) };
+  if (spot.edge === 't') return { x: along(b.minX, b.maxX), y: b.minY };
+  return { x: along(b.minX, b.maxX), y: b.maxY };
+}
+
+/** Solto em qualquer lugar: gruda na borda mais perto (nunca fica no meio). */
+function nearestSpot(x: number, y: number, b: ReturnType<typeof floatBounds>): Spot {
+  const d = { l: x - b.minX, r: b.maxX - x, t: y - b.minY, b: b.maxY - y };
+  const edge = (Object.keys(d) as Spot['edge'][]).reduce((a, k) => (d[k] < d[a] ? k : a), 'r');
+  const ratio = (v: number, min: number, max: number) => (max > min ? clamp01((v - min) / (max - min)) : 0);
+  return { edge, at: edge === 'l' || edge === 'r' ? ratio(y, b.minY, b.maxY) : ratio(x, b.minX, b.maxX) };
+}
 const EDGE = 16;
 const TOP = 64; // abaixo do cabeçalho do canal
 
@@ -932,31 +950,31 @@ function floatBounds(box: HTMLElement) {
 }
 
 /**
- * Quadro flutuante que se arrasta e encaixa no canto mais perto da área central, sem tampar a
+ * Quadro flutuante que se arrasta e gruda na borda mais perto da área central (laterais, topo ou base), sem tampar a
  * caixa de texto. Um clique sem arrastar chama onClick.
  */
 function FloatingCorner({ children, onClick, title }: { children: ReactNode; onClick: () => void; title: string }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [corner, setCorner] = useState<Corner>(() => {
+  const [spot, setSpot] = useState<Spot>(() => {
     try {
-      const c = localStorage.getItem(CORNER_KEY);
-      return c === 'tl' || c === 'tr' || c === 'bl' || c === 'br' ? c : 'tr';
+      const v = JSON.parse(localStorage.getItem(SPOT_KEY) ?? 'null') as Spot | null;
+      if (v && ['l', 'r', 't', 'b'].includes(v.edge) && typeof v.at === 'number') return { edge: v.edge, at: clamp01(v.at) };
     } catch {
-      return 'tr';
+      // começa no canto de cima, à direita
     }
+    return { edge: 'r', at: 0 };
   });
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null);
   const moved = useRef(false);
 
-  // Recalcula o canto quando a área muda (janela, caixa de texto crescendo, troca de canal).
+  // Recalcula a posição quando a área muda (janela, caixa de texto crescendo, troca de canal).
   useLayoutEffect(() => {
     const box = ref.current;
     if (!box) return;
     const place = () => {
       const b = floatBounds(box);
-      const x = corner.endsWith('l') ? b.minX : b.maxX;
-      const y = corner.startsWith('t') ? b.minY : b.maxY;
+      const { x, y } = spotXY(spot, b);
       setPos((p) => (p && p.x === x && p.y === y ? p : { x, y }));
     };
     place();
@@ -971,7 +989,7 @@ function FloatingCorner({ children, onClick, title }: { children: ReactNode; onC
       ro.disconnect();
       mo?.disconnect();
     };
-  }, [corner]);
+  }, [spot]);
 
   const down = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || !pos) return;
@@ -996,14 +1014,14 @@ function FloatingCorner({ children, onClick, title }: { children: ReactNode; onC
       const b = floatBounds(box);
       const x = start.x + ev.clientX - start.px;
       const y = start.y + ev.clientY - start.py;
-      const next: Corner = `${y + box.offsetHeight / 2 < (b.minY + b.maxY + box.offsetHeight) / 2 ? 't' : 'b'}${x + box.offsetWidth / 2 < (b.minX + b.maxX + box.offsetWidth) / 2 ? 'l' : 'r'}`;
+      const next = nearestSpot(Math.min(Math.max(x, b.minX), b.maxX), Math.min(Math.max(y, b.minY), b.maxY), b);
       setDrag(null);
-      setCorner(next);
-      setPos({ x: next.endsWith('l') ? b.minX : b.maxX, y: next.startsWith('t') ? b.minY : b.maxY });
+      setSpot(next);
+      setPos(spotXY(next, b));
       try {
-        localStorage.setItem(CORNER_KEY, next);
+        localStorage.setItem(SPOT_KEY, JSON.stringify(next));
       } catch {
-        // só não lembra o canto
+        // só não lembra onde ficou
       }
     };
     box.addEventListener('pointermove', move);
