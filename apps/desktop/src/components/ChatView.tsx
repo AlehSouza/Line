@@ -661,7 +661,7 @@ function MessageRow({
     return (
       <div
         data-mid={message.id}
-        className={cx('flex gap-4 px-4 pb-1.5', tight ? 'pt-3' : 'pt-4', highlighted && 'bg-accent/15')}
+        className={cx('flex gap-4 px-4', tight ? 'py-[9px]' : 'py-[11px]', highlighted && 'bg-accent/15')}
       >
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
           <Icons.Trash size={18} />
@@ -794,9 +794,10 @@ function MessageRow({
       }}
       className={cx(
         // Sem margem entre as linhas: o espaço é padding, então o hover pega a linha inteira.
-        'group relative flex gap-4 px-4 pb-1.5 transition-colors duration-700 hover:bg-hover/30 hover:duration-100',
+        'group relative flex gap-4 px-4 transition-colors duration-700 hover:bg-hover/30 hover:duration-100',
         moreOpen && 'bg-black/10',
-        grouped ? 'pt-1.5' : tight ? 'pt-3' : 'pt-4',
+        // Mesmo espaço em cima e embaixo (a soma de antes dividida por 2).
+        grouped ? 'py-1.5' : tight ? 'py-[9px]' : 'py-[11px]',
         mentionsMe && 'border-l-2 border-sun bg-sun/5 hover:bg-sun/10',
         highlighted && 'bg-accent/15',
       )}
