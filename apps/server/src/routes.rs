@@ -2590,6 +2590,9 @@ async fn update_music_bot(State(app): S, Me(me): Me, Path(id): Path<String>, b: 
             bot_tag_text: p.bot_tag_text,
             bot_ring_color: p.bot_ring_color,
             bot_now_playing: p.bot_now_playing,
+            bot_command_notes: p
+                .bot_command_notes
+                .map(|n| serde_json::to_string(&n).unwrap_or_else(|_| "{}".into())),
         },
     );
     let bot = q.public_user(&bot.id).ok_or_else(|| not_found("Bot"))?;
@@ -2843,11 +2846,16 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
         }
     }
     // A mídia precisa ser da própria mensagem; senão é ignorada.
-    let attachment_id = input
-        .attachment_id
-        .as_deref()
-        .filter(|aid| input.message_id.is_some() && q.attachment_message_id(aid) == input.message_id);
-    let thread = q.create_thread(&parent, &me, &input.name, input.message_id.as_deref(), attachment_id);
+    let attachment_id = input.attachment_id.as_deref().filter(|aid| {
+        input.message_id.is_some() && q.attachment_message_id(aid) == input.message_id
+    });
+    let thread = q.create_thread(
+        &parent,
+        &me,
+        &input.name,
+        input.message_id.as_deref(),
+        attachment_id,
+    );
     if thread.server_id.is_some() {
         app.to_channel(&q, &thread.id, "channel:create", &thread);
     }

@@ -9,7 +9,7 @@ import { StyledName } from '@/lib/nameStyle';
 import { actions, useLine } from '@/lib/store';
 import { showError, toast } from './Dialogs';
 import { FullProfile } from './FullProfile';
-import { BotTag, useServerBot } from './Music';
+import { AGENT_COMMANDS, BotTag, DEFAULT_COMMAND_NOTES, useServerBot } from './Music';
 import { Avatar, Button, cx, ErrorText, Field, SwatchRow } from './ui';
 import { EmojiInput, EmojiTextarea } from './EmojiField';
 
@@ -33,7 +33,10 @@ const SAMPLE_TRACK = { title: 'Nome da música', author: 'Artista' };
 export function MusicSettings({ serverId }: { serverId: string }) {
   const [botId, setBotId] = useState<string | null>(null);
   const bot = useLine((s) => (botId ? s.users[botId] : undefined));
-  const [tab, setTab] = useState<'card' | 'call'>('card');
+  const [tab, setTab] = useState<'card' | 'call' | 'commands'>('card');
+  // Aba Comandos: aviso do chat no lugar de cada comando (salva no botão).
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [savedNotes, setSavedNotes] = useState('{}');
   const [error, setError] = useState('');
   // Aba Chamada (salva no botão).
   const [ringColor, setRingColor] = useState<string | null>(null);
@@ -59,6 +62,8 @@ export function MusicSettings({ serverId }: { serverId: string }) {
         setRingColor(b.botStyle?.ringColor ?? null);
         setNowPlaying(b.botStyle?.nowPlaying ?? null);
         setSavedCall(JSON.stringify([b.botStyle?.ringColor ?? null, b.botStyle?.nowPlaying ?? null, idleMsg]));
+        setNotes(b.botStyle?.commandNotes ?? {});
+        setSavedNotes(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
       })
       .catch((e) => setError((e as Error).message));
   }, [serverId]);
@@ -89,6 +94,22 @@ export function MusicSettings({ serverId }: { serverId: string }) {
     }
   }
 
+  const notesJson = JSON.stringify(cleanNotes(notes));
+  async function saveNotes() {
+    setBusy(true);
+    try {
+      const b = await api.updateMusicBot(serverId, { botCommandNotes: cleanNotes(notes) });
+      actions.upsertUsers([b]);
+      setNotes(b.botStyle?.commandNotes ?? {});
+      setSavedNotes(JSON.stringify(cleanNotes(b.botStyle?.commandNotes ?? {})));
+      toast('Agente salvo.');
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const presence: Presence = !bot || bot.presence === 'offline' ? 'invisible' : bot.presence === 'idle' || bot.presence === 'dnd' ? bot.presence : 'online';
   const style = bot?.botStyle;
 
@@ -109,6 +130,7 @@ export function MusicSettings({ serverId }: { serverId: string }) {
                 [
                   ['card', 'Cartão'],
                   ['call', 'Chamada'],
+                  ['commands', 'Comandos'],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -125,13 +147,46 @@ export function MusicSettings({ serverId }: { serverId: string }) {
               <div className="flex h-[640px] max-h-[75vh] flex-col">
                 <FullProfile userId={bot.id} agentServerId={serverId} embedded onClose={() => {}} />
               </div>
-            ) : (
+            ) : tab === 'call' ? (
               <AgentCallPreview bot={bot} ringColor={ringColor} nowPlaying={nowPlaying} />
+            ) : (
+              <div className="rounded-xl border border-edge bg-rail p-4">
+                <p className="mb-3 text-xs font-bold tracking-wide text-muted uppercase">Prévia no chat</p>
+                <div className="space-y-3">
+                  {AGENT_COMMANDS.map((c) => (
+                    <div key={c.name}>
+                      <p className="text-xs text-muted">/{c.name}</p>
+                      <p className="text-[15px] font-semibold text-muted">{notes[c.name]?.trim() || DEFAULT_COMMAND_NOTES[c.name]}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
           <div className="min-w-0 flex-1 space-y-5">
-            {tab === 'card' ? (
+            {tab === 'commands' ? (
+              <>
+                <p className="rounded-lg border border-edge bg-rail px-3 py-2.5 text-sm text-soft">
+                  Quando alguém usa um comando do agente, o chat mostra este aviso em negrito e acinzentado no lugar do texto digitado. Vazio usa o padrão.
+                </p>
+                {AGENT_COMMANDS.map((c) => (
+                  <Field key={c.name} label={`/${c.name}`} hint={c.desc}>
+                    <EmojiInput
+                      value={notes[c.name] ?? ''}
+                      onChange={(e) => setNotes((n) => ({ ...n, [c.name]: e.target.value }))}
+                      maxLength={80}
+                      placeholder={DEFAULT_COMMAND_NOTES[c.name]}
+                    />
+                  </Field>
+                ))}
+                <div className="flex justify-end">
+                  <Button disabled={busy || notesJson === savedNotes} onClick={saveNotes} className="px-6">
+                    {busy ? 'Salvando…' : 'Salvar'}
+                  </Button>
+                </div>
+              </>
+            ) : tab === 'card' ? (
               <>
                 <p className="rounded-lg border border-edge bg-rail px-3 py-2.5 text-sm text-soft">
                   Clique no cartão para editar: nome, nota, pronomes, status, bio, música favorita, faixa e avatar (lápis no canto), estilo do nome (pincel) e cores do cartão (bolinha
@@ -243,6 +298,11 @@ export function MusicSettings({ serverId }: { serverId: string }) {
       )}
     </div>
   );
+}
+
+/** Só os avisos preenchidos (vazio = padrão). */
+function cleanNotes(n: Record<string, string>) {
+  return Object.fromEntries(Object.entries(n).map(([k, v]) => [k, v.trim()]).filter(([, v]) => v)) as Record<string, string>;
 }
 
 /** Prévia da aba Chamada: o canal de voz na barra lateral com o agente tocando. */

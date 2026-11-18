@@ -105,6 +105,38 @@ const COMMANDS = [
   { name: 'hoje', args: '[cidade]', desc: 'O agente conta a data, se é feriado, a previsão do tempo e uma curiosidade do dia.' },
 ];
 
+/** Aviso padrão que aparece no chat no lugar de cada comando do agente. */
+export const DEFAULT_COMMAND_NOTES: Record<string, string> = {
+  hoje: 'Perguntou sobre Hoje para o Agente',
+  play: 'Pediu uma música para o Agente',
+  pausar: 'Pausou a música do Agente',
+  pular: 'Pediu para o Agente pular a música',
+  voltar: 'Pediu para o Agente voltar a música',
+  stop: 'Parou a música do Agente',
+};
+export const AGENT_COMMANDS = COMMANDS;
+
+/** Nome do comando do agente se a mensagem é um (ex.: "/hoje São Paulo" → "hoje"). */
+export function commandFromContent(content: string): string | null {
+  const m = /^\/([a-zà-ú]+)(?:\s|$)/i.exec(content.trim());
+  const name = m?.[1]?.toLowerCase();
+  return name && name in DEFAULT_COMMAND_NOTES ? name : null;
+}
+
+/** No lugar do texto do comando, um aviso em negrito e acinzentado ("Perguntou sobre Hoje para o Agente"). */
+export function CommandNotice({ serverId, command, content }: { serverId: string | null; command: string; content: string }) {
+  const notes = useLine((s) => {
+    if (!serverId) return undefined;
+    const id = Object.keys(s.members[serverId] ?? {}).find((u) => s.users[u]?.bot);
+    return id ? s.users[id]?.botStyle?.commandNotes : undefined;
+  });
+  return (
+    <p title={content} className="text-[15px] font-semibold text-muted">
+      {notes?.[command] || DEFAULT_COMMAND_NOTES[command]}
+    </p>
+  );
+}
+
 /** Cidades sugeridas no `/hoje`: Brasil primeiro (capitais e maiores), depois as principais do mundo. */
 const CITIES: [string, string][] = [
   ['São Paulo', 'SP'], ['Rio de Janeiro', 'RJ'], ['Brasília', 'DF'], ['Salvador', 'BA'], ['Fortaleza', 'CE'],

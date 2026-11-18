@@ -18,7 +18,7 @@ import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
 import { GameShareCard, gameFromContent } from './GameCard';
-import { BotTag, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
+import { BotTag, CommandNotice, commandFromContent, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
@@ -814,6 +814,8 @@ function MessageRow({
             <GameShareCard data={gameFromContent(message.content)!} />
           ) : gifFromContent(message.content) ? (
             <GifEmbed url={gifFromContent(message.content)!} />
+          ) : serverId && !message.author.bot && commandFromContent(message.content) ? (
+            <CommandNotice serverId={serverId} command={commandFromContent(message.content)!} content={message.content} />
           ) : (
             <div className="text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">
               {renderMarkdown(message.content, myUsername, mentionCtx)}

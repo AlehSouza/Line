@@ -38,6 +38,8 @@ pub struct BotStyle {
     pub ring_color: Option<String>,
     /// Status do canal de voz enquanto toca, com {musica} e {artista} (null = padrão, "" = desligado).
     pub now_playing: Option<String>,
+    /// Aviso do chat no lugar de cada comando ({"hoje": "Perguntou sobre Hoje para o Agente"}).
+    pub command_notes: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize)]

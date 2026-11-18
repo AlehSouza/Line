@@ -39,6 +39,8 @@ export const updateProfileSchema = z.object({
   botRingColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   /** Status do canal enquanto o agente toca, com {musica} e {artista} (null = padrão, "" = desligado). */
   botNowPlaying: z.string().max(100).nullable().optional(),
+  /** Aviso no chat no lugar de cada comando do agente ({ hoje: "Perguntou sobre Hoje para o Agente" }); vazio = padrão. */
+  botCommandNotes: z.record(z.string(), z.string().max(80)).optional(),
 });
 
 export const createServerSchema = z.object({

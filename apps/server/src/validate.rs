@@ -342,6 +342,9 @@ impl Login {
     }
 }
 
+/// Comandos do agente que viram mensagem no chat e podem ter aviso próprio.
+pub const AGENT_COMMANDS: [&str; 6] = ["play", "pausar", "pular", "voltar", "stop", "hoje"];
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfile {
@@ -374,6 +377,8 @@ pub struct UpdateProfile {
     /// Status do canal enquanto o agente toca (null = padrão, "" = desligado).
     #[serde(default, deserialize_with = "nullable")]
     pub bot_now_playing: Option<Option<String>>,
+    /// Aviso no chat no lugar de cada comando do agente (vazio = padrão).
+    pub bot_command_notes: Option<std::collections::BTreeMap<String, String>>,
     /// Data de nascimento AAAA-MM-DD (null = apagar).
     #[serde(default, deserialize_with = "nullable")]
     pub birth_date: Option<Option<String>>,
@@ -422,6 +427,15 @@ impl UpdateProfile {
         if let Some(Some(t)) = &mut self.bot_now_playing {
             *t = t.trim().to_string();
             text(t, 0, 100, "O status de quando toca")?;
+        }
+        if let Some(notes) = &mut self.bot_command_notes {
+            notes.retain(|k, v| {
+                *v = v.trim().to_string();
+                !v.is_empty() && AGENT_COMMANDS.contains(&k.as_str())
+            });
+            for v in notes.values() {
+                text(v, 1, 80, "O aviso do comando")?;
+            }
         }
         if let Some(Some(d)) = &mut self.birth_date {
             let date = chrono::NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d")

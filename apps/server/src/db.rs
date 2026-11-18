@@ -533,6 +533,10 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE channels ADD COLUMN thread_attachment_id TEXT;
 "#,
+    // Agente: aviso que aparece no chat no lugar do comando (JSON {"hoje": "Perguntou sobre..."}).
+    r#"
+  ALTER TABLE users ADD COLUMN bot_command_notes TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

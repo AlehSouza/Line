@@ -80,6 +80,7 @@ pub struct UserRow {
     pub bot_tag_text: String,
     pub bot_ring_color: Option<String>,
     pub bot_now_playing: Option<String>,
+    pub bot_command_notes: Option<String>,
     /// Estilo do nome exibido (JSON: font, effect, colors).
     pub name_style: Option<String>,
     /// Só vem nas consultas da própria tabela users.
@@ -112,6 +113,7 @@ impl UserRow {
             bot_tag_text: r.get("bot_tag_text").unwrap_or_else(|_| "BOT".into()),
             bot_ring_color: r.get("bot_ring_color").unwrap_or(None),
             bot_now_playing: r.get("bot_now_playing").unwrap_or(None),
+            bot_command_notes: r.get("bot_command_notes").unwrap_or(None),
             name_style: r.get("name_style").unwrap_or(None),
             birth_date: r.get("birth_date").unwrap_or(None),
             blur_sensitive: r.get::<_, i64>("blur_sensitive").unwrap_or(1) != 0,
@@ -119,7 +121,7 @@ impl UserRow {
     }
 }
 
-const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color, u.bot_now_playing, u.name_style";
+const USER_COLS: &str = "u.id, u.username, u.display_name, u.password_hash, u.avatar_color, u.bio, u.custom_status, u.status, u.created_at, u.avatar_id, u.banner_id, u.pronouns, u.thought, u.bot_server_id, u.tag_server_id, u.bot_name_color, u.bot_tag_color, u.bot_tag_text, u.bot_ring_color, u.bot_now_playing, u.bot_command_notes, u.name_style";
 /// Canais base: (tipo, nome, descrição), na ordem em que aparecem.
 pub const BASE_CHANNELS: [(&str, &str, &str); 4] = [
     ("rules", "Regras", "As regras do servidor."),
@@ -230,7 +232,9 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         last_message_at: r.get("last_message_at")?,
         parent_id: r.get("parent_id")?,
         thread_message_id: r.get("thread_message_id")?,
-        thread_attachment_id: r.get::<_, Option<String>>("thread_attachment_id").unwrap_or(None),
+        thread_attachment_id: r
+            .get::<_, Option<String>>("thread_attachment_id")
+            .unwrap_or(None),
         is_private: r.get::<_, i64>("is_private")? != 0,
         interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
         base: r.get("base").unwrap_or_default(),
@@ -286,6 +290,8 @@ pub struct ProfilePatch {
     pub bot_tag_text: Option<String>,
     pub bot_ring_color: Option<Option<String>>,
     pub bot_now_playing: Option<Option<String>>,
+    /// JSON já validado dos avisos por comando (None = não mexe).
+    pub bot_command_notes: Option<String>,
 }
 
 #[derive(Default)]
@@ -450,6 +456,11 @@ impl Q<'_> {
                 tag_text: row.bot_tag_text.clone(),
                 ring_color: row.bot_ring_color.clone(),
                 now_playing: row.bot_now_playing.clone(),
+                command_notes: row
+                    .bot_command_notes
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or_else(|| serde_json::json!({})),
             }),
             name_style: row
                 .name_style
@@ -855,6 +866,9 @@ impl Q<'_> {
         if let Some(v) = patch.bot_now_playing {
             // "" fica salvo (desligado); null volta ao padrão.
             set("bot_now_playing", v.map(Value::from).unwrap_or(Value::Null));
+        }
+        if let Some(v) = patch.bot_command_notes {
+            set("bot_command_notes", v.into());
         }
         if !sets.is_empty() {
             values.push(id.to_string().into());
@@ -1398,7 +1412,11 @@ impl Q<'_> {
             owner_id: (is_dm || is_thread).then_some(row.owner_id),
             parent_id: if is_thread { row.parent_id } else { None },
             thread_message_id: is_thread.then_some(row.thread_message_id),
-            thread_attachment_id: if is_thread { row.thread_attachment_id } else { None },
+            thread_attachment_id: if is_thread {
+                row.thread_attachment_id
+            } else {
+                None
+            },
             id: row.id,
             kind: row.kind,
             server_id: row.server_id,
