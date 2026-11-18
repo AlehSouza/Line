@@ -1062,16 +1062,13 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
  * Com `source` (app do Windows ou do macOS), captura a janela/tela escolhida no seletor do Line.
  * Sem ela, usa o seletor do próprio navegador (web, macOS, Linux).
  */
-export async function toggleScreen(source?: { id: string; audio: boolean }) {
+export async function toggleScreen(source?: { id: string; audio: boolean }): Promise<string | null> {
   const { screen } = getV();
   if (screen) {
     stopScreen();
-    return;
+    return null;
   }
-  if (!voiceCan(Perm.Video)) {
-    setV({ error: 'Você não tem permissão para compartilhar a tela neste canal.' });
-    return;
-  }
+  if (!voiceCan(Perm.Video)) return 'Você não tem permissão para compartilhar a tela neste canal.';
   const gen = ++screenGen;
   try {
     const opened = await openScreen(source, gen);
@@ -1079,28 +1076,70 @@ export async function toggleScreen(source?: { id: string; audio: boolean }) {
     if (!getV().channelId) {
       opened.stop?.();
       stopStream(opened.stream);
-      return;
+      return null;
     }
     const { stream } = opened;
     nativeStop = opened.stop;
     screenSize = opened.size;
+    currentSource = source ?? null;
+    currentFps = getV().screenQuality.fps;
     setV({ screen: stream });
     addStreamToPeers(stream);
     startThumbs(stream, source?.id);
     socket?.emit('voice:state', { screenStreamId: stream.id });
     playCallSound('start_transmission');
+    return null;
   } catch (err) {
-    if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível compartilhar a tela.' });
+    if ((err as Error).name === 'NotAllowedError') return null;
+    return source?.id.startsWith('window:')
+      ? 'Não foi possível capturar essa janela. Tente transmitir a tela inteira, na aba Telas.'
+      : 'Não foi possível compartilhar a tela.';
+  }
+}
+
+/** Fonte transmitida agora (seletor do Line), para o "Trocar tela" já abrir com ela marcada. */
+let currentSource: { id: string; audio: boolean } | null = null;
+let currentFps: Fps | null = null;
+export function currentScreenSource() {
+  return getV().screen ? currentSource : null;
+}
+
+/** Ajusta taxa, fps e redução em todas as conexões que recebem a tela. */
+function retuneScreen() {
+  const screen = getV().screen;
+  if (!screen) return;
+  const video = screen.getVideoTracks()[0];
+  const { resolution, fps } = getV().screenQuality;
+  if (video) video.contentHint = fps >= 60 ? 'motion' : 'detail';
+  for (const [id, { pc }] of peers) {
+    if (!watchers.has(id)) continue;
+    for (const sender of pc.getSenders()) if (video && sender.track === video) void retuneScreenSender(sender, resolution, fps);
   }
 }
 
 /**
- * Troca a janela/tela transmitida sem parar: as trilhas novas entram no mesmo stream e nas mesmas
- * conexões (replaceTrack), então quem assiste continua assistindo, sem renegociar o vídeo.
+ * Troca a janela/tela transmitida (ou só a qualidade) sem parar: as trilhas novas entram no mesmo
+ * stream e nas mesmas conexões (replaceTrack), então quem assiste continua assistindo.
  */
-export async function switchScreen(source?: { id: string; audio: boolean }) {
+export async function switchScreen(source?: { id: string; audio: boolean }): Promise<string | null> {
   const screen = getV().screen;
   if (!screen) return toggleScreen(source);
+  const { fps } = getV().screenQuality;
+  // Mesma fonte e mesmo fps: só muda resolução/taxa no envio, sem reabrir a captura (reabrir no
+  // meio deixava a imagem travando para quem assiste).
+  if (
+    source &&
+    currentSource &&
+    source.id === currentSource.id &&
+    source.audio === currentSource.audio &&
+    fps === currentFps &&
+    hasNativeScreen()
+  ) {
+    retuneScreen();
+    setV((v) => ({ mediaRev: v.mediaRev + 1 }));
+    return null;
+  }
+  const previous = currentSource;
   const gen = ++screenGen;
   const oldStop = nativeStop;
   let opened: Awaited<ReturnType<typeof openScreen>>;
@@ -1108,22 +1147,46 @@ export async function switchScreen(source?: { id: string; audio: boolean }) {
     opened = await openScreen(source, gen);
   } catch (err) {
     if (source && hasNativeScreen()) {
-      // O Rust só captura uma fonte por vez: a antiga já parou ao tentar a nova.
-      stopScreen();
-      setV({ error: 'Não foi possível trocar a tela.' });
-      return;
+      // O Rust só captura uma fonte por vez: a antiga já parou ao tentar a nova. Tenta voltar
+      // para o que estava antes; se nem isso der, encerra a transmissão.
+      if (previous && previous.id !== source.id && getV().screen === screen) {
+        oldStop?.(true);
+        const back = await switchScreenTo(screen, previous, ++screenGen).catch(() => false);
+        if (back) return 'Não foi possível capturar essa janela. A transmissão continuou com a anterior.';
+      }
+      if (getV().screen === screen) stopScreen();
+      return 'Não foi possível trocar a tela.';
     }
     // Cancelou ou falhou no seletor do navegador: continua transmitindo o que já estava.
     if (screenGen === gen) screenGen = gen - 1;
-    if ((err as Error).name !== 'NotAllowedError') setV({ error: 'Não foi possível trocar a tela.' });
-    return;
+    return (err as Error).name === 'NotAllowedError' ? null : 'Não foi possível trocar a tela.';
   }
   // Parou de transmitir (ou saiu) enquanto abria: solta a captura nova.
   if (getV().screen !== screen) {
     opened.stop?.();
     stopStream(opened.stream);
-    return;
+    return null;
   }
+  // A captura antiga sai sem desligar a nova no Rust (que já trocou de fonte ao começar a nova).
+  oldStop?.(true);
+  applySwitch(screen, opened, source);
+  return null;
+}
+
+/** Reabre uma fonte anterior depois de uma troca que falhou. */
+async function switchScreenTo(screen: MediaStream, source: { id: string; audio: boolean }, gen: number) {
+  const opened = await openScreen(source, gen);
+  if (getV().screen !== screen) {
+    opened.stop?.();
+    stopStream(opened.stream);
+    return false;
+  }
+  applySwitch(screen, opened, source);
+  return true;
+}
+
+/** Põe as trilhas da captura nova no stream da tela e nas conexões de quem assiste. */
+function applySwitch(screen: MediaStream, opened: Awaited<ReturnType<typeof openScreen>>, source?: { id: string; audio: boolean }) {
   const oldTracks = screen.getTracks();
   const newVideo = opened.stream.getVideoTracks()[0] ?? null;
   const newAudio = opened.stream.getAudioTracks()[0] ?? null;
@@ -1148,10 +1211,10 @@ export async function switchScreen(source?: { id: string; audio: boolean }) {
     // Fonte nova tem som e a antiga não tinha: o som entra na conexão (renegocia só o áudio).
     if (newAudio && !hadAudio) pc.addTrack(newAudio, screen);
   }
-  // A captura antiga sai sem desligar a nova no Rust (que já trocou de fonte ao começar a nova).
-  oldStop?.(true);
   for (const t of oldTracks) t.stop();
   nativeStop = opened.stop;
+  currentSource = source ?? null;
+  currentFps = fps;
   startThumbs(screen, source?.id);
   setV((v) => ({ mediaRev: v.mediaRev + 1 }));
 }
@@ -1220,6 +1283,8 @@ function stopScreen() {
   nativeStop?.();
   nativeStop = null;
   screenSize = null;
+  currentSource = null;
+  currentFps = null;
   setV({ screen: null });
   socket?.emit('voice:state', { screenStreamId: null });
 }

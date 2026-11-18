@@ -323,6 +323,7 @@ export const Icons = {
   Video: icon(L.Video),
   VideoOff: icon(L.VideoOff),
   Screen: icon(L.MonitorUp),
+  MonitorX: icon(L.MonitorX),
   Gamepad: icon(L.Gamepad2),
   Trophy: icon(L.Trophy),
   Star: icon(L.Star),

@@ -70,6 +70,22 @@ export interface NativeScreen {
   stop: (keepCapture?: boolean) => void;
 }
 
+/**
+ * Relógio dos quadros entre capturas. Cada captura nova do Rust recomeça o tempo do zero; ao trocar
+ * a fonte ou a qualidade no meio, os quadros "voltavam no tempo" para o WebRTC e quem assistia via
+ * a imagem travar e engasgar. Cada captura continua a partir do último quadro enviado.
+ */
+let frameClock = 0;
+function frameTimeline() {
+  let offset: number | null = null;
+  return (ts: number) => {
+    if (offset === null) offset = frameClock + 20_000 - ts;
+    const out = ts + offset;
+    if (out > frameClock) frameClock = out;
+    return out;
+  };
+}
+
 /** Começa a capturar a fonte e só resolve quando chega o primeiro quadro. */
 export async function startNativeScreen(
   id: string,
@@ -83,6 +99,7 @@ export async function startNativeScreen(
   const audio = opts.audio ? new Gen({ kind: 'audio' }) : null;
   const audioWriter = audio?.writable.getWriter();
 
+  const timeline = frameTimeline();
   let session = 0;
   let buffer: ArrayBuffer | null = null;
   let layout = { header: 64, slotSize: 0 };
@@ -108,6 +125,7 @@ export async function startNativeScreen(
     ctx.fillText('Transmissão pausada', last.w / 2, last.h / 2);
     // Mesmo relógio dos quadros do Rust (microssegundos desde o início), sempre andando para frente.
     const timestamp = Math.round(last.ts + (performance.now() - last.at) * 1000);
+    if (timestamp > frameClock) frameClock = timestamp;
     const frame = new VideoFrame(c, { timestamp });
     if ((videoWriter.desiredSize ?? 1) <= 0) frame.close();
     else void videoWriter.write(frame).catch(() => frame.close());
@@ -157,15 +175,16 @@ export async function startNativeScreen(
       }
       resume();
       try {
+        const ts = timeline(m.ts);
         // Pede em microssegundos; o construtor copia os pixels, então o espaço já pode ser reusado.
         const frame = new VideoFrame(new Uint8Array(buffer, layout.header + m.slot * layout.slotSize, m.w * m.h * 4), {
           format: 'BGRX',
           codedWidth: m.w,
           codedHeight: m.h,
-          timestamp: m.ts,
+          timestamp: ts,
         });
         flags[m.slot] = 0;
-        last = { w: m.w, h: m.h, ts: m.ts, at: performance.now() };
+        last = { w: m.w, h: m.h, ts, at: performance.now() };
         first?.({ w: m.w, h: m.h });
         first = null;
         // Encoder atrasado: descarta em vez de acumular (latência baixa vale mais que todo quadro).
@@ -197,13 +216,14 @@ export async function startNativeScreen(
   wv.addEventListener('message', onMessage);
 
   // keepCapture: troca de fonte; o Rust já passou para a captura nova, não pode desligá-la.
+  let stopping: Promise<unknown> = Promise.resolve();
   const cleanup = (keepCapture = false) => {
     if (stopped) return;
     stopped = true;
     resume();
     wv.removeEventListener('sharedbufferreceived', onBuffer as never);
     wv.removeEventListener('message', onMessage as never);
-    if (!keepCapture) void invoke('screen_stop').catch(() => {});
+    if (!keepCapture) stopping = invoke('screen_stop').catch(() => {});
     if (buffer) wv.releaseBuffer?.(buffer);
     for (const p of pendingBuffers) wv.releaseBuffer?.(p.buf);
     buffer = null;
@@ -228,6 +248,8 @@ export async function startNativeScreen(
     return { stream, width: size.w, height: size.h, stop: cleanup };
   } catch (err) {
     cleanup();
+    // Espera o Rust soltar a captura: quem chamou pode tentar outra fonte logo em seguida.
+    await stopping;
     throw err;
   }
 }
@@ -304,6 +326,7 @@ async function startSocketScreen(
     };
   }
   let lastPreview = 0;
+  const timeline = frameTimeline();
   const ws = new WebSocket(res.url);
   ws.binaryType = 'arraybuffer';
   ws.onmessage = (e) => {
@@ -322,7 +345,7 @@ async function startSocketScreen(
     if (kind === 1) {
       const [w, h] = [a, b];
       try {
-        const frame = new VideoFrame(new Uint8Array(buf, 17), { format: 'NV12', codedWidth: w, codedHeight: h, timestamp: ts });
+        const frame = new VideoFrame(new Uint8Array(buf, 17), { format: 'NV12', codedWidth: w, codedHeight: h, timestamp: timeline(ts) });
         for (const cb of subscribers) cb(frame.clone());
         const now = performance.now();
         if (!direct || now - lastPreview > 100 || canvas.width !== w || canvas.height !== h) {
@@ -351,11 +374,12 @@ async function startSocketScreen(
   };
 
   // keepCapture: troca de fonte; o Rust já passou para a captura nova, não pode desligá-la.
+  let stopping: Promise<unknown> = Promise.resolve();
   const cleanup = (keepCapture = false) => {
     if (stopped) return;
     stopped = true;
     ws.close();
-    if (!keepCapture) void invoke('screen_stop').catch(() => {});
+    if (!keepCapture) stopping = invoke('screen_stop').catch(() => {});
     video.stop();
     audioTrack?.stop();
     void audioCtx?.close().catch(() => {});
@@ -370,6 +394,7 @@ async function startSocketScreen(
     return { stream, width: size.w, height: size.h, stop: cleanup };
   } catch (err) {
     cleanup();
+    await stopping;
     throw err;
   }
 }

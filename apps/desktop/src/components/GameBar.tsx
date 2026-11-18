@@ -85,11 +85,11 @@ export function GameBar() {
           onClick={() => void toggleScreen()}
           className="shrink-0 rounded-md p-1.5 text-danger transition-colors hover:bg-danger/15"
         >
-          <Icons.X size={18} />
+          <Icons.MonitorX size={18} />
         </button>
       )}
       {/* Abre o seletor já com a janela do jogo marcada: dá para conferir a qualidade e o áudio antes. */}
-      {picker && <ScreenShareModal preselect={picker} onClose={() => setPicker(null)} />}
+      {picker && <ScreenShareModal preselect={picker} preselectName={game.name} onClose={() => setPicker(null)} />}
     </div>
   );
 }

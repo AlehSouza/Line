@@ -32,6 +32,7 @@ import {
   startCamera,
   switchCamera,
   switchScreen,
+  currentScreenSource,
   toggleCamera,
   toggleDeafen,
   toggleMute,
@@ -47,6 +48,7 @@ import { SoundboardButton } from './Soundboard';
 import { useSounds } from '@/lib/sounds';
 import { EMOJI_FONT } from './EmojiPicker';
 import { fileUrl } from '@/lib/api';
+import { toast } from './Dialogs';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
@@ -976,8 +978,8 @@ export function VoiceControls({ large }: { large?: boolean }) {
             <Icons.Chevron size={14} />
           </button>
           <span className="mx-1 h-6 w-px bg-edge max-md:mx-0.5" />
-          <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={key(screen ? 'on' : 'off')}>
-            <Icons.Screen size={size} />
+          <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={key(screen ? 'danger' : 'off')}>
+            {screen ? <Icons.MonitorX size={size} /> : <Icons.Screen size={size} />}
           </button>
           <button
             title={screen ? 'Trocar tela ou janela' : 'Escolher tela'}
@@ -1031,8 +1033,8 @@ export function VoiceControls({ large }: { large?: boolean }) {
       <button title={camera ? 'Desligar câmera' : 'Ligar câmera'} onClick={camClick} className={btn(camera)}>
         {camera ? <Icons.Video size={size} /> : <Icons.VideoOff size={size} />}
       </button>
-      <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={btn(screen)}>
-        <Icons.Screen size={size} />
+      <button title={screen ? 'Parar de compartilhar' : 'Compartilhar tela'} onClick={shareScreen} className={btn(false, screen)}>
+        {screen ? <Icons.MonitorX size={size} /> : <Icons.Screen size={size} />}
       </button>
       <button title="Sair da chamada" onClick={() => leaveVoice()} className={btn(false, true)}>
         <Icons.PhoneOff size={size} />
@@ -1194,21 +1196,36 @@ export function ScreenShareModal({
   onClose,
   switching = false,
   preselect,
+  preselectName,
 }: {
   onClose: () => void;
   switching?: boolean;
   /** Janela que já vem marcada (ex.: o jogo aberto, pelo cartão do painel). */
   preselect?: string;
+  /** Nome do que vem marcado (o jogo), para avisar se a janela não aparecer na lista. */
+  preselectName?: string;
 }) {
   const quality = useVoice((v) => v.screenQuality);
   const [resolution, setResolution] = useState<Resolution>(quality.resolution);
   const [fps, setFps] = useState<Fps>(quality.fps);
   // App do Windows: seletor próprio com janelas e telas. Web/macOS/Linux: o do navegador.
   const native = useMemo(() => hasNativeScreen(), []);
-  const [tab, setTab] = useState<'apps' | 'screens'>('apps');
+  // Trocando: já abre com o que está sendo transmitido marcado.
+  const [current] = useState(() => (switching ? currentScreenSource() : null));
+  const wanted = preselect ?? current?.id;
+  const [tab, setTab] = useState<'apps' | 'screens'>(() => (wanted?.startsWith('screen:') ? 'screens' : 'apps'));
   const [sources, setSources] = useState<ScreenSource[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(preselect ?? null);
-  const [audio, setAudio] = useState(true);
+  const [selected, setSelected] = useState<string | null>(wanted ?? null);
+  const [audio, setAudio] = useState(current?.audio ?? true);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
 
   const [listError, setListError] = useState<string | null>(null);
   const load = () => {
@@ -1217,11 +1234,20 @@ export function ScreenShareModal({
     listScreenSources()
       .then((list) => {
         // A janela já marcada vai para o começo da lista, para aparecer sem precisar procurar.
-        const pre = preselect ? list.find((s) => s.id === preselect) : undefined;
+        const pre = wanted ? list.find((s) => s.id === wanted) : undefined;
         setSources(pre ? [pre, ...list.filter((s) => s !== pre)] : list);
-        if (preselect && !pre) setSelected((cur) => (cur === preselect ? null : cur));
-        // Sem janelas abertas, já mostra as telas.
-        if (!list.some((s) => !s.isScreen)) setTab('screens');
+        if (pre) {
+          setTab(pre.isScreen ? 'screens' : 'apps');
+        } else if (wanted) {
+          // A janela do jogo não aparece (ex.: jogo em tela cheia exclusiva): marca a tela inteira.
+          const screen = list.find((s) => s.isScreen);
+          setSelected((cur) => (cur === wanted ? (screen?.id ?? null) : cur));
+          setTab('screens');
+          if (preselect)
+            setNotice(
+              `Não encontramos a janela${preselectName ? ` de ${preselectName}` : ' do jogo'}. Marcamos a tela inteira para transmitir.`,
+            );
+        } else if (!list.some((s) => !s.isScreen)) setTab('screens'); // sem janelas abertas, já mostra as telas
       })
       .catch((err) => {
         setSources([]);
@@ -1233,13 +1259,25 @@ export function ScreenShareModal({
   }, [native]);
 
   const visible = (sources ?? []).filter((s) => s.isScreen === (tab === 'screens'));
-  const start = () => {
-    if (native && !selected) return;
+  // Fica aberto até a transmissão começar: se falhar, mostra o aviso e dá para escolher outra.
+  const go = async (id: string | null) => {
+    if (busy || (native && !id)) return;
     setScreenQuality({ resolution, fps });
-    onClose();
-    const src = native && selected ? { id: selected, audio } : undefined;
-    void (switching ? switchScreen(src) : toggleScreen(src));
+    const src = native && id ? { id, audio } : undefined;
+    setBusy(true);
+    const err = await (switching ? switchScreen(src) : toggleScreen(src)).catch(() => 'Não foi possível compartilhar a tela.');
+    if (!alive.current) {
+      if (err) toast(err, 'error');
+      return;
+    }
+    setBusy(false);
+    if (!err) onClose();
+    else {
+      toast(err, 'error');
+      if (native && id?.startsWith('window:')) setTab('screens');
+    }
   };
+  const start = () => void go(selected);
   const choice = (active: boolean) =>
     cx(
       'flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition-colors',
@@ -1275,14 +1313,15 @@ export function ScreenShareModal({
           <Button variant="ghost" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={start} disabled={native && !selected}>
-            <Icons.Screen size={16} /> {switching ? 'Trocar' : 'Transmitir'}
+          <Button onClick={start} disabled={busy || (native && !selected)}>
+            <Icons.Screen size={16} /> {busy ? 'Abrindo…' : switching ? 'Trocar' : 'Transmitir'}
           </Button>
         </>
       }
     >
       {/* Abas e opções ficam paradas; só a lista de janelas/telas rola. */}
       <div className={cx(native ? 'flex min-h-0 flex-1 flex-col gap-4' : 'space-y-4')}>
+        {notice && <p className="shrink-0 rounded-lg bg-accent/10 px-3 py-2 text-sm text-soft">{notice}</p>}
         {native && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="mb-3 flex shrink-0 items-center gap-5 border-b border-edge">
@@ -1316,9 +1355,7 @@ export function ScreenShareModal({
                     onClick={() => setSelected(s.id)}
                     onDoubleClick={() => {
                       setSelected(s.id);
-                      setScreenQuality({ resolution, fps });
-                      onClose();
-                      void (switching ? switchScreen({ id: s.id, audio }) : toggleScreen({ id: s.id, audio }));
+                      void go(s.id);
                     }}
                     title={s.name}
                     className={cx(
@@ -1661,8 +1698,9 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
   };
   useEffect(() => () => void (hideTimer.current && clearTimeout(hideTimer.current)), []);
   // Assistir: abre o canal de voz com a transmissão em destaque (não fica no chat de texto).
+  // A própria transmissão também abre em destaque (sem pedir para "assistir" a si mesmo).
   const watch = () => {
-    setWatching(userId, true);
+    if (!isMe) setWatching(userId, true);
     setAt(null);
     requestStageFocus(`screen:${userId}`);
     const st = useVoice.getState().states[userId];
@@ -1700,10 +1738,10 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
             )}
             <div
               // Clicar na miniatura também abre a transmissão, igual ao botão.
-              onClick={!isMe && inSameCall ? watch : undefined}
+              onClick={inSameCall ? watch : undefined}
               className={cx(
                 'relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black',
-                !isMe && inSameCall && 'cursor-pointer',
+                inSameCall && 'cursor-pointer',
               )}
             >
               {thumb ? (
@@ -1713,14 +1751,12 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
                 <Icons.Screen size={28} className="text-muted" />
               )}
             </div>
-            {isMe ? (
-              <p className="mt-2 text-center text-xs text-muted">Você está transmitindo.</p>
-            ) : inSameCall ? (
+            {inSameCall ? (
               <button
                 onClick={watch}
                 className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/90 py-1.5 text-sm font-semibold text-[#141418] transition-colors hover:bg-white"
               >
-                <Icons.Eye size={14} /> Assistir transmissão
+                <Icons.Eye size={14} /> {isMe ? 'Ver minha transmissão' : 'Assistir transmissão'}
               </button>
             ) : (
               <>
