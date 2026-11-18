@@ -1330,7 +1330,7 @@ function GalleryThreads({ threads, channelId, messageIds }: { threads: ThreadSum
   return (
     <button
       onClick={() => (open ? actions.closeThread() : actions.openMediaThreads(channelId, messageIds))}
-      className={cx('group/thread mt-1 flex items-center gap-2 rounded-md py-1 pr-2 pl-1.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
+      className={cx('group/thread mt-1 flex h-8 items-center gap-2 rounded-lg px-2.5 text-left text-sm hover:bg-hover/60', open && 'bg-accent/10')}
     >
       {shown.length > 0 ? (
         <span className="flex items-center -space-x-1.5">
