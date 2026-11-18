@@ -144,6 +144,8 @@ export interface SelfUser extends PublicUser {
   email?: string | null;
   /** false em conta criada pelo Google que ainda não definiu senha. */
   hasPassword?: boolean;
+  /** Data de nascimento (AAAA-MM-DD); libera mídias +18 a partir dos 18 anos. */
+  birthDate?: string | null;
 }
 
 export interface Server {
@@ -243,6 +245,10 @@ export interface Attachment {
   size: number;
   /** Caminho relativo ao servidor, ex.: /api/attachments/abc/foto.png */
   url: string;
+  /** Fica borrado até clicar. */
+  spoiler?: boolean;
+  /** +18: só aparece para quem informou ter 18 anos ou mais. */
+  nsfw?: boolean;
 }
 
 export interface ThreadSummary {

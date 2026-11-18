@@ -8,6 +8,7 @@ import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
+import { looksNsfw } from '@/lib/nsfw';
 import { attachmentKind, AttachmentList, formatSize } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
@@ -1052,6 +1053,12 @@ interface Pending {
   progress: number;
   attachment?: Attachment;
   error?: string;
+  spoiler?: boolean;
+  nsfw?: boolean;
+  /** A detecção automática ainda está olhando a imagem/vídeo. */
+  checking?: boolean;
+  /** Marcado como +18 pela detecção automática. */
+  autoNsfw?: boolean;
 }
 
 const MAX_FILE = 100 * 1024 * 1024;
@@ -1106,9 +1113,16 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         progress: 0,
         preview: kind === 'image' || kind === 'video' ? URL.createObjectURL(file) : undefined,
         error: file.size > MAX_FILE ? 'Maior que 100 MB' : file.size === 0 ? 'Arquivo vazio' : undefined,
+        checking: kind === 'image' || kind === 'video',
       };
       setPending((list) => [...list, item]);
       if (item.error) continue;
+      if (item.checking) {
+        void looksNsfw(file).then((hit) => {
+          patch(key, hit ? { checking: false, nsfw: true, autoNsfw: true } : { checking: false });
+          if (hit) toast('Esse anexo parece conteúdo +18 e foi marcado como +18.');
+        });
+      }
       api
         .uploadAttachment(file, name, (f) => patch(key, { progress: f }))
         .then((attachment) => patch(key, { attachment, progress: 1 }))
@@ -1215,8 +1229,9 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
     ref.current?.focus();
   }, [channel.id]);
 
-  const uploading = pending.some((x) => !x.attachment && !x.error);
+  const uploading = pending.some((x) => !x.error && (!x.attachment || x.checking));
   const ready = pending.filter((x) => x.attachment).map((x) => x.attachment!.id);
+  const flagIds = (flag: 'spoiler' | 'nsfw') => pending.filter((x) => x.attachment && x[flag]).map((x) => x.attachment!.id);
 
   /** Mensagem de voz vai direto, sem passar pelos anexos pendentes. */
   async function sendVoice(file: File) {
@@ -1294,7 +1309,13 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
       const target = await resolveTarget();
       // Áudio usa o player novo: apps antigos mostram o aviso de atualizar.
       const hasAudio = !gif && pending.some((x) => x.attachment && attachmentKind(x.type, x.name) === 'audio');
-      const message = await api.sendMessage(target, content, gif ? [] : ready, hasAudio ? ['audio'] : []);
+      const message = await api.sendMessage(
+        target,
+        content,
+        gif ? [] : ready,
+        hasAudio ? ['audio'] : [],
+        gif ? {} : { spoilerIds: flagIds('spoiler'), nsfwIds: flagIds('nsfw') },
+      );
       actions.addMessage(message);
       if (target !== channel.id) actions.openThread(target);
       if (gif) return;
@@ -1367,7 +1388,12 @@ function Composer({ channel, placeholder, ref: handle }: { channel: Channel; pla
         {pending.length > 0 && (
           <div className="flex gap-2 overflow-x-auto border-b border-edge p-3">
             {pending.map((p) => (
-              <PendingCard key={p.key} item={p} onRemove={() => remove(p.key)} />
+              <PendingCard
+                key={p.key}
+                item={p}
+                onRemove={() => remove(p.key)}
+                onToggle={(flag) => patch(p.key, flag === 'spoiler' ? { spoiler: !p.spoiler } : { nsfw: !p.nsfw })}
+              />
             ))}
           </div>
         )}
@@ -1686,9 +1712,10 @@ function TypingDots() {
   );
 }
 
-function PendingCard({ item, onRemove }: { item: Pending; onRemove: () => void }) {
+function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: () => void; onToggle: (flag: 'spoiler' | 'nsfw') => void }) {
   const kind = attachmentKind(item.type, item.name);
   const done = !!item.attachment;
+  const covered = item.spoiler || item.nsfw;
   return (
     <div className="relative flex w-44 shrink-0 flex-col rounded-lg border border-edge bg-side p-2">
       <button
@@ -1701,9 +1728,9 @@ function PendingCard({ item, onRemove }: { item: Pending; onRemove: () => void }
       <div className="flex h-24 items-center justify-center overflow-hidden rounded-md bg-rail">
         {kind === 'image' && item.preview ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.preview} alt={item.name} className="h-full w-full object-cover" />
+          <img src={item.preview} alt={item.name} className={cx('h-full w-full object-cover', covered && 'blur-md')} />
         ) : kind === 'video' && item.preview ? (
-          <video src={item.preview} muted className="h-full w-full object-cover" />
+          <video src={item.preview} muted className={cx('h-full w-full object-cover', covered && 'blur-md')} />
         ) : kind === 'text' ? (
           <Icons.FileText size={36} className="text-accent" />
         ) : (
@@ -1723,6 +1750,33 @@ function PendingCard({ item, onRemove }: { item: Pending; onRemove: () => void }
             <div className={cx('h-full rounded-full', done ? 'bg-online' : 'bg-accent')} style={{ width: `${Math.round(item.progress * 100)}%` }} />
           </div>
           <span className="text-[10px] text-muted">{formatSize(item.size)}</span>
+        </div>
+      )}
+      {!item.error && (
+        <div className="mt-1.5 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onToggle('spoiler')}
+            title="Fica borrado até a pessoa clicar"
+            className={cx(
+              'flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] font-semibold transition-colors',
+              item.spoiler ? 'border-accent bg-accent/15 text-accent' : 'border-edge text-muted hover:text-fg',
+            )}
+          >
+            <Icons.EyeOff size={12} /> Spoiler
+          </button>
+          <button
+            type="button"
+            onClick={() => onToggle('nsfw')}
+            title={item.autoNsfw ? 'Marcado automaticamente como +18' : 'Só quem tem 18 anos ou mais vê'}
+            className={cx(
+              'rounded-md border px-1.5 py-0.5 text-[11px] font-semibold transition-colors',
+              item.nsfw ? 'border-danger bg-danger/15 text-danger' : 'border-edge text-muted hover:text-fg',
+            )}
+          >
+            +18
+          </button>
+          {item.checking && <span className="ml-auto text-[10px] text-muted">Verificando…</span>}
         </div>
       )}
     </div>

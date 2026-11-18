@@ -31,6 +31,9 @@
     "zustand": "^5.0.16"
   },
   "dependencies": {
-    "lucide-react": "^0.468.0"
+    "@tensorflow/tfjs": "^4.22.0",
+    "buffer": "^6.0.3",
+    "lucide-react": "^0.468.0",
+    "nsfwjs": "^4.4.0"
   }
 }

@@ -63,6 +63,8 @@ pub struct SelfUser {
     pub email: Option<String>,
     /// false em conta criada pelo Google que ainda não definiu senha.
     pub has_password: bool,
+    /// Data de nascimento (AAAA-MM-DD), só para a própria pessoa.
+    pub birth_date: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -244,6 +246,10 @@ pub struct Attachment {
     pub size: i64,
     /// Caminho relativo ao servidor (o app junta com o endereço do servidor).
     pub url: String,
+    /// Fica borrado até clicar.
+    pub spoiler: bool,
+    /// +18: só aparece para quem informou ter 18 anos ou mais.
+    pub nsfw: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

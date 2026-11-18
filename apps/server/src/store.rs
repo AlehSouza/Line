@@ -80,6 +80,8 @@ pub struct UserRow {
     pub bot_now_playing: Option<String>,
     /// Estilo do nome exibido (JSON: font, effect, colors).
     pub name_style: Option<String>,
+    /// Só vem nas consultas da própria tabela users.
+    pub birth_date: Option<String>,
 }
 
 impl UserRow {
@@ -108,6 +110,7 @@ impl UserRow {
             bot_ring_color: r.get("bot_ring_color").unwrap_or(None),
             bot_now_playing: r.get("bot_now_playing").unwrap_or(None),
             name_style: r.get("name_style").unwrap_or(None),
+            birth_date: r.get("birth_date").unwrap_or(None),
         })
     }
 }
@@ -235,6 +238,8 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
         filename,
         content_type: r.get("content_type")?,
         size: r.get("size")?,
+        spoiler: r.get::<_, i64>("spoiler").unwrap_or(0) != 0,
+        nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
     })
 }
 
@@ -490,7 +495,15 @@ impl Q<'_> {
             created_at: row.created_at.clone(),
             email: row.email.clone(),
             has_password: !row.password_hash.is_empty() && row.password_hash != "google",
+            birth_date: row.birth_date.clone(),
         }
+    }
+
+    pub fn set_birth_date(&self, id: &str, date: Option<&str>) {
+        ok(self.c.execute(
+            "UPDATE users SET birth_date = ? WHERE id = ?",
+            params![date, id],
+        ));
     }
 
     pub fn set_username(&self, id: &str, username: &str) {
@@ -2251,6 +2264,21 @@ impl Q<'_> {
         attachment_ids: &[String],
         requires: &[String],
     ) -> Message {
+        self.create_message_flagged(channel_id, author_id, content, attachment_ids, requires, &[], &[])
+    }
+
+    /// Igual a `create_message`, marcando anexos como spoiler ou +18.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_message_flagged(
+        &self,
+        channel_id: &str,
+        author_id: &str,
+        content: &str,
+        attachment_ids: &[String],
+        requires: &[String],
+        spoiler_ids: &[String],
+        nsfw_ids: &[String],
+    ) -> Message {
         let id = new_id();
         let at = now_iso();
         let (everyone, roles) = self.resolve_mentions(channel_id, author_id, content);
@@ -2263,8 +2291,15 @@ impl Q<'_> {
             ok(self.c.execute("UPDATE channels SET last_message_at = ? WHERE id = ?", [&at, channel_id]));
             for (pos, a) in attachment_ids.iter().enumerate() {
                 ok(self.c.execute(
-                    "UPDATE attachments SET message_id = ?, position = ? WHERE id = ? AND uploader_id = ? AND message_id IS NULL",
-                    params![id, pos as i64, a, author_id],
+                    "UPDATE attachments SET message_id = ?, position = ?, spoiler = ?, nsfw = ? WHERE id = ? AND uploader_id = ? AND message_id IS NULL",
+                    params![
+                        id,
+                        pos as i64,
+                        spoiler_ids.contains(a) as i64,
+                        nsfw_ids.contains(a) as i64,
+                        a,
+                        author_id
+                    ],
                 ));
             }
         });

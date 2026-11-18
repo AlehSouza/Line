@@ -226,6 +226,8 @@ export const api = {
 
   me: () => request<SelfUser>('GET', '/users/@me'),
   updateMe: (patch: UpdateProfileInput) => request<SelfUser>('PATCH', '/users/@me', patch),
+  /** Data de nascimento AAAA-MM-DD (null apaga). */
+  setBirthDate: (birthDate: string | null) => request<SelfUser>('PATCH', '/users/@me', { birthDate }),
   updateAccount: (patch: { username?: string; email?: string | null; currentPassword?: string; code?: string }) =>
     request<SelfUser>('PATCH', '/users/@me/account', patch),
   changePassword: (proof: { currentPassword?: string; code?: string }, newPassword: string) =>
@@ -334,8 +336,13 @@ export const api = {
         .map(([k, v]) => `${k}=${enc(v!)}`)
         .join('&')}`,
     ),
-  sendMessage: (channelId: string, content: string, attachmentIds: string[] = [], requires: string[] = []) =>
-    request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds, requires }),
+  sendMessage: (
+    channelId: string,
+    content: string,
+    attachmentIds: string[] = [],
+    requires: string[] = [],
+    flags: { spoilerIds?: string[]; nsfwIds?: string[] } = {},
+  ) => request<Message>('POST', `/channels/${enc(channelId)}/messages`, { content, attachmentIds, requires, ...flags }),
   uploadAttachment,
   fetchMedia,
   threads: (channelId: string) => request<Channel[]>('GET', `/channels/${enc(channelId)}/threads`),

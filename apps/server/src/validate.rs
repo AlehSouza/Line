@@ -350,6 +350,9 @@ pub struct UpdateProfile {
     /// Status do canal enquanto o agente toca (null = padrão, "" = desligado).
     #[serde(default, deserialize_with = "nullable")]
     pub bot_now_playing: Option<Option<String>>,
+    /// Data de nascimento AAAA-MM-DD (null = apagar).
+    #[serde(default, deserialize_with = "nullable")]
+    pub birth_date: Option<Option<String>>,
 }
 
 impl UpdateProfile {
@@ -393,6 +396,15 @@ impl UpdateProfile {
         if let Some(Some(t)) = &mut self.bot_now_playing {
             *t = t.trim().to_string();
             text(t, 0, 100, "O status de quando toca")?;
+        }
+        if let Some(Some(d)) = &mut self.birth_date {
+            let date = chrono::NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d")
+                .map_err(|_| validation("Data de nascimento inválida"))?;
+            let today = chrono::Utc::now().date_naive();
+            if date > today || date < today - chrono::Duration::days(366 * 120) {
+                return Err(validation("Data de nascimento inválida"));
+            }
+            *d = date.format("%Y-%m-%d").to_string();
         }
         if let Some(t) = &self.bot_tag_text
             && t != "BOT"
@@ -582,6 +594,12 @@ pub struct SendMessage {
     pub content: String,
     #[serde(default)]
     pub attachment_ids: Vec<String>,
+    /// Anexos (entre os de cima) que ficam borrados até clicar.
+    #[serde(default)]
+    pub spoiler_ids: Vec<String>,
+    /// Anexos +18 (só quem tem 18 anos ou mais vê).
+    #[serde(default)]
+    pub nsfw_ids: Vec<String>,
     /// Recursos que o app de quem lê precisa conhecer (ex.: "audio"). Ver `Message::requires`.
     #[serde(default)]
     pub requires: Vec<String>,

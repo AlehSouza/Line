@@ -62,12 +62,17 @@ export function PinnedNote({ message }: { message: Message }) {
   );
 }
 
+/** Spoiler e +18 não mostram miniatura na lista. */
+const hidden = (m: Message) => !!(m.attachments[0]?.spoiler || m.attachments[0]?.nsfw);
+
 function summary(m: Message, serverId?: string | null) {
   if (m.poll) return `📊 ${m.poll.question}`;
   const text = m.content ? mentionsToText(m.content, serverId) : '';
   if (text) return text;
   const a = m.attachments[0];
   if (!a) return 'Mensagem';
+  if (a.nsfw) return '🔞 Anexo +18';
+  if (a.spoiler) return '🙈 Spoiler';
   if (a.contentType.startsWith('image/')) return '🖼️ Imagem';
   if (a.contentType.startsWith('video/')) return '🎬 Vídeo';
   if (a.contentType.startsWith('audio/')) return '🎵 Áudio';
@@ -154,13 +159,13 @@ export function PinsButton({ channel, canPin }: { channel: Channel; canPin: bool
                       </StyledName>
                       <span className="shrink-0 text-[11px] text-muted">{pinnedUntilLabel(m.pinnedUntil)}</span>
                     </p>
-                    {!(m.attachments[0]?.contentType.startsWith('video/') && !m.content && !m.poll) && (
+                    {!(m.attachments[0]?.contentType.startsWith('video/') && !hidden(m) && !m.content && !m.poll) && (
                       <p className="line-clamp-3 text-sm break-words whitespace-pre-wrap text-soft">{summary(m, channel.serverId)}</p>
                     )}
-                    {m.attachments[0]?.contentType.startsWith('image/') && (
+                    {m.attachments[0]?.contentType.startsWith('image/') && !hidden(m) && (
                       <img src={fileUrl(m.attachments[0].url)} alt="" className="mt-1 max-h-28 rounded-md object-cover" />
                     )}
-                    {m.attachments[0]?.contentType.startsWith('video/') && <VideoThumb src={fileUrl(m.attachments[0].url)} />}
+                    {m.attachments[0]?.contentType.startsWith('video/') && !hidden(m) && <VideoThumb src={fileUrl(m.attachments[0].url)} />}
                   </div>
                   {canPin && (
                     <button

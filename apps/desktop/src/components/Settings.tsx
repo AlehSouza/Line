@@ -5,7 +5,8 @@ import { api } from '@/lib/api';
 import { logout, replaceToken } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
-import { Avatar, Button, cx, ErrorText, Field, Icons, Input } from './ui';
+import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, Select } from './ui';
+import { ageOf } from '@/lib/age';
 import { VoiceSettingsPage } from './VoiceSettings';
 import { ActivityPrivacySection, GamesSection } from './Activity';
 import { NotificationsSection } from './Notifications';
@@ -267,6 +268,7 @@ function AccountSection() {
   const [showEmail, setShowEmail] = useState(false);
   const [editing, setEditing] = useState<'username' | 'email' | 'password' | 'reset-link' | null>(null);
   const [danger, setDanger] = useState<'deactivate' | 'delete' | null>(null);
+  const [birthOpen, setBirthOpen] = useState(false);
 
   return (
     <div className="space-y-10">
@@ -288,6 +290,12 @@ function AccountSection() {
             )
           }
           onEdit={() => setEditing('email')}
+        />
+        <Row
+          label="Data de nascimento"
+          value={me.birthDate ? formatBirth(me.birthDate) : <span className="text-muted">Não informada (mídias +18 ficam bloqueadas)</span>}
+          onEdit={() => setBirthOpen(true)}
+          action={me.birthDate ? 'Editar' : 'Informar'}
         />
       </div>
 
@@ -328,6 +336,7 @@ function AccountSection() {
       </div>
 
       {danger && <DangerDialog kind={danger} onClose={() => setDanger(null)} />}
+      {birthOpen && <BirthDateDialog onClose={() => setBirthOpen(false)} />}
 
       {editing === 'reset-link' ? (
         <ResetLinkDialog onClose={() => setEditing(null)} />
@@ -335,6 +344,95 @@ function AccountSection() {
         editing && <EditAccountDialog field={editing} onClose={() => setEditing(null)} onForgot={() => setEditing('reset-link')} />
       )}
     </div>
+  );
+}
+
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+function formatBirth(date: string) {
+  const [y, m, d] = date.split('-').map(Number);
+  const age = ageOf(date);
+  return `${d} de ${MONTHS[(m ?? 1) - 1]} de ${y}${age !== null ? ` (${age} anos)` : ''}`;
+}
+
+/** Dia, mês e ano de nascimento. A idade libera (ou não) as mídias +18 do chat. */
+function BirthDateDialog({ onClose }: { onClose: () => void }) {
+  const me = useLine((s) => s.me)!;
+  const [y0, m0, d0] = (me.birthDate ?? '').split('-');
+  const [day, setDay] = useState(d0 ? String(Number(d0)) : '');
+  const [month, setMonth] = useState(m0 ? String(Number(m0)) : '');
+  const [year, setYear] = useState(y0 ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const thisYear = new Date().getFullYear();
+  const days = month && year ? new Date(Number(year), Number(month), 0).getDate() : 31;
+  const iso = day && month && year ? `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}` : '';
+  const age = iso ? ageOf(iso) : null;
+
+  async function save(value: string | null) {
+    setError('');
+    setBusy(true);
+    try {
+      actions.setMe(await api.setBirthDate(value));
+      toast(value ? 'Data de nascimento salva.' : 'Data de nascimento apagada.');
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title="Data de nascimento"
+      subtitle="Usada só para liberar mídias marcadas como +18. Ninguém mais vê."
+      onClose={onClose}
+      footer={
+        <>
+          {me.birthDate && (
+            <Button variant="ghost" disabled={busy} onClick={() => save(null)} className="mr-auto text-danger hover:text-danger">
+              Apagar
+            </Button>
+          )}
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button disabled={busy || !iso || Number(day) > days} onClick={() => save(iso)}>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <div className="grid grid-cols-[1fr_1.6fr_1.2fr] gap-2">
+        <Field label="Dia" group>
+          <Select
+            value={day}
+            onChange={setDay}
+            options={[{ value: '', label: 'Dia' }, ...Array.from({ length: days }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))]}
+          />
+        </Field>
+        <Field label="Mês" group>
+          <Select
+            value={month}
+            onChange={setMonth}
+            options={[{ value: '', label: 'Mês' }, ...MONTHS.map((m, i) => ({ value: String(i + 1), label: m[0]!.toUpperCase() + m.slice(1) }))]}
+          />
+        </Field>
+        <Field label="Ano" group>
+          <Select
+            value={year}
+            onChange={setYear}
+            options={[{ value: '', label: 'Ano' }, ...Array.from({ length: 101 }, (_, i) => ({ value: String(thisYear - i), label: String(thisYear - i) }))]}
+          />
+        </Field>
+      </div>
+      {age !== null && (
+        <p className={cx('mt-3 text-sm', age >= 18 ? 'text-soft' : 'text-muted')}>
+          {age >= 18 ? `${age} anos: as mídias +18 ficam liberadas.` : `${Math.max(age, 0)} anos: as mídias +18 continuam bloqueadas.`}
+        </p>
+      )}
+      {error && <div className="mt-3"><ErrorText>{error}</ErrorText></div>}
+    </Modal>
   );
 }
 

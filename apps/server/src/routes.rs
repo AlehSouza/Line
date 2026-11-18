@@ -1136,6 +1136,9 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
     {
         return Err(bad_request("Esse servidor não tem tag"));
     }
+    if let Some(date) = &p.birth_date {
+        q.set_birth_date(&me, date.as_deref());
+    }
     let user = q.update_user(
         &me,
         ProfilePatch {
@@ -2337,12 +2340,14 @@ async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byte
     if q.pending_attachments(&me, &input.attachment_ids) != input.attachment_ids.len() {
         return Err(bad_request("Anexo inválido ou já usado"));
     }
-    let message = q.create_message(
+    let message = q.create_message_flagged(
         &channel.id,
         &me,
         &input.content,
         &input.attachment_ids,
         &input.requires,
+        &input.spoiler_ids,
+        &input.nsfw_ids,
     );
     // Quem manda a mensagem leu o canal até ela.
     q.ack(&me, &channel.id, &message.id);

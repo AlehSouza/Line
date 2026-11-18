@@ -476,6 +476,12 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (event_id, user_id)
   );
 "#,
+    // Anexos marcados como spoiler ou +18 e data de nascimento (libera o +18).
+    r#"
+  ALTER TABLE attachments ADD COLUMN spoiler INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE attachments ADD COLUMN nsfw INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE users ADD COLUMN birth_date TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

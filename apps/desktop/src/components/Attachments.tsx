@@ -3,7 +3,8 @@
 import type { Attachment } from '@line/shared';
 import { useEffect, useState } from 'react';
 import { fileUrl } from '@/lib/api';
-import { actions } from '@/lib/store';
+import { actions, useLine } from '@/lib/store';
+import { ageOf } from '@/lib/age';
 import { cx, Icons, Skeleton } from './ui';
 import { VideoPlayer } from './VideoPlayer';
 import { AudioPlayer, isVoiceMessage, VoicePlayer } from './AudioPlayer';
@@ -29,8 +30,63 @@ export function AttachmentList({ attachments, compact }: { attachments: Attachme
   return (
     <div className="mt-1 flex flex-col items-start gap-2">
       {attachments.map((a) => (
-        <AttachmentView key={a.id} attachment={a} compact={compact} />
+        a.spoiler || a.nsfw ? (
+          <MediaGate key={a.id} attachment={a}>
+            <AttachmentView attachment={a} compact={compact} />
+          </MediaGate>
+        ) : (
+          <AttachmentView key={a.id} attachment={a} compact={compact} />
+        )
       ))}
+    </div>
+  );
+}
+
+/** Spoiler e +18: o anexo fica borrado até clicar. +18 só abre para quem informou
+ * a data de nascimento e tem 18 anos ou mais (sem isso nem chega a carregar). */
+function MediaGate({ attachment: a, children }: { attachment: Attachment; children: React.ReactNode }) {
+  const birthDate = useLine((s) => s.me?.birthDate);
+  const [shown, setShown] = useState(false);
+  const age = ageOf(birthDate);
+  const blocked = !!a.nsfw && (age === null || age < 18);
+
+  if (blocked) {
+    return (
+      <div className="flex w-[320px] max-w-full flex-col items-center gap-2 rounded-lg border border-edge bg-raise px-5 py-6 text-center">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/15 text-sm font-bold text-danger">+18</span>
+        <p className="font-semibold text-fg">Conteúdo para maiores de 18 anos</p>
+        {age === null ? (
+          <>
+            <p className="text-sm text-muted">Para ver, informe sua data de nascimento em Configurações, Minha conta.</p>
+            <button
+              onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
+              className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-on-accent hover:bg-accent-strong"
+            >
+              Informar data de nascimento
+            </button>
+          </>
+        ) : (
+          <p className="text-sm text-muted">Esse anexo só aparece para quem tem 18 anos ou mais.</p>
+        )}
+      </div>
+    );
+  }
+  if (shown) return <>{children}</>;
+  return (
+    <div className="relative max-w-full overflow-hidden rounded-lg">
+      <div aria-hidden className="pointer-events-none blur-2xl select-none [&_*]:pointer-events-none">
+        {children}
+      </div>
+      <button
+        onClick={() => setShown(true)}
+        title="Clique para ver"
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/35 text-white transition-colors hover:bg-black/25"
+      >
+        <span className="rounded-full bg-black/70 px-3 py-1 text-xs font-bold tracking-wider uppercase">
+          {a.nsfw ? 'Conteúdo +18' : 'Spoiler'}
+        </span>
+        <span className="text-xs text-white/80">Clique para ver</span>
+      </button>
     </div>
   );
 }
