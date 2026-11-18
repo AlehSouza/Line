@@ -349,16 +349,17 @@ describe('Line server', () => {
 
     // Responder na thread atualiza o contador na mensagem original
     const counted = next(is, 'message:update');
-    await api('POST', `/channels/${thread.data.id}/messages`, hel.token, { content: 'boa' });
+    const reply = await api<Message>('POST', `/channels/${thread.data.id}/messages`, hel.token, { content: 'boa' });
     expect((await counted).thread?.messageCount).toBe(1);
     const list = await api<Message[]>('GET', `/channels/${text.id}/messages`, ivo.token);
     expect(list.data[0]?.thread?.messageCount).toBe(1);
     expect((await api<Channel[]>('GET', `/channels/${text.id}/threads`, ivo.token)).data).toHaveLength(1);
     expect((await is.emitWithAck('voice:join', { channelId: thread.data.id })).ok).toBe(false);
 
-    // Quem criou a thread pode apagar; o resumo some da mensagem
+    // Ninguém apaga a conversa: ela some quando a última resposta é apagada, e o resumo some da mensagem
+    expect((await api('DELETE', `/channels/${thread.data.id}`, ivo.token)).status).toBe(400);
     const gone = next(is, 'channel:delete');
-    expect((await api('DELETE', `/channels/${thread.data.id}`, ivo.token)).status).toBe(204);
+    expect((await api('DELETE', `/messages/${reply.data.id}`, hel.token)).status).toBe(204);
     expect((await gone).id).toBe(thread.data.id);
     expect((await api<Message[]>('GET', `/channels/${text.id}/messages`, ivo.token)).data[0]?.thread).toBeNull();
 
