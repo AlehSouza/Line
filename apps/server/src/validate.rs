@@ -73,26 +73,50 @@ fn display_name(raw: &str) -> ApiResult<String> {
     Ok(s)
 }
 
-/// Aparência da tag: só as chaves conhecidas, cores válidas e iconStyle outline|solid.
+/// Aparência da tag: só as chaves conhecidas. Cada cor é "#rrggbb", "transparent" (menos no texto)
+/// ou uma lista de 2 a 4 cores (degradê); dir h|v, motion static|wave, speed e iconStyle outline|solid.
 fn tag_style(v: &serde_json::Value) -> ApiResult<serde_json::Value> {
     let mut out = serde_json::Map::new();
     let Some(obj) = v.as_object() else {
         return Ok(serde_json::Value::Null);
     };
     for key in ["bg", "fg", "border", "iconColor"] {
-        if let Some(c) = obj
-            .get(key)
-            .and_then(|c| c.as_str())
-            .filter(|c| !c.is_empty())
-        {
-            out.insert(key.into(), color(c)?.into());
+        match obj.get(key) {
+            Some(serde_json::Value::String(c)) if c.is_empty() => {}
+            Some(serde_json::Value::String(c)) if c == "transparent" => {
+                if key == "fg" {
+                    return Err(validation("O texto da tag não pode ser transparente"));
+                }
+                out.insert(key.into(), c.as_str().into());
+            }
+            Some(serde_json::Value::String(c)) => {
+                out.insert(key.into(), color(c)?.into());
+            }
+            Some(serde_json::Value::Array(list)) => {
+                if !(2..=4).contains(&list.len()) {
+                    return Err(validation("O degradê da tag usa de 2 a 4 cores"));
+                }
+                let mut cols = Vec::with_capacity(list.len());
+                for c in list {
+                    cols.push(serde_json::Value::from(color(c.as_str().unwrap_or(""))?));
+                }
+                out.insert(key.into(), cols.into());
+            }
+            _ => {}
         }
     }
-    if let Some(s) = obj.get("iconStyle").and_then(|s| s.as_str()) {
-        if !matches!(s, "outline" | "solid") {
-            return Err(validation("Estilo do ícone inválido"));
+    for (key, allowed) in [
+        ("iconStyle", &["outline", "solid"][..]),
+        ("dir", &["h", "v"][..]),
+        ("motion", &["static", "wave"][..]),
+        ("speed", &["slow", "medium", "fast"][..]),
+    ] {
+        if let Some(s) = obj.get(key).and_then(|s| s.as_str()) {
+            if !allowed.contains(&s) {
+                return Err(validation("Estilo da tag inválido"));
+            }
+            out.insert(key.into(), s.into());
         }
-        out.insert("iconStyle".into(), s.into());
     }
     Ok(if out.is_empty() {
         serde_json::Value::Null

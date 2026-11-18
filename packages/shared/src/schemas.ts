@@ -53,11 +53,14 @@ export const updateServerSchema = createServerSchema.partial().extend({
   tagIcon: z.string().max(40).optional(),
   tagStyle: z
     .object({
-      bg: z.string().optional(),
-      fg: z.string().optional(),
-      border: z.string().optional(),
-      iconColor: z.string().optional(),
+      bg: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
+      fg: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
+      border: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
+      iconColor: z.union([z.string(), z.array(z.string()).min(2).max(4)]).optional(),
       iconStyle: z.enum(['outline', 'solid']).optional(),
+      dir: z.enum(['h', 'v']).optional(),
+      motion: z.enum(['static', 'wave']).optional(),
+      speed: z.enum(['slow', 'medium', 'fast']).optional(),
     })
     .nullable()
     .optional(),

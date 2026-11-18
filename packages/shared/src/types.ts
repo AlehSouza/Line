@@ -100,12 +100,20 @@ export interface UserProfile {
 }
 
 /** Aparência da tag do servidor (tudo opcional; vazio = padrão). */
+/** Uma cor da tag: "#rrggbb", "transparent" (não vale no texto) ou 2 a 4 cores em degradê. */
+export type TagPaint = string | string[];
+
 export interface TagStyle {
-  bg?: string;
-  fg?: string;
-  border?: string;
-  iconColor?: string;
+  bg?: TagPaint;
+  fg?: TagPaint;
+  border?: TagPaint;
+  iconColor?: TagPaint;
   iconStyle?: 'outline' | 'solid';
+  /** Direção dos degradês (padrão h). */
+  dir?: 'h' | 'v';
+  /** Degradês parados ou correndo em onda (padrão static). */
+  motion?: 'static' | 'wave';
+  speed?: 'slow' | 'medium' | 'fast';
 }
 
 /** Uma faixa na fila do bot de música. */

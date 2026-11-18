@@ -7,7 +7,7 @@ import type { FavoriteSong, Server } from '@line/shared';
 import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
-import { TagIcon, tagBadgeStyle } from './ServerTag';
+import { TagPill } from './ServerTag';
 import { showError, toast } from './Dialogs';
 import { EmojiButton } from './EmojiField';
 import { ColorPicker } from './ColorPicker';
@@ -315,21 +315,20 @@ export function TagPicker() {
 
   return (
     <span ref={box} className="relative inline-flex">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={cx('inline-flex items-center gap-1 rounded-md bg-raise px-1.5 py-0.5 text-[11px] leading-4 font-bold text-soft hover:bg-hover hover:text-fg', open && 'text-fg')}
-        style={current ? tagBadgeStyle(current.tagStyle) : undefined}
-      >
-        {current ? (
-          <>
-            <TagIcon icon={current.tagIcon} iconUrl={current.iconUrl} style={current.tagStyle} />
-            {current.tag}
-          </>
-        ) : (
-          <span className="font-medium italic">Escolher tag</span>
-        )}
-        <Icons.Chevron size={13} className={cx('transition-transform', open && 'rotate-180')} />
+      <button type="button" onClick={() => setOpen((v) => !v)} className="group/tag inline-flex rounded-md">
+        <TagPill
+          className={cx(
+            'inline-flex items-center gap-1 rounded-md bg-raise px-1.5 py-0.5 text-[11px] leading-4 font-bold text-soft group-hover/tag:bg-hover group-hover/tag:text-fg',
+            open && 'text-fg',
+          )}
+          text={current ? current.tag : <span className="font-medium italic">Escolher tag</span>}
+          icon={current?.tagIcon}
+          iconUrl={current ? current.iconUrl : undefined}
+          tagStyle={current?.tagStyle}
+          hideIcon={!current}
+        >
+          <Icons.Chevron size={13} className={cx('transition-transform', open && 'rotate-180')} />
+        </TagPill>
       </button>
       {open && box.current && (
         <Floating anchor={box.current} align="left" boxRef={pop} className="w-80 p-2">
@@ -357,10 +356,13 @@ export function TagPicker() {
                   {sv.iconUrl ? <img src={fileUrl(sv.iconUrl)} alt="" className="h-full w-full object-cover" /> : <DefaultServerIcon />}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-medium text-fg">{sv.name}</span>
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1.5 py-px text-[11px] leading-4 font-bold text-soft" style={tagBadgeStyle(sv.tagStyle)}>
-                  <TagIcon icon={sv.tagIcon} iconUrl={sv.iconUrl} style={sv.tagStyle} />
-                  {sv.tag}
-                </span>
+                <TagPill
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1.5 py-px text-[11px] leading-4 font-bold text-soft"
+                  text={sv.tag}
+                  icon={sv.tagIcon}
+                  iconUrl={sv.iconUrl}
+                  tagStyle={sv.tagStyle}
+                />
               </TagRow>
             ))}
             {!servers.length && <p className="px-2.5 py-2 text-xs text-muted">Nenhum servidor seu tem tag ainda. O dono cria em Configurações do servidor → Visão geral.</p>}
