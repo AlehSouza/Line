@@ -823,9 +823,10 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
   };
   return (
     <div className="w-full max-w-[760px] text-left" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="mb-2 flex items-stretch gap-2 px-4">
+      {/* Bento: botão de respostas e caixa de emoji com a altura da caixa de texto (44px) e o mesmo espaço de 8px entre tudo. */}
+      <div className="mb-2 flex h-11 gap-2 px-4">
         {summary && parent?.type !== 'thread' ? (
-          <ThreadChip thread={summary} onClick={() => open(summary.id)} className="mt-0 min-w-0 flex-1 rounded-xl bg-raise px-3 py-2 hover:bg-hover" />
+          <ThreadChip thread={summary} onClick={() => open(summary.id)} className="mt-0 h-11 min-w-0 flex-1 rounded-xl bg-raise px-3 py-0 hover:bg-hover" />
         ) : (
           <span className="flex-1" />
         )}

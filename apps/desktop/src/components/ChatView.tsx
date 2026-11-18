@@ -1122,7 +1122,7 @@ export function ViewerReactButton({ message, attachmentId }: { message: Message;
           const el = e.currentTarget;
           setAnchor((x) => (x ? null : el));
         }}
-        className={cx('flex h-[42px] w-12 shrink-0 items-center justify-center rounded-xl bg-raise text-soft hover:bg-hover hover:text-fg', anchor && 'text-fg')}
+        className={cx('flex size-11 shrink-0 items-center justify-center rounded-xl bg-raise text-soft hover:bg-hover hover:text-fg', anchor && 'text-fg')}
       >
         <Icons.SmilePlus size={20} />
       </button>
