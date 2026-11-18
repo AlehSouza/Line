@@ -25,6 +25,7 @@ export type Modal =
   | { kind: 'new-dm' }
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
   | { kind: 'full-profile'; userId: string; serverId?: string | null }
+  | { kind: 'mutual-servers'; servers: Server[] }
   | { kind: 'name-style' }
   | { kind: 'server-profile'; serverId: string }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }

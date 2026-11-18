@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { api, fileUrl } from '@/lib/api';
 import { actions, useServerLook, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
-import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, presenceLabel } from './ui';
+import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, Modal, presenceLabel } from './ui';
 import { UserTagBadge } from './ServerTag';
 import { EmojiButton } from './EmojiField';
 import { StatusPicker } from './StatusPicker';
@@ -281,13 +281,20 @@ export function UserCard({
                   ))}
                 </span>
               )}
-              <span>
-                {[
-                  mutual.friends.length && `${mutual.friends.length} ${mutual.friends.length === 1 ? 'amigo' : 'amigos'} em comum`,
-                  mutual.servers.length && `${mutual.servers.length} ${mutual.servers.length === 1 ? 'servidor' : 'servidores'} em comum`,
-                ]
-                  .filter(Boolean)
-                  .join(' • ')}
+              <span className="flex min-w-0 items-center gap-1">
+                {mutual.friends.length > 0 && (
+                  <span>{`${mutual.friends.length} ${mutual.friends.length === 1 ? 'amigo' : 'amigos'} em comum`}</span>
+                )}
+                {mutual.friends.length > 0 && mutual.servers.length > 0 && <span>•</span>}
+                {mutual.servers.length > 0 && (
+                  <button
+                    type="button"
+                    className="cursor-pointer hover:text-fg hover:underline"
+                    onClick={() => actions.openModal({ kind: 'mutual-servers', servers: mutual.servers })}
+                  >
+                    {`${mutual.servers.length} ${mutual.servers.length === 1 ? 'servidor' : 'servidores'} em comum`}
+                  </button>
+                )}
               </span>
             </div>
           )}
@@ -614,5 +621,51 @@ function MenuItem({ icon, danger, onClick, children }: { icon: ReactNode; danger
       {icon}
       {children}
     </button>
+  );
+}
+
+/** Lista dos servidores em comum (aberta pelo "N servidores em comum" do cartão). Mostra até 8, depois rola. */
+export function MutualServersModal({ servers, onClose }: { servers: Server[]; onClose: () => void }) {
+  return (
+    <Modal title="Servidores em comum" onClose={onClose} width={420} fixedBody>
+      {/* 8 cartões de 60px + 7 espaços de 8px = 536px; acima disso a lista rola e o título fica parado. */}
+      <div className="-mr-2 min-h-0 overflow-y-auto pr-2" style={{ maxHeight: 536 }}>
+        <div className="flex flex-col gap-2">
+          {servers.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                onClose();
+                actions.goServer(s.id);
+              }}
+              className="group relative flex h-[60px] shrink-0 items-center gap-3 overflow-hidden rounded-xl border border-edge bg-raise px-3 text-left hover:border-accent/60 hover:bg-hover"
+            >
+              {s.bannerUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={fileUrl(s.bannerUrl)} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-15" />
+              )}
+              <span
+                className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-rail"
+              >
+                {s.iconUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fileUrl(s.iconUrl)} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <DefaultServerIcon />
+                )}
+              </span>
+              <span className="relative min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{s.name}</span>
+                <span className="block truncate text-xs text-soft">
+                  {s.memberCount} {s.memberCount === 1 ? 'membro' : 'membros'}
+                </span>
+              </span>
+              <Icons.ChevronRight size={16} className="relative shrink-0 text-muted group-hover:text-fg" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }

@@ -9,7 +9,7 @@ import { mobile } from '@/lib/mobile';
 
 import { ProfileEditor } from './ProfileEditor';
 import { NicknameDialog, ServerSettings } from './ServerSettings';
-import { UserCard } from './UserCard';
+import { MutualServersModal, UserCard } from './UserCard';
 import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 import { ReportModal } from './ReportModal';
 
@@ -59,6 +59,8 @@ export function Modals() {
       return <UserCard userId={modal.userId} at={modal.at} hover={modal.hover} onClose={close} />;
     case 'full-profile':
       return <FullProfile userId={modal.userId} serverId={modal.serverId} onClose={close} />;
+    case 'mutual-servers':
+      return <MutualServersModal servers={modal.servers} onClose={close} />;
     case 'server-profile':
       return <ServerProfileModal serverId={modal.serverId} onClose={close} />;
     case 'name-style':
