@@ -416,11 +416,14 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               )}
             </div>
             {collapsed[cat.id] ? (
-              // Recolhida: só os canais de voz com gente, em uma linha de avatares.
+              // Recolhida: o canal aberto continua à vista; os de voz com gente, em uma linha de avatares.
               <div className="space-y-0.5">
                 {(byCategory[cat.id] ?? [])
-                  .filter((c) => c.type === 'voice')
-                  .map((c) => (
+                  .filter((c) => c.type === 'voice' || c.id === activeId)
+                  .map((c) =>
+                    c.type !== 'voice' ? (
+                      renderChannel(c)
+                    ) : (
                     <CollapsedVoiceChannel
                       key={c.id}
                       channel={c}
@@ -431,7 +434,8 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                         if (useVoice.getState().channelId !== c.id) void joinVoice(c.id);
                       }}
                     />
-                  ))}
+                    ),
+                  )}
               </div>
             ) : (
               <div className="space-y-0.5">{(byCategory[cat.id] ?? []).map(renderChannel)}</div>
