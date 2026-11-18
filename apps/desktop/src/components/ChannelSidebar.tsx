@@ -257,7 +257,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
         {server.bannerUrl && <div className="h-[87px]" />}
         {menuOpen && (
           <div
-            className="absolute top-13 right-2 left-2 z-20 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-xl"
+            className="absolute z-30 max-md:top-13 max-md:right-2 max-md:left-2 md:top-1 md:left-full md:ml-2 md:w-56 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-xl"
             onMouseLeave={() => setMenuOpen(false)}
           >
             {hasPerm(perms, Perm.CreateInvite) && (
