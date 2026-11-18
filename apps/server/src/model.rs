@@ -65,6 +65,8 @@ pub struct SelfUser {
     pub has_password: bool,
     /// Data de nascimento (AAAA-MM-DD), só para a própria pessoa.
     pub birth_date: Option<String>,
+    /// Mídias +18 aparecem atrás de um aviso até clicar.
+    pub blur_sensitive: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

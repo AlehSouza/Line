@@ -353,6 +353,8 @@ pub struct UpdateProfile {
     /// Data de nascimento AAAA-MM-DD (null = apagar).
     #[serde(default, deserialize_with = "nullable")]
     pub birth_date: Option<Option<String>>,
+    /// Borrar conteúdo sensível (+18) no chat.
+    pub blur_sensitive: Option<bool>,
 }
 
 impl UpdateProfile {

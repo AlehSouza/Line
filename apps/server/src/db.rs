@@ -482,6 +482,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE attachments ADD COLUMN nsfw INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE users ADD COLUMN birth_date TEXT;
 "#,
+    // Borrar conteúdo sensível (+18) no chat: ligado por padrão.
+    r#"
+  ALTER TABLE users ADD COLUMN blur_sensitive INTEGER NOT NULL DEFAULT 1;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

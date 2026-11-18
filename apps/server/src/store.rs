@@ -82,6 +82,7 @@ pub struct UserRow {
     pub name_style: Option<String>,
     /// Só vem nas consultas da própria tabela users.
     pub birth_date: Option<String>,
+    pub blur_sensitive: bool,
 }
 
 impl UserRow {
@@ -111,6 +112,7 @@ impl UserRow {
             bot_now_playing: r.get("bot_now_playing").unwrap_or(None),
             name_style: r.get("name_style").unwrap_or(None),
             birth_date: r.get("birth_date").unwrap_or(None),
+            blur_sensitive: r.get::<_, i64>("blur_sensitive").unwrap_or(1) != 0,
         })
     }
 }
@@ -496,6 +498,7 @@ impl Q<'_> {
             email: row.email.clone(),
             has_password: !row.password_hash.is_empty() && row.password_hash != "google",
             birth_date: row.birth_date.clone(),
+            blur_sensitive: row.blur_sensitive,
         }
     }
 
@@ -503,6 +506,13 @@ impl Q<'_> {
         ok(self.c.execute(
             "UPDATE users SET birth_date = ? WHERE id = ?",
             params![date, id],
+        ));
+    }
+
+    pub fn set_blur_sensitive(&self, id: &str, on: bool) {
+        ok(self.c.execute(
+            "UPDATE users SET blur_sensitive = ? WHERE id = ?",
+            params![on as i64, id],
         ));
     }
 

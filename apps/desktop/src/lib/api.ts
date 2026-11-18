@@ -228,6 +228,7 @@ export const api = {
   updateMe: (patch: UpdateProfileInput) => request<SelfUser>('PATCH', '/users/@me', patch),
   /** Data de nascimento AAAA-MM-DD (null apaga). */
   setBirthDate: (birthDate: string | null) => request<SelfUser>('PATCH', '/users/@me', { birthDate }),
+  setBlurSensitive: (blurSensitive: boolean) => request<SelfUser>('PATCH', '/users/@me', { blurSensitive }),
   updateAccount: (patch: { username?: string; email?: string | null; currentPassword?: string; code?: string }) =>
     request<SelfUser>('PATCH', '/users/@me/account', patch),
   changePassword: (proof: { currentPassword?: string; code?: string }, newPassword: string) =>

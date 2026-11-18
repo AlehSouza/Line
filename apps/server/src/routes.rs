@@ -1139,6 +1139,9 @@ async fn update_me(State(app): S, Me(me): Me, b: Bytes) -> Res {
     if let Some(date) = &p.birth_date {
         q.set_birth_date(&me, date.as_deref());
     }
+    if let Some(on) = p.blur_sensitive {
+        q.set_blur_sensitive(&me, on);
+    }
     let user = q.update_user(
         &me,
         ProfilePatch {

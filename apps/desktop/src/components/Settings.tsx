@@ -6,10 +6,10 @@ import { logout, replaceToken } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
 import { ProfileEditor } from './ProfileEditor';
 import { Avatar, Button, cx, ErrorText, Field, Icons, Input, Modal, Select } from './ui';
-import { ageOf } from '@/lib/age';
+import { ageOf, isAdult } from '@/lib/age';
 import { VoiceSettingsPage } from './VoiceSettings';
 import { ActivityPrivacySection, GamesSection } from './Activity';
-import { NotificationsSection } from './Notifications';
+import { NotificationsSection, SwitchRow } from './Notifications';
 import { showError, toast } from './Dialogs';
 import { forgetVoiceForUpdate, keepVoiceForUpdate } from '@/lib/voice';
 import {
@@ -28,7 +28,7 @@ import { ColorPicker } from '@/components/ColorPicker';
 type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'notifications' | 'app' | 'blocked' | 'games' | 'activity';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
-  { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança' },
+  { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança nascimento idade sensível +18 borrar' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim pink rosa daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
@@ -296,6 +296,28 @@ function AccountSection() {
           value={me.birthDate ? formatBirth(me.birthDate) : <span className="text-muted">Não informada (mídias +18 ficam bloqueadas)</span>}
           onEdit={() => setBirthOpen(true)}
           action={me.birthDate ? 'Editar' : 'Informar'}
+        />
+      </div>
+
+      <hr className="border-edge" />
+
+      <div id="conta-sensivel" className="space-y-1">
+        <h2 className="mb-2 text-xl font-bold">Conteúdo sensível</h2>
+        <SwitchRow
+          title="Borrar conteúdo sensível"
+          hint={
+            isAdult(me.birthDate)
+              ? 'Mídias +18 aparecem atrás de um aviso até você clicar em Mostrar mesmo assim.'
+              : 'Mídias +18 continuam bloqueadas até você informar uma data de nascimento com 18 anos ou mais.'
+          }
+          on={me.blurSensitive !== false}
+          onChange={async (on) => {
+            try {
+              actions.setMe(await api.setBlurSensitive(on));
+            } catch (e) {
+              showError(e);
+            }
+          }}
         />
       </div>
 

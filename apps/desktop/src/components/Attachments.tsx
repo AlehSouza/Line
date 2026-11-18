@@ -42,51 +42,52 @@ export function AttachmentList({ attachments, compact }: { attachments: Attachme
   );
 }
 
-/** Spoiler e +18: o anexo fica borrado até clicar. +18 só abre para quem informou
- * a data de nascimento e tem 18 anos ou mais (sem isso nem chega a carregar). */
+/** Spoiler e +18. Spoiler fica coberto até clicar. +18 só abre para quem informou a data
+ * de nascimento e tem 18 anos ou mais (sem isso nem carrega) e, com "Borrar conteúdo
+ * sensível" ligado (padrão), aparece atrás de um aviso até clicar. */
 function MediaGate({ attachment: a, children }: { attachment: Attachment; children: React.ReactNode }) {
   const birthDate = useLine((s) => s.me?.birthDate);
+  const blur = useLine((s) => s.me?.blurSensitive !== false);
   const [shown, setShown] = useState(false);
   const age = ageOf(birthDate);
   const blocked = !!a.nsfw && (age === null || age < 18);
+  const covered = !blocked && !shown && (a.spoiler || (a.nsfw && blur));
 
-  if (blocked) {
-    return (
-      <div className="flex w-[320px] max-w-full flex-col items-center gap-2 rounded-lg border border-edge bg-raise px-5 py-6 text-center">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/15 text-sm font-bold text-danger">+18</span>
-        <p className="font-semibold text-fg">Conteúdo para maiores de 18 anos</p>
-        {age === null ? (
-          <>
-            <p className="text-sm text-muted">Para ver, informe sua data de nascimento em Configurações, Minha conta.</p>
+  if (!blocked && !covered) return <>{children}</>;
+  return (
+    <div className="relative min-h-[220px] w-[420px] max-w-full overflow-hidden rounded-lg border border-edge bg-[#3d3d40]">
+      {!blocked && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-60 blur-3xl select-none [&_*]:pointer-events-none">
+          {children}
+        </div>
+      )}
+      <div className="relative flex min-h-[220px] flex-col items-center justify-center gap-2 px-6 py-6 text-center text-white">
+        <Icons.EyeOff size={40} className="text-white/90" />
+        <p className="mt-1 text-sm font-bold tracking-wide uppercase">{a.nsfw ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
+        <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+          {a.nsfw
+            ? blocked
+              ? age === null
+                ? 'Esta mídia é +18. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
+                : 'Esta mídia é +18 e só aparece para quem tem 18 anos ou mais.'
+              : 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
+            : 'Quem enviou marcou esta mídia como spoiler.'}
+        </p>
+        {blocked ? (
+          age === null && (
             <button
               onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
-              className="mt-1 rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-on-accent hover:bg-accent-strong"
+              className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85"
             >
               Informar data de nascimento
             </button>
-          </>
+          )
         ) : (
-          <p className="text-sm text-muted">Esse anexo só aparece para quem tem 18 anos ou mais.</p>
+          <button onClick={() => setShown(true)} className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85">
+            {a.nsfw ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
+          </button>
         )}
       </div>
-    );
-  }
-  if (shown) return <>{children}</>;
-  return (
-    <div className="relative max-w-full overflow-hidden rounded-lg">
-      <div aria-hidden className="pointer-events-none blur-2xl select-none [&_*]:pointer-events-none">
-        {children}
-      </div>
-      <button
-        onClick={() => setShown(true)}
-        title="Clique para ver"
-        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/35 text-white transition-colors hover:bg-black/25"
-      >
-        <span className="rounded-full bg-black/70 px-3 py-1 text-xs font-bold tracking-wider uppercase">
-          {a.nsfw ? 'Conteúdo +18' : 'Spoiler'}
-        </span>
-        <span className="text-xs text-white/80">Clique para ver</span>
-      </button>
     </div>
   );
 }

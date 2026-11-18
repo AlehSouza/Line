@@ -39,7 +39,7 @@ function imageFrom(url: string) {
   });
 }
 
-/** Quadros em 10%, 50% e 90% do vídeo. */
+/** 8 quadros espalhados pelo vídeo (de 5% a 95%). */
 async function videoFrames(url: string): Promise<HTMLCanvasElement[]> {
   const video = document.createElement('video');
   video.muted = true;
@@ -51,7 +51,7 @@ async function videoFrames(url: string): Promise<HTMLCanvasElement[]> {
   });
   const frames: HTMLCanvasElement[] = [];
   const duration = Number.isFinite(video.duration) ? video.duration : 0;
-  for (const at of duration ? [0.1, 0.5, 0.9] : [0]) {
+  for (const at of duration ? [0.05, 0.18, 0.31, 0.44, 0.57, 0.7, 0.83, 0.95] : [0]) {
     if (duration) {
       video.currentTime = duration * at;
       await new Promise((resolve) => (video.onseeked = resolve));
@@ -80,11 +80,11 @@ async function check(file: File): Promise<boolean> {
   }
 }
 
-/** true quando a imagem/vídeo parece conteúdo +18. Falha ou demora (15 s) conta como não. */
+/** true quando a imagem/vídeo parece conteúdo +18. Falha ou demora (25 s) conta como não. */
 export function looksNsfw(file: File): Promise<boolean> {
   if (!/^(image|video)\//.test(file.type) || file.type === 'image/svg+xml') return Promise.resolve(false);
   return Promise.race([
     check(file).catch(() => false),
-    new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 15000)),
+    new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), 25000)),
   ]);
 }

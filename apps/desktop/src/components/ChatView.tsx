@@ -1715,7 +1715,6 @@ function TypingDots() {
 function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: () => void; onToggle: (flag: 'spoiler' | 'nsfw') => void }) {
   const kind = attachmentKind(item.type, item.name);
   const done = !!item.attachment;
-  const covered = item.spoiler || item.nsfw;
   return (
     <div className="relative flex w-44 shrink-0 flex-col rounded-lg border border-edge bg-side p-2">
       <button
@@ -1728,9 +1727,9 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
       <div className="flex h-24 items-center justify-center overflow-hidden rounded-md bg-rail">
         {kind === 'image' && item.preview ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.preview} alt={item.name} className={cx('h-full w-full object-cover', covered && 'blur-md')} />
+          <img src={item.preview} alt={item.name} className="h-full w-full object-cover" />
         ) : kind === 'video' && item.preview ? (
-          <video src={item.preview} muted className={cx('h-full w-full object-cover', covered && 'blur-md')} />
+          <video src={item.preview} muted className="h-full w-full object-cover" />
         ) : kind === 'text' ? (
           <Icons.FileText size={36} className="text-accent" />
         ) : (

@@ -146,6 +146,8 @@ export interface SelfUser extends PublicUser {
   hasPassword?: boolean;
   /** Data de nascimento (AAAA-MM-DD); libera mídias +18 a partir dos 18 anos. */
   birthDate?: string | null;
+  /** Mídias +18 aparecem atrás de um aviso até clicar (padrão: ligado). */
+  blurSensitive?: boolean;
 }
 
 export interface Server {
