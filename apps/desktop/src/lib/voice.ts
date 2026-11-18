@@ -1475,8 +1475,20 @@ function createPeer(peerId: string): Peer {
 
   pc.onicecandidate = ({ candidate }) => send(peerId, { type: 'candidate', candidate: candidate ? candidate.toJSON() as never : null });
 
+  // Conexão nova com quem eu já assistia (F5, reconexão): avisa de novo para a tela voltar.
+  // Só depois de conectar: avisar antes fazia quem transmite abrir uma segunda negociação junto com a
+  // minha, e a tela não chegava. Se mesmo assim ela não vier, pede de novo (quem transmite ignora repetido).
+  let rewatched = false;
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed') pc.restartIce();
+    if (pc.connectionState !== 'connected' || rewatched || !getV().watching[peerId]) return;
+    rewatched = true;
+    send(peerId, { type: 'watch', on: true });
+    setTimeout(() => {
+      const v = getV();
+      const sid = v.states[peerId]?.screenStreamId;
+      if (peers.get(peerId)?.pc === pc && v.watching[peerId] && sid && !v.streams[sid]) send(peerId, { type: 'watch', on: true });
+    }, 5000);
   };
 
   pc.ontrack = ({ track, streams, receiver }) => {
@@ -1504,8 +1516,6 @@ function createPeer(peerId: string): Peer {
     setTimeout(() => send(peerId, { type: 'thumb', data: thumb, game: thumbGame }), 500);
   }
   if (screen && watchers.size) setTimeout(() => sendViewers(peerId), 500);
-  // Conexão nova com quem eu já assistia: avisa de novo para a tela voltar.
-  if (getV().watching[peerId]) queueMicrotask(() => send(peerId, { type: 'watch', on: true }));
   return peer;
 }
 
@@ -1547,7 +1557,8 @@ async function onSignal(from: string, signal: VoiceSignal) {
   if (signal.type === 'watch') {
     const { screen } = getV();
     if (signal.on) {
-      if (watchers.has(from)) return;
+      // Já assistia e a tela já está nesta conexão: nada a fazer. Conexão nova (a pessoa deu F5): manda de novo.
+      if (watchers.has(from) && (!screen || sendsStream(pc, screen))) return;
       watchers.add(from);
       if (screen) {
         addStream(pc, screen);
@@ -1801,6 +1812,11 @@ async function tuneScreenSender(sender: RTCRtpSender, fps: Fps, retry = true) {
 
 function removeStreamFromPeers(stream: MediaStream) {
   for (const { pc } of peers.values()) removeStreamFrom(pc, stream);
+}
+
+function sendsStream(pc: RTCPeerConnection, stream: MediaStream) {
+  const ids = new Set(stream.getTracks().map((t) => t.id));
+  return pc.getSenders().some((sender) => !!sender.track && ids.has(sender.track.id));
 }
 
 function removeStreamFrom(pc: RTCPeerConnection, stream: MediaStream) {
