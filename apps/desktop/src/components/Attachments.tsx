@@ -277,3 +277,68 @@ function LoadingImage({ src, alt, compact }: { src: string; alt: string; compact
     </span>
   );
 }
+
+/** Mídia (imagem, GIF, WebP, vídeo...) que entra na grade. */
+export const isMedia = (a: Attachment) => {
+  const k = attachmentKind(a.contentType, a.filename);
+  return k === 'image' || k === 'video';
+};
+
+/** A partir de quantas mídias seguidas o chat junta numa grade 2x2. */
+export const GRID_MIN = 4;
+
+/** Grade 2x2 de mídias enviadas juntas; a quarta mostra "+N" quando há mais. Clicar abre a
+ * galeria na mídia clicada. +18 sem idade fica bloqueado; spoiler/+18 aparecem borrados. */
+export function MediaGrid({ attachments }: { attachments: Attachment[] }) {
+  const birthDate = useLine((s) => s.me?.birthDate);
+  const blur = useLine((s) => s.me?.blurSensitive !== false);
+  const adult = (ageOf(birthDate) ?? 0) >= 18;
+  const visible = attachments.filter((a) => !a.nsfw || adult);
+  const items = visible.map((a) => ({ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType }));
+  const shown = attachments.slice(0, 4);
+  const extra = attachments.length - 4;
+  return (
+    <div className="mt-1 grid w-[340px] max-w-full grid-cols-2 gap-1 overflow-hidden rounded-lg">
+      {shown.map((a, i) => {
+        const url = fileUrl(a.url);
+        const blocked = !!a.nsfw && !adult;
+        const covered = !blocked && (a.spoiler || (a.nsfw && blur));
+        const video = attachmentKind(a.contentType, a.filename) === 'video';
+        const more = i === 3 && extra > 0;
+        return (
+          <button
+            key={a.id}
+            title={a.filename}
+            onClick={() => {
+              if (blocked) return actions.openModal({ kind: 'settings', section: 'account' });
+              actions.openModal({ kind: 'gallery', items, index: Math.max(0, visible.indexOf(a)) });
+            }}
+            onContextMenu={!video && !blocked ? (e) => openContextMenu(e, imageMenuItems(url, a.filename)) : undefined}
+            className="relative aspect-square overflow-hidden bg-rail"
+          >
+            {blocked ? (
+              <span className="flex h-full w-full flex-col items-center justify-center gap-1 bg-[#3d3d40] text-white">
+                <span className="text-lg font-extrabold text-danger">+18</span>
+                <span className="px-2 text-[11px] text-white/80">Informe sua idade para ver</span>
+              </span>
+            ) : video ? (
+              <video src={`${url}#t=0.1`} muted preload="metadata" className={cx('h-full w-full object-cover', covered && 'scale-110 blur-xl')} />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={url} alt={a.filename} loading="lazy" className={cx('h-full w-full object-cover', covered && 'scale-110 blur-xl')} />
+            )}
+            {video && !blocked && !more && (
+              <span className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white">
+                <Icons.Play size={18} />
+              </span>
+            )}
+            {covered && !more && (
+              <span className="absolute top-2 left-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white uppercase">{a.nsfw ? '+18' : 'Spoiler'}</span>
+            )}
+            {more && <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-3xl font-bold text-white">+{extra}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}

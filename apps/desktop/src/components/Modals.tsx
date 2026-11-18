@@ -67,6 +67,8 @@ export function Modals() {
       return <CreateThreadModal modal={modal} onClose={close} />;
     case 'image':
       return <ImageViewer url={modal.url} filename={modal.filename} onClose={close} />;
+    case 'gallery':
+      return <GalleryViewer items={modal.items} start={modal.index} onClose={close} />;
     case 'voice-invite':
       return <VoiceInviteModal serverId={modal.serverId} channelId={modal.channelId} onClose={close} />;
     case 'voice-status':
@@ -780,6 +782,59 @@ function ImageViewer({ url, filename, onClose }: { url: string; filename: string
       >
         Abrir original
       </a>
+    </div>
+  );
+}
+
+/** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
+function GalleryViewer({ items, start, onClose }: { items: { url: string; filename: string; contentType: string }[]; start: number; onClose: () => void }) {
+  const [i, setI] = useState(start);
+  const n = items.length;
+  const go = (d: number) => setI((x) => (x + d + n) % n);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'ArrowLeft') go(-1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, n]);
+  const item = items[i]!;
+  const video = item.contentType.startsWith('video/');
+  const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8" onMouseDown={onClose}>
+      <div className="relative flex max-h-[85vh] max-w-full items-center justify-center" onMouseDown={(e) => e.stopPropagation()}>
+        {video ? (
+          <video key={item.url} src={item.url} controls autoPlay className="max-h-[85vh] max-w-full rounded-lg shadow-2xl" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={item.url}
+            src={item.url}
+            alt={item.filename}
+            className="max-h-[85vh] max-w-full rounded-lg object-contain shadow-2xl"
+            onContextMenu={(e) => openContextMenu(e, imageMenuItems(item.url, item.filename))}
+          />
+        )}
+      </div>
+      {n > 1 && (
+        <>
+          <button title="Anterior" onMouseDown={(e) => e.stopPropagation()} onClick={() => go(-1)} className={cx(arrow, 'left-4')}>
+            <Icons.ChevronLeft size={22} />
+          </button>
+          <button title="Próxima" onMouseDown={(e) => e.stopPropagation()} onClick={() => go(1)} className={cx(arrow, 'right-4')}>
+            <Icons.ChevronRight size={22} />
+          </button>
+        </>
+      )}
+      <div className="flex items-center gap-3 text-sm text-soft" onMouseDown={(e) => e.stopPropagation()}>
+        {n > 1 && <span>{i + 1} de {n}</span>}
+        <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-fg hover:underline">
+          Abrir original
+        </a>
+      </div>
     </div>
   );
 }

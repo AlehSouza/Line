@@ -330,6 +330,7 @@ export const Icons = {
   Settings: icon(L.Settings),
   Chevron: icon(L.ChevronDown),
   ChevronRight: icon(L.ChevronRight),
+  ChevronLeft: icon(L.ChevronLeft),
   User: icon(L.User),
   Reply: icon(L.Reply),
   X: icon(L.X),

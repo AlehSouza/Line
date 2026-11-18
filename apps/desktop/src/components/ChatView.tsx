@@ -6,13 +6,13 @@ import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Chan
 import { GifEmbed, GifPicker, gifFromContent } from './GifPicker';
 import { openContextMenu, userMenu } from './ContextMenu';
 import { EMOJI_FONT, EmojiPicker, pushRecentEmoji } from './EmojiPicker';
-import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
+import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
 import { looksNsfw } from '@/lib/nsfw';
 import { acceptNsfwChannel, loadNsfwOk, useNsfwOk } from '@/lib/nsfwGate';
 import { isAdult } from '@/lib/age';
 import { goBack } from '@/lib/history';
-import { attachmentKind, AttachmentList, formatSize } from './Attachments';
+import { attachmentKind, AttachmentList, formatSize, GRID_MIN, isMedia, MediaGrid } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
 import { VoiceInviteCard, voiceInviteFromContent } from './VoiceInvite';
@@ -304,6 +304,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   }, [channel.id, meId]);
 
   const items = bucket?.items ?? EMPTY;
+  const mediaRuns = useMemo(() => mediaRunsOf(items), [items]);
   const content = useRef<HTMLDivElement>(null);
   const isThread = channel.type === 'thread';
   const starter = useLine((s) =>
@@ -415,6 +416,8 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             !prev?.deleted &&
             prev?.author.id === m.author.id &&
             new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < GROUP_WINDOW_MS;
+          // Mídias seguidas (sem texto no meio) viram uma grade na primeira mensagem da sequência.
+          if (mediaRuns.hidden.has(m.id)) return null;
           const author = users[m.author.id] ?? m.author;
           return (
             <Fragment key={m.id}>
@@ -427,6 +430,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 nameColor={colorOf(m.author.id)}
                 mentionCtx={mentionCtx}
                 grouped={grouped}
+                gallery={mediaRuns.leaders.get(m.id)}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
                 canPin={!channel.id.startsWith('draft:') && (!channel.serverId || canManageMessages || canPinMessages)}
@@ -445,6 +449,47 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
       {footer && <div className="sticky bottom-0 bg-main pt-1">{footer}</div>}
     </div>
   );
+}
+
+/** Só mídia, sem texto, enquete ou thread: pode entrar numa grade. */
+const mediaOnly = (m: Message) =>
+  !m.deleted && !m.content && !m.poll && !m.thread && !!m.attachments.length && m.attachments.every(isMedia);
+
+/** Sequências de mensagens só com mídia, do mesmo autor, no mesmo dia e com no máximo
+ * GROUP_WINDOW_MS entre uma e outra. Com GRID_MIN mídias ou mais, a primeira mensagem
+ * mostra a grade com todas e as outras somem da lista. */
+function mediaRunsOf(items: Message[]) {
+  const leaders = new Map<string, Attachment[]>();
+  const hidden = new Set<string>();
+  let i = 0;
+  while (i < items.length) {
+    const first = items[i]!;
+    if (!mediaOnly(first)) {
+      i++;
+      continue;
+    }
+    let j = i + 1;
+    while (j < items.length) {
+      const prev = items[j - 1]!;
+      const m = items[j]!;
+      if (
+        !mediaOnly(m) ||
+        m.author.id !== first.author.id ||
+        new Date(m.createdAt).toDateString() !== new Date(prev.createdAt).toDateString() ||
+        new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() >= GROUP_WINDOW_MS
+      )
+        break;
+      j++;
+    }
+    const run = items.slice(i, j);
+    const media = run.flatMap((m) => m.attachments);
+    if (media.length >= GRID_MIN) {
+      leaders.set(first.id, media);
+      for (const m of run.slice(1)) hidden.add(m.id);
+    }
+    i = j;
+  }
+  return { leaders, hidden };
 }
 
 function DayDivider({ date }: { date: string }) {
@@ -476,6 +521,7 @@ function MessageRow({
   nameColor,
   mentionCtx,
   grouped,
+  gallery,
   mine,
   canDelete,
   editing,
@@ -493,6 +539,8 @@ function MessageRow({
   nameColor?: string;
   mentionCtx?: ReturnType<typeof useMentionContext>;
   grouped: boolean;
+  /** Primeira de uma sequência de mídias: mostra a grade com todas. */
+  gallery?: Attachment[];
   mine: boolean;
   canDelete: boolean;
   editing: boolean;
@@ -724,7 +772,7 @@ function MessageRow({
         {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
-        <AttachmentList attachments={message.attachments} authorId={message.author.id} />
+        {gallery ? <MediaGrid attachments={gallery} /> : <AttachmentList attachments={message.attachments} authorId={message.author.id} />}
         {message.poll && <PollView message={message} poll={message.poll} />}
           </>
         )}
