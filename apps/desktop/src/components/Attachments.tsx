@@ -90,13 +90,14 @@ export function AttachmentList({
             <MediaGate
               attachment={a}
               fill={filled}
+              compact={compact}
               onOpen={
                 attachmentKind(a.contentType, a.filename) === 'image'
                   ? () =>
                       // Coberta: abre em foco com o mesmo aviso (como na grade).
                       actions.openModal({
                         kind: 'gallery',
-                        items: [{ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, attachmentId: a.id, messageId: owner?.messageId, sensitive: a.nsfw ? 'nsfw' : 'spoiler' }],
+                        items: [{ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, attachmentId: a.id, messageId: owner?.messageId, sensitive: a.nsfw ? 'nsfw' : 'spoiler', width: a.width, height: a.height, preview: a.preview }],
                         index: 0,
                         channelId: owner?.channelId,
                       })
@@ -133,7 +134,7 @@ export function AttachmentList({
 /** Spoiler e +18. Spoiler fica coberto até clicar. +18 só abre para quem informou a data
  * de nascimento e tem 18 anos ou mais (sem isso nem carrega) e, com "Borrar conteúdo
  * sensível" ligado (padrão), aparece atrás de um aviso até clicar. */
-function MediaGate({ attachment: a, children, onOpen, fill }: { attachment: Attachment; children: React.ReactNode; onOpen?: () => void; fill?: boolean }) {
+function MediaGate({ attachment: a, children, onOpen, fill, compact }: { attachment: Attachment; children: React.ReactNode; onOpen?: () => void; fill?: boolean; compact?: boolean }) {
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const [shown, setShown] = useState(false);
@@ -180,21 +181,28 @@ function MediaGate({ attachment: a, children, onOpen, fill }: { attachment: Atta
     );
   }
 
-  // A mídia fica sempre no mesmo lugar da árvore (só muda o borrado): revelar não recarrega
-  // a imagem nem pisca, e o aviso tem exatamente o formato dela.
+  // Coberta, a mídia real nem é montada (não baixa): só a prévia borrada que o servidor fez,
+  // num espaço do tamanho exato dela (largura/altura salvas no envio).
+  const video = attachmentKind(a.contentType, a.filename) === 'video';
+  const dims = a.width && a.height ? { w: a.width, h: a.height } : null;
+  const box = dims
+    ? video
+      ? compact ? fitBox(dims, 280, 180) : fitBox(dims, 520, 360)
+      : compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)
+    : { width: compact ? 220 : 320, height: compact ? 140 : 220 };
   return (
     <div ref={ref} className={cx('relative max-w-full overflow-hidden rounded-lg', fill ? 'w-full' : 'w-fit', covered && 'border border-edge')}>
-      <div
-        aria-hidden={covered || undefined}
-        className={cx(covered && 'pointer-events-none invisible select-none [&_*]:pointer-events-none')}
-      >
-        {children}
-      </div>
-      {covered && <SensitiveCover className="absolute inset-0" />}
+      {covered ? (
+        <span className="relative block max-w-full" style={fill && dims ? { width: '100%', aspectRatio: `${dims.w} / ${dims.h}` } : box}>
+          <CoverArt preview={a.preview} />
+        </span>
+      ) : (
+        children
+      )}
       {covered && (
         <div
           onClick={onOpen}
-          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-fg', small ? 'gap-1 p-2' : 'gap-2 p-5', small === null && 'invisible', onOpen && 'cursor-pointer')}
+          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-fg', a.preview && 'bg-main/55', small ? 'gap-1 p-2' : 'gap-2 p-5', small === null && 'invisible', onOpen && 'cursor-pointer')}
         >
           {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-soft" /> : <Icons.Warning size={small ? 22 : 40} className="text-soft" />}
           <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
@@ -238,6 +246,14 @@ export function SensitiveCover({ className }: { className?: string }) {
   return <span aria-hidden className={cx('block', className)} style={{ background: COVER_GRADIENT }} />;
 }
 
+/** Fundo da mídia coberta: a prévia borrada do servidor (16 px esticados, só manchas de cor)
+ * ou, sem prévia (vídeo, formato que o servidor não lê), o degradê do tema. Sem filtro CSS. */
+export function CoverArt({ preview, className }: { preview?: string | null; className?: string }) {
+  if (!preview) return <SensitiveCover className={cx('absolute inset-0', className)} />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={preview} alt="" aria-hidden draggable={false} className={cx('absolute inset-0 h-full w-full scale-110 object-cover', className)} />;
+}
+
 /** Tamanhos já vistos de mídias sem largura/altura salvas (anexos antigos). */
 const seenSize = new Map<string, { w: number; h: number }>();
 
@@ -265,7 +281,7 @@ function AttachmentView({ attachment: a, compact, mine, owner, fill }: { attachm
           className={cx('block max-w-full overflow-hidden rounded-lg border border-edge bg-rail', fill && 'w-full')}
           title={a.filename}
         >
-          <LoadingImage src={url} alt={a.filename} compact={compact} dims={mediaDims(a, url)} fill={fill} />
+          <LoadingImage src={url} alt={a.filename} compact={compact} dims={mediaDims(a, url)} fill={fill} placeholder={a.spoiler || a.nsfw ? a.preview : undefined} />
         </button>
       );
     case 'video':
@@ -366,7 +382,7 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
 
 /** Imagem com skeleton animado até carregar. Com o tamanho conhecido, o espaço já nasce
  * no formato exato da imagem (nada pula quando ela chega). */
-function LoadingImage({ src, alt, compact, dims, fill }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number }; fill?: boolean }) {
+function LoadingImage({ src, alt, compact, dims, fill, placeholder }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number }; fill?: boolean; placeholder?: string | null }) {
   // Já carregada antes (está no cache do navegador): sem skeleton, senão ele pisca por um quadro.
   const [loaded, setLoaded] = useState(() => seenSize.has(src));
   const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -377,10 +393,11 @@ function LoadingImage({ src, alt, compact, dims, fill }: { src: string; alt: str
   if (dims) {
     return (
       <span
-        className="relative block max-w-full"
+        className="relative block max-w-full overflow-hidden"
         style={fill ? { width: '100%', aspectRatio: `${dims.w} / ${dims.h}` } : compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)}
       >
-        {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
+        {/* Mídia sensível revelada: a prévia borrada segura o lugar até a real chegar. */}
+        {!loaded && (placeholder ? <CoverArt preview={placeholder} /> : <Skeleton className="absolute inset-0 rounded-none" />)}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
@@ -425,7 +442,7 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const adult = (ageOf(birthDate) ?? 0) >= 18;
   const visible = attachments.filter((a) => !a.nsfw || adult);
-  const items = visible.map((a) => ({ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType }));
+  const items = visible.map((a) => ({ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, width: a.width, height: a.height, preview: a.preview }));
   const shown = attachments.slice(0, 4);
   const extra = attachments.length - 4;
   const [seen, setSeen] = useState<string[]>([]);
@@ -463,12 +480,12 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
               </span>
             ) : video ? (
               covered ? (
-                <SensitiveCover className="h-full w-full" />
+                <CoverArt preview={a.preview} />
               ) : (
                 <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />
               )
             ) : covered ? (
-              <SensitiveCover className="h-full w-full" />
+              <CoverArt preview={a.preview} />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={url} alt={a.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
@@ -480,7 +497,7 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
             )}
             {covered && !more && (
               // Versão curta do aviso: ícone, título e "Ver" (revela só este quadro).
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 text-center text-fg">
+              <span className={cx('absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 text-center text-fg', a.preview && 'bg-main/55')}>
                 {a.nsfw ? <Icons.EyeOff size={24} className="text-soft" /> : <Icons.Warning size={24} className="text-soft" />}
                 <span className="text-[11px] font-bold tracking-wide uppercase">{a.nsfw ? 'Conteúdo sensível' : 'Spoiler'}</span>
                 <span

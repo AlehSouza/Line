@@ -547,6 +547,10 @@ const MIGRATIONS: &[&str] = &[
     PRIMARY KEY (attachment_id, emoji, user_id)
   );
 "#,
+    // Prévia borrada (data URL de 16 px) feita pelo servidor para mídia coberta.
+    r#"
+  ALTER TABLE attachments ADD COLUMN preview TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

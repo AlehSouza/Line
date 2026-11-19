@@ -21,6 +21,7 @@ pub mod music;
 pub mod notify;
 pub mod perms;
 pub mod presence;
+pub mod preview;
 pub mod profile;
 pub mod routes;
 pub mod saved;
@@ -215,6 +216,29 @@ pub async fn start(config: Config) -> std::io::Result<RunningServer> {
         config.turn.clone(),
     );
     app.sweep_uploads();
+    // Anexos antigos sem prévia borrada: gera em segundo plano, um por vez.
+    let weak_preview = Arc::downgrade(&app);
+    tokio::spawn(async move {
+        loop {
+            let Some(app) = weak_preview.upgrade() else { break };
+            let batch = app.store.q().attachments_without_preview(50);
+            if batch.is_empty() {
+                break;
+            }
+            for (id, _) in batch {
+                let path = app.uploads_dir.join(&id);
+                // Sem arquivo ou sem decodificar: grava vazio para não tentar de novo.
+                let p = tokio::task::spawn_blocking(move || crate::preview::blurred(&path))
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
+                app.store.q().set_attachment_preview(&id, &p);
+            }
+            drop(app);
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    });
     // Status com duração: a cada 30 s volta para Disponível quem já venceu.
     let weak = Arc::downgrade(&app);
     tokio::spawn(async move {

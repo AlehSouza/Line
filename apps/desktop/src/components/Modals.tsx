@@ -1,7 +1,7 @@
 'use client';
 
 import { imageMenuItems, openContextMenu } from './ContextMenu';
-import { COVER_GRADIENT } from './Attachments';
+import { CoverArt } from './Attachments';
 import { ServerNotifyModal } from './Notifications';
 import { FullProfile } from './FullProfile';
 import { NameStyleModal } from './NameStyleModal';
@@ -15,7 +15,7 @@ import { VoiceInviteModal, VoiceStatusModal } from './VoiceInvite';
 import { ReportModal } from './ReportModal';
 import { ForwardModal } from './Forward';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { hasPerm, Perm, type Channel, type Message, type Role } from '@line/shared';
 import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
@@ -901,7 +901,7 @@ function ImageViewer({ url, filename, channelId, messageId, attachmentId, onClos
 }
 
 /** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
-function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
+function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; width?: number; height?: number; preview?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
   const [i, setI] = useState(start);
   const [revealed, setRevealed] = useState<number[]>([]);
   const n = items.length;
@@ -915,14 +915,23 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
   const covered = !!item.sensitive && !revealed.includes(i);
-  const media = cx('max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl', covered && 'pointer-events-none invisible select-none');
+  const media = 'max-h-[calc(100vh-210px)] max-w-full rounded-lg shadow-2xl';
+  // Coberta: a mídia real nem é carregada; um espaço no formato dela com a prévia borrada.
+  const coverBox: CSSProperties =
+    item.width && item.height
+      ? { aspectRatio: `${item.width} / ${item.height}`, width: `min(${item.width}px, 90vw, calc((100vh - 210px) * ${item.width / item.height}))` }
+      : { width: 'min(640px, 90vw)', height: 'min(400px, calc(100vh - 210px))' };
   return (
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/85 p-8 pb-2" onMouseDown={onClose}>
       <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3">
       <MediaReactions channelId={channelId} messageId={item.messageId} attachmentId={item.attachmentId} />
       <div className="relative flex min-h-0 max-w-full items-center justify-center overflow-hidden rounded-lg" onMouseDown={(e) => e.stopPropagation()}>
-        {video ? (
-          <video key={item.url + covered} src={item.url} controls={!covered} autoPlay={!covered} muted={covered} className={media} />
+        {covered ? (
+          <span className="relative block max-w-full shadow-2xl" style={coverBox}>
+            <CoverArt preview={item.preview} />
+          </span>
+        ) : video ? (
+          <video key={item.url} src={item.url} controls autoPlay className={media} />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -935,7 +944,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
         )}
         {covered && (
           // Mesmo aviso do chat: a mídia fica em foco, mas coberta até a pessoa escolher ver.
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center text-fg" style={{ background: COVER_GRADIENT }}>
+          <div className={cx('absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center text-fg', item.preview && 'bg-main/55')}>
             {item.sensitive === 'nsfw' ? <Icons.EyeOff size={40} className="text-soft" /> : <Icons.Warning size={40} className="text-soft" />}
             <p className="mt-1 text-sm font-bold tracking-wide uppercase">{item.sensitive === 'nsfw' ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
             <p className="max-w-[300px] text-[13px] leading-snug text-muted">

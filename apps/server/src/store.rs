@@ -256,6 +256,7 @@ fn attachment_from_row(r: &Row) -> rusqlite::Result<Attachment> {
         nsfw_locked: r.get::<_, i64>("nsfw_locked").unwrap_or(0) != 0,
         width: r.get::<_, Option<i64>>("width").unwrap_or(None),
         height: r.get::<_, Option<i64>>("height").unwrap_or(None),
+        preview: r.get::<_, Option<String>>("preview").unwrap_or(None).filter(|p| !p.is_empty()),
         reactions: Vec::new(),
     })
 }
@@ -2583,14 +2584,35 @@ impl Q<'_> {
     /// Copia um anexo (o arquivo é copiado por quem chama) para uma linha nova de `uploader`.
     pub fn clone_attachment(&self, src: &Attachment, new_id: &str, uploader: &str) -> Attachment {
         let dims = src.width.zip(src.height);
-        self.create_attachment_sized(
+        let copy = self.create_attachment_sized(
             new_id,
             uploader,
             &src.filename,
             &src.content_type,
             src.size,
             dims,
-        )
+        );
+        match &src.preview {
+            Some(p) => {
+                self.set_attachment_preview(new_id, p);
+                self.attachment(new_id).unwrap_or(copy)
+            }
+            None => copy,
+        }
+    }
+
+    pub fn set_attachment_preview(&self, id: &str, preview: &str) {
+        ok(self.c.execute("UPDATE attachments SET preview = ? WHERE id = ?", params![preview, id]));
+    }
+
+    /// Imagens ainda sem prévia borrada (anexos de antes da prévia), em lotes.
+    pub fn attachments_without_preview(&self, limit: i64) -> Vec<(String, String)> {
+        let mut st = ok(self.c.prepare(
+            "SELECT id, content_type FROM attachments
+             WHERE preview IS NULL AND content_type IN ('image/jpeg','image/png','image/gif','image/webp','image/bmp')
+             ORDER BY created_at DESC LIMIT ?",
+        ));
+        ok(ok(st.query_map([limit], |r| Ok((r.get(0)?, r.get(1)?)))).collect())
     }
 
     pub fn attachment_ids_of_message(&self, message_id: &str) -> Vec<String> {

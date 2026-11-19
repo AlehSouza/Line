@@ -288,6 +288,8 @@ export interface Attachment {
   /** Tamanho real da imagem/vídeo em pixels (anexos antigos não têm). */
   width?: number;
   height?: number;
+  /** Prévia borrada minúscula (data URL) feita pelo servidor, para mídia coberta. */
+  preview?: string;
 }
 
 export interface ThreadSummary {

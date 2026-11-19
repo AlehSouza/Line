@@ -273,6 +273,9 @@ pub struct Attachment {
     pub width: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub height: Option<i64>,
+    /// Prévia borrada minúscula (data URL) para quando a mídia está coberta.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
     /// Reações só nesta mídia (visualizador de imagens).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<Reaction>,

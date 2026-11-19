@@ -3021,7 +3021,15 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
             .filter(|n| (1..=20000).contains(n))
     };
     let dims = dim("x-width").zip(dim("x-height"));
-    let attachment = app.store.q().create_attachment_sized(
+    // Prévia borrada feita aqui: coberta, a mídia real nunca vai para o app.
+    let preview = if crate::preview::supported(content_type.essence_str()) {
+        let p = path.clone();
+        tokio::task::spawn_blocking(move || crate::preview::blurred(&p)).await.ok().flatten()
+    } else {
+        None
+    };
+    let q = app.store.q();
+    let mut attachment = q.create_attachment_sized(
         &id,
         &me,
         &filename,
@@ -3029,6 +3037,10 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
         size as i64,
         dims,
     );
+    if let Some(p) = preview {
+        q.set_attachment_preview(&id, &p);
+        attachment.preview = Some(p);
+    }
     created(attachment)
 }
 
