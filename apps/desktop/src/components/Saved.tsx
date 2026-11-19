@@ -1,5 +1,6 @@
 'use client';
 
+import { formatMessageTime } from '../lib/msgtime';
 import { useEffect, useState } from 'react';
 import type { Message, SavedMessage } from '@line/shared';
 import { api, fileUrl } from '@/lib/api';
@@ -143,7 +144,7 @@ export function SavedView() {
                     <p className="flex items-baseline gap-2">
                       <span className="truncate text-sm font-semibold text-fg">{a.displayName}</span>
                       <span className="shrink-0 text-[11px] text-muted">
-                        {new Date(m.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {formatMessageTime(m.createdAt)}
                       </span>
                     </p>
                     {m.content ? (

@@ -1,5 +1,6 @@
 'use client';
 
+import { formatMessageTime } from '../lib/msgtime';
 import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
 import { hasPerm, massMention, missingFeatures, Perm, type Attachment, type Channel, type Message, type Reaction, type ThreadSummary } from '@line/shared';
@@ -617,15 +618,7 @@ function DayDivider({ date }: { date: string }) {
   );
 }
 
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const today = new Date();
-  const yesterday = new Date(Date.now() - 86400000);
-  if (d.toDateString() === today.toDateString()) return `Hoje às ${time}`;
-  if (d.toDateString() === yesterday.toDateString()) return `Ontem às ${time}`;
-  return `${d.toLocaleDateString('pt-BR')} ${time}`;
-}
+const formatTime = formatMessageTime;
 
 function MessageRow({
   highlighted,

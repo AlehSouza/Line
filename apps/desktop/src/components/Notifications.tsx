@@ -1,5 +1,6 @@
 'use client';
 
+import { formatMessageTime } from '../lib/msgtime';
 import type { Channel, Message, NotifyLevel } from '@line/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -801,7 +802,7 @@ function MentionsTab({ onClose }: { onClose: () => void }) {
                       {a.displayName}
                     </span>
                     <span className="shrink-0 text-[11px] text-muted">
-                      {new Date(m.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      {formatMessageTime(m.createdAt)}
                     </span>
                   </p>
                   {m.content && <div className="line-clamp-4 text-sm break-words whitespace-pre-wrap text-soft">{renderMarkdown(m.content, myUsername)}</div>}
