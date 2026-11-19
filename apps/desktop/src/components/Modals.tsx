@@ -301,7 +301,7 @@ function CreateChannelModal({
               required
               value={name}
               maxLength={100}
-              onChange={(e) => setName(type === 'text' ? e.target.value.replace(/\s/g, '-').toLowerCase() : e.target.value)}
+              onChange={(e) => setName(type === 'text' ? e.target.value.replace(/\s/g, '-') : e.target.value)}
               placeholder="novo-canal"
               className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
             />
@@ -493,7 +493,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
               required
               value={name}
               maxLength={100}
-              onChange={(e) => setName(isText ? e.target.value.replace(/\s/g, '-').toLowerCase() : e.target.value)}
+              onChange={(e) => setName(isText ? e.target.value.replace(/\s/g, '-') : e.target.value)}
               className="h-10 flex-1 bg-transparent outline-none placeholder:text-muted"
             />
             <EmojiButton target={nameRef} />

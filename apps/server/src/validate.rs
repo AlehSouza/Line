@@ -165,13 +165,13 @@ fn color(raw: &str) -> ApiResult<String> {
 }
 
 pub fn channel_name(raw: &str) -> ApiResult<String> {
-    let s = raw.trim().to_lowercase();
-    text(&s, 1, 100, "O nome do canal")?;
-    Ok(SPACES_RE.replace_all(&s, "-").into_owned())
+    let s = raw.trim();
+    text(s, 1, 100, "O nome do canal")?;
+    Ok(SPACES_RE.replace_all(s, "-").into_owned())
 }
 
-/// Canal de voz tem nome livre (maiúsculas, espaços, emojis); só os de texto
-/// viram minúsculo-com-hífen.
+/// Canal de voz tem nome livre (maiúsculas, espaços, emojis); os de texto
+/// mantêm maiúsculas e só trocam espaços por hífen.
 pub fn channel_name_for(kind: &str, raw: &str) -> ApiResult<String> {
     if kind == "voice" {
         let s = SPACES_RE.replace_all(raw.trim(), " ").into_owned();
