@@ -135,10 +135,10 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
 
   if (blocked) {
     return (
-      <div className="relative flex min-h-[220px] w-[420px] max-w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-edge bg-[#3d3d40] px-5 py-5 text-center text-white">
-        <Icons.EyeOff size={40} className="text-white/90" />
+      <div className="relative flex min-h-[220px] w-[420px] max-w-full flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-edge px-5 py-5 text-center text-fg" style={{ background: COVER_GRADIENT }}>
+        <Icons.EyeOff size={40} className="text-soft" />
         <p className="mt-1 text-sm font-bold tracking-wide uppercase">Aviso: conteúdo sensível</p>
-        <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+        <p className="max-w-[300px] text-[13px] leading-snug text-muted">
           {age === null
             ? 'Esta mídia tem conteúdo sensível. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
             : 'Esta mídia tem conteúdo sensível e só aparece para quem tem 18 anos ou mais.'}
@@ -146,7 +146,7 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
         {age === null && (
           <button
             onClick={() => actions.openModal({ kind: 'settings', section: 'account' })}
-            className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85"
+            className="mt-2 rounded-full bg-hover px-5 py-2 text-sm font-semibold text-fg hover:bg-edge"
           >
             Informar data de nascimento
           </button>
@@ -158,7 +158,7 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
   // A mídia fica sempre no mesmo lugar da árvore (só muda o borrado): revelar não recarrega
   // a imagem nem pisca, e o aviso tem exatamente o formato dela.
   return (
-    <div ref={ref} className={cx('relative w-fit max-w-full overflow-hidden rounded-lg', covered && 'bg-[#3d3d40]')}>
+    <div ref={ref} className={cx('relative w-fit max-w-full overflow-hidden rounded-lg', covered && 'border border-edge')}>
       <div
         aria-hidden={covered || undefined}
         className={cx(covered && 'pointer-events-none invisible select-none [&_*]:pointer-events-none')}
@@ -169,12 +169,12 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
       {covered && (
         <div
           onClick={onOpen}
-          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-white', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
+          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-fg', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
         >
-          {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-white/90" /> : <Icons.Warning size={small ? 22 : 40} className="text-white/90" />}
+          {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-soft" /> : <Icons.Warning size={small ? 22 : 40} className="text-soft" />}
           <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
           {!small && (
-            <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+            <p className="max-w-[300px] text-[13px] leading-snug text-muted">
               {a.nsfw
                 ? 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
                 : 'Quem enviou marcou esta mídia como spoiler.'}
@@ -185,7 +185,7 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
               e.stopPropagation();
               setShown(true);
             }}
-            className={cx('rounded-full bg-black/70 font-semibold text-white hover:bg-black/85', small ? 'px-3 py-1 text-xs' : 'mt-2 px-5 py-2 text-sm')}
+            className={cx('rounded-full bg-hover font-semibold text-fg hover:bg-edge', small ? 'px-3 py-1 text-xs' : 'mt-2 px-5 py-2 text-sm')}
           >
             {small ? 'Mostrar' : a.nsfw ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
           </button>
@@ -206,7 +206,8 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
 
 /** Cobertura de mídia sensível/spoiler: degradê cinza, sem nenhum pixel da mídia (e sem
  * filtro CSS, que travava o scroll). Quem dá o tamanho é a própria mídia, invisível embaixo. */
-export const COVER_GRADIENT = 'linear-gradient(135deg, #5a5a60 0%, #45454a 45%, #2e2e32 100%)';
+/** Segue o tema (tokens do app): discreto, no tom dos cartões. */
+export const COVER_GRADIENT = 'linear-gradient(160deg, var(--color-raise) 0%, var(--color-side) 100%)';
 
 export function SensitiveCover({ className }: { className?: string }) {
   return <span aria-hidden className={cx('block', className)} style={{ background: COVER_GRADIENT }} />;
@@ -424,9 +425,9 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
             className="relative aspect-square overflow-hidden bg-rail"
           >
             {blocked ? (
-              <span className="flex h-full w-full flex-col items-center justify-center gap-1 bg-[#3d3d40] text-white">
-                <Icons.Warning size={22} className="text-white/90" /><span className="text-[11px] font-bold uppercase">Conteúdo sensível</span>
-                <span className="px-2 text-[11px] text-white/80">Informe sua idade para ver</span>
+              <span className="flex h-full w-full flex-col items-center justify-center gap-1 text-fg" style={{ background: COVER_GRADIENT }}>
+                <Icons.Warning size={22} className="text-soft" /><span className="text-[11px] font-bold uppercase">Conteúdo sensível</span>
+                <span className="px-2 text-[11px] text-muted">Informe sua idade para ver</span>
               </span>
             ) : video ? (
               covered ? (
@@ -447,8 +448,8 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
             )}
             {covered && !more && (
               // Versão curta do aviso: ícone, título e "Ver" (revela só este quadro).
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/30 p-2 text-center text-white">
-                {a.nsfw ? <Icons.EyeOff size={24} className="text-white/90" /> : <Icons.Warning size={24} className="text-white/90" />}
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 p-2 text-center text-fg">
+                {a.nsfw ? <Icons.EyeOff size={24} className="text-soft" /> : <Icons.Warning size={24} className="text-soft" />}
                 <span className="text-[11px] font-bold tracking-wide uppercase">{a.nsfw ? 'Conteúdo sensível' : 'Spoiler'}</span>
                 <span
                   role="button"
@@ -463,7 +464,7 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
                     e.stopPropagation();
                     setSeen((l) => [...l, a.id]);
                   }}
-                  className="rounded-full bg-black/70 px-4 py-1 text-xs font-semibold hover:bg-black/85"
+                  className="rounded-full bg-hover px-4 py-1 text-xs font-semibold text-fg hover:bg-edge"
                 >
                   Ver
                 </span>

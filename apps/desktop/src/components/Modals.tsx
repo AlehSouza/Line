@@ -933,15 +933,15 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
         )}
         {covered && (
           // Mesmo aviso do chat: a mídia fica em foco, mas coberta até a pessoa escolher ver.
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center text-white" style={{ background: COVER_GRADIENT }}>
-            {item.sensitive === 'nsfw' ? <Icons.EyeOff size={40} className="text-white/90" /> : <Icons.Warning size={40} className="text-white/90" />}
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg p-5 text-center text-fg" style={{ background: COVER_GRADIENT }}>
+            {item.sensitive === 'nsfw' ? <Icons.EyeOff size={40} className="text-soft" /> : <Icons.Warning size={40} className="text-soft" />}
             <p className="mt-1 text-sm font-bold tracking-wide uppercase">{item.sensitive === 'nsfw' ? 'Aviso: conteúdo sensível' : 'Spoiler'}</p>
-            <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
+            <p className="max-w-[300px] text-[13px] leading-snug text-muted">
               {item.sensitive === 'nsfw'
                 ? 'Esta mídia pode ter conteúdo sensível (nudez, violência, palavrões, pornografia) que algumas pessoas acham ofensivo.'
                 : 'Quem enviou marcou esta mídia como spoiler.'}
             </p>
-            <button onClick={() => setRevealed((l) => [...l, i])} className="mt-2 rounded-full bg-black/70 px-5 py-2 text-sm font-semibold text-white hover:bg-black/85">
+            <button onClick={() => setRevealed((l) => [...l, i])} className="mt-2 rounded-full bg-hover px-5 py-2 text-sm font-semibold text-fg hover:bg-edge">
               {item.sensitive === 'nsfw' ? 'Mostrar mesmo assim' : 'Mostrar spoiler'}
             </button>
           </div>
