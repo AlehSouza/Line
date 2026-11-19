@@ -213,26 +213,68 @@ async function bootstrap() {
 }
 
 const STORAGE_VIEW = 'line.view';
+const STORAGE_THREAD = 'line.view.thread';
 let viewSaver: (() => void) | null = null;
 
-/** Volta para o servidor/canal ou conversa privada que estava aberto antes do F5. */
+/** F5 (o sessionStorage continua) ou o app reiniciou sozinho na atualização. Abrir do zero não conta. */
+function isResume() {
+  let reload = false;
+  try {
+    reload = sessionStorage.getItem('line.alive') === '1';
+    sessionStorage.setItem('line.alive', '1');
+  } catch {
+    /* sem armazenamento */
+  }
+  return reload || (window as { __LINE_RESUMED__?: boolean }).__LINE_RESUMED__ === true;
+}
+
+/** Volta para o servidor/canal ou conversa privada que estava aberto antes do F5 ou da atualização. */
 function restoreView() {
+  if (!isResume()) {
+    // Abriu do zero: começa no Início e esquece o lugar antigo (senão um F5 aqui voltaria para lá).
+    storage.set(STORAGE_VIEW, JSON.stringify(useLine.getState().view));
+    storage.set(STORAGE_THREAD, null);
+  }
   try {
     const saved = JSON.parse(storage.get(STORAGE_VIEW) ?? 'null') as View | null;
     const s = useLine.getState();
     if (saved?.kind === 'server' && s.servers[saved.serverId]) actions.goServer(saved.serverId, saved.channelId);
     else if (saved?.kind === 'home' && saved.dmId && s.channels[saved.dmId]) actions.goHome(saved.dmId);
     else if (saved?.kind === 'discover') actions.goDiscover();
+    // A conversa (thread) aberta no painel ao lado: volta quando os canais do servidor chegarem.
+    const threadId = storage.get(STORAGE_THREAD);
+    if (threadId && saved?.kind === 'server') restoreThread(threadId, saved.channelId);
   } catch {
     /* sem lugar salvo */
   }
   viewSaver ??= useLine.subscribe((st, prev) => {
     if (st.view !== prev.view) storage.set(STORAGE_VIEW, JSON.stringify(st.view));
+    if (st.threadId !== prev.threadId) storage.set(STORAGE_THREAD, st.threadId);
     // Abriu outro servidor: confere quem está na voz dele.
     const sid = st.view.kind === 'server' ? st.view.serverId : null;
     const before = prev.view.kind === 'server' ? prev.view.serverId : null;
     if (sid && sid !== before) void syncVoice();
   });
+}
+
+function restoreThread(threadId: string, parentId: string | null) {
+  const stillHere = () => {
+    const v = useLine.getState().view;
+    return v.kind === 'server' && v.channelId === parentId;
+  };
+  const tryOpen = () => {
+    const st = useLine.getState();
+    if (!stillHere() || st.threadId || st.threadDraft) return true;
+    if (st.channels[threadId]?.parentId !== parentId) return false;
+    actions.openThread(threadId);
+    return true;
+  };
+  if (tryOpen()) return;
+  const stop = useLine.subscribe(() => {
+    if (tryOpen()) stop();
+  });
+  // Conversa apagada ou sem acesso: desiste depois de um tempo.
+  setTimeout(stop, 30_000);
 }
 
 export async function ensureServerLoaded(serverId: string, force = false) {

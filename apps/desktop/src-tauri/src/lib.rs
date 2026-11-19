@@ -39,6 +39,37 @@ use screen_linux as screen;
 
 const MAIN: &str = "main";
 
+/// Tamanho, posição e maximizado da janela principal, lembrados para quando o app reinicia na atualização.
+/// Tela cheia fica de fora: ela é só da transmissão em tela cheia, que não volta sozinha.
+fn window_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
+}
+
+/// Este processo abriu logo depois de uma atualização (o app reiniciou sozinho). Só aí a janela e a
+/// tela voltam como estavam; abrir do zero vai para o Início, maximizado.
+static JUST_UPDATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn just_updated() -> bool {
+    JUST_UPDATED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Salva o estado da janela um pouco depois de parar de mover/redimensionar. A atualização fecha o
+/// processo direto (sem o evento de saída), então o arquivo precisa estar sempre em dia.
+fn save_window_state_soon(app: &tauri::AppHandle) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static GEN: AtomicU64 = AtomicU64::new(0);
+    let ticket = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        if GEN.load(Ordering::SeqCst) == ticket {
+            use tauri_plugin_window_state::AppHandleExt;
+            let _ = app.save_window_state(window_flags());
+        }
+    });
+}
+
 /// Argumento que o sistema passa quando abre o Line ao ligar o computador.
 const AUTOSTART_ARG: &str = "--autostart";
 
@@ -138,6 +169,7 @@ fn take_updated_marker(app: &tauri::AppHandle) -> bool {
 /// Depois de uma atualização a janela sempre aparece, mesmo que a abertura anterior tenha sido essa.
 fn start_hidden(app: &tauri::AppHandle) -> bool {
     let updated = take_updated_marker(app);
+    JUST_UPDATED.store(updated, std::sync::atomic::Ordering::SeqCst);
     !updated && std::env::args().any(|a| a == AUTOSTART_ARG) && load_startup_prefs(app).minimized
 }
 
@@ -193,7 +225,7 @@ fn open_store_updates(app: &tauri::AppHandle) {
 #[tauri::command]
 async fn update_check(app: tauri::AppHandle) -> Option<String> {
     use tauri_plugin_updater::UpdaterExt;
-    if from_store() {
+    if from_store() || cfg!(debug_assertions) {
         return None;
     }
     match app.updater().ok()?.check().await {
@@ -321,7 +353,8 @@ fn splash_status(splash: &WebviewWindow, text: &str, pct: Option<f64>) {
 async fn startup_update(app: &tauri::AppHandle, splash: &WebviewWindow) -> bool {
     use std::time::Duration;
     use tauri_plugin_updater::UpdaterExt;
-    if from_store() {
+    // Versão de desenvolvimento (0.1.0): sem isso ela se "atualiza" para a instalada e fecha.
+    if from_store() || cfg!(debug_assertions) {
         return false;
     }
     let updater = match app.updater_builder().timeout(Duration::from_secs(20)).build() {
@@ -555,9 +588,15 @@ fn notify_show(
     false
 }
 
+/// Começou escondido na bandeja (abriu do zero): maximiza quando aparecer.
+static MAXIMIZE_ON_SHOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();
+        if MAXIMIZE_ON_SHOW.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            let _ = w.maximize();
+        }
         let _ = w.show();
         let _ = w.set_focus();
     }
@@ -619,6 +658,8 @@ fn open_main(app: &tauri::AppHandle) {
 fn open_main_with(app: &tauri::AppHandle, hidden: bool) {
     match create_window(app) {
         Ok(window) if hidden => {
+            // Maximizar agora mostraria a janela: fica para quando ela abrir pela bandeja.
+            MAXIMIZE_ON_SHOW.store(true, std::sync::atomic::Ordering::SeqCst);
             #[cfg(not(any(windows, target_os = "macos")))]
             {
                 let _ = window.show();
@@ -629,6 +670,12 @@ fn open_main_with(app: &tauri::AppHandle, hidden: bool) {
         }
         // Mostra só depois de carregar, sem piscar branco.
         Ok(window) => {
+            if just_updated() {
+                use tauri_plugin_window_state::WindowExt;
+                let _ = window.restore_state(window_flags());
+            } else {
+                let _ = window.maximize();
+            }
             let _ = window.show();
             let _ = window.set_focus();
         }
@@ -719,6 +766,8 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
                 .replace("__LINE_VERSION__", &app.package_info().version.to_string())
                 .replace("__LINE_NATIVE_SCREEN__", if native_screen_picker() { "true" } else { "false" }),
         )
+        // A interface volta para o canal/conversa de antes só depois de atualizar (ou no F5).
+        .initialization_script(format!("window.__LINE_RESUMED__ = {};", just_updated()))
         // Microfone, câmera e notificações sem perguntar de novo: o app inteiro é nosso.
         .on_permission_request(|_, kind| match kind {
             PermissionKind::Microphone
@@ -787,6 +836,7 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         WindowEvent::Focused(true) => {
             let _ = w.request_user_attention(None);
         }
+        WindowEvent::Moved(_) | WindowEvent::Resized(_) => save_window_state_soon(w.app_handle()),
         // Fechar (X, Alt+F4) só esconde; sair de verdade é pelo menu da bandeja.
         #[cfg(any(windows, target_os = "macos"))]
         WindowEvent::CloseRequested { api, .. } => {
@@ -826,6 +876,14 @@ pub fn run() {
             Some(vec![AUTOSTART_ARG]),
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // A janela principal volta com o tamanho/posição de antes (restaurado em open_main_with,
+        // antes de aparecer, para não abrir pequena e depois pular).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window_flags())
+                .skip_initial_state(MAIN)
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             request_attention,
             set_badge,

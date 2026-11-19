@@ -515,9 +515,17 @@ function resumeVoice(list: VoiceState[]) {
   const watching = Object.fromEntries((data.watching ?? []).filter((id) => live.has(id)).map((id) => [id, true]));
   if (Object.keys(watching).length) setV((v) => ({ watching: { ...v.watching, ...watching } }));
   const { channelId, serverId } = data;
-  // Abre a chamada na tela (servidor ou DM) e entra.
-  if (serverId) actions.goServer(serverId, channelId);
-  else actions.goHome(channelId);
+  // Abre a chamada na tela só se não havia outro lugar aberto antes (ex.: um canal de texto).
+  let hadView = false;
+  try {
+    hadView = !!localStorage.getItem('line.view');
+  } catch {
+    // sem armazenamento
+  }
+  if (!hadView) {
+    if (serverId) actions.goServer(serverId, channelId);
+    else actions.goHome(channelId);
+  }
   void joinVoice(channelId);
 }
 
