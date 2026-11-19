@@ -540,7 +540,17 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
         </div>
       </button>
       {activity && (
-        <div className="flex items-center gap-3 border-t border-edge bg-rail/40 px-3 py-2.5">
+        <div
+          className={cx(
+            'flex items-center gap-3 border-t border-edge bg-rail/40 px-3 py-2.5',
+            activity.channelId && activity.serverId && 'cursor-pointer hover:bg-hover/60',
+          )}
+          onClick={
+            activity.channelId && activity.serverId
+              ? () => actions.goServer(activity.serverId!, activity.channelId!)
+              : undefined
+          }
+        >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
             {activity.icon}
           </span>
@@ -558,7 +568,11 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
             )}
           </div>
           {inside ? (
-            <Button variant="subtle" className="hover:text-danger" onClick={() => void leaveVoice()}>
+            <Button variant="subtle" className="hover:text-danger" onClick={(e) => {
+                e.stopPropagation();
+                void leaveVoice();
+              }}
+            >
               Sair
             </Button>
           ) : (
@@ -566,7 +580,8 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
             activity.serverId && (
               <Button
                 variant="subtle"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   actions.goServer(activity.serverId!, activity.channelId!);
                   void joinVoice(activity.channelId!);
                 }}
