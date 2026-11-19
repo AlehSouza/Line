@@ -168,25 +168,51 @@ export async function startNativeScreen(
     glow.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
-    // Ícone: círculo com as duas barras do pause.
-    const r = u * 3.6;
-    const iy = cy - u * 2.6;
-    ctx.beginPath();
-    ctx.arc(cx, iy, r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, u * 0.12);
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-    ctx.stroke();
-    const bw = r * 0.2;
-    const bh = r * 0.78;
-    const gap = r * 0.18;
-    ctx.fillStyle = '#f4f4f5';
-    for (const x of [cx - gap - bw, cx + gap]) {
-      ctx.beginPath();
-      ctx.roundRect(x, iy - bh / 2, bw, bh, bw / 2);
-      ctx.fill();
+    // Ícone: monitor com um pause no canto superior direito, recortado do monitor para parecer um ícone só.
+    const sw = u * 7.2; // tela do monitor
+    const sh = u * 4.7;
+    const iy = cy - u * 3.4; // centro da tela do monitor
+    const lw = Math.max(2, u * 0.42);
+    const icon = new OffscreenCanvas(w, h);
+    const ic = icon.getContext('2d');
+    if (ic) {
+      ic.strokeStyle = '#e4e4e7';
+      ic.lineWidth = lw;
+      ic.lineCap = 'round';
+      ic.lineJoin = 'round';
+      ic.beginPath();
+      ic.roundRect(cx - sw / 2, iy - sh / 2, sw, sh, u * 0.7);
+      ic.stroke();
+      // Pé do monitor.
+      const neckTop = iy + sh / 2;
+      const neckBottom = neckTop + u * 1.1;
+      ic.beginPath();
+      ic.moveTo(cx, neckTop);
+      ic.lineTo(cx, neckBottom);
+      ic.moveTo(cx - u * 1.6, neckBottom);
+      ic.lineTo(cx + u * 1.6, neckBottom);
+      ic.stroke();
+      // Recorte em volta do pause (fica da cor do fundo, sem emenda).
+      const px = cx + sw / 2 - u * 0.2;
+      const py = iy - sh / 2 + u * 0.2;
+      ic.globalCompositeOperation = 'destination-out';
+      ic.beginPath();
+      ic.arc(px, py, u * 1.75, 0, Math.PI * 2);
+      ic.fill();
+      ic.globalCompositeOperation = 'source-over';
+      // Pause: duas barras arredondadas.
+      const bw = u * 0.5;
+      const bh = u * 1.9;
+      const gap = u * 0.32;
+      ic.fillStyle = '#e4e4e7';
+      for (const x of [px - gap - bw, px + gap]) {
+        ic.beginPath();
+        ic.roundRect(x, py - bh / 2, bw, bh, bw / 2);
+        ic.fill();
+      }
+      ctx.drawImage(icon, 0, 0);
     }
+    const r = sh / 2 + u * 1.1; // distância do centro do ícone até o texto
     // Textos na fonte do app, menores.
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
