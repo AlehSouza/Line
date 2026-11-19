@@ -403,9 +403,9 @@ impl Q<'_> {
                 now,
                 admin_id,
                 if is_nsfw {
-                    "Confirmado como +18"
+                    "Confirmado como conteúdo sensível"
                 } else {
-                    "Não é +18"
+                    "Não é conteúdo sensível"
                 },
                 attachment_id
             ],

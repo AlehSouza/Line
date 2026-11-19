@@ -44,14 +44,14 @@ async function reportNsfw(a: Attachment, url: string) {
   }
   try {
     const r = (await api.report({ kind: 'nsfw', attachmentId: a.id, detected })) as { already?: boolean };
-    toast(r.already ? 'Esse anexo já foi confirmado como +18.' : 'Denúncia enviada. A equipe vai verificar se é +18.');
+    toast(r.already ? 'Esse anexo já foi confirmado como conteúdo sensível.' : 'Denúncia enviada. A equipe vai verificar se é conteúdo sensível.');
   } catch (e) {
     showError(e);
   }
 }
 
 function mediaMenu(a: Attachment, url: string, mine: boolean): MenuEntry[] {
-  const report: MenuEntry[] = !mine && !a.nsfwLocked ? ['sep', { label: 'Denunciar como +18', icon: <Icons.Warning size={15} />, danger: true, onClick: () => reportNsfw(a, url) }] : [];
+  const report: MenuEntry[] = !mine && !a.nsfwLocked ? ['sep', { label: 'Denunciar como conteúdo sensível', icon: <Icons.Warning size={15} />, danger: true, onClick: () => reportNsfw(a, url) }] : [];
   return attachmentKind(a.contentType, a.filename) === 'image' ? [...imageMenuItems(url, a.filename), ...report] : report.slice(1);
 }
 
@@ -140,8 +140,8 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
         <p className="mt-1 text-sm font-bold tracking-wide uppercase">Aviso: conteúdo sensível</p>
         <p className="max-w-[300px] text-[13px] leading-snug text-white/80">
           {age === null
-            ? 'Esta mídia é +18. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
-            : 'Esta mídia é +18 e só aparece para quem tem 18 anos ou mais.'}
+            ? 'Esta mídia tem conteúdo sensível. Para ver, informe sua data de nascimento em Configurações, Minha conta.'
+            : 'Esta mídia tem conteúdo sensível e só aparece para quem tem 18 anos ou mais.'}
         </p>
         {age === null && (
           <button
@@ -425,7 +425,7 @@ export function MediaGrid({ attachments, channelId }: { attachments: Attachment[
           >
             {blocked ? (
               <span className="flex h-full w-full flex-col items-center justify-center gap-1 bg-[#3d3d40] text-white">
-                <span className="text-lg font-extrabold text-danger">+18</span>
+                <Icons.Warning size={22} className="text-white/90" /><span className="text-[11px] font-bold uppercase">Conteúdo sensível</span>
                 <span className="px-2 text-[11px] text-white/80">Informe sua idade para ver</span>
               </span>
             ) : video ? (

@@ -71,7 +71,7 @@ export function summary(m: Message, serverId?: string | null) {
   if (text) return text;
   const a = m.attachments[0];
   if (!a) return 'Mensagem';
-  if (a.nsfw) return '🔞 Anexo +18';
+  if (a.nsfw) return '⚠️ Anexo com conteúdo sensível';
   if (a.spoiler) return '🙈 Spoiler';
   if (a.contentType.startsWith('image/')) return '🖼️ Imagem';
   if (a.contentType.startsWith('video/')) return '🎬 Vídeo';

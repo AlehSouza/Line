@@ -729,7 +729,7 @@ async function openServer(id) {
 
 // ---------- denúncias e bugs ----------
 
-const KIND = { bug: 'Bug', idea: 'Melhoria', user: 'Usuário', message: 'Mensagem', nsfw: '+18' };
+const KIND = { bug: 'Bug', idea: 'Melhoria', user: 'Usuário', message: 'Mensagem', nsfw: 'Conteúdo sensível' };
 const KIND_PILL = { bug: 'red', idea: 'violet', user: 'sun', message: 'sun', nsfw: 'red' };
 
 /** Prioridade da denúncia +18: mais denúncias (e o detector concordando) = mais crítica. */
@@ -788,7 +788,7 @@ function reportsPage(which) {
       'div',
       { class: 'toolbar' },
       tabs([['open', 'Abertas'], ['resolved', 'Resolvidas'], ['dismissed', 'Descartadas'], ['', 'Todas']], status, (v) => (status = v)),
-      tabs(feedback ? [['feedback', 'Tudo'], ['bug', 'Bugs'], ['idea', 'Melhorias']] : [['reports', 'Tudo'], ['user', 'Usuários'], ['message', 'Mensagens'], ['nsfw', '+18']], kind, (v) => (kind = v)),
+      tabs(feedback ? [['feedback', 'Tudo'], ['bug', 'Bugs'], ['idea', 'Melhorias']] : [['reports', 'Tudo'], ['user', 'Usuários'], ['message', 'Mensagens'], ['nsfw', 'Conteúdo sensível']], kind, (v) => (kind = v)),
     ),
     list,
     h('div', { class: 'more' }, more),
@@ -911,7 +911,7 @@ function reportCard(r, reload) {
           return h('span', { class: `pill ${color}` }, `Prioridade ${label}`);
         })(),
         h('span', { class: 'pill' }, `${num(r.reportCount || 1)} ${(r.reportCount || 1) === 1 ? 'denúncia' : 'denúncias'}`),
-        h('span', { class: 'pill' }, `Detector: ${num(r.detectedCount || 0)} de ${num(r.reportCount || 1)} acharam +18`),
+        h('span', { class: 'pill' }, `Detector: ${num(r.detectedCount || 0)} de ${num(r.reportCount || 1)} acharam conteúdo sensível`),
       ),
     r.details && h('p', { class: 'details' }, r.kind === 'message' || r.kind === 'user' || r.kind === 'nsfw' ? h('span', { class: 'muted small' }, 'Relato de quem denunciou: ') : null, r.details),
     r.kind !== 'message' && r.images?.length ? shotsView(r.images) : null,
@@ -922,8 +922,8 @@ function reportCard(r, reload) {
       { class: 'actions' },
       r.kind === 'nsfw' && r.attachmentId
         ? [
-            h('button', { class: 'btn danger small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: true }), 'Fixado como +18.')) && reload() }, 'É +18 (fixar)'),
-            h('button', { class: 'btn small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: false }), 'Marcado como não +18.')) && reload() }, 'Não é +18'),
+            h('button', { class: 'btn danger small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: true }), 'Fixado como conteúdo sensível.')) && reload() }, 'É sensível (fixar)'),
+            h('button', { class: 'btn small', onclick: async () => (await act(() => api('PUT', `/admin/attachments/${r.attachmentId}/nsfw`, { nsfw: false }), 'Marcado como não sensível.')) && reload() }, 'Não é sensível'),
           ]
         : r.status === 'open'
           ? [h('button', { class: 'btn primary small', onclick: () => setStatus('resolved') }, 'Resolver'), h('button', { class: 'btn small', onclick: () => setStatus('dismissed') }, 'Descartar')]
@@ -981,7 +981,7 @@ async function admins() {
 
 // ---------- registro ----------
 
-const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia', add_admin: 'Tornou admin', remove_admin: 'Tirou admin de', nsfw_confirm: 'Fixou +18 no anexo', nsfw_reject: 'Disse que não é +18 o anexo' };
+const ACTIONS = { ban: 'Suspendeu', unban: 'Removeu suspensão', logout: 'Derrubou sessões', delete_messages: 'Apagou mensagens de', delete_user: 'Apagou a conta', delete_server: 'Apagou o servidor', delete_message: 'Apagou mensagem', report: 'Mudou denúncia', add_admin: 'Tornou admin', remove_admin: 'Tirou admin de', nsfw_confirm: 'Fixou conteúdo sensível no anexo', nsfw_reject: 'Disse que não é sensível o anexo' };
 
 async function log() {
   loading();

@@ -1567,10 +1567,10 @@ function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean 
         <h2 className="text-2xl font-bold">Canal com conteúdo sensível</h2>
         <p className="max-w-[520px] text-[15px] leading-relaxed text-soft">
           {adult
-            ? `Este canal foi marcado como +18 pela administração de ${server?.name ?? 'este servidor'} e pode ter conteúdo sensível. Prossiga só se você tem 18 anos ou mais.`
+            ? `Este canal foi marcado como conteúdo sensível pela administração de ${server?.name ?? 'este servidor'}. Prossiga só se você tem 18 anos ou mais.`
             : hasBirth
-              ? 'Este canal foi marcado como +18 e só pode ser aberto por quem tem 18 anos ou mais.'
-              : 'Este canal foi marcado como +18. Para entrar, informe sua data de nascimento em Configurações, Minha conta.'}
+              ? 'Este canal foi marcado como conteúdo sensível e só pode ser aberto por quem tem 18 anos ou mais.'
+              : 'Este canal foi marcado como conteúdo sensível. Para entrar, informe sua data de nascimento em Configurações, Minha conta.'}
         </p>
         <div className="mt-1 flex gap-3">
           <button onClick={() => goBack()} className="rounded-lg bg-raise px-5 py-2.5 text-sm font-semibold text-fg hover:bg-hover">
@@ -1677,7 +1677,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
         const level = channel.serverId ? useLine.getState().servers[channel.serverId]?.nsfwLevel : undefined;
         void looksNsfw(file, level ?? 'moderate').then((hit) => {
           patch(key, hit ? { checking: false, nsfw: true, autoNsfw: true } : { checking: false });
-          if (hit) toast('Esse anexo parece conteúdo +18 e foi marcado como +18.');
+          if (hit) toast('Esse anexo parece conteúdo sensível e foi marcado como sensível.');
         });
       }
       api
@@ -1952,7 +1952,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
                 item={p}
                 onRemove={() => remove(p.key)}
                 onToggle={(flag) => {
-                  if (flag === 'nsfw' && p.autoNsfw) return toast('Esse anexo foi identificado como +18 e não dá para tirar a marca.');
+                  if (flag === 'nsfw' && p.autoNsfw) return toast('Esse anexo foi identificado como conteúdo sensível e não dá para tirar a marca.');
                   patch(p.key, flag === 'spoiler' ? { spoiler: !p.spoiler } : { nsfw: !p.nsfw });
                 }}
               />
@@ -2329,14 +2329,14 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
           <button
             type="button"
             onClick={() => onToggle('nsfw')}
-            title={item.autoNsfw ? 'Identificado automaticamente como +18 (não dá para tirar)' : 'Só quem tem 18 anos ou mais vê'}
+            title={item.autoNsfw ? 'Identificado automaticamente como conteúdo sensível (não dá para tirar)' : 'Só quem tem 18 anos ou mais vê'}
             className={cx(
               'rounded-md border px-1.5 py-0.5 text-[11px] font-semibold transition-colors',
               item.nsfw ? 'border-danger bg-danger/15 text-danger' : 'border-edge text-muted hover:text-fg',
               item.autoNsfw && 'cursor-not-allowed',
             )}
           >
-            {item.autoNsfw && <Icons.Lock size={11} className="mr-0.5 inline" />}+18
+            {item.autoNsfw && <Icons.Lock size={11} className="mr-0.5 inline" />}Sensível
           </button>
           {item.checking && <span className="ml-auto text-[10px] text-muted">Verificando…</span>}
         </div>

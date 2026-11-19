@@ -359,7 +359,7 @@ function NsfwChannelSwitch({ on, onToggle }: { on: boolean; onToggle: () => void
       <div className="flex items-center justify-between gap-4">
         <span className="flex items-center gap-1.5 font-semibold">
           <span className="flex items-center gap-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400"><Icons.Warning size={12} />Conteúdo Sensível</span>
-          Canal +18
+          Canal com conteúdo sensível
         </span>
         <button
           type="button"
@@ -982,7 +982,7 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
 
 /** Rigor da detecção automática de +18 nas mídias enviadas no servidor. */
 const NSFW_LEVELS = [
-  { value: 'light', label: 'Leve', hint: 'Marca +18 só o que é completamente explícito: sexo explícito, genitália à mostra e afins.' },
+  { value: 'light', label: 'Leve', hint: 'Marca como conteúdo sensível só o que é completamente explícito: sexo explícito, genitália à mostra e afins.' },
   { value: 'moderate', label: 'Moderada', hint: 'Tudo do Leve, mais o que incita sexo: se esfregar, poses e situações insinuantes.' },
   { value: 'high', label: 'Alta', hint: 'Tudo do Leve e do Moderado, mais qualquer mínima sugestão sexual.' },
 ];

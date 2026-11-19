@@ -29,7 +29,7 @@ import { Dices, RotateCcw } from 'lucide-react';
 type Section = 'account' | 'profile' | 'appearance' | 'voice' | 'notifications' | 'app' | 'blocked' | 'games' | 'activity';
 
 const NAV: { id: Section; label: string; icon: ReactNode; keywords: string }[] = [
-  { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança nascimento idade sensível +18 borrar' },
+  { id: 'account', label: 'Minha conta', icon: <Icons.User size={18} />, keywords: 'conta usuário email senha segurança nascimento idade sensível borrar' },
   { id: 'profile', label: 'Perfil', icon: <Icons.Edit size={18} />, keywords: 'perfil nome exibição status bio cor avatar' },
   { id: 'appearance', label: 'Aparência', icon: <Icons.Palette size={18} />, keywords: 'aparência tema cores claro escuro carmesim pink rosa daltônico' },
   { id: 'voice', label: 'Voz e vídeo', icon: <Icons.Mic size={18} />, keywords: 'voz vídeo microfone áudio saída ruído' },
@@ -365,7 +365,7 @@ function AccountSection() {
         />
         <Row
           label="Data de nascimento"
-          value={me.birthDate ? formatBirth(me.birthDate) : <span className="text-muted">Não informada (mídias +18 ficam bloqueadas)</span>}
+          value={me.birthDate ? formatBirth(me.birthDate) : <span className="text-muted">Não informada (mídias com conteúdo sensível ficam bloqueadas)</span>}
           onEdit={() => setBirthOpen(true)}
           action={me.birthDate ? 'Editar' : 'Informar'}
         />
@@ -379,8 +379,8 @@ function AccountSection() {
           title="Borrar conteúdo sensível"
           hint={
             isAdult(me.birthDate)
-              ? 'Mídias +18 aparecem atrás de um aviso até você clicar em Mostrar mesmo assim.'
-              : 'Mídias +18 continuam bloqueadas até você informar uma data de nascimento com 18 anos ou mais.'
+              ? 'Mídias com conteúdo sensível aparecem atrás de um aviso até você clicar em Mostrar mesmo assim.'
+              : 'Mídias com conteúdo sensível continuam bloqueadas até você informar uma data de nascimento com 18 anos ou mais.'
           }
           on={me.blurSensitive !== false}
           onChange={async (on) => {
@@ -479,7 +479,7 @@ function BirthDateDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal
       title="Data de nascimento"
-      subtitle="Usada só para liberar mídias marcadas como +18. Ninguém mais vê."
+      subtitle="Usada só para liberar mídias marcadas como conteúdo sensível. Ninguém mais vê."
       onClose={onClose}
       footer={
         <>
@@ -522,7 +522,7 @@ function BirthDateDialog({ onClose }: { onClose: () => void }) {
       </div>
       {age !== null && (
         <p className={cx('mt-3 text-sm', age >= 18 ? 'text-soft' : 'text-muted')}>
-          {age >= 18 ? `${age} anos: as mídias +18 ficam liberadas.` : `${Math.max(age, 0)} anos: as mídias +18 continuam bloqueadas.`}
+          {age >= 18 ? `${age} anos: as mídias com conteúdo sensível ficam liberadas.` : `${Math.max(age, 0)} anos: as mídias com conteúdo sensível continuam bloqueadas.`}
         </p>
       )}
       {error && <div className="mt-3"><ErrorText>{error}</ErrorText></div>}

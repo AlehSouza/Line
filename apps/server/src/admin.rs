@@ -746,7 +746,7 @@ async fn create_report(State(app): S, Me(me): Me, b: Bytes) -> Res {
         }
         input.message_id = Some(msg_id);
         if input.reason.is_empty() {
-            input.reason = "Conteúdo +18".into();
+            input.reason = "Conteúdo sensível".into();
         }
         nsfw_attachment = Some(att_id);
     }
