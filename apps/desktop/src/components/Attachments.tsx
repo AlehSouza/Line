@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment } from '@line/shared';
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
@@ -183,24 +183,12 @@ function MediaGate({ attachment: a, children, onOpen, fill, compact }: { attachm
     );
   }
 
-  // Coberta, a mídia real nem é montada (não baixa): só a prévia borrada que o servidor fez,
-  // num espaço do tamanho exato dela (largura/altura salvas no envio).
-  const video = attachmentKind(a.contentType, a.filename) === 'video';
-  const dims = a.width && a.height ? { w: a.width, h: a.height } : null;
-  const box = dims
-    ? video
-      ? compact ? fitBox(dims, 280, 180) : fitBox(dims, 520, 360)
-      : compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)
-    : { width: compact ? 220 : 320, height: compact ? 140 : 220 };
+  // Coberta, a mídia real nem é montada (não baixa): a própria AttachmentView desenha a prévia
+  // borrada do servidor com a MESMA caixa e borda da mídia revelada (nada muda de tamanho).
+  void compact;
   return (
-    <div ref={ref} className={cx('relative max-w-full overflow-hidden rounded-lg', fill ? 'w-full' : 'w-fit', covered && 'border border-edge')}>
-      {covered ? (
-        <span className="relative block max-w-full" style={fill && dims ? { width: '100%', aspectRatio: `${dims.w} / ${dims.h}` } : box}>
-          <CoverArt preview={a.preview} />
-        </span>
-      ) : (
-        children
-      )}
+    <div ref={ref} className={cx('relative max-w-full overflow-hidden rounded-lg', fill ? 'w-full' : 'w-fit')}>
+      <CoveredCtx.Provider value={!!covered}>{children}</CoveredCtx.Provider>
       {covered && (
         <div
           onClick={onOpen}
@@ -272,20 +260,34 @@ function fitBox(d: { w: number; h: number }, maxW: number, maxH: number) {
   return { width: Math.max(1, Math.round(d.w * k)), aspectRatio: `${d.w} / ${d.h}` };
 }
 
+/** true dentro de um MediaGate coberto: a mídia mostra só a prévia, sem baixar a real. */
+const CoveredCtx = createContext(false);
+
 function AttachmentView({ attachment: a, compact, mine, owner, fill }: { attachment: Attachment; compact?: boolean; mine?: boolean; owner?: { channelId: string; messageId: string }; fill?: boolean }) {
-  // Mídia sensível: link assinado pedido ao servidor (o link cru dela não abre).
-  const signed = useMediaUrl(a);
+  const covered = useContext(CoveredCtx);
+  // Mídia sensível: link assinado pedido ao servidor (o link cru dela não abre). Coberta, nem pede.
+  const signed = useMediaUrl(covered ? null : a);
   const kind = attachmentKind(a.contentType, a.filename);
-  if (a.nsfw && !signed && (kind === 'image' || kind === 'video')) {
+  const plain = fileUrl(a.url);
+  // Coberta (ou esperando o link assinado): mesma caixa e mesma borda da mídia, só com a prévia.
+  if ((covered || (a.nsfw && !signed)) && (kind === 'image' || kind === 'video')) {
+    if (kind === 'image')
+      return (
+        <span className={cx('block max-w-full overflow-hidden rounded-lg border border-edge bg-rail', fill && 'w-full')}>
+          <LoadingImage src={plain} alt="" compact={compact} dims={mediaDims(a, plain)} fill={fill} placeholder={a.preview ?? null} coverOnly />
+        </span>
+      );
     const d = a.width && a.height ? { w: a.width, h: a.height } : null;
-    const box = d ? (fill ? { width: '100%', aspectRatio: `${d.w} / ${d.h}` } : kind === 'video' ? fitBox(d, compact ? 280 : 520, compact ? 180 : 360) : fitBox(d, compact ? 220 : 420, compact ? 160 : 350)) : { width: compact ? 220 : 320, height: compact ? 140 : 220 };
     return (
-      <span className="relative block max-w-full overflow-hidden rounded-lg border border-edge" style={box}>
+      <span
+        className={cx('relative block max-w-full overflow-hidden rounded-lg border border-edge bg-black', fill ? 'w-full' : !d && (compact ? 'h-[158px] w-[280px]' : 'h-[293px] w-[520px]'))}
+        style={d ? (fill ? { width: '100%', aspectRatio: `${d.w} / ${d.h}` } : compact ? fitBox(d, 280, 180) : fitBox(d, 520, 360)) : undefined}
+      >
         <CoverArt preview={a.preview} />
       </span>
     );
   }
-  const url = signed ?? fileUrl(a.url);
+  const url = signed ?? plain;
   switch (kind) {
     case 'image':
       return (
@@ -396,7 +398,7 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
 
 /** Imagem com skeleton animado até carregar. Com o tamanho conhecido, o espaço já nasce
  * no formato exato da imagem (nada pula quando ela chega). */
-function LoadingImage({ src, alt, compact, dims, fill, placeholder }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number }; fill?: boolean; placeholder?: string | null }) {
+function LoadingImage({ src, alt, compact, dims, fill, placeholder, coverOnly }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number }; fill?: boolean; placeholder?: string | null; coverOnly?: boolean }) {
   // Já carregada antes (está no cache do navegador): sem skeleton, senão ele pisca por um quadro.
   const [loaded, setLoaded] = useState(() => seenSize.has(src));
   const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -404,6 +406,17 @@ function LoadingImage({ src, alt, compact, dims, fill, placeholder }: { src: str
     if (img.naturalWidth && img.naturalHeight) seenSize.set(src, { w: img.naturalWidth, h: img.naturalHeight });
     setLoaded(true);
   };
+  // Só a capa (mídia coberta): mesma caixa, sem <img> da mídia real.
+  if (coverOnly) {
+    return (
+      <span
+        className={cx('relative block max-w-full overflow-hidden', !dims && (compact ? 'h-[120px] w-[200px]' : 'h-[220px] w-[320px]'))}
+        style={dims ? (fill ? { width: '100%', aspectRatio: `${dims.w} / ${dims.h}` } : compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)) : undefined}
+      >
+        <CoverArt preview={placeholder} />
+      </span>
+    );
+  }
   if (dims) {
     return (
       <span

@@ -26,7 +26,8 @@ export function mediaUrlOf(id: string, plainUrl: string, nsfw?: boolean): Promis
         cache.set(id, { url, exp: r.expires ?? Date.now() / 1000 + 3600 });
         return url;
       })
-      .catch(() => null)
+      // Recusado (sem idade): nada. Qualquer outra falha (ex.: servidor antigo sem a rota): link de sempre.
+      .catch((e: { status?: number }) => (e?.status === 403 || e?.status === 401 ? null : fileUrl(plainUrl)))
       .finally(() => pending.delete(id));
     pending.set(id, p);
   }
