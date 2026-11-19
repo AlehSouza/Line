@@ -689,8 +689,9 @@ function MessageRow({
   const isSaved = useIsSaved(message.id);
   // Barra fica aberta enquanto o menu das reticências estiver aberto (some quando ele fecha).
   const [moreOpen, setMoreOpen] = useState(false);
-  // Mensagem colada no topo da lista: a barra desce para dentro dela. A lista rola (overflow),
-  // então nada que passa da borda de cima aparece, nem com z-index.
+  // A barra fica acima da linha (só encosta no padding de cima), para não cobrir o texto em
+  // mensagens em sequência. Mensagem colada no topo da lista: a barra desce para dentro dela,
+  // porque a lista rola (overflow) e nada que passa da borda de cima aparece.
   const [barInside, setBarInside] = useState(false);
   const menuOpen = useContextMenuOpen();
   useEffect(() => {
@@ -830,7 +831,7 @@ function MessageRow({
       onMouseEnter={(e) => {
         const row = e.currentTarget;
         const list = row.parentElement?.closest('.overflow-y-auto');
-        if (list) setBarInside(row.getBoundingClientRect().top - list.getBoundingClientRect().top < 18);
+        if (list) setBarInside(row.getBoundingClientRect().top - list.getBoundingClientRect().top < 40);
       }}
       onDoubleClick={(e) => {
         // Clique duplo na mensagem abre a conversa dela (ou começa uma). Na grade, abre as conversas das mídias.
@@ -1073,7 +1074,7 @@ function MessageRow({
       )}
 
       {!editing && (
-        <div className={cx('absolute right-4 z-10 items-center', barInside ? 'top-1' : '-top-4', 'gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', reactAnchor || moreOpen ? 'flex' : 'hidden group-hover:flex')}>
+        <div className={cx('absolute right-4 z-10 items-center', barInside ? 'top-1' : 'bottom-[calc(100%-4px)]', 'gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', reactAnchor || moreOpen ? 'flex' : 'hidden group-hover:flex')}>
           {canReact && (
             <>
               {topEmojis(3).map((emoji) => (
