@@ -569,7 +569,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
                     icon === name ? 'border-accent bg-accent/15 text-fg' : 'border-edge text-soft hover:bg-raise hover:text-fg',
                   )}
                 >
-                  <Icon size={17} />
+                  <Icon size={17} fill={style.iconStyle === 'solid' ? 'currentColor' : 'none'} />
                 </button>
               );
             })}
