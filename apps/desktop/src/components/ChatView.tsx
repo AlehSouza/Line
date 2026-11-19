@@ -938,11 +938,12 @@ function MessageRow({
                 </div>
                 <div className="flex min-w-0 flex-col items-start">
                   <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
+                  {/* Reações primeiro, a conversa depois (no primeiro item, se houver vários). */}
+                  {i === 0 && !!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />}
                   {t && <ThreadChip thread={t} />}
                 </div>
               </div>
             ))}
-            {!!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />}
           </>
         ) : (
           <>
@@ -1168,13 +1169,38 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (message.deleted) {
     return (
-      <div className="flex items-center gap-3 px-4 py-1">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
-          <Icons.Trash size={16} />
+      <div className="group relative flex items-center gap-2.5 px-4 py-1 hover:bg-hover/30">
+        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-raise text-muted">
+          <Icons.Trash size={13} />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] text-soft">{DELETED_ITEM}</p>
+          <p className="text-[13px] text-muted">{DELETED_ITEM}</p>
           {!!message.reactions?.length && <Reactions message={message} onAdd={setAnchor} adding={!!anchor} />}
+        </div>
+        {/* Mesma barra de reagir do hover das mensagens: 3 emojis mais usados + caixa de emojis. */}
+        <div className={cx('absolute -top-4 right-4 z-10 items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', anchor ? 'flex' : 'hidden group-hover:flex')}>
+          {topEmojis(3).map((emoji) => (
+            <button
+              key={emoji}
+              title={`Reagir com ${emoji}`}
+              onClick={() => void toggleReaction(message, emoji)}
+              className="flex size-8 items-center justify-center rounded-md text-lg leading-none hover:bg-hover"
+              style={{ fontFamily: EMOJI_FONT }}
+            >
+              {emoji}
+            </button>
+          ))}
+          <span className="mx-1 h-5 w-px bg-edge" />
+          <button
+            title="Adicionar reação"
+            onClick={(e) => {
+              const el = e.currentTarget;
+              setAnchor((a) => (a ? null : el));
+            }}
+            className="flex size-8 items-center justify-center rounded-md text-muted hover:bg-hover hover:text-fg"
+          >
+            <Icons.SmilePlus size={18} />
+          </button>
         </div>
         {anchor && (
           <EmojiPicker
