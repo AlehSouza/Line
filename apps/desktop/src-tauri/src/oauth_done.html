@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Line</title>
+<style>
+@font-face { font-family: 'Archivo'; src: url('https://useline.tech/site/fonts/Archivo-Expanded.woff2') format('woff2'); font-weight: 700 900; font-stretch: 125%; font-display: swap; }
+@font-face { font-family: 'Geist'; src: url('https://useline.tech/site/fonts/Geist-Variable.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+:root {
+  --bg-1: #0c0b16; --night: #0a0920; --dusk: #1f1764; --panel: #11101d; --rule: #24223a;
+  --fg: #f5f4fb; --soft: #bab7cf; --muted: #858299;
+  --brand: #7c6af2; --brand-hi: #a597ff; --online: #3fbf7f; --live: #f2555a;
+  --dot: var(--online);
+  --spring: cubic-bezier(.34, 1.4, .5, 1); --ease: cubic-bezier(.22, .8, .18, 1);
+}
+body.erro { --dot: var(--live); }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: 'Geist', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; color: var(--fg);
+  background: radial-gradient(70% 60% at 50% 100%, rgba(74, 56, 214, .55), transparent 70%),
+              radial-gradient(100% 80% at 50% 100%, var(--dusk), transparent 75%),
+              linear-gradient(180deg, var(--bg-1), var(--night));
+  display: grid; place-items: center; overflow: hidden; padding: 16px; position: relative;
+}
+/* estrelinhas */
+.stars { position: fixed; inset: 0; pointer-events: none; }
+.stars i { position: absolute; width: 3px; height: 3px; border-radius: 50%; background: #fff; opacity: .5; animation: tw 3.2s ease-in-out infinite; }
+@keyframes tw { 50% { opacity: .1; scale: .6; } }
+/* bolhas de conversa flutuando */
+.bub { position: fixed; pointer-events: none; animation: float 6s ease-in-out infinite; opacity: 0; animation-fill-mode: both; }
+.bub svg { display: block; }
+@keyframes float { 0% { opacity: 0; translate: 0 20px; } 15%, 85% { opacity: .9; } 50% { translate: 0 -10px; } 100% { opacity: .9; translate: 0 0; } }
+.b1 { left: 9%; top: 18%; animation-delay: .6s; }
+.b2 { right: 10%; top: 24%; animation-delay: 1.1s; animation-duration: 7s; }
+.b3 { left: 14%; bottom: 16%; animation-delay: 1.5s; animation-duration: 8s; }
+.b4 { right: 13%; bottom: 20%; animation-delay: .9s; animation-duration: 6.5s; }
+@media (max-width: 700px) { .bub { display: none; } }
+
+.card { position: relative; text-align: center; max-width: 520px; width: 100%; animation: up .7s var(--ease) both; }
+@keyframes up { from { opacity: 0; translate: 0 18px; } }
+.pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 10px; border-radius: 999px; border: 1px solid var(--rule); background: rgba(17, 16, 29, .7); color: var(--soft); font-size: 13px; margin-bottom: 18px; }
+.pill b { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); box-shadow: 0 0 10px var(--dot); }
+h1 { font-family: 'Archivo', 'Arial Black', system-ui, sans-serif; font-stretch: 125%; font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; line-height: 1.05; font-size: clamp(28px, 6vw, 46px); margin: 0; text-wrap: balance; }
+h1 em { font-style: normal; color: var(--brand-hi); }
+p { color: var(--soft); font-size: 17px; line-height: 1.5; margin: 16px auto 0; max-width: 26em; }
+.hint { margin-top: 30px; display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; }
+kbd { font-family: inherit; font-size: 12px; color: var(--fg); background: var(--panel); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 6px; padding: 2px 7px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important; } }
+</style>
+</head>
+<body class="{STATE}">
+<div class="stars" aria-hidden="true">
+  <i style="left:6%;top:12%"></i><i style="left:22%;top:40%;animation-delay:.8s"></i><i style="left:38%;top:9%;animation-delay:1.6s"></i>
+  <i style="left:61%;top:15%;animation-delay:.4s"></i><i style="left:78%;top:8%;animation-delay:2s"></i><i style="left:92%;top:42%;animation-delay:1.2s"></i>
+  <i style="left:84%;top:66%;animation-delay:.2s"></i><i style="left:7%;top:72%;animation-delay:2.4s"></i><i style="left:48%;top:88%;animation-delay:1s"></i>
+</div>
+
+<!-- desenhos: bolhas de conversa, onda de voz, coração e emoji -->
+<div class="bub b1" aria-hidden="true"><svg width="120" height="64" viewBox="0 0 120 64"><rect x="1" y="1" width="118" height="50" rx="16" fill="#171627" stroke="#24223a"/><path d="M22 51l-6 12 16-12" fill="#171627" stroke="#24223a"/><circle cx="22" cy="26" r="9" fill="#7c6af2"/><rect x="38" y="18" width="56" height="6" rx="3" fill="#bab7cf" opacity=".6"/><rect x="38" y="30" width="38" height="6" rx="3" fill="#858299" opacity=".5"/></svg></div>
+<div class="bub b2" aria-hidden="true"><svg width="110" height="56" viewBox="0 0 110 56"><rect x="1" y="1" width="108" height="44" rx="22" fill="#4c3bd4"/><g fill="#fff"><rect x="24" y="18" width="5" height="10" rx="2.5"/><rect x="34" y="12" width="5" height="22" rx="2.5"/><rect x="44" y="8" width="5" height="30" rx="2.5"/><rect x="54" y="14" width="5" height="18" rx="2.5"/><rect x="64" y="10" width="5" height="26" rx="2.5"/><rect x="74" y="17" width="5" height="12" rx="2.5"/></g><path d="M88 45l6 10-16-10" fill="#4c3bd4"/></svg></div>
+<div class="bub b3" aria-hidden="true"><svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#171627" stroke="#24223a"/><circle cx="23" cy="27" r="4" fill="#f5c451"/><circle cx="41" cy="27" r="4" fill="#f5c451"/><path d="M20 38c6 9 18 9 24 0" fill="none" stroke="#f5c451" stroke-width="4" stroke-linecap="round"/></svg></div>
+<div class="bub b4" aria-hidden="true"><svg width="96" height="52" viewBox="0 0 96 52"><rect x="1" y="1" width="94" height="40" rx="14" fill="#171627" stroke="#24223a"/><path d="M72 41l8 10-2-10" fill="#171627" stroke="#24223a"/><path d="M30 30s-12-7-12-14a6 6 0 0 1 12-2 6 6 0 0 1 12 2c0 7-12 14-12 14z" fill="#f2555a"/><rect x="50" y="17" width="28" height="6" rx="3" fill="#bab7cf" opacity=".6"/></svg></div>
+
+<main class="card">
+  <div class="pill"><b></b>{PILL}</div>
+  <h1>{TITLE}</h1>
+  <p>{MSG}</p>
+  <div class="hint">{HINT}</div>
+</main>
+</body>
+</html>

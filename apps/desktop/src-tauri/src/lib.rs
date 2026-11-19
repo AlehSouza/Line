@@ -428,12 +428,22 @@ async fn google_login(app: tauri::AppHandle, server_url: String) -> Result<Strin
                 let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                 continue;
             }
-            let msg = if code.is_some() { "Pronto! Pode fechar esta aba e voltar para o Line." } else { "Não deu para entrar. Volte para o Line e tente de novo." };
-            let html = format!(
-                "<!doctype html><html><head><meta charset=\"utf-8\"><title>Line</title></head>\
-                 <body style=\"font-family:system-ui,sans-serif;background:#0f0f12;color:#e6e6ea;display:flex;\
-                 align-items:center;justify-content:center;height:100vh;margin:0\"><h2>{msg}</h2></body></html>"
-            );
+            let hint = if cfg!(target_os = "macos") { "Fechar esta aba: <kbd>⌘</kbd> + <kbd>W</kbd>" } else { "Fechar esta aba: <kbd>Ctrl</kbd> + <kbd>W</kbd>" };
+            let (state, pill, title, msg, hint) = if code.is_some() {
+                ("ok", "Conta conectada", "Tudo <em>pronto!</em>",
+                 "Você já entrou no Line. Pode fechar esta aba e voltar para o aplicativo.",
+                 hint)
+            } else {
+                ("erro", "Não foi dessa vez", "Ops, não deu <em>para entrar</em>",
+                 "Algo deu errado no login. Volte para o Line e tente de novo.",
+                 hint)
+            };
+            let html = include_str!("oauth_done.html")
+                .replace("{STATE}", state)
+                .replace("{PILL}", pill)
+                .replace("{TITLE}", title)
+                .replace("{MSG}", msg)
+                .replace("{HINT}", hint);
             let _ = stream.write_all(
                 format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}", html.len()).as_bytes(),
             );
