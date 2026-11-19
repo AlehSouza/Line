@@ -1734,6 +1734,8 @@ interface Pending {
   nsfw?: boolean;
   /** A detecção automática ainda está olhando a imagem/vídeo. */
   checking?: boolean;
+  /** A detecção automática terminou (mostra o check no lugar do spinner). */
+  checked?: boolean;
   /** Marcado como +18 pela detecção automática. */
   autoNsfw?: boolean;
 }
@@ -1796,7 +1798,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
       if (item.checking) {
         const level = channel.serverId ? useLine.getState().servers[channel.serverId]?.nsfwLevel : undefined;
         void looksNsfw(file, level ?? 'moderate').then((hit) => {
-          patch(key, hit ? { checking: false, nsfw: true, autoNsfw: true } : { checking: false });
+          patch(key, hit ? { checking: false, checked: true, nsfw: true, autoNsfw: true } : { checking: false, checked: true });
           if (hit) toast('Esse anexo parece conteúdo sensível e foi marcado como sensível.');
         });
       }
@@ -2468,9 +2470,13 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
           >
             {item.autoNsfw && <Icons.Lock size={11} className="mr-0.5 inline" />}Sensível
           </button>
-          {item.checking && (
+          {item.checking ? (
             <span title="Verificando mídia..." className="ml-auto flex h-5 w-5 items-center justify-center text-muted">
               <Icons.Refresh size={13} className="animate-spin" />
+            </span>
+          ) : item.checked && (
+            <span title="Mídia verificada" className="ml-auto flex h-5 w-5 items-center justify-center text-online">
+              <Icons.Check size={14} />
             </span>
           )}
         </div>
