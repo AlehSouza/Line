@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import { placeAround, useFloating } from '@/lib/floating';
 import { api, type Gif } from '@/lib/api';
 import { Icons, Skeleton } from './ui';
 
@@ -18,7 +20,8 @@ export function GifEmbed({ url }: { url: string }) {
 }
 
 /** Seletor de GIFs com busca e os em alta. */
-export function GifPicker({ onPick, onClose }: { onPick: (gif: Gif) => void; onClose: () => void }) {
+/** Seletor de GIF: vai para o body (fixo, por cima dos painéis) e abre acima do botão, medido antes de aparecer. */
+export function GifPicker({ onPick, onClose, anchor }: { onPick: (gif: Gif) => void; onClose: () => void; anchor: RefObject<HTMLElement | null> }) {
   const [query, setQuery] = useState('');
   const [gifs, setGifs] = useState<Gif[] | null>(null);
   const [error, setError] = useState('');
@@ -28,7 +31,8 @@ export function GifPicker({ onPick, onClose }: { onPick: (gif: Gif) => void; onC
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.parentElement?.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      if (box.current && !box.current.contains(t) && !anchor.current?.contains(t)) onClose();
     };
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('mousedown', onDown);
@@ -37,7 +41,7 @@ export function GifPicker({ onPick, onClose }: { onPick: (gif: Gif) => void; onC
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
   useEffect(() => {
     const id = ++seq.current;
@@ -69,10 +73,16 @@ export function GifPicker({ onPick, onClose }: { onPick: (gif: Gif) => void; onC
   const cols: Gif[][] = [[], []];
   (gifs ?? []).forEach((g, i) => cols[i % 2]!.push(g));
 
-  return (
+  const { style: pos } = useFloating(box, (w, h, lock) => {
+    const r = anchor.current?.getBoundingClientRect();
+    return r ? placeAround(r, w, h, { gap: 12, align: 'end', prefer: 'above', lock }) : null;
+  });
+
+  return createPortal(
     <div
       ref={box}
-      className="absolute right-0 bottom-full z-30 mb-3 flex h-[440px] w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-side shadow-2xl"
+      style={pos}
+      className="fixed z-[250] flex h-[440px] w-[420px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-side shadow-2xl"
     >
       <div className="border-b border-edge p-3">
         <label className="flex items-center gap-2 rounded-lg bg-rail px-3 py-2 text-sm text-muted focus-within:ring-1 focus-within:ring-accent">
@@ -125,6 +135,7 @@ export function GifPicker({ onPick, onClose }: { onPick: (gif: Gif) => void; onC
         )}
       </div>
       <p className="border-t border-edge px-3 py-1.5 text-right text-[10px] text-muted">Powered by GIPHY</p>
-    </div>
+    </div>,
+    document.body,
   );
 }

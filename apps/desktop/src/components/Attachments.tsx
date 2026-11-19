@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment } from '@line/shared';
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useLine } from '@/lib/store';
 import { ageOf } from '@/lib/age';
@@ -62,23 +62,34 @@ export function AttachmentList({
   authorId,
   owner,
   below,
+  fill,
+  fillHeight,
 }: {
   attachments: Attachment[];
   compact?: boolean;
   authorId?: string;
   owner?: { channelId: string; messageId: string };
   below?: (a: Attachment) => ReactNode;
+  /** Imagem/vídeo ocupa a largura toda, até FILL_MAX_H de altura (sem esticar além disso). */
+  fill?: boolean;
+  /** Como `fill`, mas com esta altura máxima; mídia mais baixa que isso fica no tamanho original (topo da Conversa). */
+  fillHeight?: number;
 }) {
   const meId = useLine((s) => s.me?.id);
+  if (fillHeight) fill = true;
   const mine = !!authorId && authorId === meId;
   if (!attachments.length) return null;
   return (
-    <div className="mt-1 flex flex-col items-start gap-2">
+    <div className={cx('mt-1 flex flex-col gap-2', fill ? 'items-stretch' : 'items-start')}>
       {attachments.map((a) => {
-        const view =
+        const kind = attachmentKind(a.contentType, a.filename);
+        const dims = fill && (kind === 'image' || kind === 'video') ? mediaDims(a, fileUrl(a.url)) : undefined;
+        const filled = !!dims;
+        const inner =
           a.spoiler || a.nsfw ? (
             <MediaGate
               attachment={a}
+              fill={filled}
               onOpen={
                 attachmentKind(a.contentType, a.filename) === 'image'
                   ? () =>
@@ -92,11 +103,19 @@ export function AttachmentList({
                   : undefined
               }
             >
-              <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
+              <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} fill={filled} />
             </MediaGate>
           ) : (
-            <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} />
+            <AttachmentView attachment={a} compact={compact} mine={mine} owner={owner} fill={filled} />
           );
+        // Largura toda, a não ser que a altura passe de FILL_MAX_H: aí encolhe mantendo a proporção.
+        const view = dims ? (
+          <div key={a.id} className="w-full">
+            <div style={{ width: `min(100%, ${Math.round(((fillHeight ? Math.min(fillHeight, dims.h) : FILL_MAX_H) * dims.w) / dims.h)}px)` }}>{inner}</div>
+          </div>
+        ) : (
+          inner
+        );
         const extra = below?.(a);
         return extra ? (
           <div key={a.id} className="flex max-w-full flex-col items-start">
@@ -114,21 +133,27 @@ export function AttachmentList({
 /** Spoiler e +18. Spoiler fica coberto até clicar. +18 só abre para quem informou a data
  * de nascimento e tem 18 anos ou mais (sem isso nem carrega) e, com "Borrar conteúdo
  * sensível" ligado (padrão), aparece atrás de um aviso até clicar. */
-function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment; children: React.ReactNode; onOpen?: () => void }) {
+function MediaGate({ attachment: a, children, onOpen, fill }: { attachment: Attachment; children: React.ReactNode; onOpen?: () => void; fill?: boolean }) {
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const [shown, setShown] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const [small, setSmall] = useState(false);
+  // null = ainda não medido: o aviso fica invisível até saber o tamanho (senão pisca o texto grande).
+  const [small, setSmall] = useState<boolean | null>(null);
   const age = ageOf(birthDate);
   const blocked = !!a.nsfw && (age === null || age < 18);
   const covered = !blocked && !shown && (a.spoiler || (a.nsfw && blur));
 
   // Mídia pequena: o aviso encolhe para caber dentro dela.
-  useEffect(() => {
+  // Mede antes de pintar (useLayoutEffect) e continua acompanhando se a mídia mudar de tamanho.
+  useLayoutEffect(() => {
     const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(([e]) => setSmall(e.contentRect.width < 280 || e.contentRect.height < 200));
+    if (!el) return;
+    const fits = (w: number, h: number) => w < 280 || h < 200;
+    const r = el.getBoundingClientRect();
+    setSmall(fits(r.width, r.height));
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([e]) => setSmall(fits(e.contentRect.width, e.contentRect.height)));
     ro.observe(el);
     return () => ro.disconnect();
   }, [blocked]);
@@ -158,7 +183,7 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
   // A mídia fica sempre no mesmo lugar da árvore (só muda o borrado): revelar não recarrega
   // a imagem nem pisca, e o aviso tem exatamente o formato dela.
   return (
-    <div ref={ref} className={cx('relative w-fit max-w-full overflow-hidden rounded-lg', covered && 'border border-edge')}>
+    <div ref={ref} className={cx('relative max-w-full overflow-hidden rounded-lg', fill ? 'w-full' : 'w-fit', covered && 'border border-edge')}>
       <div
         aria-hidden={covered || undefined}
         className={cx(covered && 'pointer-events-none invisible select-none [&_*]:pointer-events-none')}
@@ -169,7 +194,7 @@ function MediaGate({ attachment: a, children, onOpen }: { attachment: Attachment
       {covered && (
         <div
           onClick={onOpen}
-          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-fg', small ? 'gap-1 p-2' : 'gap-2 p-5', onOpen && 'cursor-pointer')}
+          className={cx('absolute inset-0 flex flex-col items-center justify-center text-center text-fg', small ? 'gap-1 p-2' : 'gap-2 p-5', small === null && 'invisible', onOpen && 'cursor-pointer')}
         >
           {a.nsfw ? <Icons.EyeOff size={small ? 22 : 40} className="text-soft" /> : <Icons.Warning size={small ? 22 : 40} className="text-soft" />}
           <p className={cx('font-bold tracking-wide uppercase', small ? 'text-[11px]' : 'mt-1 text-sm')}>{a.nsfw ? (small ? 'Sensível' : 'Aviso: conteúdo sensível') : 'Spoiler'}</p>
@@ -220,13 +245,16 @@ function mediaDims(a: Attachment, url: string) {
   return a.width && a.height ? { w: a.width, h: a.height } : seenSize.get(url);
 }
 
+/** Altura máxima da mídia que ocupa a largura toda (painel Conversas). */
+const FILL_MAX_H = 280;
+
 /** Cabe a mídia em maxW x maxH sem distorcer (nunca aumenta). */
 function fitBox(d: { w: number; h: number }, maxW: number, maxH: number) {
   const k = Math.min(1, maxW / d.w, maxH / d.h);
   return { width: Math.max(1, Math.round(d.w * k)), aspectRatio: `${d.w} / ${d.h}` };
 }
 
-function AttachmentView({ attachment: a, compact, mine, owner }: { attachment: Attachment; compact?: boolean; mine?: boolean; owner?: { channelId: string; messageId: string } }) {
+function AttachmentView({ attachment: a, compact, mine, owner, fill }: { attachment: Attachment; compact?: boolean; mine?: boolean; owner?: { channelId: string; messageId: string }; fill?: boolean }) {
   const url = fileUrl(a.url);
   switch (attachmentKind(a.contentType, a.filename)) {
     case 'image':
@@ -234,10 +262,10 @@ function AttachmentView({ attachment: a, compact, mine, owner }: { attachment: A
         <button
           onClick={() => actions.openModal({ kind: 'image', url, filename: a.filename, attachmentId: a.id, ...owner })}
           onContextMenu={(e) => openContextMenu(e, mediaMenu(a, url, !!mine))}
-          className="block max-w-full overflow-hidden rounded-lg border border-edge bg-rail"
+          className={cx('block max-w-full overflow-hidden rounded-lg border border-edge bg-rail', fill && 'w-full')}
           title={a.filename}
         >
-          <LoadingImage src={url} alt={a.filename} compact={compact} dims={mediaDims(a, url)} />
+          <LoadingImage src={url} alt={a.filename} compact={compact} dims={mediaDims(a, url)} fill={fill} />
         </button>
       );
     case 'video':
@@ -246,8 +274,8 @@ function AttachmentView({ attachment: a, compact, mine, owner }: { attachment: A
           <VideoPlayer
             src={url}
             filename={a.filename}
-            className={a.width && a.height ? 'max-w-full' : compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
-            style={a.width && a.height ? (compact ? fitBox({ w: a.width, h: a.height }, 280, 180) : fitBox({ w: a.width, h: a.height }, 520, 360)) : undefined}
+            className={fill ? 'w-full' : a.width && a.height ? 'max-w-full' : compact ? 'max-h-[180px] w-[280px] max-w-full' : 'max-h-[360px] w-[520px] max-w-full'}
+            style={fill && a.width && a.height ? { width: '100%', aspectRatio: `${a.width} / ${a.height}` } : a.width && a.height ? (compact ? fitBox({ w: a.width, h: a.height }, 280, 180) : fitBox({ w: a.width, h: a.height }, 520, 360)) : undefined}
           />
         </div>
       );
@@ -338,8 +366,9 @@ function TextPreview({ attachment: a, url }: { attachment: Attachment; url: stri
 
 /** Imagem com skeleton animado até carregar. Com o tamanho conhecido, o espaço já nasce
  * no formato exato da imagem (nada pula quando ela chega). */
-function LoadingImage({ src, alt, compact, dims }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number } }) {
-  const [loaded, setLoaded] = useState(false);
+function LoadingImage({ src, alt, compact, dims, fill }: { src: string; alt: string; compact?: boolean; dims?: { w: number; h: number }; fill?: boolean }) {
+  // Já carregada antes (está no cache do navegador): sem skeleton, senão ele pisca por um quadro.
+  const [loaded, setLoaded] = useState(() => seenSize.has(src));
   const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     if (img.naturalWidth && img.naturalHeight) seenSize.set(src, { w: img.naturalWidth, h: img.naturalHeight });
@@ -347,7 +376,10 @@ function LoadingImage({ src, alt, compact, dims }: { src: string; alt: string; c
   };
   if (dims) {
     return (
-      <span className="relative block max-w-full" style={compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)}>
+      <span
+        className="relative block max-w-full"
+        style={fill ? { width: '100%', aspectRatio: `${dims.w} / ${dims.h}` } : compact ? fitBox(dims, 220, 160) : fitBox(dims, 420, 350)}
+      >
         {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -388,7 +420,7 @@ export const GRID_MIN = 4;
 
 /** Grade 2x2 de mídias enviadas juntas; a quarta mostra "+N" quando há mais. Clicar abre a
  * galeria na mídia clicada. +18 sem idade fica bloqueado; spoiler/+18 aparecem borrados. */
-export function MediaGrid({ attachments, channelId }: { attachments: Attachment[]; channelId?: string }) {
+export function MediaGrid({ attachments, channelId, messageIds }: { attachments: Attachment[]; channelId?: string; messageIds?: string[] }) {
   const birthDate = useLine((s) => s.me?.birthDate);
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const adult = (ageOf(birthDate) ?? 0) >= 18;

@@ -2749,6 +2749,17 @@ impl Q<'_> {
         ))
     }
 
+    /// Ids das conversas que saíram da mensagem (inteira ou de uma mídia dela).
+    pub fn thread_ids_of_message(&self, message_id: &str) -> Vec<String> {
+        ok(self
+            .c
+            .prepare_cached("SELECT id FROM channels WHERE thread_message_id = ? AND type = 'thread'")
+            .and_then(|mut st| {
+                st.query_map([message_id], |r| r.get(0))?
+                    .collect::<rusqlite::Result<Vec<String>>>()
+            }))
+    }
+
     /// Threads da mensagem (a da mensagem inteira primeiro, depois as de cada mídia).
     fn threads_of_message(&self, message_id: &str) -> Vec<ThreadSummary> {
         let rows: Vec<(String, String, Option<String>, Option<String>)> = ok(self

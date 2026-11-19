@@ -462,8 +462,8 @@ export const actions = {
   },
 
   /** Abre o painel de resposta de uma mensagem que ainda não tem thread. */
-  openThreadDraft(parent: Channel, messageId: string, name: string) {
-    const id = `draft:${messageId}`;
+  openThreadDraft(parent: Channel, messageId: string, name: string, attachmentId?: string) {
+    const id = `draft:${messageId}${attachmentId ? `:${attachmentId}` : ''}`;
     const draft: Channel = {
       ...parent,
       id,
@@ -471,13 +471,15 @@ export const actions = {
       name,
       parentId: parent.id,
       threadMessageId: messageId,
+      threadAttachmentId: attachmentId ?? null,
       messageCount: 0,
     };
     set((s) => ({
       threadDraft: draft,
       threadId: null,
       mediaThreads: null,
-      threadBack: null,
+      // Veio do painel Conversas: a seta de voltar continua (também depois da primeira resposta).
+      threadBack: s.mediaThreads ?? null,
       messages: { ...s.messages, [id]: { items: [], hasMore: false, loaded: true } },
     }));
   },
@@ -486,7 +488,13 @@ export const actions = {
   openThread(threadId: string) {
     const thread = get().channels[threadId];
     if (!thread) return;
-    set((s) => ({ threadDraft: null, threadBack: s.mediaThreads, mediaThreads: null }));
+    // Rascunho que virou conversa de verdade (primeira resposta), ou a mesma conversa aberta de novo
+    // (ex.: "respostas" na imagem em tela cheia): mantém a volta para o painel Conversas.
+    set((s) => ({
+      threadDraft: null,
+      threadBack: s.mediaThreads ?? (s.threadDraft || s.threadId === threadId ? s.threadBack : null),
+      mediaThreads: null,
+    }));
     if (thread.serverId && thread.parentId) {
       const v = get().view;
       if (v.kind !== 'server' || v.channelId !== thread.parentId) actions.goServer(thread.serverId, thread.parentId);

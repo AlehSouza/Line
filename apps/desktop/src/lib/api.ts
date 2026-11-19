@@ -409,6 +409,8 @@ export const api = {
   pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),
+  /** Apaga de vez um item já apagado (dono ou Gerenciar mensagens), com as conversas dele. */
+  purgeMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}/purge`),
 
   /** Sons do painel de efeitos sonoros de todos os meus servidores. */
   soundboard: () => request<Sound[]>('GET', '/soundboard'),

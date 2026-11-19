@@ -140,6 +140,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             "/messages/{id}",
             axum::routing::patch(edit_message).delete(delete_message),
         )
+        .route("/messages/{id}/purge", axum::routing::delete(purge_message))
         .route(
             "/channels/{id}/threads",
             get(list_threads).post(create_thread),
@@ -3282,6 +3283,50 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         remove_channel(&app, &q, &channel, &server_id);
     } else if channel.kind == "thread" {
         refresh_thread_starter(&app, &q, &channel);
+    }
+    no_content()
+}
+
+/// Apaga de vez um item já apagado (dono ou MANAGE_MESSAGES): some o item e as conversas dele.
+async fn purge_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let message = q
+        .message(&id)
+        .filter(|m| q.can_access(&me, &m.channel_id))
+        .ok_or_else(|| not_found("Mensagem"))?;
+    let channel = q
+        .channel(&message.channel_id)
+        .ok_or_else(|| not_found("Mensagem"))?;
+    let Some(server_id) = channel.server_id.clone() else {
+        return Err(forbidden("Só dá para apagar de vez em servidores"));
+    };
+    if !has(q.permissions(&server_id, &me), perms::MANAGE_MESSAGES) {
+        return Err(forbidden("Você não pode apagar este item de vez"));
+    }
+    if !message.deleted {
+        return Err(bad_request("Apague a mensagem antes de apagar de vez"));
+    }
+    // Sai a mensagem primeiro: assim remove_channel não reanuncia o item de origem.
+    let threads = q.thread_ids_of_message(&message.id);
+    q.delete_message(&message.id);
+    app.to_channel(
+        &q,
+        &channel.id,
+        "message:delete",
+        &json!({ "id": message.id, "channelId": channel.id }),
+    );
+    for tid in threads {
+        if let Some(t) = q.channel(&tid) {
+            remove_channel(&app, &q, &t, &server_id);
+        }
+    }
+    // Se o item estava dentro de uma conversa, ela some quando não sobra nada.
+    if channel.kind == "thread" {
+        if q.live_message_count(&channel.id) == 0 {
+            remove_channel(&app, &q, &channel, &server_id);
+        } else {
+            refresh_thread_starter(&app, &q, &channel);
+        }
     }
     no_content()
 }

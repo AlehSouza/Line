@@ -127,6 +127,15 @@ export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string
   const items = useLine((s) => s.messages[channelId]?.items);
   const channel = useLine((s) => s.channels[channelId]);
   const messages = useMemo(() => (items ?? []).filter((m) => messageIds.includes(m.id)), [items, messageIds]);
+  // Mensagem com várias mídias vira uma linha por mídia, cada uma com a própria conversa.
+  const rows = useMemo(
+    () =>
+      messages.flatMap((m) => {
+        const list = m.attachments.filter(isMedia);
+        return list.length > 1 ? list.map((media, k) => ({ m, media, first: k === 0 })) : [{ m, media: undefined as Attachment | undefined, first: true }];
+      }),
+    [messages],
+  );
   const meId = useLine((s) => s.me?.id);
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
@@ -158,26 +167,29 @@ export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string
           ações no hover (reagir, responder, encaminhar, menu...). */}
       <div className="min-h-0 flex-1 overflow-y-auto py-3">
         {channel &&
-          messages.map((m, i) => {
+          rows.map(({ m, media, first }, i) => {
             const author = users[m.author.id] ?? m.author;
             return (
               <MessageRow
-                key={m.id}
+                key={media ? `${m.id}:${media.id}` : m.id}
                 message={m}
+                media={media}
+                withText={first}
                 authorName={serverMembers?.[m.author.id]?.nickname || author.displayName}
                 authorColor={author.avatarColor}
                 nameColor={colorOf(m.author.id)}
                 mentionCtx={mentionCtx}
-                grouped={i > 0 && messages[i - 1]!.author.id === m.author.id}
+                grouped={i > 0 && rows[i - 1]!.m.author.id === m.author.id}
                 mine={m.author.id === meId}
                 canDelete={m.author.id === meId || canManageMessages}
                 canPin={!serverId || canManageMessages || canPinMessages}
-                editing={editing === m.id}
+                editing={first && editing === m.id}
                 onEdit={() => setEditing(m.id)}
                 onDoneEditing={() => setEditing(null)}
                 myUsername={myUsername}
                 canThread={channel.type === 'text' && canCreateThreads}
                 tight
+                fillMedia
               />
             );
           })}
@@ -484,7 +496,9 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
 
         {items.map((m, i) => {
           const prev = items[i - 1];
-          const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+          // Na conversa, a primeira resposta compara com a mensagem de origem do topo.
+          const before = prev ?? (isThread && bucket && !bucket.hasMore ? starter : undefined);
+          const newDay = !before || new Date(before.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
           const grouped =
             !newDay &&
             !m.deleted &&
@@ -494,10 +508,15 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
           // Mídias seguidas (sem texto no meio) viram uma grade na primeira mensagem da sequência.
           if (mediaRuns.hidden.has(m.id)) return null;
           const author = users[m.author.id] ?? m.author;
+          // Item apagado com várias conversas (uma por mídia): uma linha para cada, como mensagens separadas.
+          const deletedParts = m.deleted && threadsOf(m).length > 1 ? threadsOf(m) : [undefined];
           return (
             <Fragment key={m.id}>
               {newDay && <DayDivider date={m.createdAt} />}
+              {deletedParts.map((part, k) => (
               <MessageRow
+                key={part?.id ?? k}
+                deletedThread={part}
                 highlighted={highlight === m.id}
                 message={m}
                 authorName={nameOf(m.author.id, author.displayName)}
@@ -518,6 +537,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
                 canThread={channel.type === 'text' && canCreateThreads}
                 tight={isThread}
               />
+              ))}
             </Fragment>
           );
         })}
@@ -541,8 +561,9 @@ const mediaOnly = (m: Message) =>
   !m.deleted && !m.content && !m.poll && !!m.attachments.length && m.attachments.every(isMedia);
 
 /** Sequências de mensagens só com mídia, do mesmo autor, no mesmo dia e com no máximo
- * GROUP_WINDOW_MS entre uma e outra. Com GRID_MIN mídias ou mais, a primeira mensagem
- * mostra a grade com todas e as outras somem da lista. */
+ * GROUP_WINDOW_MS entre uma e outra. Com GRID_MIN mensagens ou mais, a primeira mostra a
+ * grade com todas e as outras somem da lista (continuam existindo: "Ver conversas" lista
+ * cada uma como mensagem comum). */
 function mediaRunsOf(items: Message[]) {
   const leaders = new Map<string, Attachment[]>();
   const hidden = new Set<string>();
@@ -572,7 +593,8 @@ function mediaRunsOf(items: Message[]) {
     }
     const run = items.slice(i, j);
     const media = run.flatMap((m) => m.attachments);
-    if (media.length >= GRID_MIN) {
+    // A grade nasce de GRID_MIN mensagens de mídia seguidas (cada uma continua sendo uma mensagem).
+    if (run.length >= GRID_MIN) {
       leaders.set(first.id, media);
       for (const m of run.slice(1)) hidden.add(m.id);
       const all = run.flatMap(threadsOf);
@@ -625,7 +647,13 @@ function MessageRow({
   canThread,
   canPin,
   tight,
+  media,
+  withText = true,
+  fillMedia,
+  deletedThread,
 }: {
+  /** Item apagado com várias conversas: esta linha mostra só esta conversa. */
+  deletedThread?: ThreadSummary;
   highlighted?: boolean;
   message: Message;
   authorName: string;
@@ -646,13 +674,20 @@ function MessageRow({
   canThread: boolean;
   canPin?: boolean;
   tight?: boolean;
+  /** Painel Conversas: esta linha é só uma mídia da mensagem (responder, reagir e a conversa valem para ela). */
+  media?: Attachment;
+  /** Com `media`: só a primeira linha da mensagem mostra o texto. */
+  withText?: boolean;
+  /** Painel Conversas: imagem na largura toda, até 280px de altura. */
+  fillMedia?: boolean;
 }) {
   const serverId = useLine((s) => s.channels[message.channelId]?.serverId);
   const [draft, setDraft] = useState(message.content);
   const editRef = useRef<HTMLTextAreaElement>(null);
   const [reactAnchor, setReactAnchor] = useState<HTMLElement | null>(null);
   const canReact = useLine((s) => hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.AddReactions));
-  const whole = wholeThreadOf(message);
+  const canPurge = useLine((s) => !!serverId && hasPerm(channelPermsOf(s, message.channelId, s.me?.id), Perm.ManageMessages));
+  const whole = media ? threadsOf(message).find((t) => t.attachmentId === media.id) : wholeThreadOf(message);
   const showThreadAction = canThread && !whole;
   const mentionsMe = !mine && messageMentionsMe(message);
   const ignored = useIgnored((s) => s.ids.includes(message.author.id));
@@ -661,6 +696,9 @@ function MessageRow({
   const isSaved = useIsSaved(message.id);
   // Barra fica aberta enquanto o menu das reticências estiver aberto (some quando ele fecha).
   const [moreOpen, setMoreOpen] = useState(false);
+  // Mensagem colada no topo da lista: a barra desce para dentro dela. A lista rola (overflow),
+  // então nada que passa da borda de cima aparece, nem com z-index.
+  const [barInside, setBarInside] = useState(false);
   const menuOpen = useContextMenuOpen();
   useEffect(() => {
     if (!menuOpen) setMoreOpen(false);
@@ -710,17 +748,18 @@ function MessageRow({
   const canReply = showThreadAction || !!whole;
   const canForward = !message.poll && !del;
   const canReport = !mine && !message.author.bot && !del;
-  const canEdit = mine && !del;
+  const canEdit = mine && !del && withText;
 
   function reply() {
     if (whole) return actions.openThread(whole.id);
     const parent = useLine.getState().channels[message.channelId];
-    const name = (plain.split('\n')[0] || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
-    if (parent) actions.openThreadDraft(parent, message.id, name);
+    const name = ((media ? '' : plain.split('\n')[0]) || media?.filename || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
+    if (parent) actions.openThreadDraft(parent, message.id, name, media?.id);
   }
 
   /** Na grade, reagir vale para todas as mídias dela de uma vez. */
   function reactRow(emoji: string) {
+    if (media) return toggleReaction(message, emoji, media.id);
     return gallery ? toggleGalleryReaction(message.channelId, galleryIds ?? [message.id], emoji) : toggleReaction(message, emoji);
   }
 
@@ -748,6 +787,22 @@ function MessageRow({
     if (failed) showError(failed.reason);
   }
 
+  /** Item apagado some de vez, com as conversas que saíram dele. */
+  async function purge() {
+    const ok = await confirmDialog({
+      title: 'Apagar de vez',
+      message: 'O item e as conversas dele somem para todos, sem deixar rastro. Não dá para desfazer.',
+      confirmLabel: 'Apagar de vez',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.purgeMessage(message.id);
+    } catch (e) {
+      showError(e);
+    }
+  }
+
   /** Menu das reticências (e fim do clique direito), na ordem pedida. */
   function moreItems(menuAt: { x: number; y: number }): MenuEntry[] {
     return [
@@ -759,6 +814,7 @@ function MessageRow({
       },
       { label: 'Copiar link da mensagem', icon: <Icons.Link size={15} />, onClick: () => copy(messageLink(message), 'Link da mensagem copiado.') },
       'sep',
+      canPurge && del && { label: 'Apagar de vez', icon: <Icons.Trash size={15} />, danger: true, onClick: () => purge() },
       canDelete && !del && { label: gallery && (galleryIds?.length ?? 0) > 1 ? 'Excluir grade' : 'Excluir mensagem', icon: <Icons.Trash size={15} />, danger: true, onClick: () => remove() },
       canReport && {
         label: 'Denunciar mensagem',
@@ -777,11 +833,25 @@ function MessageRow({
 
   return (
     <div
-      data-mid={message.id}
+      data-mid={media || (deletedThread && deletedThread !== threadsOf(message)[0]) ? undefined : message.id}
+      onMouseEnter={(e) => {
+        const row = e.currentTarget;
+        const list = row.parentElement?.closest('.overflow-y-auto');
+        if (list) setBarInside(row.getBoundingClientRect().top - list.getBoundingClientRect().top < 18);
+      }}
       onDoubleClick={(e) => {
         // Clique duplo na mensagem abre a conversa dela (ou começa uma). Na grade, abre as conversas das mídias.
-        if (editing || del) return;
+        if (editing) return;
         if ((e.target as HTMLElement).closest('button, a, input, textarea, video, img, [role="button"], [contenteditable="true"]')) return;
+        // Item apagado: abre a conversa daquela linha; sem conversa, segue como um item normal.
+        if (del) {
+          const t = deletedThread ?? (media ? threadsOf(message).find((x) => x.attachmentId === media.id) : threadsOf(message)[0]);
+          if (t) {
+            window.getSelection()?.removeAllRanges();
+            actions.openThread(t.id);
+            return;
+          }
+        }
         if (gallery) {
           window.getSelection()?.removeAllRanges();
           actions.openMediaThreads(message.channelId, galleryIds ?? [message.id]);
@@ -832,11 +902,7 @@ function MessageRow({
       )}
     >
       <div className="w-10 shrink-0">
-        {del ? (
-          <div className="flex size-10 items-center justify-center rounded-lg bg-raise text-muted">
-            <Icons.Trash size={18} />
-          </div>
-        ) : grouped ? (
+        {del ? null : grouped ? (
           <span className="invisible block pt-1 text-right text-[10px] text-muted group-hover:visible">
             {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
           </span>
@@ -852,11 +918,28 @@ function MessageRow({
       <div className="min-w-0 flex-1">
         {del ? (
           <>
-            {/* Cada conversa fica logo abaixo do item apagado de onde ela saiu. */}
-            {(threadsOf(message).length ? threadsOf(message) : [null]).map((t, i) => (
-              <div key={t?.id ?? i} className={cx('flex flex-col items-start', i > 0 && 'mt-2')}>
-                <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
-                {t && <ThreadChip thread={t} />}
+            {/* Cada mídia apagada é um item próprio (com a lixeira dele) e a conversa logo abaixo.
+                Mensagens antigas com várias mídias numa só aparecem separadas do mesmo jeito
+                (no chat, uma linha por conversa; no painel, só a conversa daquela mídia). */}
+            {(deletedThread
+              ? [deletedThread]
+              : media
+                ? (() => {
+                    const own = threadsOf(message).filter((t) => t.attachmentId === media.id);
+                    return own.length ? own : [null];
+                  })()
+                : threadsOf(message).length
+                  ? threadsOf(message)
+                  : [null]
+            ).map((t, i) => (
+              <div key={t?.id ?? i} className={cx('-ml-14 flex gap-4', i > 0 && 'mt-3')}>
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-raise text-muted">
+                  <Icons.Trash size={18} />
+                </div>
+                <div className="flex min-w-0 flex-col items-start">
+                  <p className="flex min-h-10 items-center rounded-lg border border-dashed border-edge px-3 py-2 text-[15px] text-soft">{DELETED_ITEM}</p>
+                  {t && <ThreadChip thread={t} />}
+                </div>
               </div>
             ))}
             {!!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />}
@@ -927,6 +1010,7 @@ function MessageRow({
             </p>
           </div>
         ) : (
+          withText &&
           message.content &&
           (voiceInviteFromContent(message.content) ? (
             <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
@@ -947,17 +1031,20 @@ function MessageRow({
         )}
         {!missingFeatures(message.requires).length && (
           <>
-        {!editing && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
+        {!editing && withText && message.content && !gifFromContent(message.content) && !voiceInviteFromContent(message.content) && !musicFromContent(message.content) && !gameFromContent(message.content) && (
           <LinkPreviews content={message.content} />
         )}
         {gallery ? (
-          <MediaGrid attachments={gallery} channelId={message.channelId} />
+          <MediaGrid attachments={gallery} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} />
+        ) : media ? (
+          <AttachmentList attachments={[media]} authorId={message.author.id} owner={{ channelId: message.channelId, messageId: message.id }} fill={fillMedia} />
         ) : (
           <AttachmentList
             attachments={message.attachments}
             authorId={message.author.id}
             owner={{ channelId: message.channelId, messageId: message.id }}
             below={mediaThreadsBelow(message)}
+            fill={fillMedia}
           />
         )}
         {message.poll && <PollView message={message} poll={message.poll} />}
@@ -965,10 +1052,17 @@ function MessageRow({
         )}
         {gallery ? (
           <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} galleryIds={galleryIds ?? [message.id]} />
+        ) : media ? (
+          mediaReacted(message, media) && <Reactions message={message} attachmentId={media.id} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         ) : (
           !!message.reactions?.length && <Reactions message={message} onAdd={(el) => setReactAnchor(el)} adding={!!reactAnchor} />
         )}
-        {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} /> : null : whole && <ThreadChip thread={whole} />}
+        {gallery ? galleryThreads?.length ? <GalleryThreads threads={galleryThreads} channelId={message.channelId} messageIds={galleryIds ?? [message.id]} /> : null : (
+          <>
+            {media && withText && wholeThreadOf(message) && <ThreadChip thread={wholeThreadOf(message)!} />}
+            {whole && <ThreadChip thread={whole} />}
+          </>
+        )}
           </>
         )}
       </div>
@@ -985,7 +1079,7 @@ function MessageRow({
       )}
 
       {!editing && (
-        <div className={cx('absolute -top-4 right-4 items-center gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', reactAnchor || moreOpen ? 'flex' : 'hidden group-hover:flex')}>
+        <div className={cx('absolute right-4 z-10 items-center', barInside ? 'top-1' : '-top-4', 'gap-0.5 rounded-lg border border-edge bg-side p-0.5 shadow', reactAnchor || moreOpen ? 'flex' : 'hidden group-hover:flex')}>
           {canReact && (
             <>
               {topEmojis(3).map((emoji) => (
@@ -1108,6 +1202,8 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
         <AttachmentList
           attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments}
           compact
+          // Topo da Conversa: mídia com até 290px de altura (a mais baixa fica no tamanho original).
+          fillHeight={290}
           authorId={message.author.id}
           owner={{ channelId: message.channelId, messageId: message.id }}
           below={only ? (a) => (a.reactions?.length ? <Reactions message={message} attachmentId={a.id} /> : null) : mediaThreadsBelow(message)}
@@ -1182,6 +1278,9 @@ async function toggleReaction(message: Message, emoji: string, attachmentId?: st
     showError(e);
   }
 }
+
+/** A mídia tem reação (dela, ou da mensagem inteira quando são várias mídias). */
+const mediaReacted = (m: Message, a: Attachment) => !!a.reactions?.length || (m.attachments.length > 1 && !!m.reactions?.length);
 
 /** Junta reações sem repetir pessoa (mesmo emoji em várias mídias conta uma vez). */
 function mergeReactions(lists: (Reaction[] | undefined)[]): Reaction[] {
@@ -1634,6 +1733,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
   const [recording, setRecording] = useState(false);
   const [voiceSending, setVoiceSending] = useState(false);
   const [gifOpen, setGifOpen] = useState(false);
+  const gifAnchor = useRef<HTMLSpanElement>(null);
   const [emojiAnchor, setEmojiAnchor] = useState<HTMLElement | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -1812,6 +1912,9 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
     if (channel.id.startsWith('draft:') && channel.parentId) {
       const thread = await api.createThread(channel.parentId, channel.name, channel.threadMessageId ?? undefined, channel.threadAttachmentId ?? undefined);
       actions.upsertChannel(thread);
+      // Conversa acabou de nascer: já começa carregada e vazia (a resposta entra logo em seguida),
+      // senão o painel pisca o esqueleto de carregamento ao trocar do rascunho para ela.
+      if (!useLine.getState().messages[thread.id]) actions.setMessages(thread.id, [], false);
       return thread.id;
     }
     return channel.id;
@@ -1867,14 +1970,20 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
       const target = await resolveTarget();
       // Áudio usa o player novo: apps antigos mostram o aviso de atualizar.
       const hasAudio = !gif && pending.some((x) => x.attachment && attachmentKind(x.type, x.name) === 'audio');
-      const message = await api.sendMessage(
-        target,
-        content,
-        gif ? [] : ready,
-        hasAudio ? ['audio'] : [],
-        gif ? {} : { spoilerIds: flagIds('spoiler'), nsfwIds: flagIds('nsfw') },
-      );
-      actions.addMessage(message);
+      const flags = gif ? {} : { spoilerIds: flagIds('spoiler'), nsfwIds: flagIds('nsfw') };
+      if (!gif && ready.length > 1) {
+        // Vários anexos: cada um vira uma mensagem própria (o texto vai antes, sozinho).
+        // Com GRID_MIN ou mais mídias seguidas, o chat mostra a grade por cima delas.
+        if (content) actions.addMessage(await api.sendMessage(target, content, [], []));
+        for (const id of ready) {
+          const kind = pending.find((x) => x.attachment?.id === id);
+          const audio = !!kind && attachmentKind(kind.type, kind.name) === 'audio';
+          const only = (ids?: string[]) => (ids?.includes(id) ? [id] : []);
+          actions.addMessage(await api.sendMessage(target, '', [id], audio ? ['audio'] : [], { spoilerIds: only(flags.spoilerIds), nsfwIds: only(flags.nsfwIds) }));
+        }
+      } else {
+        actions.addMessage(await api.sendMessage(target, content, gif ? [] : ready, hasAudio ? ['audio'] : [], flags));
+      }
       if (target !== channel.id) actions.openThread(target);
       onSent?.(target);
       if (gif) return;
@@ -2052,7 +2161,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
         </span>
         )}
         {canSend && canAttach && !recording && (
-        <span className="relative shrink-0">
+        <span ref={gifAnchor} className="relative shrink-0">
           <button
             title="GIFs"
             onClick={() => setGifOpen((v) => !v)}
@@ -2062,6 +2171,7 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
           </button>
           {gifOpen && (
             <GifPicker
+              anchor={gifAnchor}
               onClose={() => setGifOpen(false)}
               onPick={(g) => {
                 setGifOpen(false);
