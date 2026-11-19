@@ -140,7 +140,7 @@ describe('Line server', () => {
     // Só o dono cria canais
     expect((await api('POST', `/servers/${created.data.id}/channels`, bia.token, { name: 'memes' })).status).toBe(403);
     const ch = await api<{ name: string }>('POST', `/servers/${created.data.id}/channels`, ana.token, { name: 'Memes Bons' });
-    expect(ch.data.name).toBe('memes-bons');
+    expect(ch.data.name).toBe('Memes-Bons');
 
     // Paginação
     for (let i = 0; i < 5; i++) await api('POST', `/channels/${geral.id}/messages`, bia.token, { content: `msg ${i}` });

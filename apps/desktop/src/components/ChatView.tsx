@@ -893,7 +893,7 @@ function MessageRow({
       }}
       className={cx(
         // Sem margem entre as linhas: o espaço é padding, então o hover pega a linha inteira.
-        'group relative flex gap-4 px-4 transition-colors duration-700 hover:bg-hover/30 hover:duration-100',
+        'group relative flex cursor-pointer gap-4 px-4 transition-colors duration-700 hover:bg-hover/30 hover:duration-100',
         moreOpen && 'bg-black/10',
         // Mesmo espaço em cima e embaixo (a soma de antes dividida por 2).
         grouped ? 'py-1.5' : tight ? 'py-[9px]' : 'py-[11px]',
