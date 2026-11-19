@@ -179,6 +179,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               mobile.showMain();
               if (c.type === 'voice' && useVoice.getState().channelId !== c.id) void joinVoice(c.id);
             }}
+            onDoubleClick={() => canChannels && actions.openModal({ kind: 'edit-channel', channelId: c.id })}
             className={cx(
               'flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[15px]',
               active ? 'bg-hover text-fg' : hasUnread ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
@@ -388,6 +389,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             >
               <button
                 onClick={() => setCollapsed((c) => ({ ...c, [cat.id]: !c[cat.id] }))}
+                onDoubleClick={() => canChannels && actions.openModal({ kind: 'edit-category', categoryId: cat.id })}
                 className="flex items-center gap-0.5 text-xs font-bold tracking-wide text-muted uppercase hover:text-soft"
               >
                 <Icons.Chevron size={12} className={cx('transition-transform', collapsed[cat.id] && '-rotate-90')} />
