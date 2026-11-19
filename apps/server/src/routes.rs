@@ -3337,7 +3337,7 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }
     let files = q.attachment_ids_of_message(&message.id);
-    // Sempre fica como item apagado ("Esse item foi apagado..."), com reações e conversas.
+    // Sempre fica como item apagado ("A mensagem original foi excluída"), com reações e conversas.
     q.soft_delete_message(&message.id);
     app.remove_upload_files(&files);
     if let Some(updated) = q.message(&message.id) {

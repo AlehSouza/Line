@@ -549,7 +549,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
 }
 
 /** Mensagem/mídia apagada que tinha conversa com respostas. */
-const DELETED_ITEM = 'Esse item foi apagado pelo autor ou administração';
+const DELETED_ITEM = 'A mensagem original foi excluída';
 
 /** Threads da mensagem (servidor antigo só manda `thread`). */
 export const threadsOf = (m: Message): ThreadSummary[] => m.threads ?? (m.thread ? [m.thread] : []);
