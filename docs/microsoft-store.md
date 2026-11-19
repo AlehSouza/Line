@@ -9,7 +9,7 @@ e na release `build-N` do GitHub.
 1. Crie a conta de desenvolvedor individual (grátis) em https://storedeveloper.microsoft.com
    e entre na Partner Center (https://partner.microsoft.com/dashboard/apps-and-games/overview).
 2. **Apps e jogos → Novo produto → App MSIX ou PWA**, e reserve o nome **Line**
-   (reservado: **Line: Chat e Voz**, já é o padrão do CI; se mudar, crie a variável `MSSTORE_DISPLAY_NAME`).
+   (reservado: **UseLine: Chat e Voz**; "Line: Chat e Voz" foi recusado por lembrar o app LINE, já é o padrão do CI; se mudar, crie a variável `MSSTORE_DISPLAY_NAME`).
 3. Identidade do produto (já está no CI, não precisa configurar nada): `AlexandreSouza.LineChateVoz`,
    publisher `CN=0B1640DA-C2DE-40D6-9091-7568BF2908F8`, ID da Store `9NJ9ZQ9T92QR`. Para trocar, use as
    variáveis `MSSTORE_IDENTITY_NAME`, `MSSTORE_PUBLISHER`, `MSSTORE_PUBLISHER_NAME` e `MSSTORE_DISPLAY_NAME`.
