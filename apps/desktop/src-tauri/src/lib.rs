@@ -64,8 +64,14 @@ fn save_window_state_soon(app: &tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(600)).await;
         if GEN.load(Ordering::SeqCst) == ticket {
-            use tauri_plugin_window_state::AppHandleExt;
-            let _ = app.save_window_state(window_flags());
+            // Na thread principal: fora dela o plugin segura o lock do estado enquanto espera a
+            // thread principal responder (is_maximized/outer_position), e ela, num Moved/Resized,
+            // espera o mesmo lock. O app travava ("Não está respondendo") logo depois de atualizar.
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                use tauri_plugin_window_state::AppHandleExt;
+                let _ = handle.save_window_state(window_flags());
+            });
         }
     });
 }
@@ -669,15 +675,18 @@ fn open_main_with(app: &tauri::AppHandle, hidden: bool) {
             let _ = window;
         }
         // Mostra só depois de carregar, sem piscar branco.
+        // Na thread principal pelo mesmo motivo do save_window_state_soon (restore_state segura o lock).
         Ok(window) => {
-            if just_updated() {
-                use tauri_plugin_window_state::WindowExt;
-                let _ = window.restore_state(window_flags());
-            } else {
-                let _ = window.maximize();
-            }
-            let _ = window.show();
-            let _ = window.set_focus();
+            let _ = app.run_on_main_thread(move || {
+                if just_updated() {
+                    use tauri_plugin_window_state::WindowExt;
+                    let _ = window.restore_state(window_flags());
+                } else {
+                    let _ = window.maximize();
+                }
+                let _ = window.show();
+                let _ = window.set_focus();
+            });
         }
         Err(err) => tracing::error!("não abriu a janela principal: {err}"),
     }
@@ -882,6 +891,8 @@ pub fn run() {
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(window_flags())
                 .skip_initial_state(MAIN)
+                // Só a principal: a janelinha de atualização e as outras não entram no arquivo.
+                .with_filter(|label| label == MAIN)
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
