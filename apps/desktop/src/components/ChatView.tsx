@@ -2468,7 +2468,11 @@ function PendingCard({ item, onRemove, onToggle }: { item: Pending; onRemove: ()
           >
             {item.autoNsfw && <Icons.Lock size={11} className="mr-0.5 inline" />}Sensível
           </button>
-          {item.checking && <span className="ml-auto text-[10px] text-muted">Verificando…</span>}
+          {item.checking && (
+            <span title="Verificando mídia..." className="ml-auto flex h-5 w-5 items-center justify-center text-muted">
+              <Icons.Refresh size={13} className="animate-spin" />
+            </span>
+          )}
         </div>
       )}
     </div>
