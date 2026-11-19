@@ -45,6 +45,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct App {
     pub store: store::Store,
     pub tokens: auth::Tokens,
+    /// Chave dos links assinados de mídia sensível (derivada do segredo do JWT).
+    pub media_key: Vec<u8>,
     pub io: SocketIo,
     pub voice: Mutex<voice::VoiceRegistry>,
     /// Bot de música: fila e estado de cada canal de voz.
@@ -290,6 +292,13 @@ pub fn build(
     let app = Arc::new(App {
         store: store::Store::new(conn),
         tokens: auth::Tokens::new(secret),
+        media_key: {
+            use sha2::Digest;
+            let mut h = sha2::Sha256::new();
+            h.update(b"line-media-link:");
+            h.update(secret);
+            h.finalize().to_vec()
+        },
         io: io.clone(),
         voice: Mutex::new(voice::VoiceRegistry::default()),
         music: Mutex::new(music::MusicRegistry::default()),

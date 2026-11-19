@@ -16,7 +16,8 @@ import { ReportModal } from './ReportModal';
 import { ForwardModal } from './Forward';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { api } from '@/lib/api';
+import { api, fileUrl } from '@/lib/api';
+import { mediaUrlOf } from '@/lib/mediaUrl';
 import { hasPerm, Perm, type Channel, type Message, type Role } from '@line/shared';
 import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { Composer, ThreadChip, threadsOf, ViewerReactButton, ViewerReactions } from './ChatView';
@@ -901,7 +902,7 @@ function ImageViewer({ url, filename, channelId, messageId, attachmentId, onClos
 }
 
 /** Mídias de uma grade do chat em tela cheia: setas (ou ← →) passam, Esc fecha. */
-function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; width?: number; height?: number; preview?: string; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
+function GalleryViewer({ items, start, channelId, onClose }: { items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; width?: number; height?: number; preview?: string; nsfw?: boolean; sensitive?: 'nsfw' | 'spoiler' }[]; start: number; channelId?: string; onClose: () => void }) {
   const [i, setI] = useState(start);
   const [revealed, setRevealed] = useState<number[]>([]);
   const n = items.length;
@@ -912,6 +913,16 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, n]);
   const item = items[i]!;
+  // Link da mídia (relativo); sensível vem assinado do servidor.
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setSrc(item.nsfw ? null : fileUrl(item.url));
+    if (item.nsfw && item.attachmentId) void mediaUrlOf(item.attachmentId, item.url, true).then((u) => alive && setSrc(u));
+    return () => {
+      alive = false;
+    };
+  }, [item.url, item.nsfw, item.attachmentId]);
   const video = item.contentType.startsWith('video/');
   const arrow = 'absolute top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80';
   const covered = !!item.sensitive && !revealed.includes(i);
@@ -926,20 +937,20 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
       <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3">
       <MediaReactions channelId={channelId} messageId={item.messageId} attachmentId={item.attachmentId} />
       <div className="relative flex min-h-0 max-w-full items-center justify-center overflow-hidden rounded-lg" onMouseDown={(e) => e.stopPropagation()}>
-        {covered ? (
+        {covered || !src ? (
           <span className="relative block max-w-full shadow-2xl" style={coverBox}>
             <CoverArt preview={item.preview} />
           </span>
         ) : video ? (
-          <video key={item.url} src={item.url} controls autoPlay className={media} />
+          <video key={src} src={src} controls autoPlay className={media} />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            key={item.url}
-            src={item.url}
+            key={src}
+            src={src}
             alt={item.filename}
             className={cx(media, 'object-contain')}
-            onContextMenu={(e) => openContextMenu(e, imageMenuItems(item.url, item.filename))}
+            onContextMenu={(e) => openContextMenu(e, imageMenuItems(src, item.filename))}
           />
         )}
         {covered && (
@@ -980,8 +991,8 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
       )}
       <div className="flex items-center gap-3 text-sm text-soft" onMouseDown={(e) => e.stopPropagation()}>
         {n > 1 && <span>{i + 1} de {n}</span>}
-        {!covered && (
-          <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-fg hover:underline">
+        {!covered && src && (
+          <a href={src} target="_blank" rel="noreferrer" className="hover:text-fg hover:underline">
             Abrir original
           </a>
         )}

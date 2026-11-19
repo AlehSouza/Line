@@ -32,7 +32,7 @@ export type Modal =
   /** channelId/messageId: mensagem dona da mídia, para a caixa de responder em thread do visualizador. */
   | { kind: 'image'; url: string; filename: string; channelId?: string; messageId?: string; attachmentId?: string }
   /** Várias mídias seguidas (grade do chat): abre na posição clicada e navega com as setas. */
-  | { kind: 'gallery'; items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; width?: number; height?: number; preview?: string; sensitive?: 'nsfw' | 'spoiler' }[]; index: number; channelId?: string }
+  | { kind: 'gallery'; items: { url: string; filename: string; contentType: string; messageId?: string; attachmentId?: string; width?: number; height?: number; preview?: string; nsfw?: boolean; sensitive?: 'nsfw' | 'spoiler' }[]; index: number; channelId?: string }
   | { kind: 'voice-invite'; serverId: string; channelId: string }
   | { kind: 'voice-status'; channelId: string }
   /** Bug/sugestão (sem alvo) ou denúncia de usuário/mensagem. */

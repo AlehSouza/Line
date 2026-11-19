@@ -392,6 +392,8 @@ export const api = {
     request<Message>('PUT', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
   removeReaction: (messageId: string, emoji: string) =>
     request<Message>('DELETE', `/messages/${enc(messageId)}/reactions/${enc(emoji)}`),
+  /** Link para abrir a mídia; a sensível vem assinada (vale 6 h) e só para maiores de 18. */
+  attachmentAccess: (id: string) => request<{ url: string; expires?: number }>('GET', `/attachments/${enc(id)}/access`),
   setAttachmentReaction: (attachmentId: string, emoji: string, on: boolean) =>
     request<Message>(on ? 'PUT' : 'DELETE', `/attachments/${enc(attachmentId)}/reactions/${enc(emoji)}`),
   votePoll: (messageId: string, optionId: string) =>

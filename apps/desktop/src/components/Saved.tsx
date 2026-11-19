@@ -151,7 +151,7 @@ export function SavedView() {
                     ) : (
                       !(first?.contentType.startsWith('image/') && !hidden(m)) && <p className="text-sm text-soft">{summary(m, it.serverId)}</p>
                     )}
-                    {first?.contentType.startsWith('image/') && !hidden(m) && (
+                    {first?.contentType.startsWith('image/') && !hidden(m) && !first.nsfw && !first.spoiler && (
                       <img src={fileUrl(first.url)} alt="" className="mt-1.5 max-h-48 max-w-full rounded-md object-cover" />
                     )}
                     {m.content && first && !first.contentType.startsWith('image/') && <p className="mt-1 text-xs text-muted">{summary({ ...m, content: '' }, it.serverId)}</p>}

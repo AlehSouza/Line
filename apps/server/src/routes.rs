@@ -172,6 +172,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
             "/attachments",
             post(upload_attachment).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
         )
+        .route("/attachments/{id}/access", get(attachment_access))
         .route("/attachments/{id}/{name}", get(serve_attachment))
         .route(
             "/attachments/{id}/reactions/{emoji}",
@@ -3046,9 +3047,52 @@ async fn upload_attachment(State(app): S, Me(me): Me, headers: HeaderMap, body: 
 
 /// Entrega o arquivo (com suporte a Range, para vídeos). O id longo e aleatório faz
 /// as vezes de senha, assim <img> e <video> funcionam sem cabeçalho de login.
+/// Assinatura do link de mídia sensível: HMAC-SHA256(id:exp), em hex.
+fn media_sig(app: &App, id: &str, exp: i64) -> String {
+    use hmac::{KeyInit, Mac};
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(&app.media_key).expect("hmac aceita qualquer chave");
+    mac.update(format!("{id}:{exp}").as_bytes());
+    mac.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Idade completa a partir de AAAA-MM-DD.
+fn age_of(birth: &str) -> Option<i32> {
+    use chrono::Datelike;
+    let d = chrono::NaiveDate::parse_from_str(birth, "%Y-%m-%d").ok()?;
+    let today = chrono::Utc::now().date_naive();
+    let mut age = today.year() - d.year();
+    if (today.month(), today.day()) < (d.month(), d.day()) {
+        age -= 1;
+    }
+    Some(age)
+}
+
+/// Link da mídia para quem pediu. Mídia sensível só sai com link assinado (6 h) e só para
+/// quem informou ter 18 anos ou mais; o link cru dela responde 403.
+async fn attachment_access(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
+    let q = app.store.q();
+    let a = q.attachment(&id).ok_or_else(|| not_found("Arquivo"))?;
+    if !a.nsfw {
+        return ok(json!({ "url": a.url }));
+    }
+    let adult = q
+        .user_row(&me)
+        .and_then(|u| u.birth_date)
+        .and_then(|b| age_of(&b))
+        .is_some_and(|age| age >= 18);
+    drop(q);
+    if !adult {
+        return Err(forbidden("Esta mídia tem conteúdo sensível e só aparece para quem tem 18 anos ou mais"));
+    }
+    let exp = chrono::Utc::now().timestamp() + 6 * 3600;
+    let sig = media_sig(&app, &a.id, exp);
+    ok(json!({ "url": format!("{}?exp={exp}&sig={sig}", a.url), "expires": exp }))
+}
+
 async fn serve_attachment(
     State(app): S,
     Path((id, _name)): Path<(String, String)>,
+    Query(qs): Query<HashMap<String, String>>,
     req: Request,
 ) -> Result<Response, ApiError> {
     let attachment = app
@@ -3056,6 +3100,18 @@ async fn serve_attachment(
         .q()
         .attachment(&id)
         .ok_or_else(|| not_found("Arquivo"))?;
+    // Mídia sensível: só com link assinado e dentro da validade (GET /attachments/{id}/access).
+    if attachment.nsfw {
+        let exp = qs.get("exp").and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+        let sig = qs.get("sig").map(String::as_str).unwrap_or("");
+        let valid = exp > chrono::Utc::now().timestamp() && {
+            use subtle::ConstantTimeEq;
+            bool::from(media_sig(&app, &attachment.id, exp).as_bytes().ct_eq(sig.as_bytes()))
+        };
+        if !valid {
+            return Err(forbidden("Link de mídia sensível inválido ou vencido"));
+        }
+    }
     let mime: mime::Mime = attachment
         .content_type
         .parse()

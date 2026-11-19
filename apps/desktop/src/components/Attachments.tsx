@@ -9,6 +9,7 @@ import { cx, Icons, Skeleton } from './ui';
 import { VideoPlayer } from './VideoPlayer';
 import { imageMenuItems, openContextMenu, type MenuEntry } from './ContextMenu';
 import { looksNsfw } from '@/lib/nsfw';
+import { cachedMediaUrl, mediaUrlOf, useMediaUrl } from '@/lib/mediaUrl';
 import { showError, toast } from './Dialogs';
 import { AudioPlayer, isVoiceMessage, VoicePlayer } from './AudioPlayer';
 
@@ -34,7 +35,8 @@ async function reportNsfw(a: Attachment, url: string) {
   toast('Verificando o anexo…');
   let detected = false;
   try {
-    const res = await fetch(url);
+    const real = await mediaUrlOf(a.id, a.url, a.nsfw);
+    const res = await fetch(real ?? url);
     if (res.ok) {
       const blob = await res.blob();
       detected = await looksNsfw(new File([blob], a.filename, { type: blob.type || a.contentType }));
@@ -97,7 +99,7 @@ export function AttachmentList({
                       // Coberta: abre em foco com o mesmo aviso (como na grade).
                       actions.openModal({
                         kind: 'gallery',
-                        items: [{ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, attachmentId: a.id, messageId: owner?.messageId, sensitive: a.nsfw ? 'nsfw' : 'spoiler', width: a.width, height: a.height, preview: a.preview }],
+                        items: [{ url: a.url, filename: a.filename, contentType: a.contentType, attachmentId: a.id, messageId: owner?.messageId, sensitive: a.nsfw ? 'nsfw' : 'spoiler', width: a.width, height: a.height, preview: a.preview, nsfw: a.nsfw }],
                         index: 0,
                         channelId: owner?.channelId,
                       })
@@ -271,8 +273,20 @@ function fitBox(d: { w: number; h: number }, maxW: number, maxH: number) {
 }
 
 function AttachmentView({ attachment: a, compact, mine, owner, fill }: { attachment: Attachment; compact?: boolean; mine?: boolean; owner?: { channelId: string; messageId: string }; fill?: boolean }) {
-  const url = fileUrl(a.url);
-  switch (attachmentKind(a.contentType, a.filename)) {
+  // Mídia sensível: link assinado pedido ao servidor (o link cru dela não abre).
+  const signed = useMediaUrl(a);
+  const kind = attachmentKind(a.contentType, a.filename);
+  if (a.nsfw && !signed && (kind === 'image' || kind === 'video')) {
+    const d = a.width && a.height ? { w: a.width, h: a.height } : null;
+    const box = d ? (fill ? { width: '100%', aspectRatio: `${d.w} / ${d.h}` } : kind === 'video' ? fitBox(d, compact ? 280 : 520, compact ? 180 : 360) : fitBox(d, compact ? 220 : 420, compact ? 160 : 350)) : { width: compact ? 220 : 320, height: compact ? 140 : 220 };
+    return (
+      <span className="relative block max-w-full overflow-hidden rounded-lg border border-edge" style={box}>
+        <CoverArt preview={a.preview} />
+      </span>
+    );
+  }
+  const url = signed ?? fileUrl(a.url);
+  switch (kind) {
     case 'image':
       return (
         <button
@@ -426,6 +440,15 @@ function LoadingImage({ src, alt, compact, dims, fill, placeholder }: { src: str
   );
 }
 
+/** Imagem/vídeo de um quadro da grade (sensível usa o link assinado; até chegar, a prévia). */
+function TileMedia({ a, video }: { a: Attachment; video?: boolean }) {
+  const url = useMediaUrl(a);
+  if (!url) return <CoverArt preview={a.preview} />;
+  if (video) return <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={url} alt={a.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />;
+}
+
 /** Mídia (imagem, GIF, WebP, vídeo...) que entra na grade. */
 export const isMedia = (a: Attachment) => {
   const k = attachmentKind(a.contentType, a.filename);
@@ -442,7 +465,7 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
   const blur = useLine((s) => s.me?.blurSensitive !== false);
   const adult = (ageOf(birthDate) ?? 0) >= 18;
   const visible = attachments.filter((a) => !a.nsfw || adult);
-  const items = visible.map((a) => ({ url: fileUrl(a.url), filename: a.filename, contentType: a.contentType, width: a.width, height: a.height, preview: a.preview }));
+  const items = visible.map((a) => ({ url: a.url, filename: a.filename, contentType: a.contentType, width: a.width, height: a.height, preview: a.preview, nsfw: a.nsfw }));
   const shown = attachments.slice(0, 4);
   const extra = attachments.length - 4;
   const [seen, setSeen] = useState<string[]>([]);
@@ -470,7 +493,7 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
               });
               actions.openModal({ kind: 'gallery', items: withOwner, index: Math.max(0, visible.indexOf(a)), channelId });
             }}
-            onContextMenu={!video && !blocked ? (e) => openContextMenu(e, imageMenuItems(url, a.filename)) : undefined}
+            onContextMenu={!video && !blocked && !covered ? (e) => openContextMenu(e, imageMenuItems(cachedMediaUrl(a) ?? url, a.filename)) : undefined}
             className="relative aspect-square overflow-hidden bg-rail"
           >
             {blocked ? (
@@ -482,13 +505,12 @@ export function MediaGrid({ attachments, channelId, messageIds }: { attachments:
               covered ? (
                 <CoverArt preview={a.preview} />
               ) : (
-                <video src={`${url}#t=0.1`} muted preload="metadata" className="h-full w-full object-cover" />
+                <TileMedia a={a} video />
               )
             ) : covered ? (
               <CoverArt preview={a.preview} />
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={url} alt={a.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+              <TileMedia a={a} />
             )}
             {video && !blocked && !covered && !more && (
               <span className="absolute top-1/2 left-1/2 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white">
