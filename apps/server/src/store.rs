@@ -2559,6 +2559,8 @@ impl Q<'_> {
              AND id NOT IN (SELECT banner_id FROM servers WHERE banner_id IS NOT NULL)
              AND id NOT IN (SELECT attachment_id FROM report_attachments)
              AND id NOT IN (SELECT attachment_id FROM soundboard_sounds)
+             AND NOT EXISTS (SELECT 1 FROM users u WHERE json_valid(u.profile_games)
+                 AND json_extract(u.profile_games, '$.call.image') LIKE '/api/attachments/' || attachments.id || '/%')
              AND id NOT IN (SELECT json_extract(m.value, '$.id') FROM servers s, json_each(s.bot_replies) r, json_each(r.value, '$.media') m)",
             [cutoff],
         ));

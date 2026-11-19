@@ -40,7 +40,15 @@ export function CallLookLayers({ look }: { look: CallLook | null }) {
       {look.bg === 'color' && look.color && <span className="pointer-events-none absolute inset-0" style={{ background: look.color, opacity: LAYER_OPACITY }} />}
       {look.bg === 'image' && look.image && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={fileUrl(look.image)} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full object-cover" style={{ opacity: LAYER_OPACITY }} />
+        <img
+          src={fileUrl(look.image)}
+          alt=""
+          draggable={false}
+          // Imagem que não carrega (arquivo sumiu do servidor) não mostra o ícone de quebrada.
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          style={{ opacity: LAYER_OPACITY }}
+        />
       )}
       {look.border && (
         <span
