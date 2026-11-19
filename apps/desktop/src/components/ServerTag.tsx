@@ -474,14 +474,18 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
   return (
     <div className="max-w-[1080px]">
       <h2 className="text-xl font-bold">Tag do servidor</h2>
-      <p className="mt-1 mb-6 text-sm text-soft">
+      <p className="mt-1 mb-8 text-sm text-soft">
         Crie uma tag que os membros podem exibir ao lado do nome. Quem clicar nela vê o cartão do servidor. Cada membro ativa a tag em Editar perfil.
       </p>
 
       <div className="flex flex-col-reverse gap-8 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-1 space-y-4">
-        {/* Nome da tag: centralizado e fixo no topo enquanto a coluna rola, para trocar e testar a qualquer momento. */}
-        <div className="sticky top-0 z-10 -mx-1 flex flex-col items-center gap-1.5 rounded-xl border border-edge bg-main/95 px-4 py-3 text-center shadow-lg backdrop-blur">
+        {/*
+          Nome da tag: centralizado e fixo no topo enquanto a coluna rola, para trocar e testar a qualquer momento.
+          O main tem py-8: o -top-8 cola na borda de cima da rolagem e o pt-8 (com -mt-8) pinta esse vão com o fundo,
+          para nada aparecer acima dele. Embaixo, um degradê do fundo para transparente faz o conteúdo sumir aos poucos.
+        */}
+        <div className="sticky -top-8 z-10 -mt-8 flex flex-col items-center gap-1.5 bg-main pt-8 pb-2 text-center">
           <label htmlFor="tag-name" className="text-xs font-bold tracking-wide text-muted uppercase">
             Nome da tag
           </label>
@@ -493,6 +497,7 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
             className="w-36 text-center text-lg font-bold tracking-widest"
           />
           <p className="text-xs text-muted">Até 4 letras ou números. Deixe vazio para desativar a tag.</p>
+          <span aria-hidden className="pointer-events-none absolute inset-x-0 top-full h-8 bg-gradient-to-b from-main to-transparent" />
         </div>
 
         <section className="rounded-xl border border-edge bg-rail p-3.5">
