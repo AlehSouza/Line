@@ -22,7 +22,7 @@ import { GameShareCard, gameFromContent } from './GameCard';
 import { BotTag, CommandNotice, commandFromContent, controlCommand, MusicAnnounceCard, musicFromContent, MusicSearching, SlashPicker, stopCommand, type SlashPickerHandle } from './Music';
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
-import { actions, dmTitle, mentionsToText, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
+import { actions, dmTitle, mentionsToText, withoutCardCodes, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, channelIcon, cx, Icons, MessageSkeletons, Modal } from './ui';
 import { EmojiButton } from './EmojiField';
@@ -215,7 +215,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
       className="relative flex w-[420px] shrink-0 flex-col border-l border-rail bg-main max-md:fixed max-md:inset-0 max-md:z-40 max-md:w-full max-md:border-0"
       {...drop.handlers}
     >
-      {drop.over && <DropOverlay target={thread.name} />}
+      {drop.over && <DropOverlay target={withoutCardCodes(thread.name)} />}
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
         {back && (
           <button
@@ -227,7 +227,7 @@ export function ThreadPanel({ thread }: { thread: Channel }) {
           </button>
         )}
         <h2 className="font-bold">Conversa</h2>
-        <span className="truncate text-sm text-muted">{mentionsToText(thread.name, thread.serverId)}</span>
+        <span className="truncate text-sm text-muted">{withoutCardCodes(mentionsToText(thread.name, thread.serverId))}</span>
         <div className="ml-auto flex gap-1">
           <button title="Fechar conversa" onClick={actions.closeThread} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
             <Icons.X size={20} />
@@ -738,7 +738,7 @@ function MessageRow({
     );
   }
 
-  const plain = message.content ? mentionsToText(message.content, serverId) : '';
+  const plain = message.content ? withoutCardCodes(mentionsToText(message.content, serverId)) : '';
   const canReply = showThreadAction || !!whole;
   const canForward = !message.poll && !del;
   const canReport = !mine && !message.author.bot && !del;
@@ -1160,6 +1160,7 @@ const onlyMediaOf = (channel: Channel, m: Message) =>
 
 function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Message; only?: string | null; myUsername?: string; mentionCtx: ReturnType<typeof useMentionContext> }) {
   const author = useLine((s) => s.users[message.author.id]) ?? message.author;
+  const serverId = useLine((s) => s.channels[message.channelId]?.serverId);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   if (message.deleted) {
     return (
@@ -1217,8 +1218,22 @@ function ThreadStarter({ message, only, myUsername, mentionCtx }: { message: Mes
           <span className="font-semibold">{author.displayName}</span>
           <span className="text-xs text-muted">{formatTime(message.createdAt)}</span>
         </p>
-        {message.content && <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>}
-        {message.content && !gifFromContent(message.content) && <LinkPreviews content={message.content} />}
+        {/* Agente, convite de voz, jogo e GIF aparecem com o mesmo cartão do chat, não como texto cru. */}
+        {message.content &&
+          (voiceInviteFromContent(message.content) ? (
+            <VoiceInviteCard invite={voiceInviteFromContent(message.content)!} />
+          ) : musicFromContent(message.content) ? (
+            <MusicAnnounceCard data={musicFromContent(message.content)!} serverId={serverId} />
+          ) : gameFromContent(message.content) ? (
+            <GameShareCard data={gameFromContent(message.content)!} />
+          ) : gifFromContent(message.content) ? (
+            <GifEmbed url={gifFromContent(message.content)!} />
+          ) : (
+            <>
+              <div className="text-[15px] break-words whitespace-pre-wrap">{renderMarkdown(message.content, myUsername, mentionCtx)}</div>
+              <LinkPreviews content={message.content} />
+            </>
+          ))}
         <AttachmentList
           attachments={only ? message.attachments.filter((a) => a.id === only) : message.attachments}
           compact

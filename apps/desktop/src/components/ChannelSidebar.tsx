@@ -3,7 +3,7 @@
 import { hasPerm, Perm, type Channel } from '@line/shared';
 import { useMemo, useState } from 'react';
 import { fileUrl } from '@/lib/api';
-import { actions, permsOf, useLine, mentionsToText } from '@/lib/store';
+import { actions, permsOf, useLine, mentionsToText, withoutCardCodes } from '@/lib/store';
 import { mobile } from '@/lib/mobile';
 import { joinVoice, leaveVoice, useVoice } from '@/lib/voice';
 import { openContextMenu, type MenuEntry } from './ContextMenu';
@@ -201,7 +201,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
                 </span>
               )}
             </span>
-            <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-5')}>{c.type === 'thread' ? mentionsToText(c.name, c.serverId) : c.name}</span>
+            <span className={cx('truncate', hasUnread && 'font-semibold', canChannels && 'group-hover:pr-5')}>{c.type === 'thread' ? withoutCardCodes(mentionsToText(c.name, c.serverId)) : c.name}</span>
             {muted && <MutedIcon className={cx(canChannels && 'group-hover:hidden')} />}
             {mentions > 0 && <MentionBadge count={mentions} className={cx('ml-auto', canChannels && 'group-hover:hidden')} />}
           </button>

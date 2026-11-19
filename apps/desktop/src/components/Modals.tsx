@@ -19,7 +19,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 import { api, fileUrl } from '@/lib/api';
 import { mediaUrlOf } from '@/lib/mediaUrl';
 import { hasPerm, Perm, type Channel, type Message, type Role } from '@line/shared';
-import { actions, channelPermsOf, mentionsToText, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
+import { actions, channelPermsOf, mentionsToText, withoutCardCodes, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { Composer, ThreadChip, threadsOf, ViewerReactButton, ViewerReactions } from './ChatView';
 import { ServerImages, type ServerImage } from './ServerImages';
 import { SettingsModal } from './Settings';
@@ -803,7 +803,7 @@ function ViewerComposer({ channelId, messageId, attachmentId, onClose }: { chann
     if (parent.type === 'thread') return parent;
     if (thread) return thread;
     if (parent.type !== 'text' || !parent.serverId || !canCreate) return null;
-    const plain = message.content ? mentionsToText(message.content, parent.serverId) : '';
+    const plain = message.content ? withoutCardCodes(mentionsToText(message.content, parent.serverId)) : '';
     const media = mediaId ? message.attachments.find((a) => a.id === mediaId) : undefined;
     const name = (plain.split('\n')[0] || media?.filename || message.attachments[0]?.filename || 'Conversa').slice(0, 60);
     return {

@@ -615,6 +615,9 @@ export function topPosition(s: LineState, serverId: string, userId: string | und
 }
 
 /** Troca `<@&id>` por `@Nome do cargo` (para notificações e para editar mensagens). */
+/** Tira os códigos dos cartões (`[[musica:…]]`, `[[voz:…]]`, `[[jogo:…]]`) e deixa só o texto legível. */
+export const withoutCardCodes = (text: string) => text.replace(/\[\[(?:musica|voz|jogo):[^\]]*\]\]\s?/g, '');
+
 export function mentionsToText(content: string, serverId: string | null | undefined): string {
   if (!serverId) return content;
   const s = get();

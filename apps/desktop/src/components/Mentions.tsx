@@ -2,7 +2,7 @@
 
 import { hasPerm, Perm, type Role } from '@line/shared';
 import { useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref } from 'react';
-import { actions, displayNameIn, mentionTag, mentionsToText, permsOf, useLine } from '@/lib/store';
+import { actions, displayNameIn, mentionTag, mentionsToText, withoutCardCodes, permsOf, useLine } from '@/lib/store';
 import { Avatar, Icons, cx } from './ui';
 
 export interface MentionContext {
@@ -206,7 +206,7 @@ export function ChannelMention({ id }: { id: string }) {
       }}
       className="rounded bg-accent/15 px-0.5 font-medium text-accent hover:bg-accent/30"
     >
-      #{mentionsToText(channel.name, channel.serverId)}
+      #{withoutCardCodes(mentionsToText(channel.name, channel.serverId))}
     </button>
   );
 }
