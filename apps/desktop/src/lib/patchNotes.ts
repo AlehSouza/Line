@@ -147,6 +147,11 @@ export const PATCH_NOTES: PatchNote[] = [
         text: 'A foto e a capa que você escolhe para um servidor agora ficam guardadas de vez. Se a sua sumiu nos últimos dias, é só escolher de novo que ela fica.',
       },
       {
+        icon: 'mouse',
+        title: 'Organizar categorias',
+        text: 'Arrastar uma categoria para cima ou para baixo agora funciona de primeira: a linha mostra onde ela vai cair, em qualquer ponto da lista.',
+      },
+      {
         icon: 'refresh',
         title: 'Transmissão estável',
         text: 'Sair e voltar a assistir não quebra mais a imagem, e depois de recarregar a tela que você assistia volta sozinha.',

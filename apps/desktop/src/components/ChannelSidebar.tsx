@@ -52,7 +52,8 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
       .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
     const categories = Object.values(allCategories)
       .filter((c) => !suspended && c.serverId === serverId)
-      .sort((a, b) => a.position - b.position);
+      // Mesmo desempate do servidor (posição, depois id): com posições repetidas a lista e a ordem salva batem.
+      .sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const byCategory: Record<string, Channel[]> = {};
     const loose: Channel[] = [];
     for (const c of channels) {
@@ -78,6 +79,22 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     setDrag(null);
     setOver(null);
   };
+  /** Categoria arrastada: o lugar sai da altura do cursor em relação às categorias da lista
+   *  (vale em cima do nome, dos canais, de quem está na voz e dos espaços entre elas). */
+  const categoryOver = (e: React.DragEvent) => {
+    if (drag?.kind !== 'category') return;
+    e.preventDefault();
+    const boxes = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[data-cat]')).filter((el) => el.dataset.cat !== drag.id);
+    if (!boxes.length) return;
+    const next = boxes.find((el) => {
+      const r = el.getBoundingClientRect();
+      return e.clientY < r.top + r.height / 2;
+    });
+    const o = next
+      ? { kind: 'category' as const, id: next.dataset.cat!, pos: 'above' as const }
+      : { kind: 'category' as const, id: boxes[boxes.length - 1].dataset.cat!, pos: 'below' as const };
+    if (over?.kind !== o.kind || over.id !== o.id || over.pos !== o.pos) setOver(o);
+  };
   const startDrag = (e: React.DragEvent, kind: 'channel' | 'category', id: string) => {
     e.stopPropagation();
     e.dataTransfer.effectAllowed = 'move';
@@ -96,13 +113,14 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     for (const k of categories) lists[k.id] = [...(byCategory[k.id] ?? [])];
 
     if (d.kind === 'category') {
-      // Categoria solta sobre outra categoria ou sobre um canal dela.
-      const target = o.kind === 'category' ? o.id : o.kind === 'channel' ? allChannels[o.id]?.categoryId : null;
-      if (!target || target === d.id) return;
+      // Categoria solta antes ou depois de outra (categoryOver).
+      if (o.kind !== 'category') return;
       const from = catIds.indexOf(d.id);
+      if (from < 0 || !catIds.includes(o.id)) return;
       catIds.splice(from, 1);
-      const to = catIds.indexOf(target);
-      catIds.splice(o.pos === 'below' || o.kind === 'channel' ? to + 1 : to, 0, d.id);
+      const to = catIds.indexOf(o.id);
+      catIds.splice(o.pos === 'below' ? to + 1 : to, 0, d.id);
+      if (catIds.every((id, i) => id === categories[i]?.id)) return;
     } else {
       const moving = allChannels[d.id];
       if (!moving) return;
@@ -146,33 +164,35 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
     const mentions = active ? 0 : mentionCount(st, c.id);
     const Icon = channelIcon(c);
     return (
-      <div key={c.id}>
+      // A área do canal inclui quem está na voz embaixo dele: soltar ali também conta.
+      <div
+        key={c.id}
+        className="relative"
+        onDragOver={(e) => {
+          // Categoria arrastada: quem decide o lugar é a lista inteira (categoryOver).
+          if (drag?.kind !== 'channel') return;
+          e.preventDefault();
+          e.stopPropagation();
+          const pos = half(e);
+          if (over?.kind !== 'channel' || over.id !== c.id || over.pos !== pos) setOver({ kind: 'channel', id: c.id, pos });
+        }}
+        onDrop={(e) => {
+          if (drag?.kind !== 'channel') return;
+          e.preventDefault();
+          e.stopPropagation();
+          drop();
+        }}
+      >
+        {over?.kind === 'channel' && over.id === c.id && drag?.kind === 'channel' && drag.id !== c.id && (
+          <span className={cx('pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-accent', over.pos === 'above' ? '-top-px' : '-bottom-px')} />
+        )}
         <div
           className={cx('group relative', drag?.id === c.id && 'opacity-40')}
           onContextMenu={(e) => openContextMenu(e, channelMenu(c, canChannels, hasPerm(perms, Perm.CreateInvite)))}
           draggable={canChannels}
           onDragStart={(e) => startDrag(e, 'channel', c.id)}
           onDragEnd={endDrag}
-          onDragOver={(e) => {
-            if (!drag) return;
-            e.preventDefault();
-            e.stopPropagation();
-            if (drag.kind === 'category') {
-              // Categoria arrastada sobre um canal: cai depois da categoria desse canal.
-              if (c.categoryId) setOver({ kind: 'category', id: c.categoryId, pos: 'below' });
-              return;
-            }
-            setOver({ kind: 'channel', id: c.id, pos: half(e) });
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            drop();
-          }}
         >
-          {over?.kind === 'channel' && over.id === c.id && drag?.kind === 'channel' && drag.id !== c.id && (
-            <span className={cx('pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-accent', over.pos === 'above' ? '-top-px' : '-bottom-px')} />
-          )}
           <button
             onClick={() => {
               actions.goServer(serverId, c.id);
@@ -346,7 +366,15 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
         )}
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-2 py-3">
+      <div
+        className="flex-1 space-y-4 overflow-y-auto px-2 py-3"
+        onDragOver={categoryOver}
+        onDrop={(e) => {
+          if (drag?.kind !== 'category') return;
+          e.preventDefault();
+          drop();
+        }}
+      >
         {!loaded && <ListSkeleton count={8} />}
         {(loose.length > 0 || drag?.kind === 'channel') && (
           <div
@@ -354,10 +382,13 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
             onDragOver={(e) => {
               if (drag?.kind !== 'channel') return;
               e.preventDefault();
-              setOver({ kind: 'loose', id: '', pos: 'below' });
+              e.stopPropagation();
+              if (over?.kind !== 'loose') setOver({ kind: 'loose', id: '', pos: 'below' });
             }}
             onDrop={(e) => {
+              if (drag?.kind !== 'channel') return;
               e.preventDefault();
+              e.stopPropagation();
               drop();
             }}
           >
@@ -365,7 +396,7 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
           </div>
         )}
         {categories.filter((cat) => canChannels || byCategory[cat.id]?.length).map((cat) => (
-          <div key={cat.id} className={cx('relative', drag?.id === cat.id && 'opacity-40')}>
+          <div key={cat.id} data-cat={cat.id} className={cx('relative', drag?.id === cat.id && 'opacity-40')}>
             {over?.kind === 'category' && over.id === cat.id && drag?.kind === 'category' && drag.id !== cat.id && (
               <span className={cx('pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-accent', over.pos === 'above' ? '-top-2' : '-bottom-2')} />
             )}
@@ -378,12 +409,16 @@ export function ChannelSidebar({ serverId }: { serverId: string }) {
               onDragStart={(e) => startDrag(e, 'category', cat.id)}
               onDragEnd={endDrag}
               onDragOver={(e) => {
-                if (!drag) return;
+                // Canal em cima do nome da categoria: entra como o primeiro canal dela.
+                if (drag?.kind !== 'channel') return;
                 e.preventDefault();
-                setOver({ kind: 'category', id: cat.id, pos: half(e) });
+                e.stopPropagation();
+                if (over?.kind !== 'category' || over.id !== cat.id) setOver({ kind: 'category', id: cat.id, pos: 'below' });
               }}
               onDrop={(e) => {
+                if (drag?.kind !== 'channel') return;
                 e.preventDefault();
+                e.stopPropagation();
                 drop();
               }}
             >
