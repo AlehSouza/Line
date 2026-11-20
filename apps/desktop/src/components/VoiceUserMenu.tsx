@@ -28,7 +28,7 @@ import {
   toggleShowNoVideo,
   useVoice,
 } from "@/lib/voice";
-import { openVideoWindow } from "@/lib/popout";
+import { openPopout } from "@/lib/popout";
 import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/music";
 import { cx, Icons, Slider } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
@@ -105,14 +105,6 @@ export function VoiceUserMenu({
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
-  // Vídeo que "Usuário em Nova Janela" abre: a tela no quadro da transmissão, senão a câmera.
-  const popStream = useVoice((v) => {
-    const st = v.states[userId];
-    const isMe = userId === me?.id;
-    if (screen) return isMe ? v.screen : st?.screenStreamId && v.watching[userId] ? (v.streams[st.screenStreamId] ?? null) : null;
-    if (isMe) return v.camera;
-    return st?.cameraStreamId && !v.hiddenVideo[userId] ? (v.streams[st.cameraStreamId] ?? null) : null;
-  });
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   // Próprio apelido: "Alterar apelido"; de outra pessoa: "Gerenciar apelidos".
@@ -196,6 +188,70 @@ export function VoiceUserMenu({
       isMe
         ? joinVoice(to)
         : moderateVoice({ userId, action: "move", channelId: to }),
+    );
+
+  const viewOptions = (
+    <>
+      <Item onClick={run(toggleShowNoVideo, true)} check={showNoVideo}>
+        Mostrar participantes sem vídeo
+      </Item>
+      <Item onClick={run(toggleShowMyCamera, true)} check={showMyCamera}>
+        Mostrar minha câmera
+      </Item>
+      <Item onClick={run(toggleShowMyScreen, true)} check={showMyScreen}>
+        Mostrar minha transmissão
+      </Item>
+    </>
+  );
+
+  // Clique direito numa transmissão: só o que é da transmissão (nada de perfil, bloquear, moderação).
+  if (screen)
+    return (
+      <div
+        ref={ref}
+        style={pos}
+        className="fixed z-50 w-60 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl"
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {isMe ? (
+          <Item danger onClick={run(() => toggleScreen())}>
+            <span className="flex items-center gap-2">
+              <Icons.MonitorX size={14} /> Parar transmissão
+            </span>
+          </Item>
+        ) : (
+          <>
+            <div className="px-2.5 py-1.5">
+              <p className="mb-1.5 flex justify-between font-medium text-soft">
+                Volume da transmissão
+                <span className="text-muted">{screenMuted ? 0 : Math.round(screenVolume * 100)}%</span>
+              </p>
+              <Slider value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
+            </div>
+            <Item onClick={run(() => toggleScreenMute(userId), true)} check={screenMuted}>
+              Silenciar transmissão
+            </Item>
+            <Item disabled={!watching && !inSameCall} onClick={run(() => setWatching(userId, !watching))}>
+              {watching ? "Sair da transmissão" : "Assistir transmissão"}
+            </Item>
+          </>
+        )}
+        {inSameCall && (
+          <>
+            <Sep />
+            <Item
+              disabled={!isMe && !watching}
+              onClick={run(() => openPopout(`screen:${userId}`, `Tela de ${user.displayName}`))}
+            >
+              <span className="flex items-center gap-2">
+                <Icons.PopOut size={14} /> Transmissão em Nova Janela
+              </span>
+            </Item>
+            {viewOptions}
+          </>
+        )}
+        {error && <p className="px-2.5 py-1 text-xs text-danger">{error}</p>}
+      </div>
     );
 
   return (
@@ -385,30 +441,12 @@ export function VoiceUserMenu({
       {!isBot && inSameCall && (
         <>
           <Sep />
-          <Item
-            disabled={!popStream}
-            onClick={run(() =>
-              popStream &&
-              openVideoWindow(
-                `${screen ? "screen" : "camera"}:${userId}`,
-                popStream,
-                screen ? `Tela de ${user.displayName}` : user.displayName,
-              ),
-            )}
-          >
+          <Item onClick={run(() => openPopout(`person:${userId}`, user.displayName))}>
             <span className="flex items-center gap-2">
               <Icons.PopOut size={14} /> Usuário em Nova Janela
             </span>
           </Item>
-          <Item onClick={run(toggleShowNoVideo, true)} check={showNoVideo}>
-            Mostrar participantes sem vídeo
-          </Item>
-          <Item onClick={run(toggleShowMyCamera, true)} check={showMyCamera}>
-            Mostrar Minha Própria Câmera
-          </Item>
-          <Item onClick={run(toggleShowMyScreen, true)} check={showMyScreen}>
-            Mostrar minha própria transmissão
-          </Item>
+          {viewOptions}
         </>
       )}
 

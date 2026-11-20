@@ -50,6 +50,7 @@ import { EMOJI_FONT } from './EmojiPicker';
 import { fileUrl } from '@/lib/api';
 import { toast } from './Dialogs';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
+import { closePopout, popoutWindow, sweepPopouts, usePopouts } from '@/lib/popout';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
 function usePing(active: boolean) {
@@ -84,13 +85,17 @@ function Video({
   mirror,
   contain,
   onAspect,
+  detectPause,
 }: {
   stream: MediaStream;
   mirror?: boolean;
   contain?: boolean;
   onAspect?: (aspect: number) => void;
+  /** Transmissão de tela: mostra "Transmissão pausada" quando a janela de quem transmite é minimizada. */
+  detectPause?: boolean;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const paused = usePausedFrames(ref, !!detectPause);
   // Troquei câmera/tela sem parar: mesmo stream com trilha nova, então reaplica na prévia.
   const rev = useVoice((v) => v.mediaRev);
   const lastRev = useRef(rev);
@@ -110,6 +115,7 @@ function Video({
     if (v && v.videoWidth >= 100 && v.videoHeight >= 100) onAspect?.(v.videoWidth / v.videoHeight);
   };
   return (
+    <>
     <video
       ref={ref}
       autoPlay
@@ -120,6 +126,68 @@ function Video({
       onPlaying={report}
       className={cx('h-full w-full bg-black', contain ? 'object-contain' : 'object-cover', mirror && '-scale-x-100')}
     />
+    {paused && <PausedScreen />}
+    </>
+  );
+}
+
+/**
+ * Janela minimizada do outro lado: o navegador continua mandando quadros, mas lisos (só cinza ou preto)
+ * ou minúsculos. Uma amostra por segundo em 32x18; liso por 3 s seguidos vira "Transmissão pausada".
+ */
+function usePausedFrames(ref: { current: HTMLVideoElement | null }, on: boolean) {
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    setPaused(false);
+    if (!on) return;
+    const c = document.createElement('canvas');
+    c.width = 32;
+    c.height = 18;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    let since: number | null = null;
+    const t = setInterval(() => {
+      const v = ref.current;
+      if (!v || !ctx || v.readyState < 2 || !v.videoWidth) return;
+      let flat = v.videoWidth < 100 || v.videoHeight < 100;
+      if (!flat) {
+        try {
+          ctx.drawImage(v, 0, 0, 32, 18);
+          const d = ctx.getImageData(0, 0, 32, 18).data;
+          const lo = [255, 255, 255];
+          const hi = [0, 0, 0];
+          for (let i = 0; i < d.length; i += 4) {
+            for (let k = 0; k < 3; k++) {
+              if (d[i + k] < lo[k]) lo[k] = d[i + k];
+              if (d[i + k] > hi[k]) hi[k] = d[i + k];
+            }
+          }
+          flat = hi.every((h, k) => h - lo[k] <= 6);
+        } catch {
+          return;
+        }
+      }
+      const now = performance.now();
+      since = flat ? (since ?? now) : null;
+      setPaused(since !== null && now - since >= 3000);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [ref, on]);
+  return paused;
+}
+
+/** Mesmo visual do quadro "Transmissão pausada" que o app do Windows manda. */
+function PausedScreen() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5] @container">
+    <div
+      className="flex h-full w-full flex-col items-center justify-center bg-[#0e0e11] text-center"
+      style={{ backgroundImage: 'radial-gradient(circle at center, rgba(255,255,255,0.045), rgba(255,255,255,0) 55%)' }}
+    >
+      <Icons.MonitorPause className="h-[9cqw] w-[9cqw] min-h-8 min-w-8 text-[#e4e4e7]" />
+      <p className="mt-[2cqw] text-[max(13px,1.7cqw)] font-medium text-[#e4e4e7]">Transmissão pausada</p>
+      <p className="mt-[0.6cqw] text-[max(11px,1.15cqw)] text-[#71717a]">A imagem volta assim que a janela reabrir</p>
+    </div>
+    </div>
   );
 }
 
@@ -144,6 +212,7 @@ function useTiles(channelId: string) {
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
+  const popped = usePopouts((p) => p.keys);
 
   return useMemo(() => {
     const list = participants(states, channelId);
@@ -164,8 +233,10 @@ function useTiles(channelId: string) {
       if (!cam && !showNoVideo) continue;
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
-    return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen]);
+    // Quadros abertos em outra janela saem da grade.
+    const shown = tiles.filter((t) => !popped.includes(t.key));
+    return { tiles: shown, count: list.length, popped: shown.length < tiles.length };
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen, popped]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
@@ -242,12 +313,13 @@ function ScreenViewers({ userId, serverId }: { userId: string; serverId: string 
     user: users[id],
   }));
   return (
-    // pb-1.5 faz a ponte até o quadro: o mouse passa do vídeo para o ícone sem ele sumir.
-    <div className="group/viewers absolute right-0 bottom-full z-30 hidden pb-1.5 group-hover/stream:block">
-      <span className="flex items-center gap-1 rounded-md bg-raise px-2 py-1 text-xs font-semibold text-soft shadow">
+    <div className="group/viewers relative">
+      <span title="Quem está assistindo" className="flex h-[22px] items-center gap-1 rounded-md bg-black/60 px-1.5 text-xs font-semibold text-white hover:bg-black/80">
         <Icons.Users size={14} /> {people.length}
       </span>
-      <div className="absolute top-full right-0 hidden w-52 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl group-hover/viewers:block">
+      {/* pt-1.5 faz a ponte até a lista: o mouse passa do ícone para ela sem ela sumir. */}
+      <div className="absolute top-full right-0 hidden pt-1.5 group-hover/viewers:block">
+      <div className="w-52 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl">
         <p className="px-1.5 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Assistindo agora</p>
         {people.length === 0 ? (
           <p className="px-1.5 py-1 text-muted">Ninguém assistindo ainda.</p>
@@ -259,6 +331,7 @@ function ScreenViewers({ userId, serverId }: { userId: string; serverId: string 
             </div>
           ))
         )}
+      </div>
       </div>
     </div>
   );
@@ -421,7 +494,7 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
       className={cx('fixed inset-0 z-[300] bg-black', idle && 'cursor-none')}
     >
       <ZoomBox enabled={!tile.isMe} controls={idle ? 'hidden' : 'flex'}>
-        <Video stream={tile.stream} contain />
+        <Video stream={tile.stream} contain detectPause />
       </ZoomBox>
       <div
         className={cx(
@@ -474,7 +547,6 @@ function TileView({
   const showViewers = tile.kind === 'screen' && inSameCall;
   return (
     <div className={cx('group/stream relative', big && 'h-full')}>
-    {showViewers && <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />}
     <div
       role="button"
       tabIndex={0}
@@ -544,7 +616,7 @@ function TileView({
         </div>
       ) : tile.stream && tile.kind === 'screen' ? (
         <ZoomBox enabled={!!big && !tile.isMe} controls="hidden group-hover:flex">
-          <Video stream={tile.stream} contain onAspect={onAspect} />
+          <Video stream={tile.stream} contain onAspect={onAspect} detectPause />
         </ZoomBox>
       ) : tile.stream ? (
         <Video
@@ -574,23 +646,6 @@ function TileView({
         ) : null}
       </span>
       {tile.kind === 'screen' && !tile.isMe && !hidden && <ScreenMenu userId={tile.state.userId} />}
-      {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
-        <button
-          title="Tela cheia (só a transmissão)"
-          onClick={(e) => {
-            e.stopPropagation();
-            onFullscreen();
-          }}
-          className="absolute top-2 right-10 z-20 hidden rounded-md bg-black/60 p-1 hover:bg-black/80 group-hover:block"
-        >
-          <Icons.Fullscreen size={14} />
-        </button>
-      )}
-      {onClick && (
-        <span className="absolute top-2 right-2 hidden rounded-md bg-black/60 p-1 group-hover:block">
-          {big ? <Icons.Shrink size={14} /> : <Icons.Expand size={14} />}
-        </span>
-      )}
       {menu && (
         // O menu fica dentro do quadro no React: barra o clique para não focar/desfocar o quadro.
         <div onClick={(e) => e.stopPropagation()}>
@@ -605,6 +660,125 @@ function TileView({
         </div>
       )}
     </div>
+    {/* Linha de ações no canto: quem assiste, tela cheia, destacar e sair da transmissão. */}
+    <div className="absolute top-2 right-2 z-30 hidden items-center gap-1 text-white group-hover/stream:flex">
+      {showViewers && <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />}
+      {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
+        <button title="Tela cheia (só a transmissão)" onClick={onFullscreen} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
+          <Icons.Fullscreen size={14} />
+        </button>
+      )}
+      {onClick && (
+        <button title={big ? 'Sair do destaque' : 'Destacar'} onClick={onClick} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
+          {big ? <Icons.Shrink size={14} /> : <Icons.Expand size={14} />}
+        </button>
+      )}
+      {tile.kind === 'screen' && !tile.isMe && !hidden && (
+        <button title="Sair da transmissão" onClick={() => setWatching(tile.state.userId, false)} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
+          <Icons.MonitorX size={14} />
+        </button>
+      )}
+    </div>
+    </div>
+  );
+}
+
+// ---------- quadros em outra janela ----------
+
+/** Janelas abertas por "Em Nova Janela": desenha cada quadro dentro da sua janela e fecha quando não faz mais sentido. */
+export function VoicePopouts() {
+  const keys = usePopouts((p) => p.keys);
+  const states = useVoice((v) => v.states);
+  const watching = useVoice((v) => v.watching);
+  const myChannel = useVoice((v) => v.channelId);
+  const meId = useLine((s) => s.me?.id);
+  // Fechou no X da janela: o quadro volta para a grade.
+  useEffect(() => {
+    if (!keys.length) return;
+    const t = setInterval(sweepPopouts, 500);
+    return () => clearInterval(t);
+  }, [keys.length]);
+  // Saí da chamada, a pessoa saiu, a transmissão acabou ou parei de assistir: fecha a janela.
+  useEffect(() => {
+    for (const key of keys) {
+      const i = key.indexOf(':');
+      const kind = key.slice(0, i);
+      const uid = key.slice(i + 1);
+      const st = states[uid];
+      const gone = !st || !myChannel || st.channelId !== myChannel;
+      const noScreen = kind === 'screen' && (!st?.screenStreamId || (uid !== meId && !watching[uid]));
+      if (gone || noScreen) closePopout(key);
+    }
+  }, [keys, states, watching, myChannel, meId]);
+  return (
+    <>
+      {keys.map((k) => {
+        const el = popoutWindow(k)?.document.getElementById('line-popout');
+        return el ? createPortal(<PopoutTile tileKey={k} />, el, k) : null;
+      })}
+    </>
+  );
+}
+
+function PopoutTile({ tileKey }: { tileKey: string }) {
+  const i = tileKey.indexOf(':');
+  const kind = tileKey.slice(0, i) as 'person' | 'screen';
+  const uid = tileKey.slice(i + 1);
+  const isMe = useLine((s) => s.me?.id === uid);
+  const user = useLine((s) => s.users[uid]);
+  const state = useVoice((v) => v.states[uid]);
+  const nick = useLine((s) => (state?.serverId ? s.members[state.serverId]?.[uid]?.nickname : null));
+  const stream = useVoice((v) => {
+    const st = v.states[uid];
+    if (!st) return null;
+    if (kind === 'screen') return isMe ? v.screen : st.screenStreamId && v.watching[uid] ? (v.streams[st.screenStreamId] ?? null) : null;
+    return isMe ? v.camera : st.cameraStreamId && !v.hiddenVideo[uid] ? (v.streams[st.cameraStreamId] ?? null) : null;
+  });
+  const speaking = useVoice((v) => !!v.speaking[uid]);
+  const tint = useAvatarTint(user?.avatarUrl, user?.avatarColor ?? '#3a3a42');
+  const look = useCallLook(kind === 'person' ? uid : undefined);
+  const name = nick || user?.displayName || 'Alguém';
+  return (
+    <div className="flex h-screen w-screen bg-rail p-2 text-white">
+      <div
+        className="relative flex flex-1 items-center justify-center overflow-hidden rounded-xl"
+        style={{ background: kind === 'screen' ? '#000' : tint }}
+      >
+        {kind === 'person' && (
+          <span
+            className={cx(
+              'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-online ring-inset transition-opacity ease-out',
+              speaking ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
+            )}
+          />
+        )}
+        {stream ? (
+          <Video stream={stream} contain mirror={isMe && kind === 'person'} detectPause={kind === 'screen'} />
+        ) : (
+          <>
+            {kind === 'person' && <CallLookLayers look={look} />}
+            <CallLookAvatar look={kind === 'person' ? look : null}>
+              <Avatar name={name} color={user?.avatarColor ?? '#3a3a42'} src={user?.avatarUrl} size={88} />
+            </CallLookAvatar>
+          </>
+        )}
+        <span className="absolute bottom-2 left-2 z-20 flex max-w-[calc(100%-4rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium whitespace-nowrap">
+          {kind === 'screen' && <Icons.Screen size={14} className="shrink-0" />}
+          <span className="min-w-0 truncate">{kind === 'screen' ? `Tela de ${name}` : <StyledName user={user}>{name}</StyledName>}</span>
+          {kind === 'person' && state?.deafened ? (
+            <Icons.HeadphonesOff size={14} className="shrink-0 text-danger" />
+          ) : kind === 'person' && state?.muted ? (
+            <Icons.MicOff size={14} className="shrink-0 text-danger" />
+          ) : null}
+        </span>
+        <button
+          title="Voltar para a chamada"
+          onClick={() => closePopout(tileKey)}
+          className="absolute right-2 bottom-2 z-20 rounded-md bg-black/60 p-1.5 hover:bg-black/80"
+        >
+          <Icons.PopIn size={16} />
+        </button>
+      </div>
     </div>
   );
 }
@@ -718,7 +892,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   const inCall = useVoice((v) => v.channelId === channel.id);
   const connecting = useVoice((v) => v.connecting && v.channelId === channel.id);
   const error = useVoice((v) => v.error);
-  const { tiles, count } = useTiles(channel.id);
+  const { tiles, count, popped } = useTiles(channel.id);
   const [focus, setFocus] = useState<string | null>(null);
   const [emptyMenu, setEmptyMenu] = useState<{ x: number; y: number } | null>(null);
   const meId = useLine((s) => s.me?.id);
@@ -831,7 +1005,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             {/* Tela em destaque: espaço acima para o ícone de quem está assistindo. */}
             {/* Antes de saber a proporção da tela (aberta pelo chat, sem miniatura), usa 16:9 em vez de ocupar a largura toda. */}
             {/* Pessoa em destaque: sempre 16:9, com ou sem câmera, para o quadro não mudar de tamanho. */}
-            <FitBox aspect={focused.kind === 'screen' ? (aspect ?? 16 / 9) : 16 / 9} className={focused.kind === 'screen' ? 'pt-8' : undefined}>
+            <FitBox aspect={focused.kind === 'screen' ? (aspect ?? 16 / 9) : 16 / 9} >
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} onFullscreen={() => setFull(focused.key)} />
             </FitBox>
             {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
@@ -844,7 +1018,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
               if (meId) setEmptyMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.
+            {popped ? 'Todos os participantes estão destacados' : 'Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.'}
             {emptyMenu && meId && (
               <VoiceUserMenu userId={meId} channelId={channel.id} x={emptyMenu.x} y={emptyMenu.y} onClose={() => setEmptyMenu(null)} />
             )}
@@ -912,7 +1086,7 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
   };
   return (
     <FloatingCorner onClick={open} title="Voltar para a transmissão (arraste para mudar de lugar)">
-      <Video stream={stream} contain />
+      <Video stream={stream} contain detectPause />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-xs font-medium text-white">
         <Icons.Screen size={12} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
       </span>

@@ -370,6 +370,8 @@ export const Icons = {
   Monitor: icon(L.Monitor),
   AppWindow: icon(L.AppWindow),
   PopOut: icon(L.ExternalLink),
+  PopIn: icon(L.SquareArrowDownLeft),
+  MonitorPause: icon(L.MonitorPause),
   Refresh: icon(L.RefreshCw),
   Phone: icon(L.Phone),
   PhoneOff: icon(L.PhoneOff),

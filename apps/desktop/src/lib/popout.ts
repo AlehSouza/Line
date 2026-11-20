@@ -1,60 +1,79 @@
-/** "Usuário em Nova Janela": abre o vídeo (câmera ou tela) de alguém numa janela separada, por cima das outras. */
+/**
+ * "Em Nova Janela" da chamada: o quadro de uma pessoa (câmera ou avatar) ou de uma transmissão numa janela
+ * separada do Line. O conteúdo é React normal, desenhado com portal dentro da janela nova (mesmos estilos).
+ */
+import { create } from 'zustand';
 
-type DocPip = { requestWindow: (o?: { width?: number; height?: number }) => Promise<Window> };
+/** Chaves dos quadros abertos em janela própria ("person:<id>" ou "screen:<id>"). Saem da grade da chamada. */
+export const usePopouts = create<{ keys: string[] }>(() => ({ keys: [] }));
 
-const open = new Map<string, Window | HTMLVideoElement>();
+const wins = new Map<string, Window>();
 
-export async function openVideoWindow(key: string, stream: MediaStream, title: string) {
-  const prev = open.get(key);
-  if (prev instanceof Window && !prev.closed) return prev.focus();
+export function popoutWindow(key: string) {
+  return wins.get(key) ?? null;
+}
 
-  // Janela de verdade (Chrome/Edge e o WebView2 novo): vídeo grande com o nome embaixo, redimensionável.
-  const dpip = (window as unknown as { documentPictureInPicture?: DocPip }).documentPictureInPicture;
-  if (dpip) {
+/** Copia folhas de estilo e o tema (atributos do html/body) para a janela nova. */
+function copyLook(w: Window) {
+  const d = w.document;
+  // O CSS vai como texto: no app desktop a janela nova não carrega arquivos do próprio app.
+  for (const sheet of Array.from(document.styleSheets)) {
     try {
-      const w = await dpip.requestWindow({ width: 640, height: 360 });
-      w.document.title = title;
-      const css = w.document.createElement('style');
-      css.textContent =
-        'html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif}' +
-        'video{width:100%;height:100%;object-fit:contain;display:block}' +
-        'span{position:fixed;left:8px;bottom:8px;padding:2px 8px;border-radius:6px;background:rgba(0,0,0,.6);color:#fff;font-size:13px;font-weight:500}';
-      w.document.head.append(css);
-      const v = w.document.createElement('video');
-      v.autoplay = true;
-      v.muted = true; // o som continua saindo da janela principal
-      v.playsInline = true;
-      v.srcObject = stream;
-      const label = w.document.createElement('span');
-      label.textContent = title;
-      w.document.body.append(v, label);
-      open.set(key, w);
-      w.addEventListener('pagehide', () => open.delete(key));
-      return;
+      const style = d.createElement('style');
+      style.textContent = Array.from(sheet.cssRules, (r) => r.cssText).join('\n');
+      d.head.append(style);
     } catch {
-      // cai para o modo imagem sobre imagem abaixo
+      if (sheet.href) {
+        const link = d.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = sheet.href;
+        d.head.append(link);
+      }
     }
   }
+  for (const a of Array.from(document.documentElement.attributes)) d.documentElement.setAttribute(a.name, a.value);
+  for (const a of Array.from(document.body.attributes)) d.body.setAttribute(a.name, a.value);
+  d.body.style.margin = '0';
+  d.body.style.overflow = 'hidden';
+}
 
-  // Sem janela de documento: imagem sobre imagem do próprio vídeo.
-  const v = document.createElement('video');
-  v.muted = true;
-  v.playsInline = true;
-  v.srcObject = stream;
-  v.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:0;top:0';
-  document.body.append(v);
-  await v.play().catch(() => {});
-  if (v.readyState < 1) await new Promise((r) => v.addEventListener('loadedmetadata', r, { once: true }));
-  v.addEventListener('leavepictureinpicture', () => {
-    v.srcObject = null;
-    v.remove();
-    open.delete(key);
-  });
-  try {
-    await v.requestPictureInPicture();
-    open.set(key, v);
-  } catch {
-    v.remove();
-    throw new Error('Não deu para abrir o vídeo em outra janela neste aparelho.');
+/** Abre (ou traz para a frente) a janela do quadro. Precisa ser chamado no clique. */
+export function openPopout(key: string, title: string) {
+  const open = wins.get(key);
+  if (open && !open.closed) {
+    open.focus();
+    return;
   }
+  const w = window.open('', `line_${key.replace(/\W/g, '_')}`, 'popup,width=520,height=320');
+  if (!w) throw new Error('Não deu para abrir outra janela. Libere as janelas pop-up para o Line.');
+  w.document.title = title;
+  copyLook(w);
+  const root = w.document.createElement('div');
+  root.id = 'line-popout';
+  w.document.body.append(root);
+  wins.set(key, w);
+  usePopouts.setState((s) => ({ keys: [...s.keys.filter((k) => k !== key), key] }));
+}
+
+export function closePopout(key: string) {
+  const w = wins.get(key);
+  wins.delete(key);
+  try {
+    if (w && !w.closed) w.close();
+  } catch {
+    // já fechada
+  }
+  usePopouts.setState((s) => ({ keys: s.keys.filter((k) => k !== key) }));
+}
+
+/** Janelas que a pessoa fechou no X: tira da lista (o quadro volta para a grade). */
+export function sweepPopouts() {
+  for (const [key, w] of wins) if (w.closed) closePopout(key);
+}
+
+// Fechou/recarregou o Line: as janelas dos quadros vão junto.
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    for (const key of [...wins.keys()]) closePopout(key);
+  });
 }
