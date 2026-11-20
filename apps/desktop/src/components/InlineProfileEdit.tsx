@@ -164,6 +164,16 @@ export function ImageEditMenu({
   const file = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState<'avatar' | 'banner'>('banner');
   const [crop, setCrop] = useState<File | null>(null);
+  // Escolheu uma opção: o menu some na hora (não fica por cima do seletor de arquivo nem do Editar mídia).
+  const [picking, setPicking] = useState(false);
+
+  useEffect(() => {
+    // Fechou o seletor de arquivo sem escolher: fecha tudo.
+    const el = file.current;
+    const cancel = () => onClose();
+    el?.addEventListener('cancel', cancel);
+    return () => el?.removeEventListener('cancel', cancel);
+  }, [onClose]);
 
   useEffect(() => {
     const down = (e: MouseEvent) => !crop && !box.current?.contains(e.target as Node) && !anchor.contains(e.target as Node) && onClose();
@@ -173,6 +183,7 @@ export function ImageEditMenu({
 
   const pick = (k: 'avatar' | 'banner') => {
     setKind(k);
+    setPicking(true);
     file.current?.click();
   };
   async function upload(f: File) {
@@ -194,7 +205,7 @@ export function ImageEditMenu({
   };
 
   return (
-    <Floating anchor={anchor} align={align} boxRef={box} className="w-52 p-1.5">
+    <Floating anchor={anchor} align={align} boxRef={box} className={cx('w-52 p-1.5', picking && 'hidden')}>
       <MenuItem onClick={() => pick('banner')}>Mudar faixa</MenuItem>
       <MenuItem onClick={() => pick('avatar')}>Alterar avatar</MenuItem>
       {(hasBanner || hasAvatar) && <div className="mx-1.5 my-1 border-t border-edge" />}
@@ -226,7 +237,10 @@ export function ImageEditMenu({
         <ImageCropper
           file={crop}
           kind={kind}
-          onCancel={() => setCrop(null)}
+          onCancel={() => {
+            setCrop(null);
+            onClose();
+          }}
           onApply={(f) => {
             setCrop(null);
             void upload(f);
