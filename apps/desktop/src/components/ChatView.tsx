@@ -609,7 +609,7 @@ function NewsList({ channel }: { channel: Channel }) {
         message={m}
         authorName={author.displayName}
         authorColor={author.avatarColor}
-        nameColor={useLine.getState().users[m.author.id]?.botStyle?.nameColor}
+        nameColor={useLine.getState().users[m.author.id]?.botStyle?.nameColor ?? undefined}
         mentionCtx={mentionCtx}
         grouped={false}
         mine={m.author.id === meId}
