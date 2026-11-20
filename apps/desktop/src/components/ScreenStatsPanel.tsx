@@ -1,6 +1,7 @@
 'use client';
 
 import { useLine } from '@/lib/store';
+import type { SenderSummary } from '@line/shared';
 import { useScreenStats, type RecvStat, type SendStat } from '@/lib/screenStats';
 import { screenDiagnostics } from '@/lib/voice';
 import { toast } from './Dialogs';
@@ -47,9 +48,17 @@ function Head({ lvl }: { lvl: Level }) {
   );
 }
 
-function Recv({ s }: { s: RecvStat }) {
+function Recv({ s, from }: { s: RecvStat; from?: SenderSummary }) {
   return (
     <>
+      {from && (
+        <p className="mb-0.5 border-b border-white/15 pb-0.5">
+          <span className="font-semibold">Quem transmite:</span> captura {from.srcFps} fps · envia {from.fps} fps · {mbps(from.kbps)} de{' '}
+          {mbps(from.capKbps)} · {from.hw ? 'placa de vídeo' : 'processador'}
+          {from.encoder ? ` (${from.encoder})` : ''} · codificação {ms1(from.encodeMs)}
+          {from.limit !== 'none' && LIMIT[from.limit] ? ` · ${LIMIT[from.limit]}` : ''}
+        </p>
+      )}
       <Head lvl={level(s.lossPct, s.rttMs)} />
       <p>
         {s.width && s.height ? `${s.width}×${s.height}` : '–'} · {s.fps} fps · {mbps(s.kbps)}
@@ -110,6 +119,7 @@ function Send({ list }: { list: [string, SendStat][] }) {
 export function ScreenStatsPanel({ userId, isMe }: { userId: string; isMe: boolean }) {
   const open = useScreenStats((s) => s.open);
   const recv = useScreenStats((s) => s.recv[userId]);
+  const from = useScreenStats((s) => s.sender[userId]);
   const send = useScreenStats((s) => s.send);
   if (!open) return null;
   const sendList = isMe ? Object.entries(send) : [];
@@ -121,7 +131,7 @@ export function ScreenStatsPanel({ userId, isMe }: { userId: string; isMe: boole
       {isMe ? (
         sendList.length ? <Send list={sendList} /> : <p>Ninguém assistindo ainda.</p>
       ) : recv ? (
-        <Recv s={recv} />
+        <Recv s={recv} from={from} />
       ) : (
         <p>Medindo…</p>
       )}

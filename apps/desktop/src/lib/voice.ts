@@ -1734,6 +1734,7 @@ function stopThumbs() {
 /** Quem está assistindo à minha tela: só essas conexões recebem o vídeo e o som dela. */
 const watchers = new Set<string>();
 
+const sendSignal = (to: string, signal: VoiceSignal) => send(to, signal);
 function send(to: string, signal: VoiceSignal) {
   socket?.emit('voice:signal', { to, signal });
 }
@@ -1828,6 +1829,13 @@ async function onSignal(from: string, signal: VoiceSignal) {
         else delete screenGames[from];
         return { screenThumbs: { ...v.screenThumbs, [from]: signal.data }, screenGames };
       });
+    }
+    return;
+  }
+  if (signal.type === 'senderStats') {
+    const s = signal.stats;
+    if (s && typeof s === 'object' && typeof s.fps === 'number') {
+      useScreenStats.setState((st) => ({ sender: { ...st.sender, [from]: { ...s, encoder: String(s.encoder ?? '').slice(0, 80) } } }));
     }
     return;
   }
@@ -1990,7 +1998,7 @@ function stopStatsLoop() {
   clearHistory();
   screenSqueeze = 1;
   calmTicks = 0;
-  useScreenStats.setState({ send: {}, recv: {} });
+  useScreenStats.setState({ send: {}, recv: {}, sender: {} });
 }
 
 /** Diagnóstico da transmissão para copiar: últimas leituras + como a minha tela está configurada. */
@@ -2013,8 +2021,8 @@ async function statsTick() {
   statsBusy = true;
   try {
     await Promise.all([sendTick(), recvTick()]);
-    const { send, recv } = useScreenStats.getState();
-    pushHistory(send, recv);
+    const { send, recv, sender } = useScreenStats.getState();
+    pushHistory(send, recv, sender);
   } catch {
     // conexão fechou no meio da leitura: tenta de novo na próxima
   } finally {
@@ -2065,6 +2073,29 @@ async function sendTick() {
     retuneScreen();
   }
   useScreenStats.setState({ send });
+  // Quem assiste vê no painel dele como está o meu envio (captura, codificador, limite).
+  const capture = currentSource && hasNativeScreen() ? 'nativa' : 'navegador';
+  const signalTo = sendSignal;
+  for (const [id, st] of Object.entries(send)) {
+    signalTo(id, {
+      type: 'senderStats',
+      stats: {
+        srcFps: st.diag.srcFps,
+        fps: st.fps,
+        width: st.width,
+        height: st.height,
+        kbps: st.kbps,
+        capKbps: st.capKbps,
+        bweKbps: st.diag.bweKbps,
+        encoder: st.encoder.slice(0, 80),
+        hw: st.hw,
+        limit: st.limit,
+        encodeMs: st.diag.encodeMs,
+        qp: st.diag.qp,
+        capture,
+      },
+    });
+  }
 }
 
 /** Telas que eu assisto: lê a chegada e ajusta o buffer pela distância de quem transmite. */

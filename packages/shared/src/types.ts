@@ -437,7 +437,29 @@ export type VoiceSignal =
   /** Miniatura estática (JPEG em data URL, pequena) da tela de quem transmite, para quem ainda não assiste. */
   | { type: 'thumb'; data: string; game?: ScreenGame }
   /** Quem transmite conta a todos do canal quem está assistindo à tela agora. */
-  | { type: 'viewers'; ids: string[] };
+  | { type: 'viewers'; ids: string[] }
+  /** Quem transmite manda a cada 2 s um resumo do próprio envio (para o painel de estatísticas de quem assiste). */
+  | { type: 'senderStats'; stats: SenderSummary };
+
+/** Resumo do envio da tela, do lado de quem transmite. */
+export interface SenderSummary {
+  /** Quadros por segundo que a captura entrega e que o codificador manda. */
+  srcFps: number;
+  fps: number;
+  width: number;
+  height: number;
+  kbps: number;
+  capKbps: number;
+  bweKbps: number;
+  encoder: string;
+  hw: boolean;
+  /** none, bandwidth, cpu ou other. */
+  limit: string;
+  encodeMs: number | null;
+  qp: number | null;
+  /** Captura nativa do app ou do navegador. */
+  capture: string | null;
+}
 
 export interface PollOption {
   id: string;

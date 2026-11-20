@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import type { SenderSummary } from '@line/shared';
 
 /**
  * Números reais da transmissão de tela, lidos do WebRTC (getStats) a cada 2 s.
@@ -93,6 +94,8 @@ export interface RecvDiag {
 interface ScreenStatsStore {
   /** Por pessoa que assiste à minha tela. */
   send: Record<string, SendStat>;
+  /** Resumo que cada pessoa que transmite me manda do próprio envio. */
+  sender: Record<string, SenderSummary>;
   /** Por pessoa cuja tela eu assisto. */
   recv: Record<string, RecvStat>;
   /** Painel de estatísticas aberto. Só vale para mim. */
@@ -108,7 +111,7 @@ function loadOpen() {
   }
 }
 
-export const useScreenStats = create<ScreenStatsStore>(() => ({ send: {}, recv: {}, open: loadOpen() }));
+export const useScreenStats = create<ScreenStatsStore>(() => ({ send: {}, recv: {}, sender: {}, open: loadOpen() }));
 
 export function toggleScreenStats() {
   const open = !useScreenStats.getState().open;
@@ -283,13 +286,14 @@ interface DiagEntry {
   t: string;
   send: Record<string, SendStat>;
   recv: Record<string, RecvStat>;
+  sender: Record<string, SenderSummary>;
 }
 const HISTORY_MAX = 150; // 5 minutos com leituras a cada 2 s
 const history: DiagEntry[] = [];
 
-export function pushHistory(send: Record<string, SendStat>, recv: Record<string, RecvStat>) {
+export function pushHistory(send: Record<string, SendStat>, recv: Record<string, RecvStat>, sender: Record<string, SenderSummary>) {
   if (!Object.keys(send).length && !Object.keys(recv).length) return;
-  history.push({ t: new Date().toISOString(), send, recv });
+  history.push({ t: new Date().toISOString(), send, recv, sender });
   if (history.length > HISTORY_MAX) history.splice(0, history.length - HISTORY_MAX);
 }
 

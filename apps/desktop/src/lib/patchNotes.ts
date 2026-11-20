@@ -75,7 +75,7 @@ export const PATCH_NOTES: PatchNote[] = [
       {
         icon: 'eye',
         title: 'Veja a qualidade real da transmissão',
-        text: 'Passe o mouse na tela transmitida e clique no ícone de sinal para ver a resolução, a fluidez e a estabilidade da conexão de verdade. O botão Copiar diagnóstico ajuda a gente a investigar quando a imagem não fica boa.',
+        text: 'Passe o mouse na tela transmitida e clique no ícone de sinal para ver a resolução, a fluidez e a estabilidade da conexão de verdade. O botão Copiar diagnóstico ajuda a gente a investigar quando a imagem não fica boa. Quem assiste agora também vê como está o envio de quem transmite.',
       },
       {
         icon: 'sparkles',
