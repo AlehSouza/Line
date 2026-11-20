@@ -143,15 +143,16 @@ function useTiles(channelId: string) {
   const watching = useVoice((v) => v.watching);
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
+  const showMyScreen = useVoice((v) => v.showMyScreen);
 
   return useMemo(() => {
     const list = participants(states, channelId);
     const tiles: Tile[] = [];
     for (const p of list) {
       const isMe = p.userId === meId;
-      // A tela dos outros aparece como quadro mesmo antes de eu escolher assistir.
+      // Tela dos outros só aparece como quadro quando eu assisto; a minha some com "Mostrar minha própria transmissão" desligado.
       const scr = isMe ? screen : p.screenStreamId && watching[p.userId] ? (streams[p.screenStreamId] ?? null) : null;
-      if (p.screenStreamId && (scr || !isMe)) {
+      if (p.screenStreamId && (isMe ? scr && showMyScreen : watching[p.userId])) {
         tiles.push({ key: `screen:${p.userId}`, kind: 'screen', state: p, user: users[p.userId], stream: scr, isMe });
       }
     }
@@ -164,7 +165,7 @@ function useTiles(channelId: string) {
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */

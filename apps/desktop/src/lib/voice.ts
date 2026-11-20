@@ -237,6 +237,7 @@ export interface VoiceStore {
   /** Na tela da chamada: mostrar quem está sem câmera/tela e o meu próprio vídeo. Só valem para mim. */
   showNoVideo: boolean;
   showMyCamera: boolean;
+  showMyScreen: boolean;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -749,21 +750,25 @@ const STAGE_VIEW_KEY = 'line.stageView';
 function loadStageView() {
   try {
     const v = JSON.parse(localStorage.getItem(STAGE_VIEW_KEY) ?? '{}');
-    return { showNoVideo: v.showNoVideo !== false, showMyCamera: v.showMyCamera !== false };
+    return { showNoVideo: v.showNoVideo !== false, showMyCamera: v.showMyCamera !== false, showMyScreen: v.showMyScreen !== false };
   } catch {
-    return { showNoVideo: true, showMyCamera: true };
+    return { showNoVideo: true, showMyCamera: true, showMyScreen: true };
   }
 }
 function saveStageView() {
-  const { showNoVideo, showMyCamera } = useVoice.getState();
+  const { showNoVideo, showMyCamera, showMyScreen } = useVoice.getState();
   try {
-    localStorage.setItem(STAGE_VIEW_KEY, JSON.stringify({ showNoVideo, showMyCamera }));
+    localStorage.setItem(STAGE_VIEW_KEY, JSON.stringify({ showNoVideo, showMyCamera, showMyScreen }));
   } catch {
     // sem localStorage: vale só nesta sessão
   }
 }
 export function toggleShowNoVideo() {
   setV((v) => ({ showNoVideo: !v.showNoVideo }));
+  saveStageView();
+}
+export function toggleShowMyScreen() {
+  setV((v) => ({ showMyScreen: !v.showMyScreen }));
   saveStageView();
 }
 export function toggleShowMyCamera() {

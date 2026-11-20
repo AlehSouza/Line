@@ -24,6 +24,7 @@ import {
   toggleScreen,
   toggleScreenMute,
   toggleShowMyCamera,
+  toggleShowMyScreen,
   toggleShowNoVideo,
   useVoice,
 } from "@/lib/voice";
@@ -103,6 +104,7 @@ export function VoiceUserMenu({
   );
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
+  const showMyScreen = useVoice((v) => v.showMyScreen);
   // Vídeo que "Usuário em Nova Janela" abre: a tela no quadro da transmissão, senão a câmera.
   const popStream = useVoice((v) => {
     const st = v.states[userId];
@@ -403,6 +405,9 @@ export function VoiceUserMenu({
           </Item>
           <Item onClick={run(toggleShowMyCamera, true)} check={showMyCamera}>
             Mostrar Minha Própria Câmera
+          </Item>
+          <Item onClick={run(toggleShowMyScreen, true)} check={showMyScreen}>
+            Mostrar minha própria transmissão
           </Item>
         </>
       )}
