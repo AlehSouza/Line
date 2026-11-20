@@ -21,6 +21,8 @@ mod games {
     }
 }
 #[cfg(windows)]
+mod ducking;
+#[cfg(windows)]
 mod loopback;
 #[cfg(windows)]
 mod toast;
@@ -956,6 +958,9 @@ pub fn run() {
         .setup(|app| {
             #[cfg(windows)]
             toast::register(include_bytes!("../icons/128x128@2x.png"));
+            // A chamada não abaixa o som dos outros apps (atenuação de comunicações do Windows).
+            #[cfg(windows)]
+            ducking::start();
             #[cfg(target_os = "linux")]
             app.manage(rtc::Rtc::new());
             let handle = app.handle().clone();
