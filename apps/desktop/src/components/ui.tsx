@@ -369,6 +369,7 @@ export const Icons = {
   Soundboard: icon(L.Drum),
   Monitor: icon(L.Monitor),
   AppWindow: icon(L.AppWindow),
+  PopOut: icon(L.ExternalLink),
   Refresh: icon(L.RefreshCw),
   Phone: icon(L.Phone),
   PhoneOff: icon(L.PhoneOff),

@@ -141,6 +141,8 @@ function useTiles(channelId: string) {
   const meId = useLine((s) => s.me?.id);
   const hiddenVideo = useVoice((v) => v.hiddenVideo);
   const watching = useVoice((v) => v.watching);
+  const showNoVideo = useVoice((v) => v.showNoVideo);
+  const showMyCamera = useVoice((v) => v.showMyCamera);
 
   return useMemo(() => {
     const list = participants(states, channelId);
@@ -156,10 +158,13 @@ function useTiles(channelId: string) {
     for (const p of list) {
       const isMe = p.userId === meId;
       const cam = isMe ? camera : p.cameraStreamId && !hiddenVideo[p.userId] ? (streams[p.cameraStreamId] ?? null) : null;
+      // "Mostrar Minha Própria Câmera" desligado tira o meu quadro com câmera; "Mostrar participantes sem vídeo" desligado tira quem está sem câmera.
+      if (isMe && cam && !showMyCamera) continue;
+      if (!cam && !showNoVideo) continue;
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
@@ -714,6 +719,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   const error = useVoice((v) => v.error);
   const { tiles, count } = useTiles(channel.id);
   const [focus, setFocus] = useState<string | null>(null);
+  const [emptyMenu, setEmptyMenu] = useState<{ x: number; y: number } | null>(null);
   const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
   const title = channel.serverId ? channel.name : dmTitle(channel, meId, users);
@@ -829,6 +835,19 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             </FitBox>
             {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
           </>
+        ) : others.length === 0 && count > 0 ? (
+          <div
+            className="flex flex-1 items-center justify-center text-center text-sm text-muted"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (meId) setEmptyMenu({ x: e.clientX, y: e.clientY });
+            }}
+          >
+            Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.
+            {emptyMenu && meId && (
+              <VoiceUserMenu userId={meId} channelId={channel.id} x={emptyMenu.x} y={emptyMenu.y} onClose={() => setEmptyMenu(null)} />
+            )}
+          </div>
         ) : (
           <TileGrid tiles={others} onFocus={setFocus} />
         )}

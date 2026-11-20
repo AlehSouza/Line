@@ -234,6 +234,9 @@ export interface VoiceStore {
   mediaRev: number;
   /** Quadro a pôr em destaque quando a tela da chamada abrir (ex.: clique no mini player). */
   stageFocus: string | null;
+  /** Na tela da chamada: mostrar quem está sem câmera/tela e o meu próprio vídeo. Só valem para mim. */
+  showNoVideo: boolean;
+  showMyCamera: boolean;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -242,6 +245,7 @@ export const useVoice = create<VoiceStore>(() => ({
   userVolume: loadUserVolumes(),
   localMuted: {},
   hiddenVideo: {},
+  ...loadStageView(),
   ...loadScreenAudio(),
   watching: {},
   screenThumbs: {},
@@ -739,6 +743,32 @@ export function setUserVolume(userId: string, volume: number) {
 export function toggleLocalMute(userId: string) {
   setV((v) => ({ localMuted: { ...v.localMuted, [userId]: !v.localMuted[userId] } }));
   applyMute();
+}
+
+const STAGE_VIEW_KEY = 'line.stageView';
+function loadStageView() {
+  try {
+    const v = JSON.parse(localStorage.getItem(STAGE_VIEW_KEY) ?? '{}');
+    return { showNoVideo: v.showNoVideo !== false, showMyCamera: v.showMyCamera !== false };
+  } catch {
+    return { showNoVideo: true, showMyCamera: true };
+  }
+}
+function saveStageView() {
+  const { showNoVideo, showMyCamera } = useVoice.getState();
+  try {
+    localStorage.setItem(STAGE_VIEW_KEY, JSON.stringify({ showNoVideo, showMyCamera }));
+  } catch {
+    // sem localStorage: vale só nesta sessão
+  }
+}
+export function toggleShowNoVideo() {
+  setV((v) => ({ showNoVideo: !v.showNoVideo }));
+  saveStageView();
+}
+export function toggleShowMyCamera() {
+  setV((v) => ({ showMyCamera: !v.showMyCamera }));
+  saveStageView();
 }
 
 export function toggleHiddenVideo(userId: string) {

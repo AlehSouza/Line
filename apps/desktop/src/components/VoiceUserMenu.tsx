@@ -23,8 +23,11 @@ import {
   toggleMute,
   toggleScreen,
   toggleScreenMute,
+  toggleShowMyCamera,
+  toggleShowNoVideo,
   useVoice,
 } from "@/lib/voice";
+import { openVideoWindow } from "@/lib/popout";
 import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/music";
 import { cx, Icons, Slider } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
@@ -98,6 +101,16 @@ export function VoiceUserMenu({
   const inSameCall = useVoice(
     (v) => !!v.channelId && v.channelId === v.states[userId]?.channelId,
   );
+  const showNoVideo = useVoice((v) => v.showNoVideo);
+  const showMyCamera = useVoice((v) => v.showMyCamera);
+  // Vídeo que "Usuário em Nova Janela" abre: a tela no quadro da transmissão, senão a câmera.
+  const popStream = useVoice((v) => {
+    const st = v.states[userId];
+    const isMe = userId === me?.id;
+    if (screen) return isMe ? v.screen : st?.screenStreamId && v.watching[userId] ? (v.streams[st.screenStreamId] ?? null) : null;
+    if (isMe) return v.camera;
+    return st?.cameraStreamId && !v.hiddenVideo[userId] ? (v.streams[st.cameraStreamId] ?? null) : null;
+  });
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   // Próprio apelido: "Alterar apelido"; de outra pessoa: "Gerenciar apelidos".
@@ -365,6 +378,33 @@ export function VoiceUserMenu({
             </div>
           )}
         </div>
+      )}
+
+      {!isBot && inSameCall && (
+        <>
+          <Sep />
+          <Item
+            disabled={!popStream}
+            onClick={run(() =>
+              popStream &&
+              openVideoWindow(
+                `${screen ? "screen" : "camera"}:${userId}`,
+                popStream,
+                screen ? `Tela de ${user.displayName}` : user.displayName,
+              ),
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <Icons.PopOut size={14} /> Usuário em Nova Janela
+            </span>
+          </Item>
+          <Item onClick={run(toggleShowNoVideo, true)} check={showNoVideo}>
+            Mostrar participantes sem vídeo
+          </Item>
+          <Item onClick={run(toggleShowMyCamera, true)} check={showMyCamera}>
+            Mostrar Minha Própria Câmera
+          </Item>
+        </>
       )}
 
       {canModerate && state && (
