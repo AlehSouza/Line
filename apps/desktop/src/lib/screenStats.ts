@@ -48,6 +48,10 @@ export interface SendDiag {
   huge: number;
   /** Bits de reenvio no intervalo. */
   retxKbps: number;
+  /** Banda que o WebRTC acha que tem para essa pessoa agora. */
+  bweKbps: number;
+  /** Alvo do codificador (o que ele tenta gerar). */
+  targetKbps: number;
 }
 
 export interface RecvStat {
@@ -155,11 +159,15 @@ function transport(report: Report) {
       if (s.type === 'candidate-pair' && s.state === 'succeeded' && s.nominated) pair = s;
     }
   }
-  if (!pair) return { rttMs: null, relay: false };
+  if (!pair) return { rttMs: null, relay: false, bweKbps: 0 };
   const local = report.get(pair.localCandidateId as string);
   const remote = report.get(pair.remoteCandidateId as string);
   const rtt = typeof pair.currentRoundTripTime === 'number' ? pair.currentRoundTripTime * 1000 : null;
-  return { rttMs: rtt, relay: local?.candidateType === 'relay' || remote?.candidateType === 'relay' };
+  return {
+    rttMs: rtt,
+    relay: local?.candidateType === 'relay' || remote?.candidateType === 'relay',
+    bweKbps: Math.round(num(pair.availableOutgoingBitrate) / 1000),
+  };
 }
 
 function codecName(report: Report, codecId: unknown) {
@@ -209,6 +217,8 @@ export async function readSend(pc: RTCPeerConnection, trackId: string, key: stri
     nack: num(out.nackCount),
     huge: num(out.hugeFramesSent),
     retxKbps: dtMs > 0 ? Math.round((dOut('retransmittedBytesSent') * 8) / dtMs) : 0,
+    bweKbps: link.bweKbps,
+    targetKbps: Math.round(num(out.targetBitrate) / 1000),
   };
   return {
     diag,

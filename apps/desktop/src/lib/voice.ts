@@ -2232,9 +2232,14 @@ function tuneScreenSdp(sdp: string, peerId: string) {
   const { resolution, fps } = getV().screenQuality;
   const cap = RESOLUTIONS[resolution].kbps[fps];
   // Começo alto mas sem passar de 8 Mbps somando todo mundo que assiste (upload mais fraco não engasga
-  // logo no início). Sem piso (x-google-min-bitrate): com piso, quando a rede cai abaixo dele o WebRTC
-  // não pode descer e o que sobra vira perda de pacote e tela travada.
-  const extra = `x-google-start-bitrate=${Math.round(Math.min(cap * 0.6, 8000 / Math.max(1, watchers.size)))}`;
+  // logo no início).
+  // Piso moderado (x-google-min-bitrate, 30% do teto, no máximo 4,5 Mbps somando quem assiste): em cena
+  // parada o codificador manda pouco e a estimativa de banda do WebRTC encolhe junto (~1,5x do que está
+  // saindo). Na troca brusca (Alt+Tab, menu de jogo) sobravam 2-3 Mbps para um quadro todo novo, o QP ia
+  // a 45-49 e a imagem virava blocos com pedaços da tela anterior. O diagnóstico de 2026-11-20 mostrou
+  // isso com perda 0%. O piso fica baixo o bastante para a maioria dos uploads.
+  const n = Math.max(1, watchers.size);
+  const extra = `x-google-start-bitrate=${Math.round(Math.min(cap * 0.6, 8000 / n))};x-google-min-bitrate=${Math.round(Math.min(cap * 0.3, 4500 / n))}`;
   const eol = sdp.includes('\r\n') ? '\r\n' : '\n';
   // Separa por m= e mexe só nas seções de vídeo.
   const sections = sdp.split(new RegExp(`${eol}(?=m=)`));
@@ -2269,7 +2274,11 @@ function tuneScreenSdp(sdp: string, peerId: string) {
 async function tuneScreenSender(sender: RTCRtpSender, fps: Fps, retry = true) {
   try {
     const params = sender.getParameters() as RTCRtpSendParameters & { degradationPreference?: string };
-    params.degradationPreference = fps >= 60 ? 'maintain-framerate' : 'maintain-resolution';
+    // Sempre manter a resolução: com maintain-framerate o codificador encolhia a imagem (1080p ↔ 1440×804)
+    // a cada aperto, e cada troca de tamanho gera quadro-chave e congelamento (14 em 30 s no diagnóstico).
+    // Agora, no aperto, ele pula um quadro em vez de borrar ou mudar de tamanho.
+    void fps;
+    params.degradationPreference = 'maintain-resolution';
     await sender.setParameters(params);
   } catch {
     // Alguns navegadores só aceitam depois da negociação: tenta de novo quando a conexão já subiu.

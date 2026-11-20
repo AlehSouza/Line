@@ -90,6 +90,11 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     improvements: [
       {
+        icon: 'monitor',
+        title: 'Imagem firme nas trocas de tela',
+        text: 'Trocar de janela ou abrir o menu de um jogo durante a transmissão não deixa mais a imagem em blocos nem muda o tamanho dela no meio do caminho.',
+      },
+      {
         icon: 'volume',
         title: 'Sons novos em todo o app',
         text: 'Mensagens, menções, entrar e sair da voz, mutar, ligações e transmissões ganharam sons novos, mais suaves e combinando entre si. Cada situação tem o seu som, então dá para saber o que aconteceu sem olhar a tela.',

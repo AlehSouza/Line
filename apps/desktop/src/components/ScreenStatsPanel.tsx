@@ -99,7 +99,7 @@ function Send({ list }: { list: [string, SendStat][] }) {
           <br />
           <span className="text-white/70">
             captura {s.diag.srcFps} fps · QP {s.diag.qp ?? '–'} · codificação {ms1(s.diag.encodeMs)} · descartados {s.diag.encDropped} · quadros enormes{' '}
-            {s.diag.huge} · quadros-chave {s.diag.keyframes} · pedidos {s.diag.pli + s.diag.fir} · reenvio {mbps(s.diag.retxKbps)}
+            {s.diag.huge} · quadros-chave {s.diag.keyframes} · pedidos {s.diag.pli + s.diag.fir} · reenvio {mbps(s.diag.retxKbps)} · banda estimada {mbps(s.diag.bweKbps)} · alvo {mbps(s.diag.targetKbps)}
           </span>
         </p>
       ))}
