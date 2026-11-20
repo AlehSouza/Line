@@ -297,11 +297,14 @@ export async function startNativeScreen(
         // Janela mudando de tamanho (alt+tab num jogo, trocar de modo de tela): cada tamanho novo
         // reinicia o codificador e trava a imagem de quem assiste. Enquanto o tamanho não firma,
         // encaixa o quadro no tamanho de antes.
+        // Diferença de poucos pixels (1920×1078 ↔ 1920×1080 ao trocar de janela/borda) fica sempre
+        // encaixada no tamanho atual: cada troca de tamanho gera quadro-chave e congelamento para quem assiste.
         let { w, h } = { w: m.w, h: m.h };
+        const tiny = !!last && Math.abs(w - last.w) <= last.w * 0.03 && Math.abs(h - last.h) <= last.h * 0.03;
         if (last && (w !== last.w || h !== last.h)) {
           const now = performance.now();
           resizeSince ??= now;
-          if (now - resizeSince < RESIZE_SETTLE_MS) {
+          if (tiny || now - resizeSince < RESIZE_SETTLE_MS) {
             const fitted = fitFrame(frame, last.w, last.h, ts);
             frame.close();
             frame = fitted;
