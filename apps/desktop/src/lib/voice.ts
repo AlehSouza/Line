@@ -11,7 +11,7 @@ import { actions, channelPermsOf, useLine } from './store';
 import { toast } from '@/components/Dialogs';
 import { playSfx, sfxLoop, startSfxLoop, stopSfxLoop } from './sfx';
 import { needsNsfwGate } from './nsfwGate';
-import { forgetSamples, readRecv, readSend, useScreenStats, type RecvStat, type SendStat } from './screenStats';
+import { clearHistory, diagnosticsText, forgetSamples, pushHistory, readRecv, readSend, useScreenStats, type RecvStat, type SendStat } from './screenStats';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -1987,9 +1987,25 @@ function stopStatsLoop() {
   if (statsTimer) clearInterval(statsTimer);
   statsTimer = null;
   forgetSamples();
+  clearHistory();
   screenSqueeze = 1;
   calmTicks = 0;
   useScreenStats.setState({ send: {}, recv: {} });
+}
+
+/** Diagnóstico da transmissão para copiar: últimas leituras + como a minha tela está configurada. */
+export function screenDiagnostics() {
+  const { screenQuality, screen } = getV();
+  return diagnosticsText({
+    qualidade: screenQuality,
+    transmitindo: !!screen,
+    captura: currentSource ? (hasNativeScreen() ? 'nativa' : 'navegador') : screen ? 'navegador' : null,
+    fonte: currentSource?.id.split(':')[0] ?? null,
+    tamanhoCaptura: screenSize,
+    codecsPlaca: [...hwCodecs],
+    tetoComum: screenSqueeze,
+    espectadores: watchers.size,
+  });
 }
 
 async function statsTick() {
@@ -1997,6 +2013,8 @@ async function statsTick() {
   statsBusy = true;
   try {
     await Promise.all([sendTick(), recvTick()]);
+    const { send, recv } = useScreenStats.getState();
+    pushHistory(send, recv);
   } catch {
     // conexão fechou no meio da leitura: tenta de novo na próxima
   } finally {

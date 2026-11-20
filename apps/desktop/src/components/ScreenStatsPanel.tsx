@@ -2,6 +2,8 @@
 
 import { useLine } from '@/lib/store';
 import { useScreenStats, type RecvStat, type SendStat } from '@/lib/screenStats';
+import { screenDiagnostics } from '@/lib/voice';
+import { toast } from './Dialogs';
 import { cx } from './ui';
 
 /** Painel com os números reais da transmissão (o que chega de verdade, não a qualidade escolhida). */
@@ -9,6 +11,17 @@ import { cx } from './ui';
 const mbps = (kbps: number) => `${(kbps / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Mbps`;
 const pct = (v: number) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 const ms = (v: number | null) => (v == null ? '–' : `${Math.round(v)} ms`);
+const ms1 = (v: number | null) => (v == null ? '–' : `${v.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} ms`);
+const sec = (v: number) => `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s`;
+
+async function copyDiagnostics() {
+  try {
+    await navigator.clipboard.writeText(screenDiagnostics());
+    toast('Diagnóstico copiado. Cole na conversa para analisar.');
+  } catch {
+    toast('Não deu para copiar o diagnóstico.');
+  }
+}
 
 type Level = 'good' | 'warn' | 'bad';
 function level(lossPct: number, rttMs: number | null): Level {
@@ -48,8 +61,14 @@ function Recv({ s }: { s: RecvStat }) {
         Perda {pct(s.lossPct)} · RTT {ms(s.rttMs)} · Jitter {ms(s.jitterMs)}
       </p>
       <p>
-        Buffer {ms(s.bufferMs)} · Congelamentos {s.freezes}
+        Buffer {ms(s.bufferMs)} · Congelamentos {s.freezes} ({sec(s.diag.freezeMs)})
         {s.relay ? ' · via servidor TURN' : ''}
+      </p>
+      <p className="text-white/70">
+        QP {s.diag.qp ?? '–'} · decodificação {ms1(s.diag.decodeMs)} · quadros {s.diag.received} recebidos, {s.diag.decoded} decodificados, {s.diag.droppedNow} descartados
+      </p>
+      <p className="text-white/70">
+        Quadros-chave {s.diag.keyframes} · pedidos de quadro-chave {s.diag.pli + s.diag.fir} · reenvios pedidos {s.diag.nack}
       </p>
     </>
   );
@@ -77,6 +96,11 @@ function Send({ list }: { list: [string, SendStat][] }) {
           {s.fps} · {mbps(s.kbps)} de {mbps(s.capKbps)} · perda {pct(s.lossPct)} · RTT {ms(s.rttMs)}
           {s.limit !== 'none' && LIMIT[s.limit] ? ` · ${LIMIT[s.limit]}` : ''}
           {s.relay ? ' · TURN' : ''}
+          <br />
+          <span className="text-white/70">
+            captura {s.diag.srcFps} fps · QP {s.diag.qp ?? '–'} · codificação {ms1(s.diag.encodeMs)} · descartados {s.diag.encDropped} · quadros enormes{' '}
+            {s.diag.huge} · quadros-chave {s.diag.keyframes} · pedidos {s.diag.pli + s.diag.fir} · reenvio {mbps(s.diag.retxKbps)}
+          </span>
         </p>
       ))}
     </>
@@ -101,6 +125,9 @@ export function ScreenStatsPanel({ userId, isMe }: { userId: string; isMe: boole
       ) : (
         <p>Medindo…</p>
       )}
+      <button onClick={() => void copyDiagnostics()} className="mt-1 rounded bg-white/15 px-2 py-0.5 font-semibold hover:bg-white/25">
+        Copiar diagnóstico
+      </button>
     </div>
   );
 }

@@ -24,6 +24,30 @@ export interface SendStat {
   relay: boolean;
   /** Teto de bits que o Line deu para essa pessoa agora. */
   capKbps: number;
+  diag: SendDiag;
+}
+
+/**
+ * Diagnóstico por etapa (envio). Valores do intervalo entre duas leituras, a não ser os totais.
+ * QP é a quantização média: quanto maior, mais "blocos" (H.264 vai de 0 a 51; VP8/VP9 até 127; AV1 até 255).
+ */
+export interface SendDiag {
+  /** Quadros por segundo que a captura entrega ao WebRTC. */
+  srcFps: number;
+  qp: number | null;
+  /** Tempo médio para codificar um quadro. */
+  encodeMs: number | null;
+  /** Quadros que saíram da captura e o codificador não mandou, no intervalo. */
+  encDropped: number;
+  /** Totais da sessão. */
+  keyframes: number;
+  pli: number;
+  fir: number;
+  nack: number;
+  /** Quadros enormes (troca brusca de imagem) enviados no total. */
+  huge: number;
+  /** Bits de reenvio no intervalo. */
+  retxKbps: number;
 }
 
 export interface RecvStat {
@@ -42,6 +66,24 @@ export interface RecvStat {
   codec: string;
   relay: boolean;
   bufferMs: number;
+  diag: RecvDiag;
+}
+
+/** Diagnóstico por etapa (recebimento). */
+export interface RecvDiag {
+  qp: number | null;
+  decodeMs: number | null;
+  /** Quadros no intervalo: recebidos, decodificados e descartados antes de aparecer. */
+  received: number;
+  decoded: number;
+  droppedNow: number;
+  /** Tempo total congelado na sessão. */
+  freezeMs: number;
+  /** Totais da sessão: quadros-chave recebidos e pedidos de quadro-chave/reenvio que eu fiz. */
+  keyframes: number;
+  pli: number;
+  fir: number;
+  nack: number;
 }
 
 interface ScreenStatsStore {
@@ -78,9 +120,19 @@ type Report = Map<string, Record<string, unknown>>;
 type Sample = { t: number; bytes: number; packets: number; lost: number };
 /** Último valor dos contadores de cada fluxo, para calcular a taxa entre duas leituras. */
 const samples = new Map<string, Sample>();
+/** Leitura anterior inteira de cada fluxo (para os contadores do diagnóstico). */
+const prevRaw = new Map<string, Record<string, unknown>>();
 
 export function forgetSamples() {
   samples.clear();
+  prevRaw.clear();
+}
+
+/** Diferença de um contador desde a leitura anterior do mesmo fluxo. */
+function differ(key: string, cur: Record<string, unknown>) {
+  const prev = prevRaw.get(key);
+  prevRaw.set(key, cur);
+  return (field: string) => (prev ? Math.max(0, num(cur[field]) - num(prev[field])) : 0);
 }
 
 async function read(pc: RTCPeerConnection): Promise<Report> {
@@ -141,7 +193,25 @@ export async function readSend(pc: RTCPeerConnection, trackId: string, key: stri
   const { kbps, lossPct } = delta(`send:${key}:${out.id}`, t, num(out.bytesSent), num(out.packetsSent), num(remote?.packetsLost));
   const link = transport(report);
   const rtt = typeof remote?.roundTripTime === 'number' ? remote.roundTripTime * 1000 : link.rttMs;
+  const src = report.get(source) ?? {};
+  const dOut = differ(`sendraw:${key}:${out.id}`, out);
+  const dSrc = differ(`srcraw:${key}:${source}`, src);
+  const encoded = dOut('framesEncoded');
+  const dtMs = dOut('timestamp');
+  const diag: SendDiag = {
+    srcFps: Math.round(num(src.framesPerSecond)),
+    qp: encoded > 0 && out.qpSum != null ? Math.round(dOut('qpSum') / encoded) : null,
+    encodeMs: encoded > 0 ? Math.round((dOut('totalEncodeTime') / encoded) * 10000) / 10 : null,
+    encDropped: Math.max(0, dSrc('frames') - encoded),
+    keyframes: num(out.keyFramesEncoded),
+    pli: num(out.pliCount),
+    fir: num(out.firCount),
+    nack: num(out.nackCount),
+    huge: num(out.hugeFramesSent),
+    retxKbps: dtMs > 0 ? Math.round((dOut('retransmittedBytesSent') * 8) / dtMs) : 0,
+  };
   return {
+    diag,
     kbps,
     fps: Math.round(num(out.framesPerSecond)),
     width: num(out.frameWidth),
@@ -165,7 +235,22 @@ export async function readRecv(pc: RTCPeerConnection, trackId: string, key: stri
   const t = num(inb.timestamp);
   const { kbps, lossPct } = delta(`recv:${key}:${inb.id}`, t, num(inb.bytesReceived), num(inb.packetsReceived), num(inb.packetsLost));
   const link = transport(report);
+  const dIn = differ(`recvraw:${key}:${inb.id}`, inb);
+  const decoded = dIn('framesDecoded');
+  const diag: RecvDiag = {
+    qp: decoded > 0 && inb.qpSum != null ? Math.round(dIn('qpSum') / decoded) : null,
+    decodeMs: decoded > 0 ? Math.round((dIn('totalDecodeTime') / decoded) * 10000) / 10 : null,
+    received: dIn('framesReceived'),
+    decoded,
+    droppedNow: dIn('framesDropped'),
+    freezeMs: Math.round(num(inb.totalFreezesDuration) * 1000),
+    keyframes: num(inb.keyFramesDecoded),
+    pli: num(inb.pliCount),
+    fir: num(inb.firCount),
+    nack: num(inb.nackCount),
+  };
   return {
+    diag,
     kbps,
     fps: Math.round(num(inb.framesPerSecond)),
     width: num(inb.frameWidth),
@@ -180,6 +265,31 @@ export async function readRecv(pc: RTCPeerConnection, trackId: string, key: stri
     codec: codecName(report, inb.codecId),
     relay: link.relay,
   };
+}
+
+// ---------- histórico para o botão "Copiar diagnóstico" ----------
+
+interface DiagEntry {
+  t: string;
+  send: Record<string, SendStat>;
+  recv: Record<string, RecvStat>;
+}
+const HISTORY_MAX = 150; // 5 minutos com leituras a cada 2 s
+const history: DiagEntry[] = [];
+
+export function pushHistory(send: Record<string, SendStat>, recv: Record<string, RecvStat>) {
+  if (!Object.keys(send).length && !Object.keys(recv).length) return;
+  history.push({ t: new Date().toISOString(), send, recv });
+  if (history.length > HISTORY_MAX) history.splice(0, history.length - HISTORY_MAX);
+}
+
+export function clearHistory() {
+  history.length = 0;
+}
+
+/** Texto com as últimas leituras e o ambiente, para colar na conversa e analisar. */
+export function diagnosticsText(extra: Record<string, unknown>) {
+  return JSON.stringify({ app: extra, userAgent: navigator.userAgent, leituras: history }, null, 1);
 }
 
 /** Codificador/decodificador por placa de vídeo? (nomes que o Chromium e o WebKit usam) */
