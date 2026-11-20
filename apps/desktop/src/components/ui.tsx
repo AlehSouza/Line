@@ -490,7 +490,7 @@ export function Select({
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!button.current?.contains(t) && !list.current?.contains(t)) setOpen(false);
     };
@@ -500,11 +500,23 @@ export function Select({
         setOpen(false);
       }
     };
-    window.addEventListener('mousedown', onDown);
+    // Rolar a página (ou o modal) fecha a lista: ela fica fixa na tela e se soltaria da caixa.
+    const onScroll = (e: Event) => {
+      if (!list.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onResize = () => setOpen(false);
+    // Captura: fecha mesmo quando o clique cai num modal que segura o evento.
+    window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('blur', onResize);
     return () => {
-      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('blur', onResize);
     };
   }, [open]);
 

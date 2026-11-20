@@ -44,6 +44,7 @@ import { Avatar, Button, cx, Icons, Modal, Select, Slider, useAvatarTint } from 
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
 import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
+import { Meter, useMicLoopback } from './VoiceSettings';
 import { SoundboardButton } from './Soundboard';
 import { useSounds } from '@/lib/sounds';
 import { EMOJI_FONT } from './EmojiPicker';
@@ -1733,15 +1734,12 @@ function NoiseToggle({ on }: { on: boolean }) {
   );
 }
 
-const METER_BARS = 24;
 
 /** Popover da supressão de ruído: liga/desliga, explicação e teste do microfone com medidor ao vivo. */
 function NoisePopover({ onClose }: { onClose: () => void }) {
   const on = useVoice((v) => v.noiseSuppression);
-  const inputId = useVoice((v) => v.inputId);
   const ref = useRef<HTMLDivElement>(null);
   const [testing, setTesting] = useState(false);
-  const [level, setLevel] = useState(0);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -1756,43 +1754,10 @@ function NoisePopover({ onClose }: { onClose: () => void }) {
     };
   }, [onClose]);
 
-  // Teste: abre o microfone à parte e mede o volume, sem mandar nada para a chamada.
-  useEffect(() => {
-    if (!testing) return;
-    let stream: MediaStream | null = null;
-    let ctx: AudioContext | null = null;
-    let raf = 0;
-    let alive = true;
-    navigator.mediaDevices
-      .getUserMedia({ audio: { deviceId: inputId ? { exact: inputId } : undefined, noiseSuppression: on, echoCancellation: true } })
-      .then((s) => {
-        if (!alive) return s.getTracks().forEach((t) => t.stop());
-        stream = s;
-        ctx = new AudioContext();
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        ctx.createMediaStreamSource(s).connect(analyser);
-        const buf = new Uint8Array(analyser.fftSize);
-        const tick = () => {
-          analyser.getByteTimeDomainData(buf);
-          let peak = 0;
-          for (const v of buf) peak = Math.max(peak, Math.abs(v - 128));
-          setLevel(Math.min(1, peak / 64));
-          raf = requestAnimationFrame(tick);
-        };
-        tick();
-      })
-      .catch(() => setTesting(false));
-    return () => {
-      alive = false;
-      cancelAnimationFrame(raf);
-      stream?.getTracks().forEach((t) => t.stop());
-      void ctx?.close();
-      setLevel(0);
-    };
-  }, [testing, inputId, on]);
+  // Teste com retorno, igual ao de Configurações → Voz e vídeo: ouço a minha voz tratada e fico mutado na chamada.
+  const { db, failed } = useMicLoopback(testing);
+  const model = useVoice((v) => v.noiseModel);
 
-  const lit = Math.round(level * METER_BARS);
   return (
     <div ref={ref} className="absolute bottom-full left-2 z-40 mb-2 w-72 space-y-3 rounded-xl border border-edge bg-rail p-4 shadow-2xl">
       <div className="flex items-center justify-between">
@@ -1818,17 +1783,20 @@ function NoisePopover({ onClose }: { onClose: () => void }) {
           >
             {testing ? 'Parar' : 'Testar'}
           </button>
-          <div className="flex h-6 flex-1 items-center gap-[3px]">
-            {Array.from({ length: METER_BARS }, (_, i) => (
-              <span key={i} className={cx('h-full flex-1 rounded-full transition-colors', i < lit ? 'bg-online' : 'bg-edge')} />
-            ))}
-          </div>
+          <Meter db={db} />
         </div>
+        {testing && (
+          <p className="mt-2 text-xs text-muted">
+            {failed ? `Não foi possível abrir o microfone (${failed}).` : 'Você ouve a sua voz como os outros ouvem. Durante o teste você fica mutado na chamada.'}
+          </p>
+        )}
       </div>
       <div className="border-t border-edge pt-3">
         <p className="text-xs text-muted">Fornecido por</p>
-        <p className="text-sm font-semibold">RNNoise</p>
-        <p className="text-xs text-muted">Rede neural de código aberto que roda no seu próprio computador. Sua voz não sai daqui para ser filtrada.</p>
+        <p className="text-sm font-semibold">{model === 'max' ? 'DeepFilterNet 3' : model === 'balanced' ? 'GTCRN' : 'RNNoise'}</p>
+        <p className="text-xs text-muted">
+          Rede neural de código aberto que roda no seu próprio computador. Sua voz não sai daqui para ser filtrada. Troque o modelo em Configurações → Voz e vídeo.
+        </p>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   listAudioDevices,
   setAutoSensitivity,
@@ -9,7 +9,10 @@ import {
   setInputMode,
   setInputProfile,
   setInputVolume,
+  setNoiseModel,
   setNoiseSuppression,
+  startMicTest,
+  stopMicTest,
   setOutputDevice,
   setOutputVolume,
   setPttKey,
@@ -17,13 +20,14 @@ import {
   useVoice,
   type InputProfile,
 } from '@/lib/voice';
+import type { NoiseModel } from '@/lib/noise';
 import { cx, Icons, Select, Slider } from './ui';
 
 const METER_BARS = 40;
 /** Faixa do medidor e do limiar de sensibilidade, em dB. */
 const DB_MIN = -80;
 
-const dbToPct = (db: number) => Math.min(1, Math.max(0, (db - DB_MIN) / -DB_MIN));
+export const dbToPct = (db: number) => Math.min(1, Math.max(0, (db - DB_MIN) / -DB_MIN));
 
 /** Nome legível de uma tecla (KeyboardEvent.code). */
 export function keyLabel(code: string | null): string {
@@ -116,29 +120,36 @@ export function VoiceSettingsPage() {
       </Block>
 
       <Block title="Sensibilidade de entrada">
-        <Toggle
-          on={v.autoSensitivity}
-          onChange={(on) => void setAutoSensitivity(on)}
-          label="Determinar automaticamente"
-          hint="O Line decide quando você está falando. Desligue para escolher o limiar na mão."
-          disabled={v.inputProfile === 'voice'}
-        />
-        {!v.autoSensitivity && v.inputProfile !== 'voice' && <SensitivitySlider />}
+        <SensitivityBlock />
       </Block>
 
       <Block title="Processamento de voz">
-        <Toggle
-          on={v.noiseSuppression}
-          onChange={(on) => void setNoiseSuppression(on)}
-          label="Supressão de ruído"
-          hint="Tira teclado, ventilador e barulho de fundo da sua voz. Roda no seu computador."
-        />
         <Toggle
           on={v.echoCancellation}
           onChange={(on) => void setEchoCancellation(on)}
           label="Cancelamento de eco"
           hint="Evita que o som do seu alto-falante volte pelo microfone."
         />
+        <Toggle
+          on={v.noiseSuppression}
+          onChange={(on) => void setNoiseSuppression(on)}
+          label="Supressão de ruído"
+          hint="Tira teclado, ventilador, rua e conversa de fundo da sua voz. Roda no seu computador, nada sai dele."
+        />
+        {v.noiseSuppression && (
+          <Labeled label="Modelo do supressor">
+            <Select
+              value={v.noiseModel}
+              onChange={(m) => void setNoiseModel(m as NoiseModel)}
+              options={[
+                { value: 'max', label: 'Máximo (DeepFilterNet 3)' },
+                { value: 'balanced', label: 'Equilibrado (GTCRN)' },
+                { value: 'light', label: 'Leve (RNNoise)' },
+              ]}
+            />
+            <p className="mt-1.5 text-xs text-muted">{NOISE_MODEL_HINT[v.noiseModel]}</p>
+          </Labeled>
+        )}
         {!custom && <p className="text-xs text-muted">Mudar uma dessas opções troca o perfil para Personalizado.</p>}
       </Block>
 
@@ -206,6 +217,12 @@ function Toggle({ on, onChange, label, hint, disabled }: { on: boolean; onChange
   );
 }
 
+const NOISE_MODEL_HINT: Record<NoiseModel, string> = {
+  max: 'A limpeza mais forte: tira até barulhos difíceis, como conversa, cachorro e rua, e deixa a voz natural. Ideal para computador.',
+  balanced: 'Limpa bem o ruído do dia a dia usando pouco do aparelho. Ideal para celular e notebook na bateria.',
+  light: 'O mais leve: tira ruídos constantes, como ventilador e ar-condicionado. Bom para aparelhos mais simples.',
+};
+
 /** Nível do microfone (em dB) num teste à parte, com as mesmas opções da chamada. Nada vai para a chamada. */
 function useMicLevel(active: boolean) {
   const inputId = useVoice((v) => v.inputId);
@@ -254,24 +271,95 @@ function useMicLevel(active: boolean) {
   return db;
 }
 
-function Meter({ db, threshold }: { db: number; threshold?: number }) {
-  const lit = Math.round(dbToPct(db) * METER_BARS);
-  const cut = threshold === undefined ? -1 : Math.round(dbToPct(threshold) * METER_BARS);
+/** Medidor de gominhos de 4px, colados (3px entre eles), quantos couberem na largura. */
+export function Meter({ db, threshold }: { db: number; threshold?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [bars, setBars] = useState(METER_BARS);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => setBars(Math.max(8, Math.floor((el.clientWidth + 3) / 7)));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const lit = Math.round(dbToPct(db) * bars);
+  const cut = threshold === undefined ? -1 : Math.round(dbToPct(threshold) * bars);
   return (
-    <div className="flex h-6 flex-1 items-center gap-[3px]">
-      {Array.from({ length: METER_BARS }, (_, i) => (
+    <div ref={ref} className="flex h-6 min-w-0 flex-1 items-center gap-[3px] overflow-hidden">
+      {Array.from({ length: bars }, (_, i) => (
         <span
           key={i}
-          className={cx('h-full flex-1 rounded-full transition-colors', i < lit ? (cut >= 0 && i < cut ? 'bg-sun' : 'bg-online') : 'bg-edge')}
+          className={cx('h-full w-1 shrink-0 rounded-full transition-colors', i < lit ? (cut >= 0 && i < cut ? 'bg-sun' : 'bg-online') : 'bg-edge')}
         />
       ))}
     </div>
   );
 }
 
+/** Teste com retorno: ouço o meu microfone já tratado (supressor, eco, volume), e as barras medem esse som. */
+export function useMicLoopback(active: boolean) {
+  const v = useVoice();
+  const deps = [v.inputId, v.echoCancellation, v.noiseSuppression, v.noiseModel, v.inputProfile, v.autoSensitivity, v.inputVolume, v.outputId, v.outputVolume];
+  const [db, setDb] = useState(DB_MIN);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    let ctx: AudioContext | null = null;
+    let raf = 0;
+    let alive = true;
+    setFailed(null);
+    setOpening(true);
+    // Começa no próximo ciclo: se o efeito for desfeito na hora (modo estrito do React), nem abre.
+    const timer = setTimeout(() => {
+      startMicTest()
+        .then((s) => {
+          if (!alive) return;
+          setOpening(false);
+          ctx = new AudioContext();
+          if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          ctx.createMediaStreamSource(s).connect(analyser);
+          const buf = new Float32Array(analyser.fftSize);
+          const tick = () => {
+            analyser.getFloatTimeDomainData(buf);
+            let sum = 0;
+            for (const x of buf) sum += x * x;
+            const rms = Math.sqrt(sum / buf.length);
+            setDb(rms > 0 ? Math.max(DB_MIN, 20 * Math.log10(rms)) : DB_MIN);
+            raf = requestAnimationFrame(tick);
+          };
+          tick();
+        })
+        .catch((err) => {
+          if (!alive) return;
+          console.warn('Teste do microfone falhou', err);
+          setOpening(false);
+          setFailed(`${(err as Error)?.name ?? 'Erro'}: ${(err as Error)?.message ?? String(err)}`);
+          setDb(DB_MIN);
+        });
+    }, 0);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      void ctx?.close();
+      stopMicTest();
+      setOpening(false);
+      setDb(DB_MIN);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, ...deps]);
+  return { db, failed, opening };
+}
+
 function MicTest() {
   const [testing, setTesting] = useState(false);
-  const db = useMicLevel(testing);
+  const { db, failed, opening } = useMicLoopback(testing);
+  const inCall = useVoice((v) => !!v.channelId);
   return (
     <div className="rounded-lg border border-edge bg-rail p-3">
       <p className="mb-2 text-sm font-semibold">Teste do microfone</p>
@@ -285,23 +373,86 @@ function MicTest() {
         </button>
         <Meter db={db} />
       </div>
-      <p className="mt-2 text-xs text-muted">Fale algo: as barras mostram o nível que chega. Nada é enviado para a chamada.</p>
+      <p className="mt-2 text-xs text-muted">
+        {failed
+          ? `Não foi possível abrir o microfone (${failed}).`
+          : testing && opening
+            ? 'Abrindo o microfone e o supressor…'
+            : 'Fale algo: você ouve a sua voz como os outros ouvem, já com o supressor escolhido. Use fone para não dar microfonia.'}
+        {inCall && !failed && ' Durante o teste você fica mutado e sem som na chamada; ao parar, volta como estava.'}
+      </p>
     </div>
   );
 }
 
-function SensitivitySlider() {
+/**
+ * Sensibilidade no estilo de uma barra só: o nível da voz aparece ao vivo por trás e, no modo manual,
+ * a bolinha marca o limiar. Abaixo dele (amarelo) o microfone fica fechado; acima (verde) os outros ouvem.
+ */
+function SensitivityBlock() {
+  const auto = useVoice((v) => v.autoSensitivity);
+  const profile = useVoice((v) => v.inputProfile);
   const threshold = useVoice((v) => v.sensitivityDb);
+  const locked = profile === 'voice';
+  const manual = !auto && !locked;
   const db = useMicLevel(true);
+  const level = dbToPct(db) * 100;
+  const cut = manual ? dbToPct(threshold) * 100 : 0;
   return (
-    <div className="space-y-2 rounded-lg border border-edge bg-rail p-3">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold">Limiar</span>
-        <span className="text-muted">{threshold} dB</span>
+    <div className="space-y-3 rounded-lg border border-edge bg-rail px-3 py-3">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={auto}
+        disabled={locked}
+        onClick={() => void setAutoSensitivity(!auto)}
+        className="flex w-full items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="flex-1">
+          <span className="block text-sm font-semibold">Ajustar automaticamente a sensibilidade de entrada</span>
+          <span className="block text-xs text-muted">
+            {locked ? 'No Isolamento de voz o Line ajusta sozinho. Escolha Personalizado para mexer aqui.' : 'Controla quanto som o Line transmite do seu microfone.'}
+          </span>
+        </span>
+        <span className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', auto ? 'bg-accent' : 'bg-edge')}>
+          <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', auto ? 'left-[22px]' : 'left-0.5')} />
+        </span>
+      </button>
+      <div className="relative flex h-6 items-center">
+        {/* Trilho: amarelo até o limiar, verde depois (apagados) */}
+        <div className="absolute inset-x-0 h-1.5 overflow-hidden rounded-full">
+          <div className="absolute inset-y-0 left-0 bg-sun/30" style={{ width: `${cut}%` }} />
+          <div className="absolute inset-y-0 right-0 bg-online/30" style={{ left: `${cut}%` }} />
+          {/* Nível ao vivo por cima, nas mesmas cores */}
+          <div
+            className="absolute inset-0 transition-[clip-path] duration-75"
+            style={{
+              background: `linear-gradient(to right, var(--color-sun) 0 ${cut}%, var(--color-online) ${cut}% 100%)`,
+              clipPath: `inset(0 ${100 - level}% 0 0)`,
+            }}
+          />
+        </div>
+        {manual && (
+          <>
+            <span
+              className="pointer-events-none absolute size-4 -translate-x-1/2 rounded-full bg-white shadow"
+              style={{ left: `${cut}%` }}
+              aria-hidden
+            />
+            <input
+              type="range"
+              min={DB_MIN}
+              max={0}
+              step={1}
+              value={threshold}
+              onChange={(e) => setSensitivityDb(Number(e.target.value))}
+              aria-label="Limiar de sensibilidade"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+            />
+          </>
+        )}
       </div>
-      <Meter db={db} threshold={threshold} />
-      <Slider value={threshold} min={DB_MIN} max={0} onChange={setSensitivityDb} label="Limiar de sensibilidade" className="!w-full" />
-      <p className="text-xs text-muted">Abaixo da linha (amarelo) o microfone fica fechado; acima (verde) os outros te ouvem.</p>
+      {manual && <p className="text-xs text-muted">Limiar: {threshold} dB. Abaixo da bolinha (amarelo) o microfone fica fechado; acima (verde) os outros te ouvem.</p>}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import type { ClientToServerEvents, ScreenGame, ServerToClientEvents, VoiceModeration, VoiceSignal, VoiceState } from '@line/shared';
 import type { Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import { disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise } from './noise';
+import { defaultNoiseModel, disposeNoiseSuppressor, resumeNoiseSuppressor, suppressNoise, type NoiseModel } from './noise';
 import { api } from './api';
 import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from './nativeScreen';
 import { hasPerm, Perm } from '@line/shared';
@@ -64,6 +64,8 @@ export type InputMode = 'voice' | 'ptt';
 
 interface VoicePrefs {
   noiseSuppression: boolean;
+  /** Modelo do supressor: DeepFilterNet (máximo), GTCRN (equilibrado) ou RNNoise (leve). */
+  noiseModel: NoiseModel;
   inputId: string | null;
   outputId: string | null;
   screenQuality: ScreenQuality;
@@ -84,6 +86,7 @@ interface VoicePrefs {
 const PREFS_KEY = 'line.voice';
 const defaultPrefs: VoicePrefs = {
   noiseSuppression: true,
+  noiseModel: defaultNoiseModel(),
   inputId: null,
   outputId: null,
   screenQuality: { resolution: '1080', fps: 60 },
@@ -110,6 +113,7 @@ function savePrefs() {
   const v = getV();
   const prefs: VoicePrefs = {
     noiseSuppression: v.noiseSuppression,
+    noiseModel: v.noiseModel,
     inputId: v.inputId,
     outputId: v.outputId,
     screenQuality: v.screenQuality,
@@ -214,8 +218,9 @@ export interface VoiceStore {
   streams: Record<string, MediaStream>;
   speaking: Record<string, boolean>;
   error: string | null;
-  /** Supressor de ruído (RNNoise) no microfone. */
+  /** Supressor de ruído no microfone e o modelo dele. */
   noiseSuppression: boolean;
+  noiseModel: NoiseModel;
   /** Microfone e saída de áudio escolhidos (null = padrão do sistema). */
   inputId: string | null;
   outputId: string | null;
@@ -640,7 +645,9 @@ function applyMute() {
   const { muted, deafened, states, inputMode, pttDown } = getV();
   const forced = myId ? states[myId] : undefined;
   const silent = muted || deafened || !!forced?.serverMuted || !!forced?.serverDeafened || (inputMode === 'ptt' && !pttDown);
-  for (const s of [rawMic, mic]) s?.getAudioTracks().forEach((t) => (t.enabled = !silent));
+  // No teste do microfone nada é enviado.
+  rawMic?.getAudioTracks().forEach((t) => (t.enabled = !silent));
+  mic?.getAudioTracks().forEach((t) => (t.enabled = !silent && !micTesting));
   for (const el of audioEls.values()) applyPeerAudio(el);
 }
 
@@ -793,7 +800,7 @@ export function moderateVoice(m: VoiceModeration) {
 // ---------- microfone, supressor de ruído e dispositivos ----------
 
 async function openMic() {
-  const { inputId, noiseSuppression, echoCancellation, autoSensitivity, inputProfile } = getV();
+  const { inputId, noiseSuppression, noiseModel, echoCancellation, autoSensitivity, inputProfile } = getV();
   const studio = inputProfile === 'studio';
   const audio: MediaTrackConstraints = {
     deviceId: inputId ? { exact: inputId } : undefined,
@@ -818,7 +825,13 @@ async function openMic() {
   watchMicEnded(rawMic);
   if (noiseSuppression) {
     try {
-      mic = await suppressNoise(rawMic);
+      const res = await suppressNoise(rawMic, noiseModel);
+      mic = res.stream;
+      // O máximo não abriu neste aparelho: fica no leve (e não tenta de novo a cada chamada).
+      if (res.model !== noiseModel) {
+        setV({ noiseModel: res.model });
+        savePrefs();
+      }
     } catch (err) {
       console.warn('Supressor de ruído indisponível', err);
       setV({ noiseSuppression: false, error: 'Não deu para ligar o supressor de ruído neste PC.' });
@@ -954,8 +967,18 @@ if (typeof window !== 'undefined') {
   window.addEventListener('blur', release);
 }
 
-/** Reabre o microfone (trocou o dispositivo ou o supressor) sem derrubar a chamada. */
-async function reopenMic() {
+/**
+ * Reabre o microfone (trocou o dispositivo ou o supressor) sem derrubar a chamada.
+ * As reaberturas vão em fila: duas ao mesmo tempo misturariam os streams e deixariam a voz muda.
+ */
+let reopenQueue: Promise<void> = Promise.resolve();
+function reopenMic(): Promise<void> {
+  const run = reopenQueue.then(reopenMicNow);
+  reopenQueue = run.catch(() => {});
+  return run;
+}
+
+async function reopenMicNow() {
   if (!getV().channelId) return;
   const old = mic;
   const oldRaw = rawMic;
@@ -989,6 +1012,125 @@ export async function setNoiseSuppression(on: boolean) {
   setV({ noiseSuppression: on, inputProfile: 'custom' });
   savePrefs();
   await reopenMic();
+}
+
+// ---------- teste do microfone (Configurações → Voz e vídeo) ----------
+
+let micTest: { raw: MediaStream | null; ctx: AudioContext; el: HTMLAudioElement; dispose: (() => void) | null } | null = null;
+/** Teste do microfone ligado dentro de um canal: o microfone da chamada fica solto e nada é enviado. */
+let micTesting = false;
+/** Sobe a cada início/parada: um teste que termina de abrir depois de parado (ou substituído) se desfaz. */
+let micTestGen = 0;
+/** Como eu estava no canal antes do teste (para voltar igual ao parar). */
+let micTestPrev: { muted: boolean; deafened: boolean } | null = null;
+/** Reabertura do microfone da chamada ao parar o teste (o próximo teste espera ela terminar). */
+let micTestReopen: Promise<void> = Promise.resolve();
+
+/**
+ * Toca o meu microfone de volta para mim, com o mesmo tratamento da chamada (supressor escolhido,
+ * volume). Se eu estiver num canal de voz, fico mutado e ensurdecido enquanto testo: ouço só
+ * o retorno e ninguém me ouve. Devolve o áudio tratado (para o medidor).
+ */
+export async function startMicTest(): Promise<MediaStream> {
+  stopMicTest();
+  const gen = ++micTestGen;
+  const v = getV();
+  let raw: MediaStream | null = null;
+  let dispose: (() => void) | null = null;
+  const cancelled = () => {
+    if (gen === micTestGen) return false;
+    dispose?.();
+    stopStream(raw);
+    return true;
+  };
+  if (v.channelId) {
+    micTestPrev = { muted: v.muted, deafened: v.deafened };
+    micTesting = true;
+    if (!v.muted || !v.deafened) {
+      setV({ muted: true, deafened: true });
+      socket?.emit('voice:state', { muted: true, deafened: true });
+    }
+    applyMute();
+    // Solta o microfone da chamada enquanto testo (o Chrome não abre o mesmo microfone duas vezes com
+    // tratamentos diferentes); ao parar, ele reabre do jeito de antes.
+    await micTestReopen;
+    await reopenQueue;
+    if (cancelled()) throw new Error('teste parado');
+    stopStream(rawMic);
+  }
+  const studio = v.inputProfile === 'studio';
+  raw = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      deviceId: v.inputId ? { exact: v.inputId } : undefined,
+      // Sem cancelamento de eco no teste: ele trataria o próprio retorno como eco e apagaria a voz.
+      echoCancellation: false,
+      noiseSuppression: !v.noiseSuppression && !studio,
+      autoGainControl: v.autoSensitivity && !studio,
+      channelCount: 1,
+    },
+    video: false,
+  });
+  if (cancelled()) throw new Error('teste parado');
+  let clean: MediaStream = raw;
+  if (v.noiseSuppression) {
+    try {
+      const res = await suppressNoise(raw, v.noiseModel, 'test');
+      clean = res.stream;
+      dispose = res.dispose;
+    } catch (err) {
+      console.warn('Supressor indisponível no teste', err);
+    }
+  }
+  if (cancelled()) throw new Error('teste parado');
+  const ctx = new AudioContext();
+  const gain = ctx.createGain();
+  gain.gain.value = v.inputVolume;
+  const dest = ctx.createMediaStreamDestination();
+  ctx.createMediaStreamSource(clean).connect(gain).connect(dest);
+  const el = new Audio();
+  el.autoplay = true;
+  el.srcObject = dest.stream;
+  el.volume = Math.min(1, v.outputVolume);
+  micTest = { raw, ctx, el, dispose };
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
+  const sink = (el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }).setSinkId;
+  if (v.outputId && sink) await sink.call(el, v.outputId).catch(() => {});
+  void el.play().catch((err) => console.warn('Retorno do teste não tocou', err));
+  return dest.stream;
+}
+
+export function stopMicTest() {
+  micTestGen++;
+  if (micTest) {
+    const { raw, ctx, el, dispose } = micTest;
+    micTest = null;
+    el.pause();
+    el.srcObject = null;
+    dispose?.();
+    stopStream(raw);
+    void ctx.close().catch(() => {});
+  }
+  const wasTesting = micTesting;
+  micTesting = false;
+  const prev = micTestPrev;
+  micTestPrev = null;
+  if (!getV().channelId) return;
+  if (prev) {
+    const now = getV();
+    if (now.muted !== prev.muted || now.deafened !== prev.deafened) {
+      setV(prev);
+      socket?.emit('voice:state', prev);
+    }
+  }
+  // Volta o microfone da chamada com o cancelamento de eco de antes.
+  if (wasTesting) micTestReopen = micTestReopen.then(reopenMic).then(applyMute).catch(() => {});
+  else applyMute();
+}
+
+export async function setNoiseModel(model: NoiseModel) {
+  setV({ noiseModel: model });
+  savePrefs();
+  if (getV().noiseSuppression) await reopenMic();
 }
 
 export async function setInputDevice(deviceId: string | null) {
