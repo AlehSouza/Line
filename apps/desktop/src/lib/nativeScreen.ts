@@ -287,10 +287,17 @@ export async function startNativeScreen(
       try {
         const ts = timeline(m.ts);
         // Pede em microssegundos; o construtor copia os pixels, então o espaço já pode ser reusado.
+        // Largura e altura pares: com tamanho ímpar (janela de 1920×1079) a placa de vídeo recusa
+        // codificar e tudo cai no codificador do processador, que não passa de ~25 fps em 1080p.
+        const ew = m.w & ~1;
+        const eh = m.h & ~1;
         let frame = new VideoFrame(new Uint8Array(buffer, layout.header + m.slot * layout.slotSize, m.w * m.h * 4), {
           format: 'BGRX',
           codedWidth: m.w,
           codedHeight: m.h,
+          visibleRect: { x: 0, y: 0, width: ew, height: eh },
+          displayWidth: ew,
+          displayHeight: eh,
           timestamp: ts,
         });
         flags[m.slot] = 0;
@@ -299,7 +306,7 @@ export async function startNativeScreen(
         // encaixa o quadro no tamanho de antes.
         // Diferença de poucos pixels (1920×1078 ↔ 1920×1080 ao trocar de janela/borda) fica sempre
         // encaixada no tamanho atual: cada troca de tamanho gera quadro-chave e congelamento para quem assiste.
-        let { w, h } = { w: m.w, h: m.h };
+        let { w, h } = { w: ew, h: eh };
         const tiny = !!last && Math.abs(w - last.w) <= last.w * 0.03 && Math.abs(h - last.h) <= last.h * 0.03;
         if (last && (w !== last.w || h !== last.h)) {
           const now = performance.now();

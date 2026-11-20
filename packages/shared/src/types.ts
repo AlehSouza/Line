@@ -459,6 +459,8 @@ export interface SenderSummary {
   qp: number | null;
   /** Captura nativa do app ou do navegador. */
   capture: string | null;
+  /** Codecs que a placa de vídeo de quem transmite diz codificar. */
+  placa?: string[];
 }
 
 export interface PollOption {

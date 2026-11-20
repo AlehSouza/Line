@@ -277,7 +277,9 @@ const SPLASH: &str = "splash";
 /// As três primeiras são as padrão do Tauri. O resto impede o Chromium de frear a página quando
 /// o Line fica atrás de um jogo em tela cheia: sem isso os timers, a cópia dos quadros da tela
 /// e o encoder do WebRTC rodam em prioridade baixa e a transmissão perde fps e qualidade.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,UseEcoQoSForBackgroundProcess \
+/// WebRtcScreenshareSwEncoding: o Chromium manda tela compartilhada para o codificador do
+/// processador; desligado, a transmissão usa a placa de vídeo (60 fps em 1080p).
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,UseEcoQoSForBackgroundProcess,WebRtcScreenshareSwEncoding \
     --disable-background-timer-throttling --disable-renderer-backgrounding \
     --disable-backgrounding-occluded-windows --disable-ipc-flooding-protection";
 

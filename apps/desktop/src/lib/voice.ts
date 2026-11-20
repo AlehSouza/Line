@@ -2100,6 +2100,7 @@ async function sendTick() {
         encodeMs: st.diag.encodeMs,
         qp: st.diag.qp,
         capture,
+        placa: [...hwCodecs],
       },
     });
   }
