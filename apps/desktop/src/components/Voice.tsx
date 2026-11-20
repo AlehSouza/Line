@@ -50,6 +50,8 @@ import { useSounds } from '@/lib/sounds';
 import { EMOJI_FONT } from './EmojiPicker';
 import { fileUrl } from '@/lib/api';
 import { toast } from './Dialogs';
+import { ScreenStatsPanel } from './ScreenStatsPanel';
+import { toggleScreenStats, useScreenStats } from '@/lib/screenStats';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
@@ -547,6 +549,8 @@ function TileView({
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   // Tela de alguém da minha chamada: no hover, mostra por fora (acima) quem está assistindo.
   const showViewers = tile.kind === 'screen' && inSameCall;
+  const statsOpen = useScreenStats((s) => s.open);
+  const canStats = tile.kind === 'screen' && !!tile.stream && !hidden;
   return (
     <div className={cx('group/stream relative', big && 'h-full')}>
     <div
@@ -663,12 +667,25 @@ function TileView({
       )}
     </div>
     {/* Linha de ações no canto: quem assiste, tela cheia, destacar e sair da transmissão. */}
+    {canStats && <ScreenStatsPanel userId={tile.state.userId} isMe={tile.isMe} />}
     {showViewers && (
       <div className="absolute top-2 left-2 z-30 hidden text-white group-hover/stream:block">
         <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />
       </div>
     )}
     <div className="absolute top-2 right-2 z-30 hidden items-center gap-1 text-white group-hover/stream:flex">
+      {canStats && (
+        <button
+          title={statsOpen ? 'Esconder estatísticas da transmissão' : 'Estatísticas da transmissão'}
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleScreenStats();
+          }}
+          className={cx('rounded-md p-1', statsOpen ? 'bg-white/25 hover:bg-white/35' : 'bg-black/60 hover:bg-black/80')}
+        >
+          <Icons.Signal size={14} />
+        </button>
+      )}
       {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
         <button title="Tela cheia (só a transmissão)" onClick={onFullscreen} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
           <Icons.Fullscreen size={14} />

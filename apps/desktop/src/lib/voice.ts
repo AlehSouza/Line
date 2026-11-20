@@ -10,6 +10,7 @@ import { hasPerm, Perm } from '@line/shared';
 import { actions, channelPermsOf, useLine } from './store';
 import { toast } from '@/components/Dialogs';
 import { needsNsfwGate } from './nsfwGate';
+import { forgetSamples, readRecv, readSend, useScreenStats, type RecvStat, type SendStat } from './screenStats';
 
 /** Pode isso no canal de voz (de servidor) atual ou no indicado? DM pode tudo. */
 function voiceCan(flag: number, channelId = getV().channelId): boolean {
@@ -594,6 +595,7 @@ async function rejoin(channelId: string) {
   if (camera || screen) socket.emit('voice:state', { cameraStreamId: camera?.id ?? null, screenStreamId: screen?.id ?? null });
   for (const p of res.peers) if (!peers.has(p.userId)) createPeer(p.userId);
   startSpeakingLoop();
+  startStatsLoop();
 }
 
 export async function leaveVoice(notify = true) {
@@ -606,6 +608,7 @@ export async function leaveVoice(notify = true) {
   stopStream(getV().screen);
   stopMic();
   stopSpeakingLoop();
+  stopStatsLoop();
   setV({ channelId: null, connecting: false, camera: null, screen: null, streams: {}, speaking: {} });
 }
 
@@ -1526,7 +1529,7 @@ async function retuneScreenSender(sender: RTCRtpSender, resolution: Resolution, 
     const params = sender.getParameters();
     const enc = params.encodings?.[0];
     if (!enc) return;
-    enc.maxBitrate = RESOLUTIONS[resolution].kbps[fps] * 1000;
+    enc.maxBitrate = capKbps(resolution, fps) * 1000;
     enc.maxFramerate = fps;
     enc.scaleResolutionDownBy = downscale(resolution);
     await sender.setParameters(params);
@@ -1589,6 +1592,8 @@ function stopScreen() {
   screenSize = null;
   currentSource = null;
   currentFps = null;
+  screenSqueeze = 1;
+  calmTicks = 0;
   setV({ screen: null });
   socket?.emit('voice:state', { screenStreamId: null });
 }
@@ -1724,7 +1729,7 @@ function createPeer(peerId: string): Peer {
     track.onended = onGone;
   };
 
-  if (mic) for (const t of mic.getTracks()) pc.addTrack(t, mic);
+  if (mic) for (const t of mic.getTracks()) preferRed(pc, pc.addTrack(t, mic));
   const { camera, screen } = getV();
   if (camera) addStream(pc, camera);
   if (screen && watchers.has(peerId)) addStream(pc, screen);
@@ -1843,22 +1848,167 @@ async function renegotiateIfPending(peer: Peer) {
 /**
  * Tela recebida: guarda ~50 ms a mais antes de mostrar. Dá tempo de o reenvio (NACK) repor um
  * pacote perdido e de reordenar os que chegam trocados, em vez de travar ou borrar o quadro.
- * Voz e câmera ficam sem buffer extra (latência da conversa).
+ * Quem está longe (RTT alto) ganha mais buffer no laço de estatísticas (screenBufferFor), senão o
+ * pacote reenviado chega depois do prazo. Voz e câmera ficam sem buffer extra (latência da conversa).
  */
 const SCREEN_BUFFER_MS = 50;
+const SCREEN_BUFFER_MAX_MS = 300;
+/** Buffer aplicado em cada receptor de tela. */
+const screenBuffers = new WeakMap<RTCRtpReceiver, number>();
+
+function setScreenBuffer(receiver: RTCRtpReceiver, ms: number) {
+  const r = receiver as unknown as { jitterBufferTarget?: number | null; playoutDelayHint?: number };
+  try {
+    // jitterBufferTarget em ms (Chromium/WebView2 novos); playoutDelayHint em segundos (antigos, WebKit).
+    if ('jitterBufferTarget' in receiver) r.jitterBufferTarget = ms;
+    else r.playoutDelayHint = ms / 1000;
+    screenBuffers.set(receiver, ms);
+  } catch {
+    // navegador sem esse ajuste: segue com o buffer automático
+  }
+}
+
+/** Buffer para a distância e a perda atuais: um RTT a mais dá tempo de um reenvio chegar. */
+function screenBufferFor(rttMs: number | null, lossPct: number) {
+  const base = SCREEN_BUFFER_MS + Math.max(0, (rttMs ?? 0) - 40);
+  const extra = lossPct >= 2 ? 40 : 0;
+  return Math.min(SCREEN_BUFFER_MAX_MS, Math.round(base + extra));
+}
 function bufferScreen(peerId: string, stream: MediaStream, track: MediaStreamTrack, receiver: RTCRtpReceiver) {
   const state = getV().states[peerId];
   const isScreen =
     stream.id === state?.screenStreamId || (track.kind === 'video' && !!state && stream.id !== state.cameraStreamId);
   if (!isScreen) return;
-  const r = receiver as unknown as { jitterBufferTarget?: number | null; playoutDelayHint?: number };
+  setScreenBuffer(receiver, SCREEN_BUFFER_MS);
+}
+
+/**
+ * Voz com redundância (Opus RED): cada pacote leva também o pedaço anterior, então um pacote perdido
+ * não vira picote. Custa ~30 kbps a mais. Só onde o WebRTC oferece audio/red (Chromium/WebView2);
+ * se o outro lado não aceitar, a negociação fica no Opus normal.
+ */
+function preferRed(pc: RTCPeerConnection, sender: RTCRtpSender) {
+  if ((window as unknown as { __lineRtc?: { adapter?: boolean } }).__lineRtc?.adapter) return;
+  const transceiver = pc.getTransceivers().find((t) => t.sender === sender);
+  const codecs = RTCRtpReceiver.getCapabilities?.('audio')?.codecs;
+  if (!transceiver?.setCodecPreferences || !codecs?.some((c) => c.mimeType.toLowerCase() === 'audio/red')) return;
+  const rank = (c: { mimeType: string }) => {
+    const m = c.mimeType.toLowerCase();
+    return m === 'audio/red' ? 0 : m === 'audio/opus' ? 1 : 2;
+  };
   try {
-    // jitterBufferTarget em ms (Chromium/WebView2 novos); playoutDelayHint em segundos (antigos, WebKit).
-    if ('jitterBufferTarget' in receiver) r.jitterBufferTarget = SCREEN_BUFFER_MS;
-    else r.playoutDelayHint = SCREEN_BUFFER_MS / 1000;
+    transceiver.setCodecPreferences([...codecs].sort((a, b) => rank(a) - rank(b)));
   } catch {
-    // navegador sem esse ajuste: segue com o buffer automático
+    // navegador não deixou escolher: fica com o Opus normal
   }
+}
+
+// ---------- estatísticas e ajustes da tela ----------
+
+const STATS_MS = 2000;
+let statsTimer: ReturnType<typeof setInterval> | null = null;
+let statsBusy = false;
+/** Leituras seguidas com a perda baixa em todo mundo que assiste (para devolver a qualidade). */
+let calmTicks = 0;
+
+function startStatsLoop() {
+  if (statsTimer) return;
+  statsTimer = setInterval(() => void statsTick(), STATS_MS);
+}
+
+function stopStatsLoop() {
+  if (statsTimer) clearInterval(statsTimer);
+  statsTimer = null;
+  forgetSamples();
+  screenSqueeze = 1;
+  calmTicks = 0;
+  useScreenStats.setState({ send: {}, recv: {} });
+}
+
+async function statsTick() {
+  if (statsBusy) return;
+  statsBusy = true;
+  try {
+    await Promise.all([sendTick(), recvTick()]);
+  } catch {
+    // conexão fechou no meio da leitura: tenta de novo na próxima
+  } finally {
+    statsBusy = false;
+  }
+}
+
+/** Minha tela: lê o envio para cada pessoa que assiste e aperta/solta o teto comum. */
+async function sendTick() {
+  const video = getV().screen?.getVideoTracks()[0];
+  if (!video || !watchers.size) {
+    if (screenSqueeze !== 1) screenSqueeze = 1;
+    calmTicks = 0;
+    if (Object.keys(useScreenStats.getState().send).length) useScreenStats.setState({ send: {} });
+    return;
+  }
+  const { resolution, fps } = getV().screenQuality;
+  const send: Record<string, SendStat> = {};
+  await Promise.all(
+    [...watchers].map(async (id) => {
+      const pc = peers.get(id)?.pc;
+      if (!pc || pc.connectionState === 'closed') return;
+      const st = await readSend(pc, video.id, id).catch(() => null);
+      if (st) send[id] = { ...st, capKbps: capKbps(resolution, fps) };
+    }),
+  );
+  const list = Object.values(send);
+  // Só com duas ou mais pessoas: com uma só, o controle de banda do WebRTC já resolve sozinho.
+  if (list.length >= 2) {
+    const hurt = list.filter((s) => s.lossPct >= 5 || (s.lossPct >= 2 && s.limit === 'bandwidth')).length;
+    const before = screenSqueeze;
+    if (hurt >= 2) {
+      screenSqueeze = Math.max(0.4, screenSqueeze * 0.85);
+      calmTicks = 0;
+    } else if (list.every((s) => s.lossPct < 0.5)) {
+      // 3 leituras calmas seguidas (6 s) para subir 5%: volta devagar e não fica oscilando.
+      if (++calmTicks >= 3 && screenSqueeze < 1) {
+        screenSqueeze = Math.min(1, screenSqueeze + 0.05);
+        calmTicks = 0;
+      }
+    } else {
+      calmTicks = 0;
+    }
+    if (screenSqueeze !== before) retuneScreen();
+  } else if (screenSqueeze !== 1) {
+    screenSqueeze = 1;
+    calmTicks = 0;
+    retuneScreen();
+  }
+  useScreenStats.setState({ send });
+}
+
+/** Telas que eu assisto: lê a chegada e ajusta o buffer pela distância de quem transmite. */
+async function recvTick() {
+  const { states, streams, watching } = getV();
+  const recv: Record<string, RecvStat> = {};
+  await Promise.all(
+    Object.keys(watching).map(async (userId) => {
+      if (!watching[userId]) return;
+      const sid = states[userId]?.screenStreamId;
+      const track = sid ? streams[sid]?.getVideoTracks()[0] : undefined;
+      const pc = peers.get(userId)?.pc;
+      if (!track || !pc || pc.connectionState === 'closed') return;
+      const st = await readRecv(pc, track.id, userId).catch(() => null);
+      if (!st) return;
+      const receiver = pc.getReceivers().find((r) => r.track === track);
+      let bufferMs = receiver ? (screenBuffers.get(receiver) ?? SCREEN_BUFFER_MS) : SCREEN_BUFFER_MS;
+      if (receiver) {
+        const want = screenBufferFor(st.rttMs, st.lossPct);
+        // Só mexe quando muda bastante (o buffer pulando a toda hora dá trancos na imagem).
+        if (Math.abs(want - bufferMs) >= 20) {
+          setScreenBuffer(receiver, want);
+          bufferMs = screenBuffers.get(receiver) ?? bufferMs;
+        }
+      }
+      recv[userId] = { ...st, bufferMs };
+    }),
+  );
+  useScreenStats.setState({ recv });
 }
 
 function closePeer(peerId: string) {
@@ -1896,7 +2046,7 @@ function addStream(pc: RTCPeerConnection, stream: MediaStream) {
       streams: [stream],
       sendEncodings: [
         {
-          maxBitrate: RESOLUTIONS[resolution].kbps[fps] * 1000,
+          maxBitrate: capKbps(resolution, fps) * 1000,
           maxFramerate: fps,
           scaleResolutionDownBy: downscale(resolution),
           // A tela passa na frente do resto da conexão quando a banda aperta.
@@ -1908,6 +2058,17 @@ function addStream(pc: RTCPeerConnection, stream: MediaStream) {
     preferHardwareCodec(transceiver, resolution, fps);
     void tuneScreenSender(transceiver.sender, fps);
   }
+}
+
+/**
+ * Teto de cada pessoa que assiste. Com várias pessoas, cada conexão manda a sua própria cópia pelo
+ * mesmo upload: quando duas ou mais perdem pacote ao mesmo tempo, o upload encheu, e o teto de todas
+ * desce junto (screenSqueeze) até a perda sumir; depois volta aos poucos. Não substitui o controle de
+ * banda do WebRTC, que continua decidindo abaixo desse teto.
+ */
+let screenSqueeze = 1;
+function capKbps(resolution: Resolution, fps: Fps) {
+  return Math.round(RESOLUTIONS[resolution].kbps[fps] * screenSqueeze);
 }
 
 /** Captura do Rust vem no tamanho real da fonte: reduz no envio até a resolução escolhida. */
@@ -1976,18 +2137,19 @@ function preferHardwareCodec(transceiver: RTCRtpTransceiver, resolution: Resolut
 }
 
 /**
- * Sem isto o WebRTC começa a estimar a banda em ~300 kbps e sobe aos poucos, e em qualquer perda
- * despenca: os primeiros segundos e os movimentos rápidos saem em blocos. Na descrição do outro
- * lado (que vale para o meu envio) marca a taxa inicial e o mínimo da conexão para a qualidade
- * escolhida. Só no Chromium/WebView2/WebKit (libwebrtc); o adaptador do Linux ignora.
+ * Sem isto o WebRTC começa a estimar a banda em ~300 kbps e sobe aos poucos: os primeiros
+ * segundos saem em blocos. Na descrição do outro lado (que vale para o meu envio) marca a taxa
+ * inicial da conexão para a qualidade escolhida. Só no Chromium/WebView2/WebKit (libwebrtc); o adaptador do Linux ignora.
  */
 function tuneScreenSdp(sdp: string, peerId: string) {
   if (!getV().screen || !watchers.has(peerId)) return sdp;
   if ((window as unknown as { __lineRtc?: { adapter?: boolean } }).__lineRtc?.adapter) return sdp;
   const { resolution, fps } = getV().screenQuality;
   const cap = RESOLUTIONS[resolution].kbps[fps];
-  // Começo alto mas sem passar de 8 Mbps (upload mais fraco não engasga logo no início).
-  const extra = `x-google-start-bitrate=${Math.round(Math.min(cap * 0.6, 8000))};x-google-min-bitrate=${Math.round(Math.min(cap * 0.15, 2500))}`;
+  // Começo alto mas sem passar de 8 Mbps somando todo mundo que assiste (upload mais fraco não engasga
+  // logo no início). Sem piso (x-google-min-bitrate): com piso, quando a rede cai abaixo dele o WebRTC
+  // não pode descer e o que sobra vira perda de pacote e tela travada.
+  const extra = `x-google-start-bitrate=${Math.round(Math.min(cap * 0.6, 8000 / Math.max(1, watchers.size)))}`;
   const eol = sdp.includes('\r\n') ? '\r\n' : '\n';
   // Separa por m= e mexe só nas seções de vídeo.
   const sections = sdp.split(new RegExp(`${eol}(?=m=)`));

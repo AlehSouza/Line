@@ -78,7 +78,7 @@ PORT=4000
 HOST=127.0.0.1
 DATA_DIR=/var/lib/line
 WEB_DIR=/opt/line/web
-TURN_URLS=turn:$DOMAIN:3478,turn:$DOMAIN:3478?transport=tcp
+TURN_URLS=turn:$DOMAIN:3478,turn:$DOMAIN:3478?transport=tcp,turns:$DOMAIN:5349?transport=tcp
 TURN_SECRET=$TURN_SECRET
 RUST_LOG=info
 ENV
@@ -246,7 +246,6 @@ min-port=$TURN_MIN
 max-port=$TURN_MAX
 external-ip=${PUBLIC_IP:-$PRIVATE_IP}/$PRIVATE_IP
 no-cli
-no-tls
 no-dtls
 no-multicast-peers
 denied-peer-ip=10.0.0.0-10.255.255.255
@@ -256,6 +255,53 @@ total-quota=200
 TURN
 sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn 2>/dev/null || true
 
+# TURN com TLS na 5349 (turns:): atravessa redes de empresa/faculdade que bloqueiam a 3478.
+# Usa o mesmo certificado que o Caddy tira para o domínio. O comando abaixo copia o certificado para
+# o coturn, liga o TLS no turnserver.conf quando o certificado existe e reinicia o coturn quando ele
+# muda (o Caddy renova sozinho; o timer roda todo dia).
+cat > /usr/local/bin/line-turn-cert <<'CERT'
+#!/bin/sh
+set -eu
+DOMAIN=$(cat /etc/line/domain)
+CRT=$(find /var/lib/caddy -type f -name "$DOMAIN.crt" -path '*certificates*' 2>/dev/null | head -1)
+[ -n "$CRT" ] || exit 0
+KEY="${CRT%.crt}.key"
+[ -f "$KEY" ] || exit 0
+DST=/etc/line/turn-tls
+GROUP=$(getent group turnserver >/dev/null && echo turnserver || echo root)
+install -d -m 750 -o root -g "$GROUP" "$DST"
+CHANGED=0
+if ! cmp -s "$CRT" "$DST/cert.pem" || ! cmp -s "$KEY" "$DST/key.pem"; then
+  install -m 640 -o root -g "$GROUP" "$CRT" "$DST/cert.pem"
+  install -m 640 -o root -g "$GROUP" "$KEY" "$DST/key.pem"
+  CHANGED=1
+fi
+if ! grep -q '^tls-listening-port=' /etc/turnserver.conf; then
+  sed -i '/^no-tls$/d' /etc/turnserver.conf
+  printf 'tls-listening-port=5349\ncert=%s/cert.pem\npkey=%s/key.pem\n' "$DST" "$DST" >> /etc/turnserver.conf
+  CHANGED=1
+fi
+[ "$CHANGED" = 1 ] && systemctl restart coturn 2>/dev/null || true
+CERT
+chmod 755 /usr/local/bin/line-turn-cert
+cat > /etc/systemd/system/line-turn-cert.service <<'UNIT'
+[Unit]
+Description=Copia o certificado do Caddy para o TURN com TLS
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/line-turn-cert
+UNIT
+cat > /etc/systemd/system/line-turn-cert.timer <<'UNIT'
+[Unit]
+Description=Certificado do TURN com TLS, todo dia
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1d
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+
 echo "==> Firewall da máquina (as imagens da Oracle bloqueiam tudo por padrão)"
 open_port() { iptables -C INPUT -p "$1" --dport "$2" -j ACCEPT 2>/dev/null || iptables -I INPUT -p "$1" --dport "$2" -j ACCEPT; }
 open_port tcp 80
@@ -263,6 +309,7 @@ open_port tcp 443
 open_port udp 443
 open_port tcp 3478
 open_port udp 3478
+open_port tcp 5349
 open_port udp "$TURN_MIN:$TURN_MAX"
 netfilter-persistent save >/dev/null
 
@@ -319,6 +366,9 @@ systemctl enable --now line-backup.timer >/dev/null
 systemctl enable --now line.service
 systemctl restart line.service coturn caddy
 systemctl enable coturn caddy >/dev/null
+systemctl daemon-reload
+systemctl enable --now line-turn-cert.timer >/dev/null
+/usr/local/bin/line-turn-cert || echo "Aviso: TURN com TLS ainda sem certificado (o timer tenta de novo amanhã)."
 
 sleep 2
 if curl -fsS http://127.0.0.1:4000/api/health >/dev/null; then
