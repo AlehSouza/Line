@@ -536,10 +536,13 @@ function TileView({
   const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !v.watching[tile.state.userId]);
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
+  // Foto do perfil do servidor por cima da principal, igual ao cartão e à lista de membros.
+  const serverAvatar = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.profile?.avatarUrl : null));
+  const avatarUrl = serverAvatar || tile.user?.avatarUrl;
   // Só dá para assistir à tela de quem está na mesma chamada que eu.
   const inSameCall = useVoice((v) => !!v.channelId && v.channelId === tile.state.channelId);
   const thumb = useVoice((v) => (tile.kind === 'screen' ? v.screenThumbs[tile.state.userId] : undefined));
-  const tint = useAvatarTint(tile.user?.avatarUrl, tile.user?.avatarColor ?? '#3a3a42');
+  const tint = useAvatarTint(avatarUrl, tile.user?.avatarColor ?? '#3a3a42');
   const look = useCallLook(tile.kind === 'person' ? tile.state.userId : undefined);
   // Clique direito no quadro: o mesmo menu da pessoa na lista do canal de voz.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -630,7 +633,7 @@ function TileView({
         <>
           {tile.kind === 'person' && <CallLookLayers look={look} />}
           <CallLookAvatar look={tile.kind === 'person' ? look : null}>
-            <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={tile.user?.avatarUrl} size={big ? 112 : 72} />
+            <Avatar name={name} color={tile.user?.avatarColor ?? '#3a3a42'} src={avatarUrl} size={big ? 112 : 72} />
           </CallLookAvatar>
         </>
       )}
@@ -2126,7 +2129,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
   const effects = useSounds((s) => s.effects);
   const myChannel = useVoice((v) => v.channelId);
   const users = useLine((s) => s.users);
-  useLine((s) => s.members); // apelidos
+  const serverMembers = useLine((s) => (serverId ? s.members[serverId] : undefined)); // apelidos e foto do servidor
   const list = participants(states, channelId);
   const canInvite = !!serverId && myChannel === channelId;
   const [menu, setMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
@@ -2153,7 +2156,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
           >
             {/* Caixa fixa 24x24; o anel de "falando" fica 2px em volta, sempre redondo e centralizado. */}
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center">
-              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={24} />
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={serverMembers?.[p.userId]?.profile?.avatarUrl || u?.avatarUrl} size={24} />
               {(speaking[p.userId] || effects[p.userId]) && (
                 <span
                   className={cx(
@@ -2278,6 +2281,7 @@ export function CollapsedVoiceChannel({ channel, active, onOpen }: { channel: Ch
   const states = useVoice((v) => v.states);
   const speaking = useVoice((v) => v.speaking);
   const users = useLine((s) => s.users);
+  const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
   const list = participants(states, channel.id);
   if (!list.length) return null;
   const MAX = 4;
@@ -2306,7 +2310,7 @@ export function CollapsedVoiceChannel({ channel, active, onOpen }: { channel: Ch
               )}
               style={{ zIndex: shown.length - i }}
             >
-              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={u?.avatarUrl} size={22} />
+              <Avatar name={u?.displayName ?? '?'} color={u?.avatarColor ?? '#3a3a42'} src={serverMembers?.[p.userId]?.profile?.avatarUrl || u?.avatarUrl} size={22} />
             </span>
           );
         })}
