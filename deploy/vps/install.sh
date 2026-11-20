@@ -276,8 +276,9 @@ if ! cmp -s "$CRT" "$DST/cert.pem" || ! cmp -s "$KEY" "$DST/key.pem"; then
   install -m 640 -o root -g "$GROUP" "$KEY" "$DST/key.pem"
   CHANGED=1
 fi
-if ! grep -q '^tls-listening-port=' /etc/turnserver.conf; then
-  sed -i '/^no-tls$/d' /etc/turnserver.conf
+# Uma vez só (duas execuções juntas já duplicaram as linhas): limpa e escreve de novo se não estiver certo.
+if [ "$(grep -c '^tls-listening-port=' /etc/turnserver.conf)" != 1 ]; then
+  sed -i '/^no-tls$/d; /^tls-listening-port=/d; /^cert=/d; /^pkey=/d' /etc/turnserver.conf
   printf 'tls-listening-port=5349\ncert=%s/cert.pem\npkey=%s/key.pem\n' "$DST" "$DST" >> /etc/turnserver.conf
   CHANGED=1
 fi
@@ -368,7 +369,8 @@ systemctl restart line.service coturn caddy
 systemctl enable coturn caddy >/dev/null
 systemctl daemon-reload
 systemctl enable --now line-turn-cert.timer >/dev/null
-/usr/local/bin/line-turn-cert || echo "Aviso: TURN com TLS ainda sem certificado (o timer tenta de novo amanhã)."
+# Pelo systemd (o timer pode estar rodando agora; o systemd não deixa as duas juntas).
+systemctl start line-turn-cert.service || echo "Aviso: TURN com TLS ainda sem certificado (o timer tenta de novo amanhã)."
 
 sleep 2
 if curl -fsS http://127.0.0.1:4000/api/health >/dev/null; then
