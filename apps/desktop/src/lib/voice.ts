@@ -1590,6 +1590,13 @@ function applySwitch(screen: MediaStream, opened: Awaited<ReturnType<typeof open
   setV((v) => ({ mediaRev: v.mediaRev + 1 }));
 }
 
+/**
+ * Teto de fps do codificador um pouco acima do escolhido. A captura já sai no ritmo certo; com o teto
+ * exatamente igual, o limitador do WebRTC descartava todo quadro que chegava alguns ms adiantado
+ * (60 fps viravam 30 a 45).
+ */
+const encoderFps = (fps: number) => fps + Math.ceil(fps / 6);
+
 /** Depois de trocar a fonte: ajusta taxa, fps e redução ao tamanho da tela nova. */
 async function retuneScreenSender(sender: RTCRtpSender, resolution: Resolution, fps: Fps) {
   try {
@@ -1597,7 +1604,7 @@ async function retuneScreenSender(sender: RTCRtpSender, resolution: Resolution, 
     const enc = params.encodings?.[0];
     if (!enc) return;
     enc.maxBitrate = capKbps(resolution, fps) * 1000;
-    enc.maxFramerate = fps;
+    enc.maxFramerate = encoderFps(fps);
     enc.scaleResolutionDownBy = downscale(resolution);
     await sender.setParameters(params);
   } catch {
@@ -2163,7 +2170,7 @@ function addStream(pc: RTCPeerConnection, stream: MediaStream) {
       sendEncodings: [
         {
           maxBitrate: capKbps(resolution, fps) * 1000,
-          maxFramerate: fps,
+          maxFramerate: encoderFps(fps),
           scaleResolutionDownBy: downscale(resolution),
           // A tela passa na frente do resto da conexão quando a banda aperta.
           priority: 'high',

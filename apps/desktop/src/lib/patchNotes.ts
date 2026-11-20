@@ -100,6 +100,11 @@ export const PATCH_NOTES: PatchNote[] = [
         text: 'Trocar de janela ou abrir o menu de um jogo durante a transmissão não deixa mais a imagem em blocos nem muda o tamanho dela no meio do caminho.',
       },
       {
+        icon: 'zap',
+        title: 'Transmissão a 60 fps de verdade',
+        text: 'Ao transmitir em 60 fps, a imagem agora chega muito mais perto dos 60 quadros por segundo para quem assiste, mesmo com o jogo rodando acima disso.',
+      },
+      {
         icon: 'volume',
         title: 'Sons novos em todo o app',
         text: 'Mensagens, menções, entrar e sair da voz, mutar, ligações e transmissões ganharam sons novos, mais suaves e combinando entre si. Cada situação tem o seu som, então dá para saber o que aconteceu sem olhar a tela.',

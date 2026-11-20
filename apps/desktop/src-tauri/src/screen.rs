@@ -335,7 +335,10 @@ pub async fn screen_start(
         DrawBorderSettings::Default
     };
     let interval = if GraphicsCaptureApi::is_minimum_update_interval_supported().unwrap_or(false) {
-        MinimumUpdateIntervalSettings::Custom(Duration::from_micros(1_000_000 / fps as u64))
+        // Metade do intervalo: o ritmo certo quem dá é o `next` do on_frame_arrived. Com o intervalo
+        // exato, o Windows conta a partir do último quadro entregue e qualquer atraso pequeno
+        // pulava o seguinte inteiro (60 fps viravam 40 a 48).
+        MinimumUpdateIntervalSettings::Custom(Duration::from_micros(500_000 / fps as u64))
     } else {
         MinimumUpdateIntervalSettings::Default
     };
