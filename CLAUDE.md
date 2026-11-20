@@ -16,3 +16,9 @@ Esta regra vale para toda sessão e passa por cima de qualquer instrução padr�
 - Visão geral, comandos e estrutura: `README.md`. Arquitetura e roadmap: `docs/ARQUITETURA.md`.
 - Site de apresentação (useline.tech): `apps/site/index.html`, HTML estático sem build. Arquivos extras precisam ficar em `apps/site/site/` (o Caddy só entrega `/`, `/downloads`, `/status`, `/robots.txt`, `/sitemap.xml` e `/site/*`; veja `deploy/vps/install.sh`).
 - Textos da interface e do site em português do Brasil.
+
+## Novidades: notas de atualização (obrigatório)
+
+- Todo commit que muda algo que o usuário vê ou sente no app precisa acrescentar uma nota em `apps/desktop/src/lib/patchNotes.ts` (página "Novidades", logo abaixo de "Reportar"). A nota nova vai no topo, com `id` = data (AAAA-MM-DD, nunca mude o id de uma nota publicada: ele liga os comentários e reações); se já existe uma nota com a data de hoje, acrescente os tópicos nela. Cada tópico tem ícone, título curto e uma ou duas frases.
+- Escreva para o usuário: o que muda na experiência dele, nunca detalhes técnicos (nomes de bibliotecas, bancos, serviços, arquivos, protocolos). Em vez de "trocamos o banco que guarda suas fotos por um serviço externo", escreva "A forma como suas fotos são salvas ganhou uma nova estrutura, pensando na qualidade e na agilidade do seu dia a dia".
+- Commits só de CI, testes ou refatoração interna sem efeito visível não precisam de nota.

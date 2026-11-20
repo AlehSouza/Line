@@ -20,7 +20,7 @@ export function TitleBar() {
     if (v.kind === 'server') return s.servers[v.serverId]?.name ?? 'Line';
     if (v.kind === 'discover') return 'Explorar servidores';
     if (v.dmId && s.channels[v.dmId]) return dmTitle(s.channels[v.dmId]!, s.me?.id, s.users);
-    return v.page === 'requests' ? 'Solicitações' : v.page === 'saved' ? 'Salvos' : 'Amigos';
+    return v.page === 'requests' ? 'Solicitações' : v.page === 'saved' ? 'Salvos' : v.page === 'patch-notes' ? 'Novidades' : 'Amigos';
   });
   const inServer = useLine((s) => s.view.kind === 'server');
   const loggedIn = useLine((s) => !!s.token && !!s.me);

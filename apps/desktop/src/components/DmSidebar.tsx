@@ -1,6 +1,8 @@
 'use client';
 
 import { mobile } from '@/lib/mobile';
+import { useEffect, useState } from 'react';
+import { hasUnseenPatchNote, markPatchNotesSeen } from '@/lib/patchNotes';
 
 import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
@@ -23,6 +25,12 @@ export function DmSidebar() {
   const dms = useLine(useShallow((s) => s.dmOrder.map((id) => s.channels[id]!).filter(Boolean)));
   const activeDm = view.kind === 'home' ? view.dmId : null;
   const pending = useIncomingCount();
+  const onNews = view.kind === 'home' && view.page === 'patch-notes';
+  const [unseenNews, setUnseenNews] = useState(false);
+  useEffect(() => {
+    if (onNews) markPatchNotesSeen();
+    setUnseenNews(hasUnseenPatchNote());
+  }, [onNews]);
 
   return (
     <div className="flex h-full flex-col">
@@ -83,6 +91,20 @@ export function DmSidebar() {
         >
           <Icons.Bug />
           <span className="flex-1 truncate text-left">Reportar</span>
+        </button>
+        <button
+          onClick={() => {
+            actions.goPatchNotes();
+            mobile.showMain();
+          }}
+          className={cx(
+            'flex w-full items-center gap-3 rounded-md px-2 py-2 font-medium',
+            onNews ? 'bg-hover text-fg' : 'text-muted hover:bg-hover hover:text-soft',
+          )}
+        >
+          <Icons.ScrollText />
+          <span className="flex-1 truncate text-left">Novidades</span>
+          {unseenNews && <span className="rounded-full bg-accent px-1.5 text-[11px] leading-5 font-bold text-on-accent uppercase">Novo</span>}
         </button>
 
         <div className="flex items-center justify-between px-2 pt-4 pb-1">

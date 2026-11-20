@@ -99,6 +99,13 @@ export function fileUrl(path: string) {
   return /^https?:/.test(path) ? path : `${baseUrl}${path}`;
 }
 
+/** Reações e comentários de uma nota de atualização. */
+export interface PatchNoteSocial {
+  noteId: string;
+  reactions: { emoji: string; userIds: string[] }[];
+  comments: { id: string; author: PublicUser | null; content: string; createdAt: string; canDelete: boolean }[];
+}
+
 /** Jogo de alguém na Atividade (jogando agora ou nas últimas 24 h). */
 export interface ServerActivity {
   userId: string;
@@ -408,6 +415,11 @@ export const api = {
   savedIds: () => request<string[]>('GET', '/users/@me/saved/ids'),
   saveMessage: (id: string) => request<unknown>('PUT', `/messages/${enc(id)}/save`),
   unsaveMessage: (id: string) => request<unknown>('DELETE', `/messages/${enc(id)}/save`),
+  patchNote: (id: string) => request<PatchNoteSocial>('GET', `/patch-notes/${enc(id)}`),
+  patchNoteReact: (id: string, emoji: string, on: boolean) =>
+    request<PatchNoteSocial>(on ? 'PUT' : 'DELETE', `/patch-notes/${enc(id)}/reactions/${enc(emoji)}`),
+  patchNoteComment: (id: string, content: string) => request<PatchNoteSocial>('POST', `/patch-notes/${enc(id)}/comments`, { content }),
+  deletePatchNoteComment: (id: string) => request<unknown>('DELETE', `/patch-note-comments/${enc(id)}`),
   pins: (channelId: string) => request<Message[]>('GET', `/channels/${enc(channelId)}/pins`),
   editMessage: (id: string, content: string) => request<Message>('PATCH', `/messages/${enc(id)}`, { content }),
   deleteMessage: (id: string) => request<void>('DELETE', `/messages/${enc(id)}`),

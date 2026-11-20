@@ -18,6 +18,7 @@ pub mod events;
 pub mod forward;
 pub mod notify;
 pub mod profile;
+pub mod patch_notes;
 pub mod saved;
 pub mod sounds;
 pub use admin::{BAN_FOREVER, NewReport};

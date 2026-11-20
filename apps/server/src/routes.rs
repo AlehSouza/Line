@@ -222,6 +222,7 @@ pub fn router(app: Arc<App>, socket_layer: SocketIoLayer) -> Router {
                 .merge(crate::profile::router())
                 .merge(crate::notify::router())
                 .merge(crate::saved::router())
+                .merge(crate::patch_notes::router())
                 .merge(crate::forward::router()),
         )
         .fallback(web_fallback)

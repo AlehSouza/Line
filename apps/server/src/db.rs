@@ -551,6 +551,25 @@ const MIGRATIONS: &[&str] = &[
     r#"
   ALTER TABLE attachments ADD COLUMN preview TEXT;
 "#,
+    // Patch notes: reações e comentários em cada nota de versão (o texto das notas vem no app).
+    r#"
+  CREATE TABLE IF NOT EXISTS patch_note_reactions (
+    note_id    TEXT NOT NULL,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    emoji      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (note_id, emoji, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS patch_note_comments (
+    id         TEXT PRIMARY KEY,
+    note_id    TEXT NOT NULL,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content    TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX patch_note_comments_note ON patch_note_comments(note_id, id);
+  CREATE INDEX patch_note_comments_user ON patch_note_comments(user_id, created_at);
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

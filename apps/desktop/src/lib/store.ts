@@ -5,7 +5,7 @@ import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, 
 import { create } from 'zustand';
 
 export type View =
-  | { kind: 'home'; dmId: string | null; page?: 'requests' | 'saved' }
+  | { kind: 'home'; dmId: string | null; page?: 'requests' | 'saved' | 'patch-notes' }
   | { kind: 'server'; serverId: string; channelId: string | null }
   | { kind: 'discover' };
 
@@ -433,6 +433,11 @@ export const actions = {
   /** Página "Salvos" (abaixo de Solicitações). */
   goSaved() {
     set({ view: { kind: 'home', dmId: null, page: 'saved' }, threadId: null });
+  },
+
+  /** Página "Novidades" (abaixo de Reportar). */
+  goPatchNotes() {
+    set({ view: { kind: 'home', dmId: null, page: 'patch-notes' }, threadId: null });
   },
 
   /** Marca/desmarca uma mensagem como salva (só o estado local). */

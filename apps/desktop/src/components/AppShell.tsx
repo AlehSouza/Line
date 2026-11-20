@@ -1,6 +1,7 @@
 'use client';
 
 import { SavedView } from './Saved';
+import { PatchNotesView } from './PatchNotes';
 import { totalMentions } from '@/lib/notify';
 import { useEffect } from 'react';
 import { mobile, useMobile } from '@/lib/mobile';
@@ -67,7 +68,7 @@ export function AppShell() {
   let main;
   if (suspended) main = <SuspendedServer />;
   else if (view.kind === 'discover') main = <DiscoverView />;
-  else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : view.page === 'saved' ? <SavedView /> : <FriendsView />;
+  else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : view.page === 'saved' ? <SavedView /> : view.page === 'patch-notes' ? <PatchNotesView /> : <FriendsView />;
   else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
   else if (channel?.base === 'activity') main = <ActivityChannel channel={channel} />;
   else if (channel?.base === 'events') main = <EventsChannel channel={channel} />;

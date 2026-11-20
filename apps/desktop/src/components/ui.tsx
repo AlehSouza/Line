@@ -334,6 +334,7 @@ export const Icons = {
   CalendarPlus: icon(L.CalendarPlus),
   Help: icon(L.CircleHelp),
   Megaphone: icon(L.Megaphone),
+  ScrollText: icon(L.ScrollText),
   CalendarCheck: icon(L.CalendarCheck2),
   Speaker: icon(L.Volume2),
   SpeakerOff: icon(L.VolumeX),

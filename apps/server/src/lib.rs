@@ -22,6 +22,7 @@ pub mod notify;
 pub mod perms;
 pub mod presence;
 pub mod preview;
+pub mod patch_notes;
 pub mod profile;
 pub mod routes;
 pub mod saved;
