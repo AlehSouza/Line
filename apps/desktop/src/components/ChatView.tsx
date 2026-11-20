@@ -100,9 +100,17 @@ export function ChatView({ channel }: { channel: Channel }) {
         </div>
       </header>
       {isDm && callActive && <VoiceStage channel={channel} compact />}
-      <MessageList channel={channel} title={title} />
+      {news ? (
+        <>
+          {/* Comentários das Novidades: caixa no topo, os meus primeiro e o resto do mais novo ao mais antigo. */}
+          <Composer ref={composer} channel={channel} placeholder="Escreva um comentário…" />
+          <NewsList channel={channel} />
+        </>
+      ) : (
+        <MessageList channel={channel} title={title} />
+      )}
       {/* Canal de Notas e Atualizações sem permissão para publicar: só leitura, sem caixa de texto. */}
-      {!(channel.base && !news && !canPost) && (
+      {!news && !(channel.base && !canPost) && (
         <Composer ref={composer} channel={channel} placeholder={news ? 'Escreva um comentário…' : isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
       )}
     </div>
@@ -537,6 +545,109 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
       </div>
       {/* Na thread a caixa de resposta fica logo abaixo da última resposta (e gruda embaixo quando a conversa é longa). */}
       {footer && <div className="sticky bottom-0 bg-main pt-1">{footer}</div>}
+    </div>
+  );
+}
+
+const NEWS_PAGE = 20;
+
+/** Lista dos comentários de uma nota: os da pessoa logada no topo (mesmo que antigos), depois
+ * os outros do mais novo ao mais antigo, de 20 em 20. */
+function NewsList({ channel }: { channel: Channel }) {
+  const bucket = useLine((s) => s.messages[channel.id]);
+  const mineBucket = useLine((s) => s.messages[`mine:${channel.id}`]);
+  const meId = useLine((s) => s.me?.id);
+  const myUsername = useLine((s) => s.me?.username);
+  const users = useLine((s) => s.users);
+  const canManage = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.ManageMessages));
+  const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.CreateThreads));
+  const mentionCtx = useMentionContext(undefined);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setError('');
+    loadMessages(channel.id, false, NEWS_PAGE).catch((e) => setError(e.message));
+  }, [channel.id]);
+
+  // Meus comentários, mesmo os que estão lá atrás (mais de 20 páginas, por exemplo).
+  useEffect(() => {
+    if (!myUsername) return;
+    api
+      .search({ channel: channel.id, author: myUsername })
+      .then((list) => actions.setMessages(`mine:${channel.id}`, list.filter((m) => m.channelId === channel.id), false))
+      .catch(() => {});
+  }, [channel.id, myUsername]);
+
+  const items = bucket?.items ?? EMPTY;
+  const byNewest = (a: Message, b: Message) => b.createdAt.localeCompare(a.createdAt);
+  const mine = useMemo(() => {
+    const live = new Map(items.map((m) => [m.id, m]));
+    const all = new Map<string, Message>();
+    for (const m of mineBucket?.items ?? EMPTY) all.set(m.id, live.get(m.id) ?? m);
+    for (const m of items) if (m.author.id === meId) all.set(m.id, m);
+    return [...all.values()].sort(byNewest);
+  }, [items, mineBucket, meId]);
+  const others = useMemo(() => items.filter((m) => m.author.id !== meId).sort(byNewest), [items, meId]);
+
+  async function more() {
+    setLoading(true);
+    try {
+      await loadMessages(channel.id, true, NEWS_PAGE);
+    } catch (e) {
+      showError(e);
+    }
+    setLoading(false);
+  }
+
+  const row = (m: Message) => {
+    const author = users[m.author.id] ?? m.author;
+    return (
+      <MessageRow
+        key={m.id}
+        message={m}
+        authorName={author.displayName}
+        authorColor={author.avatarColor}
+        nameColor={useLine.getState().users[m.author.id]?.botStyle?.nameColor}
+        mentionCtx={mentionCtx}
+        grouped={false}
+        mine={m.author.id === meId}
+        canDelete={m.author.id === meId || canManage}
+        canPin={canManage}
+        editing={editing === m.id}
+        onEdit={() => setEditing(m.id)}
+        onDoneEditing={() => setEditing(null)}
+        myUsername={myUsername}
+        canThread={channel.type === 'text' && canCreateThreads}
+      />
+    );
+  };
+
+  const label = (text: string) => <p className="px-4 pt-4 pb-1 text-xs font-bold uppercase tracking-wide text-muted">{text}</p>;
+
+  return (
+    <div className="flex flex-col pb-4">
+      {!bucket && !error && <MessageSkeletons />}
+      {error && <p className="px-4 py-6 text-sm text-danger">{error}</p>}
+      {mine.length > 0 && (
+        <>
+          {label(mine.length === 1 ? 'Seu comentário' : 'Seus comentários')}
+          {mine.map(row)}
+        </>
+      )}
+      {bucket && (others.length > 0 || bucket.hasMore) && label('Mais recentes')}
+      {others.map(row)}
+      {bucket && !items.length && <p className="px-4 py-6 text-sm text-muted">Ninguém comentou ainda. Seja a primeira pessoa!</p>}
+      {bucket?.hasMore && (
+        <button
+          onClick={more}
+          disabled={loading}
+          className="mx-4 mt-3 h-10 rounded-xl border border-edge bg-raise/40 text-sm font-bold text-soft hover:border-accent/50 hover:text-fg disabled:opacity-60"
+        >
+          {loading ? 'Carregando…' : 'Mostrar mais 20 comentários'}
+        </button>
+      )}
     </div>
   );
 }
@@ -1912,7 +2023,8 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
       for (const x of list) if (x.preview) URL.revokeObjectURL(x.preview);
       return [];
     });
-    ref.current?.focus();
+    // Nos comentários das Novidades não puxa o foco: a página rolaria sozinha até a caixa.
+    if (!(channel.base === 'news' && !channel.serverId)) ref.current?.focus();
   }, [channel.id]);
 
   const uploading = pending.some((x) => !x.error && (!x.attachment || x.checking));

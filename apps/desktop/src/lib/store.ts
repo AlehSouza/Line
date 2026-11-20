@@ -361,22 +361,24 @@ export const actions = {
 
   updateMessage(message: Message) {
     set((s) => {
-      const bucket = s.messages[message.channelId];
-      if (!bucket) return {};
-      return {
-        messages: {
-          ...s.messages,
-          [message.channelId]: { ...bucket, items: bucket.items.map((m) => (m.id === message.id ? message : m)) },
-        },
-      };
+      // `mine:` guarda os meus comentários das Novidades, que podem estar fora das páginas carregadas.
+      const messages = { ...s.messages };
+      for (const key of [message.channelId, `mine:${message.channelId}`]) {
+        const b = messages[key];
+        if (b) messages[key] = { ...b, items: b.items.map((m) => (m.id === message.id ? message : m)) };
+      }
+      return { messages };
     });
   },
 
   deleteMessage(channelId: string, id: string) {
     set((s) => {
-      const bucket = s.messages[channelId];
-      if (!bucket) return {};
-      return { messages: { ...s.messages, [channelId]: { ...bucket, items: bucket.items.filter((m) => m.id !== id) } } };
+      const messages = { ...s.messages };
+      for (const key of [channelId, `mine:${channelId}`]) {
+        const b = messages[key];
+        if (b) messages[key] = { ...b, items: b.items.filter((m) => m.id !== id) };
+      }
+      return { messages };
     });
   },
 

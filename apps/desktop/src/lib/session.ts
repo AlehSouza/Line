@@ -327,7 +327,7 @@ export async function jumpToMessage(message: Message) {
 export const MESSAGES_PAGE = 40;
 const loadingMessages = new Set<string>();
 
-export async function loadMessages(channelId: string, older = false) {
+export async function loadMessages(channelId: string, older = false, page = MESSAGES_PAGE) {
   const bucket = useLine.getState().messages[channelId];
   if (older && (!bucket || !bucket.hasMore)) return;
   if (!older && bucket?.loaded) return;
@@ -336,9 +336,9 @@ export async function loadMessages(channelId: string, older = false) {
   loadingMessages.add(key);
   try {
     const before = older ? bucket?.items[0]?.id : undefined;
-    const items = await api.messages(channelId, before, MESSAGES_PAGE);
+    const items = await api.messages(channelId, before, page);
     ensureUsers(items.flatMap((m) => (m.threads ?? (m.thread ? [m.thread] : [])).flatMap((t) => t.participantIds ?? [])));
-    actions.setMessages(channelId, items, items.length === MESSAGES_PAGE, older);
+    actions.setMessages(channelId, items, items.length === page, older);
   } finally {
     loadingMessages.delete(key);
   }

@@ -90,6 +90,11 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     improvements: [
       {
+        icon: 'message',
+        title: 'Comentários das Novidades mais fáceis de usar',
+        text: 'A caixa para comentar agora fica no topo, seus comentários aparecem sempre primeiro e os demais chegam do mais novo ao mais antigo, de 20 em 20. A página também não desce mais sozinha até o fim ao abrir.',
+      },
+      {
         icon: 'monitor',
         title: 'Imagem firme nas trocas de tela',
         text: 'Trocar de janela ou abrir o menu de um jogo durante a transmissão não deixa mais a imagem em blocos nem muda o tamanho dela no meio do caminho.',

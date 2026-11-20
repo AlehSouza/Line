@@ -274,7 +274,7 @@ function Social({ noteId }: { noteId: string }) {
         </div>
       </div>
 
-      <div className="mt-6 flex h-[70vh] min-h-[480px] flex-col overflow-hidden rounded-2xl border border-edge bg-main">
+      <div className="mt-6 flex flex-col overflow-hidden rounded-2xl border border-edge bg-main">
         {channel ? <ChatView channel={channel} /> : <p className="m-auto text-sm text-muted">{data ? 'Os comentários não carregaram. Tente de novo mais tarde.' : 'Carregando comentários…'}</p>}
       </div>
     </section>
