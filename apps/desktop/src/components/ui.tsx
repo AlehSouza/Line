@@ -396,6 +396,7 @@ export const Icons = {
   Camera: icon(L.Camera),
   AtSign: icon(L.AtSign),
   UserPlus: icon(L.UserPlus),
+  CircleUser: icon(L.CircleUser),
   UserCheck: icon(L.UserCheck),
   Clock: icon(L.Clock),
   More: icon(L.Ellipsis),

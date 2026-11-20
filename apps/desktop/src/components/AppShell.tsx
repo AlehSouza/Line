@@ -13,6 +13,7 @@ import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendRequestsView, FriendsView } from './FriendsView';
 import { MembersDrawer, ServerSidePanel } from './MemberList';
+import { DmSidePanel } from './DmSidePanel';
 import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
@@ -27,7 +28,7 @@ export function AppShell() {
   const connection = useLine((s) => s.connection);
   const mediaThreads = useLine((s) => s.mediaThreads);
   const thread = useLine((s) =>
-    s.threadId ? s.channels[s.threadId] : s.threadDraft && s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId ? s.threadDraft : undefined,
+    s.threadId ? s.channels[s.threadId] : s.threadDraft && ((s.view.kind === 'server' && s.view.channelId === s.threadDraft.parentId) || (s.view.kind === 'home' && s.view.page === 'patch-notes')) ? s.threadDraft : undefined,
   );
   const unreadTotal = useLine((s) => totalMentions(s));
   const showBadge = useLine((s) => s.notify.badge !== false);
@@ -107,12 +108,13 @@ export function AppShell() {
           {main}
           <MiniStream viewingChannelId={channel?.id ?? null} />
         </main>
-        {thread && channel?.type === 'text' ? (
+        {thread && (channel?.type === 'text' || (view.kind === 'home' && view.page === 'patch-notes')) ? (
           <ThreadPanel thread={thread} />
         ) : mediaThreads && channel?.type === 'text' && mediaThreads.channelId === channel.id ? (
           <MediaThreadsPanel channelId={mediaThreads.channelId} messageIds={mediaThreads.messageIds} />
         ) : (
-          view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />
+          (view.kind === 'server' && channel?.type === 'text' && <ServerSidePanel key={view.serverId} serverId={view.serverId} />) ||
+          (view.kind === 'home' && (channel?.type === 'dm' || channel?.type === 'group_dm') && <DmSidePanel channel={channel} />)
         )}
       </div>
       {membersOpen && view.kind === 'server' && channel?.type === 'text' && <MembersDrawer serverId={view.serverId} onClose={mobile.closeMembers} />}

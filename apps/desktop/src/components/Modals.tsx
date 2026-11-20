@@ -1,5 +1,6 @@
 'use client';
 
+import { FriendNickModal, UserNoteModal } from './PersonMenu';
 import { imageMenuItems, openContextMenu } from './ContextMenu';
 import { CoverArt } from './Attachments';
 import { ServerNotifyModal } from './Notifications';
@@ -19,6 +20,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 import { api, fileUrl } from '@/lib/api';
 import { mediaUrlOf } from '@/lib/mediaUrl';
 import { hasPerm, Perm, type Channel, type Message, type Role } from '@line/shared';
+import { inviteCodeFromText, inviteLink } from '@/lib/invite';
+import { InvitePage } from './InviteCard';
 import { actions, channelPermsOf, mentionsToText, withoutCardCodes, permsOf, useLine, type Modal as ModalState } from '@/lib/store';
 import { Composer, ThreadChip, threadsOf, ViewerReactButton, ViewerReactions } from './ChatView';
 import { ServerImages, type ServerImage } from './ServerImages';
@@ -51,14 +54,20 @@ export function Modals() {
       return <ServerNotifyModal serverId={modal.serverId} onClose={close} />;
     case 'invite':
       return <InviteModal serverId={modal.serverId} onClose={close} />;
+    case 'invite-page':
+      return <InvitePage code={modal.code} onClose={close} />;
     case 'profile':
       return <ProfileModal onClose={close} />;
     case 'settings':
       return <SettingsModal key={modal.section ?? 'account'} onClose={close} initial={modal.section} />;
     case 'create-poll':
       return <CreatePollModal channelId={modal.channelId} onClose={close} />;
+    case 'user-note':
+      return <UserNoteModal userId={modal.userId} onClose={close} />;
+    case 'friend-nick':
+      return <FriendNickModal userId={modal.userId} onClose={close} />;
     case 'new-dm':
-      return <NewDmModal onClose={close} />;
+      return <NewDmModal base={modal.base} onClose={close} />;
     case 'user':
       return <UserCard userId={modal.userId} at={modal.at} hover={modal.hover} onClose={close} />;
     case 'full-profile':
@@ -118,7 +127,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
       const server =
         mode === 'create'
           ? await api.createServer({ name, isPublic })
-          : await api.acceptInvite(invite.trim().split('/').pop() ?? '');
+          : await api.acceptInvite(inviteCodeFromText(invite));
       actions.upsertServer(server);
       actions.goServer(server.id);
       mobile.showNav();
@@ -132,7 +141,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
       subtitle={
         mode === 'create'
           ? 'Um lugar para você e sua galera. Dá pra mudar tudo depois.'
-          : 'Cole o código de convite que te mandaram.'
+          : 'Cole o link ou o código de convite que te mandaram.'
       }
       onClose={onClose}
     >
@@ -148,7 +157,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
             </label>
           </>
         ) : (
-          <Field label="Código de convite" hint="Exemplo: hTKzmak2">
+          <Field label="Link ou código de convite" hint="Exemplo: hTKzmak2">
             <Input autoFocus required value={invite} onChange={(e) => setInvite(e.target.value)} />
           </Field>
         )}
@@ -1108,13 +1117,13 @@ function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => v
   if (!server) return null;
 
   return (
-    <Modal title={`Convide amigos para ${server.name}`} subtitle="Mande este código; a pessoa usa em “Entrar em um servidor”." onClose={onClose}>
+    <Modal title={`Convide amigos para ${server.name}`} subtitle="Mande este link; no chat ele vira um cartão com o botão Juntar-se." onClose={onClose}>
       <div className="space-y-3">
         <div className="flex gap-2 rounded-lg border border-edge bg-rail p-1.5">
-          <Input readOnly value={server.inviteCode} className="border-0 bg-transparent font-mono text-base" />
+          <Input readOnly value={inviteLink(server.inviteCode)} className="border-0 bg-transparent font-mono text-sm" />
           <Button
             onClick={async () => {
-              await navigator.clipboard.writeText(server.inviteCode).catch(() => {});
+              await navigator.clipboard.writeText(inviteLink(server.inviteCode)).catch(() => {});
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             }}
@@ -1127,7 +1136,7 @@ function InviteModal({ serverId, onClose }: { serverId: string; onClose: () => v
             className="text-xs text-muted hover:text-fg"
             onClick={() => run(async () => actions.upsertServer(await api.resetInvite(server.id)))}
           >
-            Gerar novo código (o antigo para de funcionar)
+            Gerar novo link (o antigo para de funcionar)
           </button>
         )}
         <ErrorText>{error}</ErrorText>
@@ -1145,26 +1154,33 @@ function ProfileModal({ onClose }: { onClose: () => void }) {
 }
 
 
-function NewDmModal({ onClose }: { onClose: () => void }) {
+/** Nova conversa. Com `base` (pessoas da conversa aberta), quem for adicionado forma um grupo novo com todos. */
+function NewDmModal({ base = [], onClose }: { base?: string[]; onClose: () => void }) {
   const friends = useLine((s) => s.friends);
   const users = useLine((s) => s.users);
   const [selected, setSelected] = useState<string[]>([]);
   const [username, setUsername] = useState('');
   const [groupName, setGroupName] = useState('');
   const { busy, error, run } = useAction();
-  const list = Object.values(friends).filter((f) => f.state === 'friends');
+  const adding = base.length > 0;
+  const list = Object.values(friends).filter((f) => f.state === 'friends' && !base.includes(f.user.id));
 
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-  const targets = [...selected, ...(username.trim() ? [username.trim().replace(/^@/, '')] : [])];
+  const added = [...selected, ...(username.trim() ? [username.trim().replace(/^@/, '')] : [])];
+  const targets = [...base, ...added];
 
   return (
     <Modal
-      title="Nova conversa"
-      subtitle="Escolha amigos ou digite um nome de usuário. Duas pessoas ou mais viram um grupo."
+      title={adding ? 'Adicionar pessoas' : 'Nova conversa'}
+      subtitle={
+        adding
+          ? 'Quem você adicionar entra num grupo novo junto com as pessoas desta conversa.'
+          : 'Escolha amigos ou digite um nome de usuário. Duas pessoas ou mais viram um grupo.'
+      }
       onClose={onClose}
       footer={
         <Button
-          disabled={busy || targets.length === 0}
+          disabled={busy || added.length === 0}
           onClick={() =>
             run(async () => {
               const dm = await api.openDm(targets, targets.length > 1 ? groupName || undefined : undefined);
@@ -1179,6 +1195,20 @@ function NewDmModal({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="space-y-3">
+        {adding && (
+          <div className="flex flex-wrap gap-1.5">
+            {base.map((id) => {
+              const u = users[id];
+              if (!u) return null;
+              return (
+                <span key={id} className="flex items-center gap-1.5 rounded-full bg-rail py-0.5 pr-2.5 pl-0.5 text-xs font-medium text-soft">
+                  <Avatar name={u.displayName} color={u.avatarColor} src={u.avatarUrl} size={20} />
+                  {u.displayName}
+                </span>
+              );
+            })}
+          </div>
+        )}
         <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="@nome_de_usuario" />
         <div className="max-h-56 space-y-1 overflow-y-auto">
           {list.length === 0 && <p className="text-sm text-muted">Você ainda não tem amigos adicionados.</p>}

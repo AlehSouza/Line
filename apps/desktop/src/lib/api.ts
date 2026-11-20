@@ -104,6 +104,9 @@ export interface PatchNoteSocial {
   noteId: string;
   reactions: { emoji: string; userIds: string[] }[];
   comments: { id: string; author: PublicUser | null; content: string; createdAt: string; canDelete: boolean }[];
+  /** Canal de comentários da nota (chat igual ao dos servidores). */
+  channel?: Channel;
+  admin?: boolean;
 }
 
 /** Jogo de alguém na Atividade (jogando agora ou nas últimas 24 h). */

@@ -570,6 +570,13 @@ const MIGRATIONS: &[&str] = &[
   CREATE INDEX patch_note_comments_note ON patch_note_comments(note_id, id);
   CREATE INDEX patch_note_comments_user ON patch_note_comments(user_id, created_at);
 "#,
+    // Novidades: cada nota tem um canal de texto próprio (comentários com respostas e Conversas).
+    r#"
+  CREATE TABLE IF NOT EXISTS patch_note_channels (
+    note_id    TEXT PRIMARY KEY,
+    channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE
+  );
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

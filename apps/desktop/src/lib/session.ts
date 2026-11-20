@@ -184,6 +184,17 @@ function openSharedProfile() {
   );
 }
 
+/** Link de convite (useline.tech/app/?convite=...): abre a tela do convite e limpa a URL. */
+function openSharedInvite() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const code = url.searchParams.get('convite');
+  if (!code) return;
+  url.searchParams.delete('convite');
+  window.history.replaceState(window.history.state, '', url.toString());
+  actions.openModal({ kind: 'invite-page', code });
+}
+
 /** Link de mensagem (useline.tech/app/?mensagem=...): abre o canal na mensagem e limpa a URL. */
 function openSharedMessage() {
   if (typeof window === 'undefined') return;
@@ -206,6 +217,7 @@ async function bootstrap() {
   restoreView();
   openSharedProfile();
   openSharedMessage();
+  openSharedInvite();
   connectSocket();
   setupIdleDetection();
   if (!typingTicker) typingTicker = setInterval(actions.pruneTyping, 2000);
@@ -369,6 +381,7 @@ function connectSocket() {
     useLine.setState({ connection: 'connected' });
     // Reconectou: conta de novo o jogo aberto (o servidor esquece quando a conexão cai).
     if (lastGame) s.emit('presence:game', lastGame);
+    for (const id of watchedNews) s.emit('news:watch', { channelId: id });
     void syncVoice();
     void syncMusic();
   });
@@ -487,8 +500,29 @@ async function resync() {
   if (view.kind === 'server') await ensureServerLoaded(view.serverId);
 }
 
+/** Comentários de uma nota das Novidades em tempo real enquanto a página está aberta. */
+const watchedNews = new Set<string>();
+export function watchNews(channelId: string, on: boolean) {
+  if (on) watchedNews.add(channelId);
+  else watchedNews.delete(channelId);
+  socket?.emit(on ? 'news:watch' : 'news:unwatch', { channelId });
+}
+
+/** Canal (ou conversa) dos comentários das Novidades. */
+function isNewsChannel(state: ReturnType<typeof useLine.getState>, channelId: string) {
+  let c = state.channels[channelId];
+  if (c?.type === 'thread' && c.parentId) c = state.channels[c.parentId] ?? c;
+  return c?.base === 'news';
+}
+
 function onMessage(message: Message) {
   const state = useLine.getState();
+  // Comentário nas Novidades: entra na lista, sem notificação nem contador.
+  if (isNewsChannel(state, message.channelId)) {
+    actions.addMessage(message);
+    actions.upsertUsers([message.author]);
+    return;
+  }
   // DM nova que ainda não conhecemos: busca a lista de novo.
   if (!state.channels[message.channelId] && !state.channelInfo[message.channelId]) void api.dms().then(actions.setDms);
   actions.addMessage(message);

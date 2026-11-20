@@ -22,6 +22,7 @@ pub mod patch_notes;
 pub mod saved;
 pub mod sounds;
 pub use admin::{BAN_FOREVER, NewReport};
+pub use patch_notes::NEWS_BASE;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -1594,6 +1595,15 @@ impl Q<'_> {
                 },
             )
             .optional());
+        if let Some((None, _, _, _, base)) = &row
+            && base == NEWS_BASE
+        {
+            return if self.admin_flag(user_id) {
+                perms::ALL & !perms::ADMINISTRATOR
+            } else {
+                perms::NEWS
+            };
+        }
         let Some((Some(server_id), root, is_private, restricted, base)) = row else {
             return perms::ALL;
         };
@@ -1690,6 +1700,8 @@ impl Q<'_> {
             .optional());
         match row {
             None => false,
+            // Comentários das Novidades: qualquer conta.
+            Some((None, _, _, _, _, _, base)) if base == NEWS_BASE => true,
             Some((None, ..)) => self.recipient_ids(channel_id).iter().any(|r| r == user_id),
             Some((Some(server_id), root, is_private, restricted, kind, category_id, base)) => {
                 if !self.is_member(&server_id, user_id) {

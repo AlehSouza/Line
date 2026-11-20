@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, type LinkEmbed } from '@/lib/api';
+import { inviteCodeFromUrl } from '@/lib/invite';
+import { InviteCard } from './InviteCard';
 import { Icons } from './ui';
 
 const cache = new Map<string, Promise<LinkEmbed | null>>();
@@ -27,9 +29,10 @@ export function LinkPreviews({ content }: { content: string }) {
   if (!links.length) return null;
   return (
     <>
-      {links.map((u) => (
-        <LinkPreview key={u} url={u} />
-      ))}
+      {links.map((u) => {
+        const code = inviteCodeFromUrl(u);
+        return code ? <InviteCard key={u} code={code} /> : <LinkPreview key={u} url={u} />;
+      })}
     </>
   );
 }

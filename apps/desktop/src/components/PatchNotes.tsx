@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import * as L from 'lucide-react';
 import { api, type PatchNoteSocial } from '@/lib/api';
-import { formatMessageTime } from '@/lib/msgtime';
 import { PATCH_NOTES, type PatchIcon, type PatchNote, type PatchTopic } from '@/lib/patchNotes';
-import { useLine } from '@/lib/store';
-import { confirmDialog, showError } from './Dialogs';
+import { watchNews } from '@/lib/session';
+import { actions, setNewsAdmin, useLine } from '@/lib/store';
+import { ChatView } from './ChatView';
+import { showError } from './Dialogs';
 import { EMOJI_FONT, EmojiPicker } from './EmojiPicker';
 import { MobileBack } from './Mobile';
-import { Avatar, Button, cx } from './ui';
+import { cx } from './ui';
 
 const ICONS: Record<PatchIcon, LucideIcon> = {
   mic: L.Mic,
@@ -40,7 +41,6 @@ function formatDate(iso: string) {
 
 /** Emojis que aparecem sempre embaixo da nota, mesmo sem ninguém ter reagido. */
 const QUICK = ['🔥', '❤️', '👏', '🎉', '😮', '😂'];
-const MAX_COMMENT = 1000;
 
 /** Página "Novidades": banner, faixa da última versão e as notas, da mais nova para a mais antiga. */
 export function PatchNotesView() {
@@ -179,26 +179,40 @@ function Topic({ topic, tone }: { topic: PatchTopic; tone?: 'fix' }) {
   );
 }
 
-/** Reações e comentários no fim de cada nota. */
+/** Reações e comentários no fim de cada nota. Os comentários são um chat igual ao dos servidores. */
 function Social({ noteId }: { noteId: string }) {
   const me = useLine((s) => s.me);
-  const users = useLine((s) => s.users);
   const [data, setData] = useState<PatchNoteSocial | null>(null);
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const [picker, setPicker] = useState<HTMLElement | null>(null);
-  const box = useRef<HTMLTextAreaElement>(null);
+  const channelId = data?.channel?.id;
+  const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
 
   useEffect(() => {
     let alive = true;
     api
       .patchNote(noteId)
-      .then((d) => alive && setData(d))
+      .then((d) => {
+        if (!alive) return;
+        setNewsAdmin(!!d.admin);
+        if (d.channel) actions.upsertChannel(d.channel);
+        setData(d);
+      })
       .catch(() => alive && setData({ noteId, reactions: [], comments: [] }));
     return () => {
       alive = false;
     };
   }, [noteId]);
+
+  // Tempo real e conversas já criadas no canal de comentários.
+  useEffect(() => {
+    if (!channelId) return;
+    watchNews(channelId, true);
+    api
+      .threads(channelId)
+      .then((list) => list.forEach((t) => actions.upsertChannel(t)))
+      .catch(() => {});
+    return () => watchNews(channelId, false);
+  }, [channelId]);
 
   const reactions = data?.reactions ?? [];
   const shown = [...QUICK.map((e) => reactions.find((r) => r.emoji === e) ?? { emoji: e, userIds: [] }), ...reactions.filter((r) => !QUICK.includes(r.emoji))];
@@ -213,143 +227,56 @@ function Social({ noteId }: { noteId: string }) {
       if (!mine && !list.some((r) => r.emoji === emoji)) list.push({ emoji, userIds: [me.id] });
       return { ...d, reactions: list.filter((r) => r.userIds.length) };
     });
-    api.patchNoteReact(noteId, emoji, !mine).then(setData).catch(showError);
+    api.patchNoteReact(noteId, emoji, !mine).then((d) => setData((cur) => ({ ...d, channel: cur?.channel ?? d.channel }))).catch(showError);
   };
-
-  const send = async () => {
-    const content = text.trim();
-    if (!content || sending) return;
-    setSending(true);
-    try {
-      setData(await api.patchNoteComment(noteId, content));
-      setText('');
-    } catch (e) {
-      showError(e);
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const remove = async (id: string) => {
-    if (!(await confirmDialog({ title: 'Apagar comentário', message: 'O comentário some para todo mundo.', confirmLabel: 'Apagar', danger: true }))) return;
-    try {
-      await api.deletePatchNoteComment(id);
-      setData((d) => d && { ...d, comments: d.comments.filter((c) => c.id !== id) });
-    } catch (e) {
-      showError(e);
-    }
-  };
-
-  const comments = data?.comments ?? [];
 
   return (
-    <section className="mt-12 rounded-2xl bg-raise/40 p-6 max-md:p-4">
-      <h3 className="text-lg font-bold text-fg">O que você achou?</h3>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {shown.map((r) => {
-          const mine = !!me && r.userIds.includes(me.id);
-          return (
-            <button
-              key={r.emoji}
-              onClick={() => toggle(r.emoji)}
-              aria-pressed={mine}
-              className={cx(
-                'flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition-transform hover:-translate-y-0.5',
-                mine ? 'border-accent bg-accent/20 text-fg' : 'border-edge bg-main/60 text-soft hover:border-accent/50',
-              )}
-            >
-              <span className="text-xl leading-none" style={{ fontFamily: EMOJI_FONT }}>
-                {r.emoji}
-              </span>
-              {r.userIds.length > 0 && <span className={cx('tabular-nums', mine && 'text-accent')}>{r.userIds.length}</span>}
-            </button>
-          );
-        })}
-        <button
-          title="Outro emoji"
-          onClick={(e) => setPicker(picker ? null : e.currentTarget)}
-          className="flex h-10 items-center rounded-xl border border-dashed border-edge px-3 text-muted hover:border-accent/50 hover:text-fg"
-        >
-          <L.SmilePlus size={20} />
-        </button>
-        {picker && (
-          <EmojiPicker
-            anchor={picker}
-            onPick={(emoji, keepOpen) => {
-              if (!reactions.find((r) => r.emoji === emoji)?.userIds.includes(me?.id ?? '')) toggle(emoji);
-              if (!keepOpen) setPicker(null);
-            }}
-            onClose={() => setPicker(null)}
-          />
-        )}
-      </div>
-
-      <h3 className="mt-8 flex items-center gap-2 text-lg font-bold text-fg">
-        Comentários
-        {comments.length > 0 && <span className="text-sm font-semibold text-muted">({comments.length})</span>}
-      </h3>
-
-      {data === null ? (
-        <p className="mt-3 text-sm text-muted">Carregando…</p>
-      ) : comments.length === 0 ? (
-        <p className="mt-3 text-[15px] text-muted">Ninguém comentou ainda. Seja a primeira pessoa a dizer o que achou!</p>
-      ) : (
-        <ul className="mt-4 space-y-4">
-          {comments.map((c) => {
-            const a = c.author ? (users[c.author.id] ?? c.author) : null;
+    <section className="mt-12">
+      <div className="rounded-2xl bg-raise/40 p-6 max-md:p-4">
+        <h3 className="text-lg font-bold text-fg">O que você achou?</h3>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {shown.map((r) => {
+            const mine = !!me && r.userIds.includes(me.id);
             return (
-              <li key={c.id} className="group flex gap-3">
-                <Avatar name={a?.displayName ?? 'Conta removida'} color={a?.avatarColor ?? '#3a3a42'} src={a?.avatarUrl} size={40} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate font-semibold text-fg">{a?.displayName ?? 'Conta removida'}</span>
-                    <span className="shrink-0 text-xs text-muted">{formatMessageTime(c.createdAt)}</span>
-                    {c.canDelete && (
-                      <button
-                        title="Apagar comentário"
-                        onClick={() => void remove(c.id)}
-                        className="ml-auto rounded p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-danger max-md:opacity-100"
-                      >
-                        <L.Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-                  <p className="mt-0.5 text-[15px] leading-relaxed break-words whitespace-pre-wrap text-soft">{c.content}</p>
-                </div>
-              </li>
+              <button
+                key={r.emoji}
+                onClick={() => toggle(r.emoji)}
+                aria-pressed={mine}
+                className={cx(
+                  'flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition-transform hover:-translate-y-0.5',
+                  mine ? 'border-accent bg-accent/20 text-fg' : 'border-edge bg-main/60 text-soft hover:border-accent/50',
+                )}
+              >
+                <span className="text-xl leading-none" style={{ fontFamily: EMOJI_FONT }}>
+                  {r.emoji}
+                </span>
+                {r.userIds.length > 0 && <span className={cx('tabular-nums', mine && 'text-accent')}>{r.userIds.length}</span>}
+              </button>
             );
           })}
-        </ul>
-      )}
-
-      {me && (
-        <div className="mt-6 flex gap-3">
-          <Avatar name={me.displayName} color={me.avatarColor} src={me.avatarUrl} size={40} />
-          <div className="min-w-0 flex-1">
-            <textarea
-              ref={box}
-              value={text}
-              maxLength={MAX_COMMENT}
-              rows={3}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void send();
-                }
+          <button
+            title="Outro emoji"
+            onClick={(e) => setPicker(picker ? null : e.currentTarget)}
+            className="flex h-10 items-center rounded-xl border border-dashed border-edge px-3 text-muted hover:border-accent/50 hover:text-fg"
+          >
+            <L.SmilePlus size={20} />
+          </button>
+          {picker && (
+            <EmojiPicker
+              anchor={picker}
+              onPick={(emoji, keepOpen) => {
+                if (!reactions.find((r) => r.emoji === emoji)?.userIds.includes(me?.id ?? '')) toggle(emoji);
+                if (!keepOpen) setPicker(null);
               }}
-              placeholder="Escreva um comentário…"
-              className="w-full resize-none rounded-xl border border-edge bg-main/60 px-4 py-3 text-[15px] text-fg placeholder:text-muted focus:border-accent/60 focus:outline-none"
+              onClose={() => setPicker(null)}
             />
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <span className="text-xs text-muted">Enter envia · Shift+Enter quebra a linha</span>
-              <Button onClick={() => void send()} disabled={sending || !text.trim()}>
-                <L.Send size={16} /> Comentar
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="mt-6 flex h-[70vh] min-h-[480px] flex-col overflow-hidden rounded-2xl border border-edge bg-main">
+        {channel ? <ChatView channel={channel} /> : <p className="m-auto text-sm text-muted">{data ? 'Os comentários não carregaram. Tente de novo mais tarde.' : 'Carregando comentários…'}</p>}
+      </div>
     </section>
   );
 }

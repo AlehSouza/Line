@@ -22,6 +22,10 @@ pub fn user_room(id: &str) -> String {
 pub fn server_room(id: &str) -> String {
     format!("server:{id}")
 }
+/// Quem está com a página Novidades aberta numa nota (comentários em tempo real).
+pub fn news_room(id: &str) -> String {
+    format!("news:{id}")
+}
 
 #[derive(Clone)]
 struct UserId(String);
@@ -88,7 +92,10 @@ impl App {
                 Some(ids) => self.to_users(&ids, event, data),
                 None => self.to_server(server_id, event, data),
             },
-            None => self.to_users(&q.recipient_ids(&channel.id), event, data),
+            None => match q.news_root(&channel.id) {
+                Some(root) => self.emit_rooms(vec![news_room(&root)], event, data),
+                None => self.to_users(&q.recipient_ids(&channel.id), event, data),
+            },
         }
     }
 
@@ -257,6 +264,8 @@ async fn on_connect(
     }
 
     s.on("typing:start", typing_start);
+    s.on("news:watch", news_watch);
+    s.on("news:unwatch", news_unwatch);
     s.on("presence:activity", presence_activity);
     s.on("presence:game", presence_game);
     s.on("voice:join", voice_join);
@@ -272,6 +281,22 @@ async fn on_connect(
     s.on("music:report", music_report);
     s.on("music:sync", music_sync);
     s.on_disconnect(on_disconnect);
+}
+
+/// Página Novidades aberta numa nota: passa a receber as mensagens do canal de comentários.
+async fn news_watch(s: SocketRef, State(app): State<AppRef>, TryData(d): TryData<Value>) {
+    let Some(id) = d.ok().and_then(|d| d.get("channelId").and_then(|c| c.as_str()).map(String::from)) else {
+        return;
+    };
+    if app.store.q().news_root(&id).as_deref() == Some(id.as_str()) {
+        s.join(news_room(&id));
+    }
+}
+
+async fn news_unwatch(s: SocketRef, TryData(d): TryData<Value>) {
+    if let Some(id) = d.ok().and_then(|d| d.get("channelId").and_then(|c| c.as_str()).map(String::from)) {
+        s.leave(news_room(&id));
+    }
 }
 
 /// Recusei uma ligação no privado: avisa os outros da conversa (quem liga para de chamar).
@@ -337,6 +362,10 @@ async fn typing_start(
             app.to_users(&others, "typing:start", &payload);
         }
         (Some(server_id), None) => now(s.to(server_room(server_id)).emit("typing:start", &payload)),
+        (None, _) if q.news_root(&channel.id).is_some() => {
+            let root = q.news_root(&channel.id).unwrap_or_default();
+            now(s.to(news_room(&root)).emit("typing:start", &payload));
+        }
         (None, _) => {
             let others: Vec<String> = q
                 .recipient_ids(&channel.id)

@@ -1751,12 +1751,27 @@ async fn remove_member_role(
 
 // ----- convites -----
 
-async fn get_invite(State(app): S, Me(_): Me, Path(code): Path<String>) -> Res {
-    ok(app
-        .store
-        .q()
+/// Prévia do convite (cartão no chat): o servidor, quantos estão online e se eu já sou membro.
+async fn get_invite(State(app): S, Me(me): Me, Path(code): Path<String>) -> Res {
+    let q = app.store.q();
+    let server = q
         .server_by_invite(&code)
-        .ok_or_else(|| not_found("Convite"))?)
+        .ok_or_else(|| not_found("Convite"))?;
+    let online = online_members(&q, &server.id);
+    let member = q.is_member(&server.id, &me);
+    let mut v = serde_json::to_value(&server).unwrap_or_else(|_| json!({}));
+    if let Some(o) = v.as_object_mut() {
+        o.insert("onlineCount".into(), json!(online));
+        o.insert("member".into(), json!(member));
+    }
+    ok(v)
+}
+
+fn online_members(q: &Q, server_id: &str) -> usize {
+    q.ids("SELECT user_id FROM members WHERE server_id = ?", [server_id])
+        .iter()
+        .filter(|u| q.public_user(u).is_some_and(|p| p.presence != "offline"))
+        .count()
 }
 
 async fn accept_invite(State(app): S, Me(me): Me, Path(code): Path<String>) -> Res {
@@ -2159,14 +2174,7 @@ async fn server_card(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
             json!({ "id": server.id, "private": true, "iconUrl": server.icon_url, "bannerUrl": server.banner_url }),
         );
     }
-    let online = q
-        .ids(
-            "SELECT user_id FROM members WHERE server_id = ?",
-            [id.as_str()],
-        )
-        .iter()
-        .filter(|u| q.public_user(u).is_some_and(|p| p.presence != "offline"))
-        .count();
+    let online = online_members(&q, &id);
     ok(json!({
         "id": server.id,
         "private": false,
@@ -2927,7 +2935,7 @@ async fn create_thread(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
         input.message_id.as_deref(),
         attachment_id,
     );
-    if thread.server_id.is_some() {
+    if thread.server_id.is_some() || q.news_root(&thread.id).is_some() {
         app.to_channel(&q, &thread.id, "channel:create", &thread);
     }
     if let Some(mid) = &input.message_id
@@ -3333,7 +3341,8 @@ async fn delete_message(State(app): S, Me(me): Me, Path(id): Path<String>) -> Re
     let can_manage = channel
         .server_id
         .as_deref()
-        .is_some_and(|s| has(q.permissions(s, &me), perms::MANAGE_MESSAGES));
+        .is_some_and(|s| has(q.permissions(s, &me), perms::MANAGE_MESSAGES))
+        || (q.news_root(&channel.id).is_some() && q.admin_flag(&me));
     if message.author.id != me && !can_manage {
         return Err(forbidden("Você não pode apagar esta mensagem"));
     }

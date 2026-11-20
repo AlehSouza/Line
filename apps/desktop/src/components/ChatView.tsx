@@ -1,5 +1,6 @@
 'use client';
 
+import { useDmPrefs } from '@/lib/dmPrefs';
 import { formatMessageTime } from '../lib/msgtime';
 import { useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
@@ -23,7 +24,7 @@ import { BotTag, CommandNotice, commandFromContent, controlCommand, MusicAnnounc
 import { loadMessages, mentionsMe as messageMentionsMe, sendTyping } from '@/lib/session';
 import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Mentions';
 import { actions, dmTitle, mentionsToText, withoutCardCodes, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
-import { joinVoice, toggleCamera, useVoice } from '@/lib/voice';
+import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, channelIcon, cx, Icons, MessageSkeletons, Modal } from './ui';
 import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
@@ -34,6 +35,7 @@ import { MobileBack, MobileMembersButton } from './Mobile';
 import { isPinned, openPinMenu, PinnedNote, PinsButton } from './Pins';
 import { toggleSaved, useIsSaved } from './Saved';
 import { InboxButton } from './Notifications';
+import { DmHeaderActions } from './DmSidePanel';
 
 const GROUP_WINDOW_MS = 7 * 60 * 1000;
 const EMPTY: Message[] = [];
@@ -41,14 +43,15 @@ const EMPTY: Message[] = [];
 export function ChatView({ channel }: { channel: Channel }) {
   const me = useLine((s) => s.me);
   const users = useLine((s) => s.users);
-  const isDm = !channel.serverId;
-  const title = isDm ? dmTitle(channel, me?.id, users) : channel.name;
+  useDmPrefs((p) => p.nicks); // apelido de amigo no título da conversa
+  const news = channel.base === 'news' && !channel.serverId;
+  const isDm = !channel.serverId && !news;
+  const title = news ? 'Comentários' : isDm ? dmTitle(channel, me?.id, users) : channel.name;
   const other = isDm && channel.type === 'dm' ? channel.recipients?.find((r) => r.id !== me?.id) : undefined;
   const ChanIcon = channelIcon(channel);
   const canPost = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.SendMessages));
 
   const callActive = useVoice((v) => v.channelId === channel.id || Object.values(v.states).some((s) => s.channelId === channel.id));
-  const inCall = useVoice((v) => v.channelId === channel.id);
   const composer = useRef<ComposerHandle>(null);
   const drop = useFileDrop(composer);
   const canPin = useLine((s) => {
@@ -90,34 +93,17 @@ export function ChatView({ channel }: { channel: Channel }) {
           </>
         )}
         <div className="ml-auto flex items-center gap-1">
-          {!channel.id.startsWith('draft:') && <PinsButton channel={channel} canPin={isDm || canPin} />}
+          {isDm ? <DmHeaderActions channel={channel} /> : !channel.id.startsWith('draft:') && <PinsButton channel={channel} canPin={canPin} />}
           {!isDm && <MobileMembersButton />}
           {/* No navegador não há barra de título: a caixa de entrada fica aqui. */}
           {typeof window !== 'undefined' && !window.line?.window && <InboxButton size={20} className="rounded-md p-1.5 text-soft hover:bg-hover" />}
         </div>
-        {isDm && !inCall && (
-          <div className="flex gap-1">
-            <button title="Iniciar chamada de voz" onClick={() => joinVoice(channel.id)} className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg">
-              <Icons.Phone size={20} />
-            </button>
-            <button
-              title="Iniciar chamada de vídeo"
-              onClick={async () => {
-                await joinVoice(channel.id);
-                if (useVoice.getState().channelId === channel.id && !useVoice.getState().camera) await toggleCamera();
-              }}
-              className="rounded-md p-1.5 text-soft hover:bg-hover hover:text-fg"
-            >
-              <Icons.Video size={20} />
-            </button>
-          </div>
-        )}
       </header>
       {isDm && callActive && <VoiceStage channel={channel} compact />}
       <MessageList channel={channel} title={title} />
       {/* Canal de Notas e Atualizações sem permissão para publicar: só leitura, sem caixa de texto. */}
-      {!(channel.base && !canPost) && (
-        <Composer ref={composer} channel={channel} placeholder={isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
+      {!(channel.base && !news && !canPost) && (
+        <Composer ref={composer} channel={channel} placeholder={news ? 'Escreva um comentário…' : isDm ? `Conversar com ${title}` : `Conversar em #${channel.name}`} />
       )}
     </div>
   );
@@ -339,8 +325,12 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const meId = useLine((s) => s.me?.id);
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
-  const canManageMessages = useCan(channel.serverId, Perm.ManageMessages);
-  const canPinMessages = useCan(channel.serverId, Perm.PinMessages);
+  const news = channel.base === 'news' && !channel.serverId;
+  const canManageServer = useCan(channel.serverId, Perm.ManageMessages);
+  const canPinServer = useCan(channel.serverId, Perm.PinMessages);
+  const canManageNews = useLine((s) => news && hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.ManageMessages));
+  const canManageMessages = news ? canManageNews : canManageServer;
+  const canPinMessages = news ? canManageNews : canPinServer;
   const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.CreateThreads));
   // Apelido e cor do cargo mais alto de quem escreveu (só em servidor).
   const serverMembers = useLine((s) => (channel.serverId ? s.members[channel.serverId] : undefined));
@@ -484,7 +474,9 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
             </div>
             <h2 className="text-3xl font-bold">{channel.base ? title : channel.serverId ? `Bem-vindo a #${title}!` : title}</h2>
             <p className="mt-1 text-muted">
-              {channel.base
+              {channel.base === 'news' && !channel.serverId
+                ? 'Comente, responda e abra conversas sobre esta atualização. Tudo funciona igual ao chat dos servidores.'
+                : channel.base
                 ? channel.topic || 'Canal de Notas e Atualizações.'
                 : channel.serverId
                 ? `Este é o começo do canal #${title}.`

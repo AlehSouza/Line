@@ -79,8 +79,13 @@ export const PATCH_NOTES: PatchNote[] = [
       },
       {
         icon: 'sparkles',
+        title: 'Convites viram um cartão no chat',
+        text: 'Links de convite agora aparecem com a capa, a foto, quantas pessoas estão online e desde quando o servidor existe. Clique em Juntar-se e o servidor abre na hora; se você já participa, o botão leva direto para ele. Abrir um link de convite mostra uma tela com o servidor, ou avisa quando o convite não vale mais.',
+      },
+      {
+        icon: 'sparkles',
         title: 'Página de Novidades',
-        text: 'Um lugar para ver o que há de novo, reagir e comentar. Sempre que o Line mudar, a novidade aparece aqui.',
+        text: 'Um lugar para ver o que há de novo, reagir e conversar. Os comentários funcionam como o chat dos servidores, com respostas, reações e Conversas.',
       },
     ],
     improvements: [
@@ -93,6 +98,16 @@ export const PATCH_NOTES: PatchNote[] = [
         icon: 'headphones',
         title: 'Ligações no privado tocam de verdade',
         text: 'Quando alguém te liga no privado, o Line toca até você atender ou recusar. Quem liga ouve o som de chamando e vê o cartão da outra pessoa pulsando na chamada até ela entrar.',
+      },
+      {
+        icon: 'message',
+        title: 'Perfil ao lado das conversas diretas',
+        text: 'Nas conversas diretas, o cartão da pessoa fica à direita, com "Ver perfil completo" e uma busca só dentro da conversa. Em grupos aparecem os participantes, e no topo você liga, liga com câmera, vê as fixadas ou adiciona pessoas para formar um grupo novo.',
+      },
+      {
+        icon: 'sparkles',
+        title: 'Mais opções ao clicar com o botão direito em um amigo',
+        text: 'Fixe até 5 conversas ou grupos no topo, marcados com um alfinete, separe suas favoritas, feche as que não usa, dê um apelido que só você vê, adicione uma nota, convide para um servidor, silencie ou copie os IDs, tudo direto da lista.',
       },
       {
         icon: 'mic',

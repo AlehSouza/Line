@@ -13,6 +13,9 @@ import { useIncomingCount } from './FriendsView';
 import { isChannelMuted, mentionCount } from '@/lib/notify';
 import { openContextMenu } from './ContextMenu';
 import { dmNotifyItems, MentionBadge, MutedIcon } from './Notifications';
+import { personMenu, pinEntry } from './PersonMenu';
+import { isClosed, useDmPrefs } from '@/lib/dmPrefs';
+import type { Channel } from '@line/shared';
 
 export function DmSidebar() {
   const view = useLine((s) => s.view);
@@ -24,6 +27,12 @@ export function DmSidebar() {
   const st = useLine.getState();
   const dms = useLine(useShallow((s) => s.dmOrder.map((id) => s.channels[id]!).filter(Boolean)));
   const activeDm = view.kind === 'home' ? view.dmId : null;
+  const prefs = useDmPrefs();
+  // Fechadas somem até chegar mensagem nova; fixadas vão para o topo; favoritas ficam numa seção própria.
+  const visible = dms.filter((dm) => dm.id === activeDm || !isClosed(prefs.closed[dm.id], dm.lastMessageAt));
+  const favorites = visible.filter((dm) => prefs.favorites.includes(dm.id));
+  const rest = visible.filter((dm) => !prefs.favorites.includes(dm.id));
+  const direct = [...rest.filter((dm) => prefs.pinned.includes(dm.id)), ...rest.filter((dm) => !prefs.pinned.includes(dm.id))];
   const pending = useIncomingCount();
   const onNews = view.kind === 'home' && view.page === 'patch-notes';
   const [unseenNews, setUnseenNews] = useState(false);
@@ -31,6 +40,69 @@ export function DmSidebar() {
     if (onNews) markPatchNotesSeen();
     setUnseenNews(hasUnseenPatchNote());
   }, [onNews]);
+
+  const renderDm = (dm: Channel) => {
+    const others = (dm.recipients ?? []).filter((r) => r.id !== me?.id);
+    const first = others[0] ? (users[others[0].id] ?? others[0]) : me;
+    const isGroup = dm.type === 'group_dm';
+    const active = activeDm === dm.id;
+    const muted = isChannelMuted(st, dm.id);
+    const count = active || muted ? 0 : mentionCount(st, dm.id);
+    const bold = !active && !muted && !!unread[dm.id];
+    return (
+      <div key={dm.id} className={cx('group relative', muted && !active && 'opacity-50 hover:opacity-80')} onContextMenu={(e) => openContextMenu(e, !isGroup && others[0] ? personMenu(others[0].id, dm.id) : [pinEntry(dm.id), 'sep', ...dmNotifyItems(dm.id)])}>
+        <button
+          onClick={() => {
+            actions.goHome(dm.id);
+            mobile.showMain();
+          }}
+          className={cx(
+            'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left',
+            active ? 'bg-hover text-fg' : bold ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
+          )}
+        >
+          {first && (
+            <Avatar
+              name={isGroup ? dmTitle(dm, me?.id, users) : first.displayName}
+              color={isGroup ? '#3a3a42' : first.avatarColor}
+              src={isGroup ? null : first.avatarUrl}
+              group={isGroup}
+              size={32}
+              presence={isGroup ? undefined : (users[first.id]?.presence ?? first.presence)}
+              ring={active ? 'raise' : 'side'}
+            />
+          )}
+          <span className="min-w-0 flex-1">
+            <span className={cx('block truncate text-[15px]', bold && 'font-semibold')}>
+              {dmTitle(dm, me?.id, users)}
+            </span>
+            {isGroup ? (
+              <span className="block truncate text-xs text-muted">{dm.recipients?.length} membros</span>
+            ) : (
+              first &&
+              users[first.id]?.customStatus && (
+                <span className="block truncate text-xs text-muted">{users[first.id]?.customStatus}</span>
+              )
+            )}
+          </span>
+          {muted && <MutedIcon />}
+          {!!count && <MentionBadge count={count} />}
+          {prefs.pinned.includes(dm.id) && <Icons.Pin size={14} className={cx('shrink-0 text-muted', isGroup && 'group-hover:invisible')} />}
+        </button>
+        {isGroup && (
+          <button
+            title="Sair do grupo"
+            onClick={async () => {
+              if (await confirmDialog({ title: 'Sair do grupo', message: 'Você deixa de receber as mensagens deste grupo.', confirmLabel: 'Sair', danger: true })) await api.leaveGroup(dm.id).catch(showError);
+            }}
+            className="absolute top-1/2 right-2 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
+          >
+            <Icons.X size={16} />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -107,6 +179,14 @@ export function DmSidebar() {
           {unseenNews && <span className="rounded-full bg-accent px-1.5 text-[11px] leading-5 font-bold text-on-accent uppercase">Novo</span>}
         </button>
 
+        {favorites.length > 0 && (
+          <>
+            <div className="px-2 pt-4 pb-1">
+              <span className="text-xs font-bold tracking-wide text-muted uppercase">Favoritos</span>
+            </div>
+            {favorites.map(renderDm)}
+          </>
+        )}
         <div className="flex items-center justify-between px-2 pt-4 pb-1">
           <span className="text-xs font-bold tracking-wide text-muted uppercase">Mensagens diretas</span>
           <button title="Nova conversa" onClick={() => actions.openModal({ kind: 'new-dm' })} className="text-muted hover:text-fg">
@@ -114,69 +194,9 @@ export function DmSidebar() {
           </button>
         </div>
 
-        {dms.length === 0 && <p className="px-2 py-2 text-xs text-muted">Nenhuma conversa ainda.</p>}
+        {direct.length === 0 && favorites.length === 0 && <p className="px-2 py-2 text-xs text-muted">Nenhuma conversa ainda.</p>}
 
-        {dms.map((dm) => {
-          const others = (dm.recipients ?? []).filter((r) => r.id !== me?.id);
-          const first = others[0] ? (users[others[0].id] ?? others[0]) : me;
-          const isGroup = dm.type === 'group_dm';
-          const active = activeDm === dm.id;
-          const muted = isChannelMuted(st, dm.id);
-          const count = active || muted ? 0 : mentionCount(st, dm.id);
-          const bold = !active && !muted && !!unread[dm.id];
-          return (
-            <div key={dm.id} className={cx('group relative', muted && !active && 'opacity-50 hover:opacity-80')} onContextMenu={(e) => openContextMenu(e, dmNotifyItems(dm.id))}>
-              <button
-                onClick={() => {
-                  actions.goHome(dm.id);
-                  mobile.showMain();
-                }}
-                className={cx(
-                  'flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left',
-                  active ? 'bg-hover text-fg' : bold ? 'text-fg hover:bg-hover' : 'text-muted hover:bg-hover hover:text-soft',
-                )}
-              >
-                {first && (
-                  <Avatar
-                    name={isGroup ? dmTitle(dm, me?.id, users) : first.displayName}
-                    color={isGroup ? '#3a3a42' : first.avatarColor}
-                    src={isGroup ? null : first.avatarUrl}
-                    group={isGroup}
-                    size={32}
-                    presence={isGroup ? undefined : (users[first.id]?.presence ?? first.presence)}
-                    ring={active ? 'raise' : 'side'}
-                  />
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className={cx('block truncate text-[15px]', bold && 'font-semibold')}>
-                    {dmTitle(dm, me?.id, users)}
-                  </span>
-                  {isGroup ? (
-                    <span className="block truncate text-xs text-muted">{dm.recipients?.length} membros</span>
-                  ) : (
-                    first &&
-                    users[first.id]?.customStatus && (
-                      <span className="block truncate text-xs text-muted">{users[first.id]?.customStatus}</span>
-                    )
-                  )}
-                </span>
-                {muted && <MutedIcon />}
-                {!!count && <MentionBadge count={count} />}
-              </button>
-              {isGroup && (
-                <button
-                  title="Sair do grupo"
-                  onClick={async () => {
-                    if (await confirmDialog({ title: 'Sair do grupo', message: 'Você deixa de receber as mensagens deste grupo.', confirmLabel: 'Sair', danger: true })) await api.leaveGroup(dm.id).catch(showError);
-                  }}
-                  className="absolute top-1/2 right-2 hidden -translate-y-1/2 text-muted group-hover:block hover:text-danger"
-                >
-                  <Icons.X size={16} />
-                </button>
-              )}
-            </div>
-          );
-        })}
+        {direct.map(renderDm)}
       </div>
     </div>
   );

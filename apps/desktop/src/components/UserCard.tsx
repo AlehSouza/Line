@@ -29,9 +29,12 @@ export function UserCard({
   userId,
   at,
   hover,
+  inline,
   onClose,
 }: {
   userId: string;
+  /** Dentro da coluna da direita da conversa direta: sem fundo, ocupa a coluna toda, com "Ver perfil completo" embaixo. */
+  inline?: boolean;
   at?: { x: number; y: number; above?: boolean };
   /** Aberto ao passar o mouse numa menção: sem fundo bloqueando a tela, fecha ao tirar o mouse. */
   hover?: boolean;
@@ -61,10 +64,11 @@ export function UserCard({
   const roleColor = useMemberColor(viewServer, userId);
 
   useEffect(() => {
+    if (inline) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, inline]);
 
   useEffect(() => {
     if (isMe) return;
@@ -138,30 +142,37 @@ export function UserCard({
     await run(async () => actions.setMe(await api.updateMe({ status, statusMinutes: minutes })));
   }
 
-  return (
-    <div className={cx('fixed inset-0 z-50', hover && 'pointer-events-none')} onMouseDown={onClose}>
+  const card = (
       <div
-        ref={box}
-        role="dialog"
+        ref={inline ? undefined : box}
+        role={inline ? undefined : 'dialog'}
         aria-label={user.displayName}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          // Clicou dentro do cartão: ele passa a ficar aberto como um clique normal.
-          if (hover) hoverCard.pin();
-        }}
+        onMouseDown={
+          inline
+            ? undefined
+            : (e) => {
+                e.stopPropagation();
+                // Clicou dentro do cartão: ele passa a ficar aberto como um clique normal.
+                if (hover) hoverCard.pin();
+              }
+        }
         onMouseEnter={hover ? hoverCard.cancel : undefined}
         onMouseLeave={hover ? hoverCard.leave : undefined}
-        className="pointer-events-auto fixed overflow-hidden rounded-2xl border border-edge shadow-2xl"
+        className={cx(
+          'overflow-hidden rounded-2xl border border-edge',
+          inline ? 'flex min-h-0 flex-1 flex-col' : 'pointer-events-auto fixed shadow-2xl',
+        )}
         style={{
           width: W,
-          ...placed,
+          ...(inline ? null : placed),
           ...(cardColors?.length
             ? cardStyle(cardColors, user.avatarColor)
             : { background: `linear-gradient(to bottom, color-mix(in srgb, ${user.avatarColor} 30%, var(--color-rail)), var(--color-rail) 60%)` }),
         }}
       >
+        <Scroll inline={inline}>
         {/* Banner com ações no canto */}
-        <div className="relative h-[105px]" style={banner ? undefined : { background: user.avatarColor }}>
+        <div className="relative h-[105px] shrink-0" style={banner ? undefined : { background: user.avatarColor }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           {banner && <img src={banner} alt="" className="h-full w-full object-cover" />}
           <div className="absolute top-2.5 right-2.5 flex gap-1.5">
@@ -325,7 +336,7 @@ export function UserCard({
             </div>
           ) : user.bot ? null : state === 'blocked' ? (
             <p className="mt-4 rounded-lg bg-side/70 px-3 py-2 text-sm text-muted">Você bloqueou essa pessoa.</p>
-          ) : (
+          ) : inline ? null : (
             <form
               className="mt-4"
               onSubmit={(e) => {
@@ -348,9 +359,27 @@ export function UserCard({
           )}
           {!isMe && <p className="sr-only">{presenceLabel[user.presence]}</p>}
         </div>
+        </Scroll>
+        {inline && (
+          <div className="shrink-0 p-3 pt-0">
+            <Button variant="subtle" className="w-full" onClick={() => actions.openModal({ kind: 'full-profile', userId, serverId: viewServer })}>
+              Ver perfil completo
+            </Button>
+          </div>
+        )}
       </div>
+  );
+  if (inline) return card;
+  return (
+    <div className={cx('fixed inset-0 z-50', hover && 'pointer-events-none')} onMouseDown={onClose}>
+      {card}
     </div>
   );
+}
+
+/** No cartão da coluna da direita, banner e conteúdo rolam juntos e o botão fica fixo embaixo. */
+function Scroll({ inline, children }: { inline?: boolean; children: ReactNode }) {
+  return inline ? <div className="min-h-0 flex-1 overflow-y-auto">{children}</div> : <>{children}</>;
 }
 
 const DEFAULT_ROLE_COLOR = '#99aab5';

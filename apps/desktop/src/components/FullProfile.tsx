@@ -8,6 +8,7 @@ import { api, fileUrl } from '@/lib/api';
 import { setIgnored, useIgnored } from '@/lib/ignored';
 import { StyledName } from '@/lib/nameStyle';
 import { placeAround, placeBeside, useFloating } from '@/lib/floating';
+import { inviteLink } from '@/lib/invite';
 import { actions, useServerLook, displayNameIn, useLine, useMemberColor } from '@/lib/store';
 import { ago, formatPlayed, GameArt, since } from './Activity';
 import { confirmDialog, showError, toast } from './Dialogs';
@@ -602,7 +603,7 @@ export function MoreMenu({
   async function sendInvite(sv: Server) {
     const dm = await api.openDm([user.id]);
     actions.upsertChannel(dm);
-    await api.sendMessage(dm.id, `Entra no servidor ${sv.name} comigo! Código de convite: ${sv.inviteCode}`, []);
+    await api.sendMessage(dm.id, `Entra no servidor ${sv.name} comigo! ${inviteLink(sv.inviteCode)}`, []);
     toast(`Convite de ${sv.name} enviado para ${user.displayName}.`);
   }
 

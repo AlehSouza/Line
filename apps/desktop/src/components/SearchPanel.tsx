@@ -1,12 +1,12 @@
 'use client';
 
 import { formatMessageTime } from '../lib/msgtime';
-import type { Message } from '@line/shared';
+import type { Channel, Message } from '@line/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { renderMarkdown } from '@/lib/markdown';
 import { jumpToMessage } from '@/lib/session';
-import { useLine } from '@/lib/store';
+import { dmTitle, useLine } from '@/lib/store';
 import { Avatar, cx, Icons, MessageSkeletons } from './ui';
 
 type Key = 'de' | 'em' | 'tem' | 'menciona';
@@ -31,10 +31,27 @@ function parse(input: string) {
 }
 
 /** Campo de busca no topo da coluna da direita. */
-export function SearchBox({ serverId, onSearch, onClear, active }: { serverId: string; onSearch: (query: string) => void; onClear: () => void; active: boolean }) {
-  const server = useLine((s) => s.servers[serverId]);
-  const members = useLine((s) => s.members[serverId]);
+export function SearchBox({
+  serverId,
+  dm,
+  onSearch,
+  onClear,
+  active,
+}: {
+  serverId?: string;
+  /** Conversa direta ou grupo: busca só nela, e "de:"/"menciona:" sugerem quem participa. */
+  dm?: Channel;
+  onSearch: (query: string) => void;
+  onClear: () => void;
+  active: boolean;
+}) {
+  const server = useLine((s) => (serverId ? s.servers[serverId] : undefined));
+  const serverMembers = useLine((s) => (serverId ? s.members[serverId] : undefined));
+  const meId = useLine((s) => s.me?.id);
   const users = useLine((s) => s.users);
+  const members = dm ? Object.fromEntries((dm.recipients ?? []).map((r) => [r.id, r])) : serverMembers;
+  const placeLabel = dm ? dmTitle(dm, meId, users) : server?.name ?? '';
+  const filters = dm ? FILTERS.filter((f) => f.key !== 'em') : FILTERS;
   const channels = useLine((s) => s.channels);
   const [value, setValue] = useState('');
   const [focused, setFocused] = useState(false);
@@ -48,13 +65,14 @@ export function SearchBox({ serverId, onSearch, onClear, active }: { serverId: s
     const key = last[1]!.toLowerCase() as Key;
     const part = last[2]!.toLowerCase();
     if (key === 'tem') return HAS.filter((h) => h.startsWith(part)).map((h) => ({ value: h, label: h, icon: <Icons.Paperclip size={16} /> }));
+    if (key === 'em' && !dm) return [];
     if (key === 'em')
       return Object.values(channels)
         .filter((c) => c.serverId === serverId && c.type === 'text' && c.name.toLowerCase().includes(part))
         .slice(0, 8)
         .map((c) => ({ value: c.name, label: c.name, icon: <Icons.Hash size={16} /> }));
     return Object.keys(members ?? {})
-      .map((id) => users[id])
+      .map((id) => users[id] ?? dm?.recipients?.find((r) => r.id === id))
       .filter((u) => u && (u.username.includes(part) || u.displayName.toLowerCase().includes(part)))
       .slice(0, 8)
       .map((u) => ({
@@ -105,7 +123,7 @@ export function SearchBox({ serverId, onSearch, onClear, active }: { serverId: s
               } else if (e.key === 'Enter') submit();
             } else if (e.key === 'Escape') input.current?.blur();
           }}
-          placeholder={`Buscar ${server?.name ?? ''}`}
+          placeholder={`Buscar ${placeLabel}`}
           className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-muted"
         />
         {value || active ? (
@@ -133,7 +151,7 @@ export function SearchBox({ serverId, onSearch, onClear, active }: { serverId: s
           {showFilters ? (
             <>
               <p className="px-2 pt-1 pb-2 text-xs font-bold text-muted">Filtros</p>
-              {FILTERS.map((f) => (
+              {filters.map((f) => (
                 <button key={f.key} onClick={() => addKey(f.key)} className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-accent/10">
                   <span className="text-soft">{f.icon}</span>
                   <span className="min-w-0">
@@ -166,7 +184,7 @@ export function SearchBox({ serverId, onSearch, onClear, active }: { serverId: s
 }
 
 /** Resultados da busca, no lugar da lista de membros. */
-export function SearchResults({ serverId, query }: { serverId: string; query: string }) {
+export function SearchResults({ serverId, channelId: inChannel, query }: { serverId?: string; channelId?: string; query: string }) {
   const channels = useLine((s) => s.channels);
   const users = useLine((s) => s.users);
   const myUsername = useLine((s) => s.me?.username);
@@ -181,8 +199,9 @@ export function SearchResults({ serverId, query }: { serverId: string; query: st
       const name = p.em.replace(/^#/, '').toLowerCase();
       channelId = Object.values(channels).find((c) => c.serverId === serverId && c.type === 'text' && c.name.toLowerCase() === name)?.id ?? '__none__';
     }
+    if (inChannel) return { channel: inChannel, q: p.text, author: p.de, mentions: p.menciona, has: p.tem?.toLowerCase() };
     return { server: serverId, q: p.text, author: p.de, in: channelId, mentions: p.menciona, has: p.tem?.toLowerCase() };
-  }, [query, serverId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [query, serverId, inChannel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let live = true;
@@ -227,10 +246,12 @@ export function SearchResults({ serverId, query }: { serverId: string; query: st
               onClick={() => void jumpToMessage(m)}
               className="block w-full rounded-lg border border-edge bg-main/60 p-2.5 text-left hover:border-accent/50 hover:bg-hover"
             >
-              <p className="mb-1.5 flex items-center gap-1 truncate text-xs font-semibold text-muted">
-                {ch?.type === 'thread' ? <Icons.Thread size={12} /> : <Icons.Hash size={12} />}
-                {ch?.name ?? 'canal'}
-              </p>
+              {!inChannel && (
+                <p className="mb-1.5 flex items-center gap-1 truncate text-xs font-semibold text-muted">
+                  {ch?.type === 'thread' ? <Icons.Thread size={12} /> : <Icons.Hash size={12} />}
+                  {ch?.name ?? 'canal'}
+                </p>
+              )}
               <div className="flex gap-2.5">
                 <Avatar name={author.displayName} color={author.avatarColor} src={author.avatarUrl} size={32} />
                 <div className="min-w-0 flex-1">

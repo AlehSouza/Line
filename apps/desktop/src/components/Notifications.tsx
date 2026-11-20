@@ -78,7 +78,7 @@ function Radio({ on }: { on: boolean }) {
 
 const subItem = 'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left font-medium text-soft hover:bg-hover hover:text-fg';
 
-function MuteSubmenu({ onPick }: { onPick: (minutes: number | null) => void }) {
+export function MuteSubmenu({ onPick }: { onPick: (minutes: number | null) => void }) {
   return (
     <>
       {MUTE_OPTIONS.map((o) => (

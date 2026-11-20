@@ -6,6 +6,7 @@ import { MobileBack } from './Mobile';
 import type { Server } from '@line/shared';
 import { type FormEvent, useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
+import { inviteCodeFromText } from '@/lib/invite';
 import { actions } from '@/lib/store';
 import { Button, DefaultServerIcon, Icons, Input, Skeleton } from './ui';
 import { showError } from './Dialogs';
@@ -42,7 +43,7 @@ export function DiscoverView() {
   /** Aceita o código puro ou um link de convite (pega o último pedaço do link). */
   async function joinByInvite(e: FormEvent) {
     e.preventDefault();
-    const code = invite.trim().replace(/[/?#]+$/, '').split(/[/?#]/).pop() ?? '';
+    const code = inviteCodeFromText(invite);
     if (!code) return;
     setJoining(true);
     setInviteError('');

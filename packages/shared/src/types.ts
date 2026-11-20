@@ -232,7 +232,8 @@ export interface ServerEvent {
   rsvps: { userId: string; status: RsvpStatus; at: string }[];
 }
 
-export type BaseChannelKind = 'rules' | 'announcements' | 'events' | 'activity';
+/** 'news': canal de comentários de uma nota das Novidades (fora de servidor). */
+export type BaseChannelKind = 'rules' | 'announcements' | 'events' | 'activity' | 'news';
 
 export interface Channel {
   id: string;

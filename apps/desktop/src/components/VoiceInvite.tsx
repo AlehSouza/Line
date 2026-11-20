@@ -5,6 +5,7 @@ import { mobile } from "@/lib/mobile";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { DEFAULT_NOW_PLAYING, formatNowPlaying, useMusic } from "@/lib/music";
+import { inviteLink } from "@/lib/invite";
 import { ensureServerLoaded } from "@/lib/session";
 import { actions, channelPermsOf, useLine } from "@/lib/store";
 import { hasPerm, Perm } from "@line/shared";
@@ -255,18 +256,18 @@ export function VoiceInviteModal({
         <ErrorText>{error}</ErrorText>
         <div className="space-y-2 border-t border-edge pt-4">
           <p className="text-sm font-semibold">
-            Ou mande o código de convite do servidor
+            Ou mande o link de convite do servidor
           </p>
           <div className="flex gap-2 rounded-lg border border-edge bg-rail p-1.5">
             <Input
               readOnly
-              value={server.inviteCode}
+              value={inviteLink(server.inviteCode)}
               className="border-0 bg-transparent font-mono"
             />
             <Button
               onClick={async () => {
                 await navigator.clipboard
-                  .writeText(server.inviteCode)
+                  .writeText(inviteLink(server.inviteCode))
                   .catch(() => {});
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
@@ -276,7 +277,7 @@ export function VoiceInviteModal({
             </Button>
           </div>
           <p className="text-xs text-muted">
-            A pessoa usa em “Entrar em um servidor”.
+            No chat ele vira um cartão com o botão Juntar-se.
           </p>
         </div>
       </div>

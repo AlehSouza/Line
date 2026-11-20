@@ -52,6 +52,20 @@ pub const INTERACT: i64 =
 
 pub const ALL: i64 = (1 << 29) - 1;
 
+/// Canal de comentários das Novidades: todo mundo conversa, ninguém modera (só admins do Line).
+pub const NEWS: i64 = ALL
+    & !(MANAGE_CHANNELS
+        | MANAGE_ROLES
+        | MANAGE_SERVER
+        | KICK_MEMBERS
+        | MANAGE_MESSAGES
+        | MENTION_EVERYONE
+        | ADMINISTRATOR
+        | PIN_MESSAGES
+        | USE_AGENT
+        | MANAGE_AGENT
+        | POST_NOTES);
+
 /// O que o @everyone de um servidor novo pode fazer.
 pub const DEFAULT_EVERYONE: i64 = VIEW_CHANNELS
     | CREATE_INVITE

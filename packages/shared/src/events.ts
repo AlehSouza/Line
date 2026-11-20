@@ -96,6 +96,8 @@ export type VoiceJoinResult = { ok: true; peers: VoiceState[] } | { ok: false; e
 /** Eventos que o cliente envia para o servidor. */
 export interface ClientToServerEvents {
   'typing:start': (payload: { channelId: string }) => void;
+  'news:watch': (payload: { channelId: string }) => void;
+  'news:unwatch': (payload: { channelId: string }) => void;
   'presence:activity': (payload: { idle: boolean }) => void;
   /** Jogo aberto agora (app do Windows) ou null. */
   'presence:game': (payload: { name: string; icon?: string } | null) => void;

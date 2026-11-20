@@ -1,4 +1,6 @@
+import { inviteCodeFromUrl } from './invite';
 import { isMessageLink, openMessageLink } from './messageLink';
+import { actions } from './store';
 import type { ReactNode } from 'react';
 import { ChannelMention, type MentionContext } from '@/components/Mentions';
 import { UserMention } from '@/components/UserCard';
@@ -49,6 +51,11 @@ function inline(text: string, key: string, me?: string, ctx?: MentionContext): R
           target="_blank"
           rel="noreferrer"
           onClick={(e) => {
+            const invite = inviteCodeFromUrl(tok);
+            if (invite) {
+              e.preventDefault();
+              return actions.openModal({ kind: 'invite-page', code: invite });
+            }
             if (!isMessageLink(tok)) return;
             e.preventDefault();
             void openMessageLink(tok);

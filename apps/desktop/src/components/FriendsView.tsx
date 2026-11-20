@@ -1,5 +1,7 @@
 'use client';
 
+import { useDmPrefs } from '@/lib/dmPrefs';
+import { personMenu } from './PersonMenu';
 import { MobileBack } from './Mobile';
 
 import type { Friend } from '@line/shared';
@@ -245,72 +247,22 @@ async function openDm(userId: string) {
   return dm;
 }
 
-function friendMenu(user: PublicUser): MenuEntry[] {
-  return [
-    {
-      label: 'Iniciar chamada de voz',
-      icon: <Icons.Phone size={15} />,
-      onClick: () => run(async () => joinVoice((await openDm(user.id)).id)),
-    },
-    {
-      label: 'Iniciar chamada de vídeo',
-      icon: <Icons.Video size={15} />,
-      onClick: () =>
-        run(async () => {
-          await joinVoice((await openDm(user.id)).id);
-          if (useVoice.getState().channelId && !useVoice.getState().camera) await toggleCamera();
-        }),
-    },
-    'sep',
-    {
-      label: 'Desfazer amizade',
-      icon: <Icons.UserMinus size={15} />,
-      danger: true,
-      onClick: async () => {
-        if (
-          await confirmDialog({
-            title: 'Desfazer amizade',
-            message: `Tirar ${user.displayName} dos seus amigos?`,
-            confirmLabel: 'Desfazer amizade',
-            danger: true,
-          })
-        )
-          run(() => api.removeFriend(user.id));
-      },
-    },
-    {
-      label: 'Bloquear',
-      icon: <Icons.Ban size={15} />,
-      danger: true,
-      onClick: async () => {
-        if (
-          await confirmDialog({
-            title: `Bloquear ${user.displayName}`,
-            message: 'A pessoa não vai poder te mandar pedidos nem mensagens diretas.',
-            confirmLabel: 'Bloquear',
-            danger: true,
-          })
-        )
-          run(() => api.blockUser(user.id));
-      },
-    },
-  ];
-}
 
 function FriendRow({ friend }: { friend: Friend }) {
   const { user } = friend;
   const activity = useActivity(user);
+  const nick = useDmPrefs((p) => p.nicks[user.id]);
 
   return (
     <div
       className="group flex cursor-pointer items-center gap-3 border-t border-edge px-2 py-2.5 hover:bg-hover"
       onClick={() => run(() => openDm(user.id))}
-      onContextMenu={(e) => openContextMenu(e, friendMenu(user))}
+      onContextMenu={(e) => openContextMenu(e, personMenu(user.id))}
     >
       <Avatar name={user.displayName} color={user.avatarColor} src={user.avatarUrl} size={36} presence={user.presence} ring="main" />
       <div className="min-w-0 flex-1">
         <p className="truncate font-semibold">
-          {user.displayName} <span className="hidden text-sm font-normal text-muted group-hover:inline">@{user.username}</span>
+          {nick ?? user.displayName} <span className="hidden text-sm font-normal text-muted group-hover:inline">@{user.username}</span>
         </p>
         <p className="flex min-w-0 items-center gap-1 truncate text-sm text-muted">
           {activity ? (
@@ -337,7 +289,7 @@ function FriendRow({ friend }: { friend: Friend }) {
         onClick={(e) => {
           e.stopPropagation();
           const r = e.currentTarget.getBoundingClientRect();
-          openMenuAt({ x: r.right - 208, y: r.bottom + 4 }, friendMenu(user));
+          openMenuAt({ x: r.right - 208, y: r.bottom + 4 }, personMenu(user.id));
         }}
       >
         <Icons.MoreVertical size={18} />
@@ -522,7 +474,7 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
   return (
     <div
       className="overflow-hidden rounded-xl border border-edge bg-side"
-      onContextMenu={group ? undefined : (e) => openContextMenu(e, friendMenu(user))}
+      onContextMenu={group ? undefined : (e) => openContextMenu(e, personMenu(user.id))}
     >
       <button onClick={group ? undefined : open} className={cx('flex w-full items-center gap-3 bg-hover/70 px-3 py-2.5 text-left', !group && 'hover:bg-hover')}>
         {group ? (

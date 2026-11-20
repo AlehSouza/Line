@@ -65,7 +65,8 @@ fn payload(app: &App, me: &str, id: &str, admin: bool) -> Value {
             })
         })
         .collect();
-    json!({ "noteId": id, "reactions": reactions, "comments": comments })
+    let channel = q.patch_note_channel(id);
+    json!({ "noteId": id, "reactions": reactions, "comments": comments, "channel": channel, "admin": admin })
 }
 
 async fn social(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {

@@ -1,5 +1,7 @@
 //! Patch notes: comentários e reações de cada nota de versão (as notas em si moram no app).
 use super::{Q, ok};
+use crate::model::Channel;
+use rusqlite::OptionalExtension;
 use crate::ids::{new_id, now_iso};
 use rusqlite::params;
 
@@ -10,7 +12,51 @@ pub struct PatchCommentRow {
     pub created_at: String,
 }
 
+/// `base` do canal de comentários de uma nota das Novidades.
+pub const NEWS_BASE: &str = "news";
+
 impl Q<'_> {
+    /// Canal de comentários da nota (cria na primeira vez).
+    pub fn patch_note_channel(&self, note_id: &str) -> Channel {
+        let found: Option<String> = ok(self
+            .c
+            .query_row(
+                "SELECT channel_id FROM patch_note_channels WHERE note_id = ?",
+                [note_id],
+                |r| r.get(0),
+            )
+            .optional());
+        let id = match found {
+            Some(id) => id,
+            None => {
+                let id = new_id();
+                ok(self.c.execute(
+                    "INSERT INTO channels (id, type, name, topic, base, created_at) VALUES (?, 'text', 'comentarios', '', ?, ?)",
+                    params![id, NEWS_BASE, now_iso()],
+                ));
+                ok(self.c.execute(
+                    "INSERT INTO patch_note_channels (note_id, channel_id) VALUES (?, ?)",
+                    params![note_id, id],
+                ));
+                id
+            }
+        };
+        self.channel(&id).expect("canal da nota")
+    }
+
+    /// Se o canal (ou a conversa dentro dele) é dos comentários das Novidades, devolve o id do canal raiz.
+    pub fn news_root(&self, channel_id: &str) -> Option<String> {
+        ok(self
+            .c
+            .query_row(
+                "SELECT r.id FROM channels r WHERE r.id = (SELECT COALESCE(parent_id, id) FROM channels WHERE id = ?)
+                 AND r.server_id IS NULL AND r.base = ?",
+                params![channel_id, NEWS_BASE],
+                |r| r.get(0),
+            )
+            .optional())
+    }
+
     /// Reações da nota: (emoji, ids de quem reagiu na ordem em que reagiu).
     pub fn patch_reactions(&self, note_id: &str) -> Vec<(String, Vec<String>)> {
         let mut st = ok(self.c.prepare_cached(
@@ -92,7 +138,6 @@ impl Q<'_> {
 
     /// Dono do comentário (None se não existe).
     pub fn patch_comment_author(&self, id: &str) -> Option<String> {
-        use rusqlite::OptionalExtension;
         ok(self
             .c
             .query_row("SELECT user_id FROM patch_note_comments WHERE id = ?", [id], |r| r.get(0))

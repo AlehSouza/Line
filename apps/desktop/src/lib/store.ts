@@ -1,5 +1,6 @@
 'use client';
 
+import { useDmPrefs } from './dmPrefs';
 import { useShallow } from 'zustand/react/shallow';
 import { ALL_PERMS, hasPerm, INTERACT_PERMS, Perm, type Category, type Channel, type Friend, type Member, type Message, type NotifySettings, type Presence, type PublicUser, type Role, type SelfUser, type Server } from '@line/shared';
 import { create } from 'zustand';
@@ -19,13 +20,17 @@ export type Modal =
   | { kind: 'notify-settings'; serverId: string }
   | { kind: 'nickname'; serverId: string; userId: string }
   | { kind: 'invite'; serverId: string }
+  /** Tela de convite aberta por um link (useline.tech/app/?convite=...). */
+  | { kind: 'invite-page'; code: string }
   | { kind: 'profile' }
   | { kind: 'settings'; section?: 'account' | 'profile' | 'voice' | 'games' | 'activity' | 'notifications' }
   | { kind: 'create-poll'; channelId: string }
-  | { kind: 'new-dm' }
+  | { kind: 'new-dm'; base?: string[] }
   | { kind: 'user'; userId: string; at?: { x: number; y: number; above?: boolean }; hover?: boolean }
   | { kind: 'full-profile'; userId: string; serverId?: string | null }
   | { kind: 'mutual-servers'; servers: Server[] }
+  | { kind: 'user-note'; userId: string }
+  | { kind: 'friend-nick'; userId: string }
   | { kind: 'name-style' }
   | { kind: 'server-profile'; serverId: string }
   | { kind: 'create-thread'; channelId: string; messageId?: string; suggestedName?: string }
@@ -257,7 +262,7 @@ export const actions = {
   upsertChannel(channel: Channel) {
     if (channel.recipients) actions.upsertUsers(channel.recipients);
     set((s) => {
-      const isDm = !channel.serverId;
+      const isDm = !channel.serverId && (channel.type === 'dm' || channel.type === 'group_dm');
       const dmOrder = isDm ? [channel.id, ...s.dmOrder.filter((x) => x !== channel.id)] : s.dmOrder;
       const existing = s.channels[channel.id];
       // Ao atualizar uma DM existente, mantém a ordem atual.
@@ -341,7 +346,7 @@ export const actions = {
       }
       if (channel) {
         patch.channels = { ...s.channels, [channel.id]: { ...channel, lastMessageAt: message.createdAt } };
-        if (!channel.serverId) patch.dmOrder = [channel.id, ...s.dmOrder.filter((x) => x !== channel.id)];
+        if (!channel.serverId && (channel.type === 'dm' || channel.type === 'group_dm')) patch.dmOrder = [channel.id, ...s.dmOrder.filter((x) => x !== channel.id)];
       }
       // Quem enviou parou de digitar.
       const typing = s.typing[message.channelId];
@@ -552,7 +557,8 @@ export function dmTitle(channel: Channel, meId: string | undefined, users: Recor
   if (channel.type === 'group_dm' && channel.name) return channel.name;
   const others = (channel.recipients ?? []).filter((r) => r.id !== meId);
   if (!others.length) return 'Só você';
-  return others.map((r) => users[r.id]?.displayName ?? r.displayName).join(', ');
+  const nicks = useDmPrefs.getState().nicks;
+  return others.map((r) => nicks[r.id] ?? users[r.id]?.displayName ?? r.displayName).join(', ');
 }
 
 // ---------- cargos e permissões ----------
@@ -572,9 +578,20 @@ export function permsOf(s: LineState, serverId: string | null | undefined, userI
 /** Permissões dentro de um canal (igual ao servidor): quem está em "Quem pode ver" ganha ver, enviar e
  *  entrar/falar; com "quem pode interagir" ligado, quem está na lista ganha enviar/falar e quem não está
  *  perde. Dono e admin podem tudo. Threads seguem o pai. */
+const NEWS_PERMS =
+  ALL_PERMS &
+  ~(Perm.ManageChannels | Perm.ManageRoles | Perm.ManageServer | Perm.KickMembers | Perm.ManageMessages | Perm.MentionEveryone | Perm.Administrator | Perm.PinMessages | Perm.UseAgent | Perm.ManageAgent | Perm.PostNotes);
+let newsAdmin = false;
+/** A conta é admin do Line (modera os comentários das Novidades). */
+export function setNewsAdmin(v: boolean) {
+  newsAdmin = v;
+}
+
 export function channelPermsOf(s: LineState, channelId: string | null | undefined, userId: string | undefined): number {
   let c = channelId ? s.channels[channelId] : undefined;
   if (c?.type === 'thread' && c.parentId) c = s.channels[c.parentId] ?? c;
+  // Comentários das Novidades: todo mundo conversa, só os admins do Line moderam.
+  if (c?.base === 'news' && !c.serverId) return newsAdmin ? ALL_PERMS & ~Perm.Administrator : NEWS_PERMS;
   let p = permsOf(s, c?.serverId, userId);
   if (c?.serverId && userId && !hasPerm(p, Perm.Administrator)) {
     const serverId = c.serverId;
