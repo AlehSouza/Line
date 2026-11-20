@@ -789,10 +789,6 @@ fn create_window(app: &tauri::AppHandle) -> tauri::Result<WebviewWindow> {
         })
         // Links externos abrem no navegador padrão.
         .on_new_window(move |url, _| {
-            // Janela em branco aberta pelo próprio app ("Em Nova Janela" da chamada): abre de verdade.
-            if url.as_str() == "about:blank" {
-                return NewWindowResponse::Allow;
-            }
             if matches!(url.scheme(), "http" | "https" | "mailto") {
                 let _ = opener.opener().open_url(url.as_str(), None::<&str>);
             }

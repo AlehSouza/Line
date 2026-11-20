@@ -50,7 +50,6 @@ import { EMOJI_FONT } from './EmojiPicker';
 import { fileUrl } from '@/lib/api';
 import { toast } from './Dialogs';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
-import { closePopout, popoutWindow, sweepPopouts, usePopouts } from '@/lib/popout';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
 function usePing(active: boolean) {
@@ -212,7 +211,6 @@ function useTiles(channelId: string) {
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
-  const popped = usePopouts((p) => p.keys);
 
   return useMemo(() => {
     const list = participants(states, channelId);
@@ -233,10 +231,8 @@ function useTiles(channelId: string) {
       if (!cam && !showNoVideo) continue;
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
-    // Quadros abertos em outra janela saem da grade.
-    const shown = tiles.filter((t) => !popped.includes(t.key));
-    return { tiles: shown, count: list.length, popped: shown.length < tiles.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen, popped]);
+    return { tiles, count: list.length };
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
@@ -686,106 +682,6 @@ function TileView({
   );
 }
 
-// ---------- quadros em outra janela ----------
-
-/** Janelas abertas por "Em Nova Janela": desenha cada quadro dentro da sua janela e fecha quando não faz mais sentido. */
-export function VoicePopouts() {
-  const keys = usePopouts((p) => p.keys);
-  const states = useVoice((v) => v.states);
-  const watching = useVoice((v) => v.watching);
-  const myChannel = useVoice((v) => v.channelId);
-  const meId = useLine((s) => s.me?.id);
-  // Fechou no X da janela: o quadro volta para a grade.
-  useEffect(() => {
-    if (!keys.length) return;
-    const t = setInterval(sweepPopouts, 500);
-    return () => clearInterval(t);
-  }, [keys.length]);
-  // Saí da chamada, a pessoa saiu, a transmissão acabou ou parei de assistir: fecha a janela.
-  useEffect(() => {
-    for (const key of keys) {
-      const i = key.indexOf(':');
-      const kind = key.slice(0, i);
-      const uid = key.slice(i + 1);
-      const st = states[uid];
-      const gone = !st || !myChannel || st.channelId !== myChannel;
-      const noScreen = kind === 'screen' && (!st?.screenStreamId || (uid !== meId && !watching[uid]));
-      if (gone || noScreen) closePopout(key);
-    }
-  }, [keys, states, watching, myChannel, meId]);
-  return (
-    <>
-      {keys.map((k) => {
-        const el = popoutWindow(k)?.document.getElementById('line-popout');
-        return el ? createPortal(<PopoutTile tileKey={k} />, el, k) : null;
-      })}
-    </>
-  );
-}
-
-function PopoutTile({ tileKey }: { tileKey: string }) {
-  const i = tileKey.indexOf(':');
-  const kind = tileKey.slice(0, i) as 'person' | 'screen';
-  const uid = tileKey.slice(i + 1);
-  const isMe = useLine((s) => s.me?.id === uid);
-  const user = useLine((s) => s.users[uid]);
-  const state = useVoice((v) => v.states[uid]);
-  const nick = useLine((s) => (state?.serverId ? s.members[state.serverId]?.[uid]?.nickname : null));
-  const stream = useVoice((v) => {
-    const st = v.states[uid];
-    if (!st) return null;
-    if (kind === 'screen') return isMe ? v.screen : st.screenStreamId && v.watching[uid] ? (v.streams[st.screenStreamId] ?? null) : null;
-    return isMe ? v.camera : st.cameraStreamId && !v.hiddenVideo[uid] ? (v.streams[st.cameraStreamId] ?? null) : null;
-  });
-  const speaking = useVoice((v) => !!v.speaking[uid]);
-  const tint = useAvatarTint(user?.avatarUrl, user?.avatarColor ?? '#3a3a42');
-  const look = useCallLook(kind === 'person' ? uid : undefined);
-  const name = nick || user?.displayName || 'Alguém';
-  return (
-    <div className="flex h-screen w-screen bg-rail p-2 text-white">
-      <div
-        className="relative flex flex-1 items-center justify-center overflow-hidden rounded-xl"
-        style={{ background: kind === 'screen' ? '#000' : tint }}
-      >
-        {kind === 'person' && (
-          <span
-            className={cx(
-              'pointer-events-none absolute inset-0 z-10 rounded-xl ring-[3px] ring-online ring-inset transition-opacity ease-out',
-              speaking ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
-            )}
-          />
-        )}
-        {stream ? (
-          <Video stream={stream} contain mirror={isMe && kind === 'person'} detectPause={kind === 'screen'} />
-        ) : (
-          <>
-            {kind === 'person' && <CallLookLayers look={look} />}
-            <CallLookAvatar look={kind === 'person' ? look : null}>
-              <Avatar name={name} color={user?.avatarColor ?? '#3a3a42'} src={user?.avatarUrl} size={88} />
-            </CallLookAvatar>
-          </>
-        )}
-        <span className="absolute bottom-2 left-2 z-20 flex max-w-[calc(100%-4rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium whitespace-nowrap">
-          {kind === 'screen' && <Icons.Screen size={14} className="shrink-0" />}
-          <span className="min-w-0 truncate">{kind === 'screen' ? `Tela de ${name}` : <StyledName user={user}>{name}</StyledName>}</span>
-          {kind === 'person' && state?.deafened ? (
-            <Icons.HeadphonesOff size={14} className="shrink-0 text-danger" />
-          ) : kind === 'person' && state?.muted ? (
-            <Icons.MicOff size={14} className="shrink-0 text-danger" />
-          ) : null}
-        </span>
-        <button
-          title="Voltar para a chamada"
-          onClick={() => closePopout(tileKey)}
-          className="absolute right-2 bottom-2 z-20 rounded-md bg-black/60 p-1.5 hover:bg-black/80"
-        >
-          <Icons.PopIn size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ---------- palco da chamada ----------
 
 /** Área principal de um canal de voz (ou o topo de uma DM em chamada). */
@@ -895,7 +791,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   const inCall = useVoice((v) => v.channelId === channel.id);
   const connecting = useVoice((v) => v.connecting && v.channelId === channel.id);
   const error = useVoice((v) => v.error);
-  const { tiles, count, popped } = useTiles(channel.id);
+  const { tiles, count } = useTiles(channel.id);
   const [focus, setFocus] = useState<string | null>(null);
   const [emptyMenu, setEmptyMenu] = useState<{ x: number; y: number } | null>(null);
   const meId = useLine((s) => s.me?.id);
@@ -1021,7 +917,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
               if (meId) setEmptyMenu({ x: e.clientX, y: e.clientY });
             }}
           >
-            {popped ? 'Todos os participantes estão destacados' : 'Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.'}
+            Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.
             {emptyMenu && meId && (
               <VoiceUserMenu userId={meId} channelId={channel.id} x={emptyMenu.x} y={emptyMenu.y} onClose={() => setEmptyMenu(null)} />
             )}

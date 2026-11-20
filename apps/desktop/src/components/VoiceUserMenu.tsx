@@ -28,7 +28,6 @@ import {
   toggleShowNoVideo,
   useVoice,
 } from "@/lib/voice";
-import { openPopout } from "@/lib/popout";
 import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/music";
 import { cx, Icons, Slider } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
@@ -239,14 +238,6 @@ export function VoiceUserMenu({
         {inSameCall && (
           <>
             <Sep />
-            <Item
-              disabled={!isMe && !watching}
-              onClick={run(() => openPopout(`screen:${userId}`, `Tela de ${user.displayName}`))}
-            >
-              <span className="flex items-center gap-2">
-                <Icons.PopOut size={14} /> Transmissão em Nova Janela
-              </span>
-            </Item>
             {viewOptions}
           </>
         )}
@@ -441,11 +432,6 @@ export function VoiceUserMenu({
       {!isBot && inSameCall && (
         <>
           <Sep />
-          <Item onClick={run(() => openPopout(`person:${userId}`, user.displayName))}>
-            <span className="flex items-center gap-2">
-              <Icons.PopOut size={14} /> Usuário em Nova Janela
-            </span>
-          </Item>
           {viewOptions}
         </>
       )}

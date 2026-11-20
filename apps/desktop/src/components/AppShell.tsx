@@ -16,7 +16,7 @@ import { Modals } from './Modals';
 import { ServerRail } from './ServerRail';
 import { UserPanel } from './UserPanel';
 import { cx } from './ui';
-import { IncomingCall, MiniStream, VoiceBar, VoicePopouts, VoiceStage } from './Voice';
+import { IncomingCall, MiniStream, VoiceBar, VoiceStage } from './Voice';
 import { GameBar } from './GameBar';
 import { ActivityChannel } from './Activity';
 import { EventsChannel } from './Events';
@@ -105,7 +105,6 @@ export function AppShell() {
         <main className={cx('glow relative flex min-w-0 flex-1 flex-col bg-main', pane === 'nav' && 'max-md:hidden')}>
           {main}
           <MiniStream viewingChannelId={channel?.id ?? null} />
-          <VoicePopouts />
         </main>
         {thread && channel?.type === 'text' ? (
           <ThreadPanel thread={thread} />
