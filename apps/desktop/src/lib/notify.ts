@@ -11,6 +11,7 @@
  * - Ocupado (Não perturbe): nada de som, notificação na área de trabalho nem piscar a barra.
  * As configurações ficam no servidor (sincronizam entre aparelhos); quem decide é o app.
  */
+import { playSfx } from './sfx';
 import type { ChannelNotify, Message, NotifyLevel, NotifySettings, ReadState, ServerNotify } from '@line/shared';
 import { api } from './api';
 import { useIgnored } from './ignored';
@@ -313,7 +314,7 @@ export function handleIncoming(message: Message, viewing: boolean, show: (m: Mes
   if (level === 'mentions' && !kind) return;
 
   const n = s.notify;
-  if (pref(n, 'sounds')) playMessageSound();
+  if (pref(n, 'sounds')) playMessageSound(isDm ? 'dm' : kind ? 'mention' : 'message');
   const focused = typeof document !== 'undefined' && document.hasFocus();
   // Com a janela em foco o Discord só toca o som; fora dela mostra a notificação.
   if (!focused) {
@@ -341,35 +342,12 @@ if (typeof window !== 'undefined') {
 
 // ---------- som ----------
 
-let audioCtx: AudioContext | null = null;
 let lastSound = 0;
 
-/** Som curto de mensagem nova (dois toques), gerado na hora. */
-export function playMessageSound() {
+/** Som de mensagem nova: mensagem direta (o "padrão"), menção ou mensagem comum de servidor. */
+export function playMessageSound(kind: 'dm' | 'mention' | 'message' = 'dm') {
   const now = Date.now();
   if (now - lastSound < 400) return;
   lastSound = now;
-  try {
-    audioCtx ??= new AudioContext();
-    const ctx = audioCtx;
-    void ctx.resume();
-    const t = ctx.currentTime;
-    for (const [freq, delay] of [
-      [740, 0],
-      [1110, 0.08],
-    ] as const) {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0.0001, t + delay);
-      g.gain.exponentialRampToValueAtTime(0.16, t + delay + 0.012);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + delay + 0.32);
-      o.connect(g).connect(ctx.destination);
-      o.start(t + delay);
-      o.stop(t + delay + 0.36);
-    }
-  } catch {
-    /* sem áudio */
-  }
+  playSfx(kind);
 }

@@ -75,6 +75,8 @@ export interface ServerToClientEvents {
   'voice:status': (payload: { channelId: string; status: string | null }) => void;
   /** Um moderador te moveu para outro canal de voz. */
   'voice:move': (payload: { channelId: string }) => void;
+  /** Alguém recusou a ligação no privado. */
+  'voice:declined': (payload: { channelId: string; userId: string }) => void;
   /** Alguém do meu canal de voz tocou um efeito sonoro do painel. */
   'voice:sound': (payload: {
     userId: string;
@@ -108,6 +110,8 @@ export interface ClientToServerEvents {
   /** Pede de novo quem está em cada canal de voz e os status dos canais. */
   /** Toca um efeito sonoro para todos do canal (só desmutado). */
   'voice:sound': (payload: { soundId: string }) => void;
+  /** Recusa a ligação de uma conversa no privado (quem liga para de chamar). */
+  'voice:decline': (payload: { channelId: string }) => void;
   'voice:sync': (ack: (res: { states: VoiceState[]; statuses: Record<string, string> }) => void) => void;
   /** Controles do bot de música: quem deu o /play manda direto, os outros votam. */
   'music:control': (payload: MusicControl) => void;

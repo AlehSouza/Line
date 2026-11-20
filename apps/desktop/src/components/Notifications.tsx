@@ -420,7 +420,7 @@ export function NotificationsSection() {
             hint={
               <>
                 Toca um som quando chega algo que notifica.{' '}
-                <button className="text-accent hover:underline" onClick={playMessageSound}>
+                <button className="text-accent hover:underline" onClick={() => playMessageSound()}>
                   Ouvir
                 </button>
               </>

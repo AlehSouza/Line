@@ -85,6 +85,16 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     improvements: [
       {
+        icon: 'volume',
+        title: 'Sons novos em todo o app',
+        text: 'Mensagens, menções, entrar e sair da voz, mutar, ligações e transmissões ganharam sons novos, mais suaves e combinando entre si. Cada situação tem o seu som, então dá para saber o que aconteceu sem olhar a tela.',
+      },
+      {
+        icon: 'headphones',
+        title: 'Ligações no privado tocam de verdade',
+        text: 'Quando alguém te liga no privado, o Line toca até você atender ou recusar. Quem liga ouve o som de chamando e vê o cartão da outra pessoa pulsando na chamada até ela entrar.',
+      },
+      {
         icon: 'mic',
         title: 'Voz mais firme em internet instável',
         text: 'A sua voz chega inteira mesmo quando a conexão perde um pedacinho, sem picotar.',

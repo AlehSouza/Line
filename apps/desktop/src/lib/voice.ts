@@ -9,6 +9,7 @@ import { detectGame, hasGameDetection, hasNativeScreen, startNativeScreen } from
 import { hasPerm, Perm } from '@line/shared';
 import { actions, channelPermsOf, useLine } from './store';
 import { toast } from '@/components/Dialogs';
+import { playSfx, sfxLoop, startSfxLoop, stopSfxLoop } from './sfx';
 import { needsNsfwGate } from './nsfwGate';
 import { forgetSamples, readRecv, readSend, useScreenStats, type RecvStat, type SendStat } from './screenStats';
 
@@ -297,27 +298,51 @@ const audioEls = new Map<string, HTMLAudioElement>();
 
 // ---------- sons da chamada ----------
 
-type CallSound =
-  | 'enter'
-  | 'left'
-  | 'mute_microphone'
-  | 'mute_headphone'
-  | 'start_transmission'
-  | 'close_transmission'
-  | 'enter_in_transmission'
-  | 'left_transmission';
+/** Canal de mensagem direta (ou grupo): a chamada ali toca como ligação. */
+function isDmChannel(channelId: string | null | undefined) {
+  if (!channelId) return false;
+  const ch = useLine.getState().channels[channelId];
+  return !!ch && !ch.serverId;
+}
 
-const callSounds: Partial<Record<CallSound, HTMLAudioElement>> = {};
+/** Estou ligando no privado: as pessoas chamadas aparecem na chamada, apagadas e pulsando, até atender ou recusar. */
+export const useCalling = create<{ channelId: string | null; declined: string[] }>(() => ({ channelId: null, declined: [] }));
+let callingTimer: ReturnType<typeof setTimeout> | null = null;
 
-function playCallSound(kind: CallSound) {
-  try {
-    // Caminho relativo: funciona no app (raiz) e na web (/app/).
-    const el = (callSounds[kind] ??= new Audio(new URL(`sounds/${kind}.mp3`, document.baseURI).href));
-    el.currentTime = 0;
-    void el.play().catch(() => {});
-  } catch {
-    /* sem áudio */
-  }
+function startCalling(channelId: string) {
+  if (callingTimer) clearTimeout(callingTimer);
+  useCalling.setState({ channelId, declined: [] });
+  // Ninguém atendeu em 30 s: para de chamar.
+  callingTimer = setTimeout(endCalling, 30_000);
+}
+
+function endCalling() {
+  if (callingTimer) clearTimeout(callingTimer);
+  callingTimer = null;
+  const c = useCalling.getState().channelId;
+  if (c) stopSfxLoop(c);
+  useCalling.setState({ channelId: null, declined: [] });
+}
+
+/** Recuso a ligação: o meu toque para e quem liga fica sabendo. */
+export function declineCall(channelId: string) {
+  stopSfxLoop(channelId);
+  socket?.emit('voice:decline', { channelId });
+}
+
+/** Toque de ligação que não faz mais sentido (quem ligou saiu, ou eu saí da minha ligação): para na hora. */
+function stopDeadRing() {
+  const c = useCalling.getState().channelId;
+  if (c && (getV().channelId !== c || othersIn(c) > 0)) endCalling();
+  const l = sfxLoop();
+  if (!l) return;
+  if (l.kind === 'incomingCall' && (getV().channelId === l.key || !othersIn(l.key))) stopSfxLoop(l.key);
+  if (l.kind === 'callRinging' && (getV().channelId !== l.key || othersIn(l.key) > 0)) stopSfxLoop(l.key);
+}
+
+/** Quantas pessoas, além de mim e de `except`, estão num canal. */
+function othersIn(channelId: string, except?: string) {
+  return Object.values(getV().states).filter((v) => v.channelId === channelId && v.userId !== myId && v.userId !== except).length;
 }
 
 // ---------- ligação com o socket ----------
@@ -328,6 +353,7 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
 
   s.on('voice:snapshot', (list) => {
     setV({ states: Object.fromEntries(list.map((v) => [v.userId, v])) });
+    stopDeadRing();
     // Reconectou: se eu estava num canal, o servidor me tirou. Entra de novo.
     const { channelId } = getV();
     // Página recarregada (F5) ou app reiniciado pela atualização: volta para a chamada de antes.
@@ -347,17 +373,27 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       const here = getV().channelId;
       const before = getV().states[uid]?.channelId ?? null;
       const after = state?.channelId ?? null;
+      if (before !== after) {
+        // Ligação no privado: alguém começou a chamada e eu não estou nela, toca chegando.
+        if (after && after !== here && (state?.serverId === null || isDmChannel(after)) && !othersIn(after, uid) && useLine.getState().me?.status !== 'dnd')
+          startSfxLoop('incomingCall', after, () => getV().channelId !== after && othersIn(after) > 0);
+        // Quem ligou desistiu antes de eu atender.
+        if (before && before !== here && !othersIn(before, uid)) stopSfxLoop(before);
+      }
       if (here && before !== after) {
-        if (after === here) playCallSound('enter');
-        else if (before === here) playCallSound('left');
+        if (after === here) {
+          // Atenderam a minha ligação: para de chamar.
+          if (sfxLoop()?.key === here) stopSfxLoop(here);
+          playSfx('voiceJoin');
+        } else if (before === here) playSfx(isDmChannel(here) && !othersIn(here, uid) ? 'callEnd' : 'voiceLeave');
       } else if (here && after === here && state?.screenStreamId && !getV().states[uid]?.screenStreamId) {
         // Alguém do meu canal começou a transmitir: todos do canal ouvem.
-        playCallSound('start_transmission');
+        playSfx('streamStarted');
       } else if (here && after === here && before === here && state) {
         // Alguém do meu canal mutou/desmutou o microfone ou o fone: todos do canal ouvem.
         const prev = getV().states[uid];
-        if (!!prev?.deafened !== !!state.deafened) playCallSound('mute_headphone');
-        else if (!!prev?.muted !== !!state.muted) playCallSound('mute_microphone');
+        if (!!prev?.deafened !== !!state.deafened) playSfx(state.deafened ? 'userDeafened' : 'userUndeafened');
+        else if (!!prev?.muted !== !!state.muted) playSfx(state.muted ? 'userMuted' : 'userUnmuted');
       }
     }
     setV((v) => {
@@ -366,11 +402,12 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       else if (states[uid]?.channelId === channelId) delete states[uid];
       return { states };
     });
+    stopDeadRing();
     if (uid === myId) return applyMute();
     // Parou de transmitir (ou saiu): na próxima vez, assistir de novo é escolha minha.
     if (!state?.screenStreamId && (getV().watching[uid] || getV().screenThumbs[uid] || getV().screenViewers[uid])) {
       // Só quem assistia ouve o fim da transmissão.
-      if (getV().watching[uid]) playCallSound('close_transmission');
+      if (getV().watching[uid]) playSfx('streamEnded');
       setV((v) => {
         const screenThumbs = { ...v.screenThumbs };
         delete screenThumbs[uid];
@@ -392,7 +429,11 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
 
   s.on('voice:signal', ({ from, signal }) => void onSignal(from, signal));
 
-  s.on('voice:move', ({ channelId }) => void joinVoice(channelId));
+  s.on('voice:move', ({ channelId }) => {
+    // Um moderador me moveu: toca o som de "movido" em vez de sair e entrar.
+    playSfx('userMoved');
+    void joinVoice(channelId, false);
+  });
 
   s.on('voice:statuses', (channelStatus) => setV({ channelStatus }));
   s.on('voice:status', ({ channelId, status }) =>
@@ -404,8 +445,19 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
     }),
   );
 
+  s.on('voice:declined', ({ channelId, userId }) => {
+    if (userId === myId || useCalling.getState().channelId !== channelId) return;
+    const declined = [...useCalling.getState().declined, userId];
+    const ch = useLine.getState().channels[channelId];
+    const waiting = (ch?.recipients ?? []).filter((u) => u.id !== myId && !declined.includes(u.id));
+    // Todos recusaram (no privado é só uma pessoa): para de chamar e o cartão some.
+    if (!waiting.length) endCalling();
+    else useCalling.setState({ declined });
+  });
+
   s.on('voice:kicked', () => {
-    void leaveVoice(false);
+    if (getV().channelId) playSfx('disconnect');
+    void leaveVoice(false, false);
   });
 }
 
@@ -543,13 +595,14 @@ function resumeVoice(list: VoiceState[]) {
 
 // ---------- entrar / sair ----------
 
-export async function joinVoice(channelId: string) {
+/** `sound` = false quando quem chama já tocou outro som (ex.: movido por um moderador). */
+export async function joinVoice(channelId: string, sound = true) {
   if (!socket) return;
   // Canal +18 sem passar pelo aviso: a tela do canal mostra o aviso e entra no Prosseguir.
   if (needsNsfwGate(channelId)) return;
   const current = getV();
   if (current.channelId === channelId) return;
-  if (current.channelId) await leaveVoice();
+  if (current.channelId) await leaveVoice(true, sound);
 
   if (typeof RTCPeerConnection === 'undefined') {
     setV({
@@ -570,7 +623,18 @@ export async function joinVoice(channelId: string) {
     if (!mic) await openMic();
     applyMute();
     await rejoin(channelId);
-    playCallSound('enter');
+    stopSfxLoop(channelId);
+    if (!sound) {
+      /* o som já tocou */
+    } else if (isDmChannel(channelId) && !othersIn(channelId)) {
+      // Comecei uma ligação no privado: toca a saída e fica chamando até alguém atender.
+      playSfx('outgoingCall');
+      startCalling(channelId);
+      setTimeout(() => {
+        if (useCalling.getState().channelId === channelId)
+          startSfxLoop('callRinging', channelId, () => useCalling.getState().channelId === channelId);
+      }, 700);
+    } else playSfx('selfJoin');
   } catch (err) {
     const name = (err as Error).name;
     const message =
@@ -598,9 +662,11 @@ async function rejoin(channelId: string) {
   startStatsLoop();
 }
 
-export async function leaveVoice(notify = true) {
+export async function leaveVoice(notify = true, sound = true) {
   clearResume();
-  if (getV().channelId && !getV().connecting) playCallSound('left');
+  const was = getV().channelId;
+  if (was && sfxLoop()?.key === was) stopSfxLoop(was);
+  if (sound && was && !getV().connecting) playSfx(isDmChannel(was) ? 'callEnd' : 'selfLeave');
   if (notify) socket?.emit('voice:leave');
   if (cameraOpening) cameraCancelled = true;
   cleanupPeers();
@@ -610,6 +676,7 @@ export async function leaveVoice(notify = true) {
   stopSpeakingLoop();
   stopStatsLoop();
   setV({ channelId: null, connecting: false, camera: null, screen: null, streams: {}, speaking: {} });
+  stopDeadRing();
 }
 
 function cleanupPeers() {
@@ -629,7 +696,7 @@ export function toggleMute() {
   }
   setV(next);
   saveSelfMute(getV().muted, getV().deafened);
-  playCallSound(next.deafened === false ? 'mute_headphone' : 'mute_microphone');
+  playSfx(next.deafened === false ? 'selfUndeafen' : next.muted ? 'selfMute' : 'selfUnmute');
   applyMute();
   socket?.emit('voice:state', next);
 }
@@ -639,7 +706,7 @@ export function toggleDeafen() {
   const next = { deafened, muted: deafened ? true : !voiceCan(Perm.Speak) };
   setV(next);
   saveSelfMute(next.muted, next.deafened);
-  playCallSound('mute_headphone');
+  playSfx(deafened ? 'selfDeafen' : 'selfUndeafen');
   applyMute();
   socket?.emit('voice:state', next);
 }
@@ -736,7 +803,7 @@ export function requestStageFocus(key: string | null) {
 }
 
 export function setWatching(userId: string, on: boolean) {
-  if (!!getV().watching[userId] !== on) playCallSound(on ? 'enter_in_transmission' : 'left_transmission');
+  if (!!getV().watching[userId] !== on) playSfx(on ? 'streamJoin' : 'streamLeave');
   setV((v) => ({ watching: { ...v.watching, [userId]: on } }));
   send(userId, { type: 'watch', on });
   applyMute();
@@ -1320,7 +1387,7 @@ export async function toggleScreen(source?: { id: string; audio: boolean }): Pro
     addStreamToPeers(stream);
     startThumbs(stream, source?.id);
     socket?.emit('voice:state', { screenStreamId: stream.id });
-    playCallSound('start_transmission');
+    playSfx('streamStarted');
     return null;
   } catch (err) {
     if ((err as Error).name === 'NotAllowedError') return null;
@@ -1582,7 +1649,7 @@ function stopScreen() {
       return { screenViewers };
     });
   }
-  playCallSound('close_transmission');
+  playSfx('streamEnded');
   stopThumbs();
   stopStream(screen);
   nativeStop?.();
@@ -1771,8 +1838,8 @@ async function onSignal(from: string, signal: VoiceSignal) {
     // Eu assisto a essa tela: ouço quando outra pessoa entra ou sai dela (a minha própria toca no setWatching).
     if (getV().watching[from]) {
       const others = (list: string[]) => list.filter((id) => id !== myId);
-      if (others(ids).some((id) => !before.includes(id))) playCallSound('enter_in_transmission');
-      else if (others(before).some((id) => !ids.includes(id))) playCallSound('left_transmission');
+      if (others(ids).some((id) => !before.includes(id))) playSfx('streamJoin');
+      else if (others(before).some((id) => !ids.includes(id))) playSfx('streamLeave');
     }
     setV((v) => ({ screenViewers: { ...v.screenViewers, [from]: ids } }));
     return;
@@ -1786,7 +1853,7 @@ async function onSignal(from: string, signal: VoiceSignal) {
       if (screen) {
         // Voltou a assistir: religa os envios pausados (sem renegociar); se não der, envia do zero.
         if (!resumeScreen(peer, screen)) addStream(pc, screen);
-        playCallSound('enter_in_transmission');
+        playSfx('streamJoin');
         sendViewers();
       }
     } else {
@@ -1794,7 +1861,7 @@ async function onSignal(from: string, signal: VoiceSignal) {
       if (screen) {
         // Só pausa (replaceTrack null): sair e voltar a assistir não mexe na negociação, que quebrava a tela.
         pauseScreen(peer, screen);
-        playCallSound('left_transmission');
+        playSfx('streamLeave');
         sendViewers();
       }
     }

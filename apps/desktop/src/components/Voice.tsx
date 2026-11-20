@@ -39,6 +39,8 @@ import {
   toggleScreen,
   toggleScreenMute,
   useVoice,
+  declineCall,
+  useCalling,
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select, Slider, useAvatarTint } from './ui';
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
@@ -200,6 +202,8 @@ interface Tile {
   user: PublicUser | undefined;
   stream: MediaStream | null;
   isMe: boolean;
+  /** Pessoa que estou chamando no privado e ainda não atendeu. */
+  pending?: boolean;
 }
 
 function useTiles(channelId: string) {
@@ -215,6 +219,8 @@ function useTiles(channelId: string) {
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
   const showUnwatched = useVoice((v) => v.showUnwatched);
+  const calling = useCalling();
+  const recipients = useLine((s) => s.channels[channelId]?.recipients);
 
   return useMemo(() => {
     const list = participants(states, channelId);
@@ -236,8 +242,24 @@ function useTiles(channelId: string) {
       if (!cam && !showNoVideo) continue;
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
+    // Ligando no privado: quem ainda não atendeu aparece do lado, apagado e pulsando.
+    if (calling.channelId === channelId)
+      for (const u of recipients ?? []) {
+        if (u.id === meId || calling.declined.includes(u.id) || list.some((p) => p.userId === u.id)) continue;
+        const state: VoiceState = {
+          userId: u.id,
+          channelId,
+          serverId: null,
+          muted: false,
+          deafened: false,
+          cameraStreamId: null,
+          screenStreamId: null,
+          joinedAt: '',
+        };
+        tiles.push({ key: `calling:${u.id}`, kind: 'person', state, user: users[u.id] ?? u, stream: null, isMe: false, pending: true });
+      }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen, showUnwatched]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen, showUnwatched, calling, recipients]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
@@ -552,7 +574,7 @@ function TileView({
   const statsOpen = useScreenStats((s) => s.open);
   const canStats = tile.kind === 'screen' && !!tile.stream && !hidden;
   return (
-    <div className={cx('group/stream relative', big && 'h-full')}>
+    <div className={cx('group/stream relative', big && 'h-full', tile.pending && 'pointer-events-none animate-pulse opacity-50')}>
     <div
       role="button"
       tabIndex={0}
@@ -2128,7 +2150,9 @@ export function IncomingCall() {
 
   return (
     <div className="fixed right-6 bottom-6 z-40 flex w-72 flex-col items-center gap-3 rounded-2xl border border-edge bg-side p-5 shadow-2xl">
-      <span className="animate-pulse rounded-full ring-4 ring-accent/50">
+      <span className="relative flex rounded-full">
+        <span className="pointer-events-none absolute -inset-1.5 animate-ping rounded-full border-2 border-accent/60" />
+        <span className="pointer-events-none absolute -inset-1 rounded-full border-2 border-accent" />
         <Avatar name={caller?.displayName ?? '?'} color={caller?.avatarColor ?? '#3a3a42'} src={caller?.avatarUrl} size={64} />
       </span>
       <div className="text-center">
@@ -2138,7 +2162,10 @@ export function IncomingCall() {
       <div className="flex gap-3">
         <button
           title="Ignorar"
-          onClick={() => setDismissed((d) => ({ ...d, [channel.id]: true }))}
+          onClick={() => {
+            declineCall(channel.id);
+            setDismissed((d) => ({ ...d, [channel.id]: true }));
+          }}
           className="flex h-11 w-11 items-center justify-center rounded-full bg-danger text-white hover:brightness-110"
         >
           <Icons.PhoneOff size={20} />

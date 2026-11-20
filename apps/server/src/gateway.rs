@@ -267,10 +267,39 @@ async fn on_connect(
     s.on("voice:moderate", voice_moderate);
     s.on("voice:sync", voice_sync);
     s.on("voice:sound", voice_sound);
+    s.on("voice:decline", voice_decline);
     s.on("music:control", music_control);
     s.on("music:report", music_report);
     s.on("music:sync", music_sync);
     s.on_disconnect(on_disconnect);
+}
+
+/// Recusei uma ligação no privado: avisa os outros da conversa (quem liga para de chamar).
+async fn voice_decline(
+    State(app): State<AppRef>,
+    Extension(UserId(me)): Extension<UserId>,
+    TryData(d): TryData<Value>,
+) {
+    let Some(channel_id) = d.ok().and_then(|d| {
+        d.get("channelId")
+            .and_then(|c| c.as_str())
+            .map(String::from)
+    }) else {
+        return;
+    };
+    let q = app.store.q();
+    let Some(channel) = q.channel(&channel_id) else {
+        return;
+    };
+    if channel.server_id.is_some() || !q.can_access(&me, &channel.id) {
+        return;
+    }
+    app.to_channel(
+        &q,
+        &channel.id,
+        "voice:declined",
+        &json!({ "channelId": channel.id, "userId": me }),
+    );
 }
 
 async fn typing_start(
