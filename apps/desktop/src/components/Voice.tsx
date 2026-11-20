@@ -211,15 +211,17 @@ function useTiles(channelId: string) {
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
+  const showUnwatched = useVoice((v) => v.showUnwatched);
 
   return useMemo(() => {
     const list = participants(states, channelId);
     const tiles: Tile[] = [];
     for (const p of list) {
       const isMe = p.userId === meId;
-      // Tela dos outros só aparece como quadro quando eu assisto; a minha some com "Mostrar minha própria transmissão" desligado.
+      // Tela dos outros aparece mesmo antes de eu assistir (com "Assistir transmissão"), a não ser que eu desligue
+      // "Mostrar transmissões não assistidas"; a minha some com "Mostrar minha transmissão" desligado.
       const scr = isMe ? screen : p.screenStreamId && watching[p.userId] ? (streams[p.screenStreamId] ?? null) : null;
-      if (p.screenStreamId && (isMe ? scr && showMyScreen : watching[p.userId])) {
+      if (p.screenStreamId && (isMe ? scr && showMyScreen : watching[p.userId] || showUnwatched)) {
         tiles.push({ key: `screen:${p.userId}`, kind: 'screen', state: p, user: users[p.userId], stream: scr, isMe });
       }
     }
@@ -232,7 +234,7 @@ function useTiles(channelId: string) {
       tiles.push({ key: `person:${p.userId}`, kind: 'person', state: p, user: users[p.userId], stream: p.cameraStreamId ? cam : null, isMe });
     }
     return { tiles, count: list.length };
-  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen]);
+  }, [states, streams, camera, screen, users, meId, channelId, hiddenVideo, watching, showNoVideo, showMyCamera, showMyScreen, showUnwatched]);
 }
 
 /** Menu de 3 pontinhos no canto da tela que eu assisto: parar de assistir, silenciar e volume. Só mudam para mim. */
@@ -314,7 +316,7 @@ function ScreenViewers({ userId, serverId }: { userId: string; serverId: string 
         <Icons.Users size={14} /> {people.length}
       </span>
       {/* pt-1.5 faz a ponte até a lista: o mouse passa do ícone para ela sem ela sumir. */}
-      <div className="absolute top-full right-0 hidden pt-1.5 group-hover/viewers:block">
+      <div className="absolute top-full left-0 hidden pt-1.5 group-hover/viewers:block">
       <div className="w-52 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl">
         <p className="px-1.5 pb-1 text-xs font-bold tracking-wide text-muted uppercase">Assistindo agora</p>
         {people.length === 0 ? (
@@ -660,8 +662,12 @@ function TileView({
       )}
     </div>
     {/* Linha de ações no canto: quem assiste, tela cheia, destacar e sair da transmissão. */}
+    {showViewers && (
+      <div className="absolute top-2 left-2 z-30 hidden text-white group-hover/stream:block">
+        <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />
+      </div>
+    )}
     <div className="absolute top-2 right-2 z-30 hidden items-center gap-1 text-white group-hover/stream:flex">
-      {showViewers && <ScreenViewers userId={tile.state.userId} serverId={tile.state.serverId ?? null} />}
       {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
         <button title="Tela cheia (só a transmissão)" onClick={onFullscreen} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
           <Icons.Fullscreen size={14} />

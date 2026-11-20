@@ -25,6 +25,7 @@ import {
   toggleScreenMute,
   toggleShowMyCamera,
   toggleShowMyScreen,
+  toggleShowUnwatched,
   toggleShowNoVideo,
   useVoice,
 } from "@/lib/voice";
@@ -104,6 +105,7 @@ export function VoiceUserMenu({
   const showNoVideo = useVoice((v) => v.showNoVideo);
   const showMyCamera = useVoice((v) => v.showMyCamera);
   const showMyScreen = useVoice((v) => v.showMyScreen);
+  const showUnwatched = useVoice((v) => v.showUnwatched);
   const serverId = channel?.serverId ?? null;
   const canModerate = useCanModerateVoice(serverId);
   // Próprio apelido: "Alterar apelido"; de outra pessoa: "Gerenciar apelidos".
@@ -199,6 +201,9 @@ export function VoiceUserMenu({
       </Item>
       <Item onClick={run(toggleShowMyScreen, true)} check={showMyScreen}>
         Mostrar minha transmissão
+      </Item>
+      <Item onClick={run(toggleShowUnwatched, true)} check={showUnwatched}>
+        Mostrar transmissões não assistidas
       </Item>
     </>
   );

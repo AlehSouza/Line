@@ -238,6 +238,7 @@ export interface VoiceStore {
   showNoVideo: boolean;
   showMyCamera: boolean;
   showMyScreen: boolean;
+  showUnwatched: boolean;
 }
 
 export const useVoice = create<VoiceStore>(() => ({
@@ -750,21 +751,25 @@ const STAGE_VIEW_KEY = 'line.stageView';
 function loadStageView() {
   try {
     const v = JSON.parse(localStorage.getItem(STAGE_VIEW_KEY) ?? '{}');
-    return { showNoVideo: v.showNoVideo !== false, showMyCamera: v.showMyCamera !== false, showMyScreen: v.showMyScreen !== false };
+    return { showNoVideo: v.showNoVideo !== false, showMyCamera: v.showMyCamera !== false, showMyScreen: v.showMyScreen !== false, showUnwatched: v.showUnwatched !== false };
   } catch {
-    return { showNoVideo: true, showMyCamera: true, showMyScreen: true };
+    return { showNoVideo: true, showMyCamera: true, showMyScreen: true, showUnwatched: true };
   }
 }
 function saveStageView() {
-  const { showNoVideo, showMyCamera, showMyScreen } = useVoice.getState();
+  const { showNoVideo, showMyCamera, showMyScreen, showUnwatched } = useVoice.getState();
   try {
-    localStorage.setItem(STAGE_VIEW_KEY, JSON.stringify({ showNoVideo, showMyCamera, showMyScreen }));
+    localStorage.setItem(STAGE_VIEW_KEY, JSON.stringify({ showNoVideo, showMyCamera, showMyScreen, showUnwatched }));
   } catch {
     // sem localStorage: vale só nesta sessão
   }
 }
 export function toggleShowNoVideo() {
   setV((v) => ({ showNoVideo: !v.showNoVideo }));
+  saveStageView();
+}
+export function toggleShowUnwatched() {
+  setV((v) => ({ showUnwatched: !v.showUnwatched }));
   saveStageView();
 }
 export function toggleShowMyScreen() {
