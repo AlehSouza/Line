@@ -68,12 +68,32 @@ export const PATCH_NOTES: PatchNote[] = [
         text: 'Escute a sua própria voz antes de entrar na chamada e confira como os outros vão te ouvir.',
       },
       {
+        icon: 'monitor',
+        title: 'Transmissão de tela mais estável',
+        text: 'Quando a internet aperta, a imagem agora se ajusta em vez de travar, e quem assiste de longe ganha mais folga para a imagem chegar inteira. Com várias pessoas assistindo, a qualidade se equilibra entre todas.',
+      },
+      {
+        icon: 'eye',
+        title: 'Veja a qualidade real da transmissão',
+        text: 'Passe o mouse na tela transmitida e clique no ícone de sinal para ver a resolução, a fluidez e a estabilidade da conexão de verdade.',
+      },
+      {
         icon: 'sparkles',
         title: 'Página de Novidades',
         text: 'Um lugar para ver o que há de novo, reagir e comentar. Sempre que o Line mudar, a novidade aparece aqui.',
       },
     ],
     improvements: [
+      {
+        icon: 'mic',
+        title: 'Voz mais firme em internet instável',
+        text: 'A sua voz chega inteira mesmo quando a conexão perde um pedacinho, sem picotar.',
+      },
+      {
+        icon: 'shield',
+        title: 'Chamadas em redes mais fechadas',
+        text: 'Ficou mais fácil entrar em chamadas em redes de empresa, faculdade e outras que bloqueiam conexões.',
+      },
       {
         icon: 'mouse',
         title: 'A chamada do seu jeito',
