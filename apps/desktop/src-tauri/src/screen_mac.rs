@@ -243,7 +243,9 @@ pub async fn screen_start(id: String, fps: u32, audio: bool, height: Option<u32>
         .with_width(ow)
         .with_height(oh)
         .with_pixel_format(PixelFormat::YCbCr_420v)
-        .with_fps(fps)
+        // Intervalo mínimo 10 fps acima do escolhido: com o intervalo exato o macOS pulava o quadro
+        // que chegava um pouco adiantado e 60 fps viravam 50 e poucos.
+        .with_fps(fps + 10)
         .with_queue_depth(5)
         .with_shows_cursor(true)
         .with_captures_audio(audio)

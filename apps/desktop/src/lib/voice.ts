@@ -1595,9 +1595,9 @@ function applySwitch(screen: MediaStream, opened: Awaited<ReturnType<typeof open
 /**
  * Teto de fps do codificador um pouco acima do escolhido. A captura já sai no ritmo certo; com o teto
  * exatamente igual, o limitador do WebRTC descartava todo quadro que chegava alguns ms adiantado
- * (60 fps viravam 30 a 45).
+ * (60 fps viravam 30 a 45). 10 a mais: 60 → 70 e 30 → 40.
  */
-const encoderFps = (fps: number) => fps + Math.ceil(fps / 6);
+const encoderFps = (fps: number) => fps + 10;
 
 /** Depois de trocar a fonte: ajusta taxa, fps e redução ao tamanho da tela nova. */
 async function retuneScreenSender(sender: RTCRtpSender, resolution: Resolution, fps: Fps) {

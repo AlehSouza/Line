@@ -410,7 +410,9 @@ async function startSocketScreen(
   });
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { alpha: false })!;
-  const video = canvas.captureStream(opts.fps).getVideoTracks()[0];
+  // Teto 10 acima do escolhido (o ritmo vem de quem desenha): com o teto exato, quadro que chegava
+  // um pouco adiantado era descartado e 60 fps viravam menos.
+  const video = canvas.captureStream(opts.fps + 10).getVideoTracks()[0];
 
   let audioCtx: AudioContext | null = null;
   let audioTrack: MediaStreamTrack | null = null;
