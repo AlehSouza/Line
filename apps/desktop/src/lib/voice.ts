@@ -53,8 +53,8 @@ export interface ScreenQuality {
 // Teto de cada pessoa que assiste. Movimento rápido (jogo, rolar a tela) é o que mais pede bits:
 // com teto baixo o codificador sobe a quantização e a imagem vira blocos.
 export const RESOLUTIONS: Record<Resolution, { label: string; width: number; height: number; kbps: Record<Fps, number> }> = {
-  '720': { label: '720p', width: 1280, height: 720, kbps: { 30: 4000, 60: 6000 } },
-  '1080': { label: '1080p', width: 1920, height: 1080, kbps: { 30: 8000, 60: 12000 } },
+  '720': { label: '720p', width: 1280, height: 720, kbps: { 30: 5000, 60: 8000 } },
+  '1080': { label: '1080p', width: 1920, height: 1080, kbps: { 30: 10000, 60: 16000 } },
   '1440': { label: '1440p', width: 2560, height: 1440, kbps: { 30: 14000, 60: 20000 } },
   '2160': { label: '4K', width: 3840, height: 2160, kbps: { 30: 25000, 60: 35000 } },
 };
@@ -2132,7 +2132,11 @@ async function recvTick() {
       recv[userId] = { ...st, bufferMs };
     }),
   );
-  useScreenStats.setState({ recv });
+  // Resumo de quem parou de transmitir (ou que eu parei de assistir) sai junto.
+  useScreenStats.setState((s) => ({
+    recv,
+    sender: Object.fromEntries(Object.entries(s.sender).filter(([id]) => recv[id])),
+  }));
 }
 
 function closePeer(peerId: string) {

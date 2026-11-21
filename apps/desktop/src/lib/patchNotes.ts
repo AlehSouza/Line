@@ -102,7 +102,7 @@ export const PATCH_NOTES: PatchNote[] = [
       {
         icon: 'zap',
         title: 'Transmissão a 60 fps de verdade',
-        text: 'Ao transmitir em 60 fps, a imagem agora chega muito mais perto dos 60 quadros por segundo para quem assiste, mesmo com o jogo rodando acima disso.',
+        text: 'Ao transmitir em 60 fps, a imagem agora chega muito mais perto dos 60 quadros por segundo para quem assiste, mesmo com o jogo rodando acima disso. Em 720p e 1080p a imagem também ganhou mais espaço para ficar nítida nas cenas com muito movimento.',
       },
       {
         icon: 'volume',
