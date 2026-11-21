@@ -1337,7 +1337,9 @@ async function openScreen(source: { id: string; audio: boolean } | undefined, ge
       video: {
         width: { ideal: r.width, max: r.width },
         height: { ideal: r.height, max: r.height },
-        frameRate: { ideal: fps, max: fps },
+        // Teto um pouco acima do escolhido: com o teto exato a captura do navegador pulava todo
+        // quadro que chegava alguns ms adiantado e 60 fps viravam 51 a 58.
+        frameRate: { ideal: fps, max: encoderFps(fps) },
       },
       // Tira do áudio capturado o som do próprio Line (vozes, sons, música), para os outros não
       // ouvirem a própria voz de volta. É uma restrição da trilha de áudio: no nível de cima do
