@@ -84,6 +84,11 @@ export const PATCH_NOTES: PatchNote[] = [
         title: 'Supressão de ruído Leve como padrão',
         text: 'Quem ainda não escolheu um nível agora começa no Leve, que liga mais rápido e roda bem em qualquer aparelho. Se você já tinha escolhido, nada muda; dá para trocar quando quiser em Configurações → Voz e vídeo.',
       },
+      {
+        icon: 'volume',
+        title: 'Line no mixer de volume',
+        text: 'No mixer de volume do Windows, o som das chamadas agora aparece como Line, com o nosso ícone, e não mais com um nome genérico. Fica mais fácil achar e ajustar o volume do Line sem mexer nos outros apps.',
+      },
     ],
   },
   {

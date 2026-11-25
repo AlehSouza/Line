@@ -8,12 +8,15 @@
 //! O áudio do WebView2 roda num processo filho (msedgewebview2.exe), então aqui ficamos de olho nas
 //! sessões de áudio de todos os dispositivos e marcamos as que são de processos descendentes do Line.
 //! Uma sessão nova dispara o aviso OnSessionCreated, que faz a vigia passar na hora.
+//!
+//! Na mesma passada a sessão ganha o nome "Line" e o ícone do Line.exe; sem isso o mixer de volume
+//! do Windows mostra "Microsoft Edge WebView2" (a descrição do executável do processo filho).
 
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use windows::core::{implement, Interface, Ref, Result};
+use windows::core::{implement, Interface, Ref, Result, GUID, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Media::Audio::{
     eAll, IAudioSessionControl, IAudioSessionControl2, IAudioSessionManager2, IAudioSessionNotification,
@@ -56,15 +59,50 @@ fn our_tree() -> HashSet<u32> {
     tree
 }
 
-/// Tira a sessão da atenuação padrão do Windows se ela for de um processo do Line.
-fn opt_out(session: &IAudioSessionControl, tree: &HashSet<u32>) {
+/// Nome e ícone que a sessão de áudio mostra no mixer de volume do Windows.
+struct Label {
+    name: HSTRING,
+    icon: Option<HSTRING>,
+}
+
+impl Label {
+    fn new() -> Self {
+        // "caminho\\Line.exe,0": primeiro ícone embutido no executável.
+        let icon = std::env::current_exe().ok().map(|p| HSTRING::from(format!("{},0", p.display())));
+        Label { name: HSTRING::from("Line"), icon }
+    }
+}
+
+/// Se a sessão for de um processo do Line: tira da atenuação padrão do Windows e põe nome e ícone do Line.
+fn claim(session: &IAudioSessionControl, tree: &HashSet<u32>, label: &Label) {
     unsafe {
         let Ok(s2) = session.cast::<IAudioSessionControl2>() else { return };
         let Ok(pid) = s2.GetProcessId() else { return };
-        if tree.contains(&pid) {
-            let _ = s2.SetDuckingPreference(true);
+        if !tree.contains(&pid) {
+            return;
+        }
+        let _ = s2.SetDuckingPreference(true);
+        let ctx = GUID::zeroed();
+        if differs(session.GetDisplayName(), &label.name) {
+            let _ = session.SetDisplayName(PCWSTR(label.name.as_ptr()), &ctx);
+        }
+        if let Some(icon) = &label.icon {
+            if differs(session.GetIconPath(), icon) {
+                let _ = session.SetIconPath(PCWSTR(icon.as_ptr()), &ctx);
+            }
         }
     }
+}
+
+/// Compara o texto atual da sessão com o desejado (e libera a memória que o Windows devolveu).
+unsafe fn differs(current: Result<PWSTR>, want: &HSTRING) -> bool {
+    let Ok(p) = current else { return true };
+    if p.is_null() {
+        return true;
+    }
+    let same = p.to_string().map(|s| s == want.to_string_lossy()).unwrap_or(false);
+    CoTaskMemFree(Some(p.0 as _));
+    !same
 }
 
 /// Aviso de sessão nova: só acorda a thread (o Windows pede para não mexer em nada dentro do aviso).
@@ -89,6 +127,7 @@ pub fn start() {
         let notify: IAudioSessionNotification = Created(wake).into();
         // Um gerenciador por dispositivo; precisam continuar vivos para os avisos chegarem.
         let mut managers: HashMap<String, IAudioSessionManager2> = HashMap::new();
+        let label = Label::new();
         loop {
             let tree = our_tree();
             if let Ok(list) = devices.EnumAudioEndpoints(eAll, DEVICE_STATE_ACTIVE) {
@@ -108,7 +147,7 @@ pub fn start() {
                     let Ok(sessions) = m.GetSessionEnumerator() else { continue };
                     for j in 0..sessions.GetCount().unwrap_or(0) {
                         if let Ok(s) = sessions.GetSession(j) {
-                            opt_out(&s, &tree);
+                            claim(&s, &tree, &label);
                         }
                     }
                 }

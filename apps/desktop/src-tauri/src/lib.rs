@@ -956,7 +956,7 @@ pub fn run() {
         .setup(|app| {
             #[cfg(windows)]
             toast::register(include_bytes!("../icons/128x128@2x.png"));
-            // A chamada não abaixa o som dos outros apps (atenuação de comunicações do Windows).
+            // A chamada não abaixa o som dos outros apps e aparece como "Line" no mixer de volume do Windows.
             #[cfg(windows)]
             ducking::start();
             #[cfg(target_os = "linux")]
