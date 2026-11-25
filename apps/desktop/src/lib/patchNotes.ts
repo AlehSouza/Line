@@ -79,6 +79,11 @@ export const PATCH_NOTES: PatchNote[] = [
         title: 'Aviso antes de entrar em canais classificados',
         text: 'Quem não informou a data de nascimento ou não tem a idade mínima de um canal classificado vê só um aviso, sem as mensagens. Nos canais de conteúdo sensível, o aviso também aparece na primeira vez para quem tem 18 anos ou mais.',
       },
+      {
+        icon: 'mic',
+        title: 'Supressão de ruído Leve como padrão',
+        text: 'Quem ainda não escolheu um nível agora começa no Leve, que liga mais rápido e roda bem em qualquer aparelho. Se você já tinha escolhido, nada muda; dá para trocar quando quiser em Configurações → Voz e vídeo.',
+      },
     ],
   },
   {

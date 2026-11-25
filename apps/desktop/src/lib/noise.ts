@@ -166,11 +166,7 @@ export function resumeNoiseSuppressor() {
   if (ctx && ctx.state === 'suspended') void ctx.resume().catch(() => {});
 }
 
-/** Celular ou tablet: começa no equilibrado (menos bateria e sem baixar 34 MB). */
+/** Quem ainda não escolheu um modelo começa no leve (abre rápido e roda bem em qualquer aparelho). */
 export function defaultNoiseModel(): NoiseModel {
-  try {
-    return typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && matchMedia('(max-width: 1024px)').matches ? 'balanced' : 'max';
-  } catch {
-    return 'max';
-  }
+  return 'light';
 }
