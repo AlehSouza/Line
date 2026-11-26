@@ -70,6 +70,11 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     improvements: [
       {
+        icon: 'image',
+        title: 'Censura de mídias pode ser desligada',
+        text: 'Nas configurações do servidor, a censura de mídias ganhou a opção Nenhuma, que desliga a marcação automática de conteúdo sensível. Quem envia continua podendo marcar o anexo como Spoiler ou conteúdo sensível.',
+      },
+      {
         icon: 'message',
         title: 'Classificação por canal',
         text: 'Canais de texto e de voz também podem ter a própria classificação, ou seguir a do servidor. Os canais que já eram de conteúdo sensível continuam iguais.',
@@ -88,6 +93,16 @@ export const PATCH_NOTES: PatchNote[] = [
         icon: 'volume',
         title: 'Line no mixer de volume',
         text: 'No mixer de volume do Windows, o som das chamadas agora aparece como Line, com o nosso ícone, e não mais com um nome genérico. Fica mais fácil achar e ajustar o volume do Line sem mexer nos outros apps.',
+      },
+      {
+        icon: 'sparkles',
+        title: 'Tag do servidor com até 5 letras',
+        text: 'A tag do servidor agora pode ter até 5 letras ou números, dando mais espaço para o nome que representa a sua comunidade.',
+      },
+      {
+        icon: 'monitor',
+        title: 'Novo selo de compartilhamento de tela',
+        text: 'Quem está compartilhando a tela num canal de voz agora aparece com um ícone de transmissão no fundo vermelho, mais discreto que o antigo selo AO VIVO. Passe o mouse em cima para ver a prévia, como antes.',
       },
     ],
     fixes: [

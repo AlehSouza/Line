@@ -1926,7 +1926,7 @@ export function VoiceBar() {
 
 // ---------- participantes embaixo do canal de voz ----------
 
-/** Selo AO VIVO: com o mouse em cima, mostra a prévia da transmissão (e o jogo, se for um). */
+/** Selo de transmissão (ícone "radio" no vermelho): com o mouse em cima, mostra a prévia da transmissão (e o jogo, se for um). */
 function LiveBadge({ userId, channelId }: { userId: string; channelId: string }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1970,8 +1970,13 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
   };
   return (
     <>
-      <span onMouseEnter={show} onMouseLeave={hide} className="rounded bg-danger px-1 text-[10px] font-bold text-white">
-        AO VIVO
+      <span
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        title="Transmitindo a tela"
+        className="flex h-[18px] w-[22px] items-center justify-center rounded bg-danger text-white"
+      >
+        <Icons.Radio size={13} />
       </span>
       {at &&
         createPortal(

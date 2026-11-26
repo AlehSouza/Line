@@ -436,7 +436,7 @@ function ServerCardPopover({
   );
 }
 
-/** Configurações do servidor → Tag do servidor: nome (até 4 caracteres) e ícone da badge. */
+/** Configurações do servidor → Tag do servidor: nome (até 5 caracteres) e ícone da badge. */
 export function ServerTagSettings({ serverId }: { serverId: string }) {
   const server = useLine((s) => s.servers[serverId]);
   const [tag, setTag] = useState(server?.tag ?? '');
@@ -492,11 +492,11 @@ export function ServerTagSettings({ serverId }: { serverId: string }) {
           <Input
             id="tag-name"
             value={tag}
-            onChange={(e) => setTag(e.target.value.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase().slice(0, 4))}
+            onChange={(e) => setTag(e.target.value.replace(/[^\p{L}\p{N}]/gu, '').toUpperCase().slice(0, 5))}
             placeholder="Ex.: LINE"
             className="w-36 text-center text-lg font-bold tracking-widest"
           />
-          <p className="text-xs text-muted">Até 4 letras ou números. Deixe vazio para desativar a tag.</p>
+          <p className="text-xs text-muted">Até 5 letras ou números. Deixe vazio para desativar a tag.</p>
           <span aria-hidden className="pointer-events-none absolute inset-x-0 top-full h-8 bg-gradient-to-b from-main to-transparent" />
         </div>
 

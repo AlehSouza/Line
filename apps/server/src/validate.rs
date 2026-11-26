@@ -572,14 +572,14 @@ impl UpdateServer {
         self.icon_color = self.icon_color.as_deref().map(color).transpose()?;
         rating(&self.rating, false)?;
         if let Some(l) = &self.nsfw_level
-            && !["light", "moderate", "high"].contains(&l.as_str())
+            && !["none", "light", "moderate", "high"].contains(&l.as_str())
         {
             return Err(validation("Nível de censura inválido"));
         }
         if let Some(t) = &mut self.tag {
             *t = t.trim().to_uppercase();
-            if t.chars().count() > 4 || !t.chars().all(char::is_alphanumeric) {
-                return Err(validation("A tag precisa ter até 4 letras ou números"));
+            if t.chars().count() > 5 || !t.chars().all(char::is_alphanumeric) {
+                return Err(validation("A tag precisa ter até 5 letras ou números"));
             }
         }
         if let Some(i) = &self.tag_icon

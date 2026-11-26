@@ -78,7 +78,7 @@ pub struct Server {
     pub name: String,
     pub description: String,
     pub icon_color: String,
-    /// Tag de identificação (até 4 caracteres); vazia = sem tag.
+    /// Tag de identificação (até 5 caracteres); vazia = sem tag.
     pub tag: String,
     /// Ícone da tag: '' = foto do servidor; senão nome de um ícone do Lucide.
     pub tag_icon: String,
