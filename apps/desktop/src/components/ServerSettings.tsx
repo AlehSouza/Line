@@ -39,6 +39,7 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
   const server = useLine((s) => s.servers[serverId]);
   const perms = useLine((s) => permsOf(s, serverId, s.me?.id));
   const canServer = hasPerm(perms, Perm.ManageServer);
+  const isOwner = useLine((s) => s.me?.id === s.servers[serverId]?.ownerId);
   const canSounds = hasPerm(perms, Perm.ManageSoundboard);
   const canAgent = hasPerm(perms, Perm.ManageAgent);
   const canRoles = hasPerm(perms, Perm.ManageRoles);
@@ -100,6 +101,27 @@ export function ServerSettings({ serverId, initial, onClose }: { serverId: strin
         </aside>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-10 py-8">
+          {isOwner && server.isPublic && !server.rating && (
+            <div className="mb-6 flex max-w-2xl items-center gap-4 rounded-xl border border-amber-400/40 bg-amber-400/10 p-4 max-md:flex-col max-md:items-start">
+              <Icons.Warning size={22} className="shrink-0 text-amber-400" />
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-semibold">Seu servidor está sem classificação indicativa</p>
+                <p className="mt-0.5 text-soft">
+                  Servidores públicos sem classificação indicativa não aparecem em Explorar. Escolha uma para a comunidade encontrar o seu servidor.
+                </p>
+              </div>
+              <Button
+                className="shrink-0"
+                onClick={() => {
+                  setSection('overview');
+                  setEditing(null);
+                  setTimeout(() => document.getElementById('server-rating')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+                }}
+              >
+                Configurar
+              </Button>
+            </div>
+          )}
           {section === 'overview' && canServer && (
             <div className="max-w-2xl">
               <h2 className="mb-5 text-xl font-bold">Perfil do servidor</h2>

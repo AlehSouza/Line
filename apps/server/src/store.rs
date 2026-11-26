@@ -954,7 +954,7 @@ impl Q<'_> {
     }
 
     /// Servidores públicos em que a pessoa ainda não está. Some o que tem classificação acima
-    /// da idade dela; sem data de nascimento, somem o 18 e os sem classificação.
+    /// da idade dela (sem data de nascimento, some o 18) e todo servidor sem classificação.
     pub fn discover_servers(&self, user_id: &str, query: &str, age: Option<i32>) -> Vec<Server> {
         let like = format!("%{query}%");
         let mut st = ok(self.c.prepare_cached(&format!(
@@ -967,7 +967,7 @@ impl Q<'_> {
         let list: Vec<Server> =
             ok(ok(st.query_map(params![user_id, like], server_from_row)).collect());
         list.into_iter()
-            .filter(|s| crate::validate::rating_allows(s.rating.as_deref(), age))
+            .filter(|s| s.rating.is_some() && crate::validate::rating_allows(s.rating.as_deref(), age))
             .map(|s| Server {
                 invite_code: String::new(),
                 ..s

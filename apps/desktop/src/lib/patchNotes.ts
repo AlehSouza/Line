@@ -65,7 +65,7 @@ export const PATCH_NOTES: PatchNote[] = [
       {
         icon: 'eye',
         title: 'Explorar mais seguro',
-        text: 'Os servidores em Explorar mostram o selo da classificação, e os que ainda não têm uma só aparecem, com as imagens borradas, para quem tem 18 anos ou mais. Cada pessoa só vê os servidores indicados para a idade informada em Minha conta, e os de conteúdo sensível só aparecem para quem tem 18 anos ou mais.',
+        text: 'Os servidores em Explorar mostram o selo da classificação, e os que ainda não têm uma não aparecem. Donos de servidores públicos sem classificação recebem um aviso nas configurações do servidor. Cada pessoa só vê os servidores indicados para a idade informada em Minha conta, e os de conteúdo sensível só aparecem para quem tem 18 anos ou mais.',
       },
     ],
     improvements: [

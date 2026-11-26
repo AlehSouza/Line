@@ -1033,11 +1033,13 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
           <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
-        <RatingPicker
-          value={rating}
-          onChange={(r) => r && setRating(r)}
-          noneHint="Este servidor ainda não tem classificação. Escolha uma para as pessoas saberem o que esperar."
-        />
+        <div id="server-rating">
+          <RatingPicker
+            value={rating}
+            onChange={(r) => r && setRating(r)}
+            noneHint="Este servidor ainda não tem classificação. Enquanto isso, ele não aparece em Explorar."
+          />
+        </div>
         <Field label="Censura de mídias" group hint={NSFW_LEVELS.find((l) => l.value === nsfwLevel)?.hint}>
           <Select value={nsfwLevel} onChange={(v) => setNsfwLevel(v as typeof nsfwLevel)} options={NSFW_LEVELS} />
         </Field>
