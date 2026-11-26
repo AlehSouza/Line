@@ -577,6 +577,13 @@ const MIGRATIONS: &[&str] = &[
     channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE
   );
 "#,
+    // Classificação indicativa (L, 10, 12, 14, 16, 18) do servidor e de cada canal; NULL = sem
+    // classificação. Canal que já era de conteúdo sensível vira 18.
+    r#"
+  ALTER TABLE servers ADD COLUMN rating TEXT;
+  ALTER TABLE channels ADD COLUMN rating TEXT;
+  UPDATE channels SET rating = '18' WHERE nsfw = 1;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

@@ -188,6 +188,7 @@ fn server_from_row(r: &Row) -> rusqlite::Result<Server> {
             .is_some(),
         show_owner_badge: r.get::<_, i64>("show_owner_badge").unwrap_or(1) != 0,
         nsfw_level: r.get("nsfw_level").unwrap_or_else(|_| "moderate".into()),
+        rating: r.get::<_, Option<String>>("rating").unwrap_or(None),
     })
 }
 
@@ -219,6 +220,7 @@ struct ChannelRow {
     interact_restricted: bool,
     base: String,
     nsfw: bool,
+    rating: Option<String>,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -241,6 +243,7 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         interact_restricted: r.get::<_, i64>("interact_restricted")? != 0,
         base: r.get("base").unwrap_or_default(),
         nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
+        rating: r.get::<_, Option<String>>("rating").unwrap_or(None),
     })
 }
 
@@ -950,7 +953,9 @@ impl Q<'_> {
         self.ids("SELECT server_id FROM members WHERE user_id = ?", [user_id])
     }
 
-    pub fn discover_servers(&self, user_id: &str, query: &str) -> Vec<Server> {
+    /// Servidores públicos em que a pessoa ainda não está. Some o que tem classificação acima
+    /// da idade dela; sem data de nascimento, some só o conteúdo sensível (18).
+    pub fn discover_servers(&self, user_id: &str, query: &str, age: Option<i32>) -> Vec<Server> {
         let like = format!("%{query}%");
         let mut st = ok(self.c.prepare_cached(&format!(
             "{SERVER_SELECT}
@@ -962,6 +967,7 @@ impl Q<'_> {
         let list: Vec<Server> =
             ok(ok(st.query_map(params![user_id, like], server_from_row)).collect());
         list.into_iter()
+            .filter(|s| crate::validate::rating_allows(s.rating.as_deref(), age))
             .map(|s| Server {
                 invite_code: String::new(),
                 ..s
@@ -975,13 +981,14 @@ impl Q<'_> {
         name: &str,
         description: &str,
         is_public: bool,
+        rating: Option<&str>,
     ) -> Server {
         let id = new_id();
         self.tx(|| {
             ok(self.c.execute(
-                "INSERT INTO servers (id, name, description, icon_color, owner_id, is_public, invite_code, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                params![id, name, description, random_color(), owner_id, is_public as i64, new_invite_code(), now_iso()],
+                "INSERT INTO servers (id, name, description, icon_color, owner_id, is_public, invite_code, created_at, rating)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![id, name, description, random_color(), owner_id, is_public as i64, new_invite_code(), now_iso(), rating],
             ));
             ok(self.c.execute(
                 "INSERT INTO roles (id, server_id, name, permissions, position, created_at) VALUES (?, ?, '@everyone', ?, 0, ?)",
@@ -1357,6 +1364,21 @@ impl Q<'_> {
         ));
     }
 
+    pub fn set_server_rating(&self, server_id: &str, rating: &str) {
+        ok(self.c.execute(
+            "UPDATE servers SET rating = ? WHERE id = ?",
+            params![rating, server_id],
+        ));
+    }
+
+    /// Classificação do canal ("" = segue o servidor); 18 também liga o aviso de conteúdo sensível.
+    pub fn set_channel_rating(&self, channel_id: &str, rating: &str) {
+        ok(self.c.execute(
+            "UPDATE channels SET rating = ?, nsfw = ? WHERE id = ?",
+            params![(!rating.is_empty()).then_some(rating), (rating == "18") as i64, channel_id],
+        ));
+    }
+
     pub fn set_channel_nsfw(&self, channel_id: &str, on: bool) {
         ok(self.c.execute(
             "UPDATE channels SET nsfw = ? WHERE id = ?",
@@ -1408,6 +1430,7 @@ impl Q<'_> {
             role_ids,
             interact_restricted: row.interact_restricted,
             nsfw: row.nsfw,
+            rating: row.rating,
             base: row.base,
             interact_member_ids,
             interact_role_ids,

@@ -8,8 +8,9 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { inviteCodeFromText } from '@/lib/invite';
 import { actions } from '@/lib/store';
-import { Button, DefaultServerIcon, Icons, Input, Skeleton } from './ui';
+import { Button, cx, DefaultServerIcon, Icons, Input, Skeleton } from './ui';
 import { showError } from './Dialogs';
+import { RatingBadge } from './Rating';
 
 export function DiscoverView() {
   const [query, setQuery] = useState('');
@@ -99,7 +100,7 @@ export function DiscoverView() {
           <div key={s.id} className="flex flex-col overflow-hidden rounded-xl border border-edge bg-side">
             {s.bannerUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={fileUrl(s.bannerUrl)} alt="" className="h-16 w-full object-cover" />
+              <img src={fileUrl(s.bannerUrl)} alt="" className={cx('h-16 w-full object-cover', !s.rating && 'blur-md')} />
             ) : (
               <div className="h-16 bg-gradient-to-br from-raise to-transparent" />
             )}
@@ -108,9 +109,13 @@ export function DiscoverView() {
                 className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[17px] text-lg font-bold text-rail ring-4 ring-side"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {s.iconUrl ? <img src={fileUrl(s.iconUrl)} alt="" className="h-full w-full object-cover" /> : <DefaultServerIcon />}
+                {s.iconUrl ? <img src={fileUrl(s.iconUrl)} alt="" className={cx('h-full w-full object-cover', !s.rating && 'blur-sm')} /> : <DefaultServerIcon />}
               </span>
-              <h3 className="font-bold">{s.name}</h3>
+              <h3 className="flex items-center gap-2 font-bold">
+                <span className="min-w-0 truncate">{s.name}</span>
+                <RatingBadge rating={s.rating} />
+              </h3>
+              {!s.rating && <p className="-mt-1 text-xs text-muted">Sem classificação indicativa</p>}
               <p className="line-clamp-3 flex-1 text-sm text-muted">{s.description || 'Sem descrição.'}</p>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted">{s.memberCount} membros</span>

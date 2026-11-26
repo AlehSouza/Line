@@ -97,6 +97,8 @@ pub struct Server {
     pub show_owner_badge: bool,
     /// Rigor da detecção automática de +18 nas mídias: light | moderate | high.
     pub nsfw_level: String,
+    /// Classificação indicativa: L | 10 | 12 | 14 | 16 | 18; null = sem classificação.
+    pub rating: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -133,6 +135,8 @@ pub struct Channel {
     pub interact_restricted: bool,
     /// Canal +18: aviso de conteúdo sensível na primeira entrada; só para 18 anos ou mais.
     pub nsfw: bool,
+    /// Classificação indicativa do canal (L | 10 | 12 | 14 | 16 | 18); null = sem classificação.
+    pub rating: Option<String>,
     /// Canal base: 'rules' | 'announcements' | 'events' | 'activity'; vazio = canal comum.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub base: String,

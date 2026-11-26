@@ -1313,7 +1313,9 @@ async fn discover(State(app): S, Me(me): Me, Query(qs): Query<HashMap<String, St
         .get("q")
         .map(|s| s.chars().take(100).collect())
         .unwrap_or_default();
-    ok(app.store.q().discover_servers(&me, &query))
+    let q = app.store.q();
+    let age = q.user_row(&me).and_then(|u| u.birth_date).and_then(|b| age_of(&b));
+    ok(q.discover_servers(&me, &query, age))
 }
 
 async fn create_server(State(app): S, Me(me): Me, b: Bytes) -> Res {
@@ -1323,6 +1325,7 @@ async fn create_server(State(app): S, Me(me): Me, b: Bytes) -> Res {
         &input.name,
         input.description.as_deref().unwrap_or(""),
         input.is_public.unwrap_or(false),
+        input.rating.as_deref(),
     );
     app.join_server(&me, &server.id);
     app.to_user(&me, "server:create", &server);
@@ -1373,6 +1376,9 @@ async fn update_server(State(app): S, Me(me): Me, Path(id): Path<String>, b: Byt
     }
     if let Some(level) = &p.nsfw_level {
         q.set_server_nsfw_level(&id, level);
+    }
+    if let Some(r) = &p.rating {
+        q.set_server_rating(&id, r);
     }
     let before_tag = q
         .server(&id)
@@ -2143,6 +2149,23 @@ fn require_access(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<Channel> 
     }
 }
 
+/// Canal de conteúdo sensível só abre para quem informou ter 18 anos ou mais.
+fn require_age_for(q: &Q, channel: &Channel, user_id: &str) -> ApiResult<()> {
+    if !channel.nsfw {
+        return Ok(());
+    }
+    let adult = q
+        .user_row(user_id)
+        .and_then(|u| u.birth_date)
+        .and_then(|b| age_of(&b))
+        .is_some_and(|age| age >= 18);
+    if adult {
+        Ok(())
+    } else {
+        Err(forbidden("Este canal tem conteúdo sensível e só abre para quem tem 18 anos ou mais"))
+    }
+}
+
 fn require_channel_manager(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<(Channel, String)> {
     let channel = require_access(q, channel_id, user_id)?;
     let Some(server_id) = channel.server_id.clone() else {
@@ -2260,6 +2283,11 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
     {
         q.set_channel_nsfw(&channel.id, on);
     }
+    if let Some(r) = &p.rating
+        && (channel.kind == "text" || channel.kind == "voice")
+    {
+        q.set_channel_rating(&channel.id, r);
+    }
     let updated = q.update_channel(
         &channel.id,
         ChannelPatch {
@@ -2365,6 +2393,7 @@ async fn list_messages(
 ) -> Res {
     let q = app.store.q();
     let channel = require_access(&q, &id, &me)?;
+    require_age_for(&q, &channel, &me)?;
     let limit = qs
         .get("limit")
         .and_then(|l| l.parse::<f64>().ok())
@@ -2381,6 +2410,7 @@ async fn list_messages(
 async fn send_message(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
     let channel = require_access(&q, &id, &me)?;
+    require_age_for(&q, &channel, &me)?;
     if channel.kind == "voice" {
         return Err(bad_request("Canais de voz não aceitam mensagens de texto"));
     }

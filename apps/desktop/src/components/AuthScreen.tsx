@@ -7,6 +7,9 @@ import { Eye, EyeOff } from 'lucide-react';
 import { Avatar, Button, Checkbox, ErrorText, Field, Input, Logo } from './ui';
 import { toast } from './Dialogs';
 
+/** Front local (next dev, porta 3000): login com Google volta pelo fluxo do desktop. */
+const DEV_GOOGLE = process.env.NODE_ENV === 'development' && typeof window !== 'undefined' && window.location.port === '3000';
+
 export function AuthScreen() {
   // Link do email de recuperação: .../app/?reset=TOKEN abre direto a tela de nova senha.
   const [resetToken] = useState(() =>
@@ -55,13 +58,15 @@ export function AuthScreen() {
   // Volta do Google no app web: .../app/?google=CODIGO (ou ?googleError=mensagem).
   useEffect(() => {
     const qs = new URLSearchParams(window.location.search);
-    const code = qs.get('google');
+    // Em desenvolvimento a volta é pelo fluxo do desktop (?code=), que não depende de cookie.
+    const devCode = DEV_GOOGLE ? qs.get('code') : null;
+    const code = qs.get('google') ?? devCode;
     const fail = qs.get('googleError');
     if (!code && !fail) return;
     window.history.replaceState(null, '', window.location.pathname);
     if (fail) return setError(fail);
     setBusy(true);
-    authenticateWithGoogle(serverUrl, code!)
+    authenticateWithGoogle(serverUrl, code!, !!devCode)
       .catch((err) => setError((err as Error).message))
       .finally(() => setBusy(false));
   }, [serverUrl]);
@@ -72,7 +77,10 @@ export function AuthScreen() {
     const tauri = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (c: string, a?: unknown) => Promise<string> } })
       .__TAURI_INTERNALS__;
     if (!tauri) {
-      window.location.href = `${base}/api/auth/google/start`;
+      // Front local (next dev): o servidor devolve para http://127.0.0.1:<porta>/?code=...
+      window.location.href = DEV_GOOGLE
+        ? `${base}/api/auth/google/start?port=${window.location.port}`
+        : `${base}/api/auth/google/start`;
       return;
     }
     // Desktop: o Google não deixa logar dentro do app, então abre o navegador e espera voltar.

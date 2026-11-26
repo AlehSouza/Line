@@ -26,6 +26,7 @@ import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Me
 import { actions, dmTitle, mentionsToText, withoutCardCodes, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, channelIcon, cx, Icons, MessageSkeletons, Modal } from './ui';
+import { RatingBadge } from './Rating';
 import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
 import { UserTagBadge } from './ServerTag';
@@ -1792,17 +1793,17 @@ function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean 
   const hasBirth = !!useLine((s) => s.me?.birthDate);
   const ChanIcon = channelIcon(channel);
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rail px-4 shadow-sm">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#000000] text-white">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-white/10 px-4">
         <MobileBack />
-        <ChanIcon size={20} className="text-muted" />
+        <ChanIcon size={20} className="text-white/60" />
         <h1 className="truncate font-bold">{channel.name}</h1>
-        <span className="flex items-center gap-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400"><Icons.Warning size={12} />Conteúdo Sensível</span>
+        <RatingBadge rating="18" size={20} />
       </header>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/15 text-amber-400"><Icons.Warning size={32} /></span>
+        <RatingBadge rating="18" size={64} className="rounded-xl" />
         <h2 className="text-2xl font-bold">Canal com conteúdo sensível</h2>
-        <p className="max-w-[520px] text-[15px] leading-relaxed text-soft">
+        <p className="max-w-[520px] text-[15px] leading-relaxed text-white/70">
           {adult
             ? `Este canal foi marcado como conteúdo sensível pela administração de ${server?.name ?? 'este servidor'}. Prossiga só se você tem 18 anos ou mais.`
             : hasBirth
@@ -1810,7 +1811,7 @@ function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean 
               : 'Este canal foi marcado como conteúdo sensível. Para entrar, informe sua data de nascimento em Configurações, Minha conta.'}
         </p>
         <div className="mt-1 flex gap-3">
-          <button onClick={() => goBack()} className="rounded-lg bg-raise px-5 py-2.5 text-sm font-semibold text-fg hover:bg-hover">
+          <button onClick={() => goBack()} className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20">
             Voltar
           </button>
           {adult ? (

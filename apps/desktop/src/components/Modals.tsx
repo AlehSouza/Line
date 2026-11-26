@@ -29,6 +29,8 @@ import { SettingsModal } from './Settings';
 import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, presenceLabel, Select } from './ui';
 import { EmojiButton, EmojiInput, EmojiTextarea } from './EmojiField';
 import { confirmDialog } from './Dialogs';
+import { channelRating, RatingPicker } from './Rating';
+import type { Rating } from '@line/shared';
 
 
 export function Modals() {
@@ -118,6 +120,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<'create' | 'join'>('create');
   const [name, setName] = useState(me ? `Servidor de ${me.displayName}` : '');
   const [isPublic, setIsPublic] = useState(false);
+  const [rating, setRating] = useState<Rating>('L');
   const [invite, setInvite] = useState('');
   const { busy, error, run } = useAction();
 
@@ -126,7 +129,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
     run(async () => {
       const server =
         mode === 'create'
-          ? await api.createServer({ name, isPublic })
+          ? await api.createServer({ name, isPublic, rating })
           : await api.acceptInvite(inviteCodeFromText(invite));
       actions.upsertServer(server);
       actions.goServer(server.id);
@@ -155,6 +158,7 @@ function CreateServerModal({ onClose }: { onClose: () => void }) {
               <Checkbox checked={isPublic} onChange={setIsPublic} />
               Público (aparece em Explorar para qualquer pessoa entrar)
             </label>
+            <RatingPicker value={rating} onChange={(r) => r && setRating(r)} />
           </>
         ) : (
           <Field label="Link ou código de convite" hint="Exemplo: hTKzmak2">
@@ -224,7 +228,7 @@ function CreateChannelModal({
   const [isPrivate, setIsPrivate] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [roleIds, setRoleIds] = useState<string[]>([]);
-  const [nsfw, setNsfw] = useState(false);
+  const [rating, setRating] = useState<Rating | null>(null);
   const serverRoles = useLine((s) => s.roles[modal.serverId]);
   const category = useLine((s) => (modal.categoryId ? s.categories[modal.categoryId] : undefined));
   const server = useLine((s) => s.servers[modal.serverId]);
@@ -251,7 +255,7 @@ function CreateChannelModal({
         categoryId: modal.categoryId,
         ...(isPrivate ? { isPrivate: true, memberIds, roleIds } : {}),
       });
-      actions.upsertChannel(nsfw ? await api.updateChannel(channel.id, { nsfw: true }) : channel);
+      actions.upsertChannel(rating ? await api.updateChannel(channel.id, { rating, nsfw: rating === '18' }) : channel);
       if (channel.type === 'text') {
         actions.goServer(modal.serverId, channel.id);
         mobile.showMain();
@@ -346,7 +350,7 @@ function CreateChannelModal({
           )}
         </div>
 
-        <NsfwChannelSwitch on={nsfw} onToggle={() => setNsfw((v) => !v)} />
+        <RatingPicker value={rating} onChange={setRating} none="Igual ao servidor" noneHint="O canal segue a classificação do servidor." />
 
         <ErrorText>{error}</ErrorText>
         <div className="grid grid-cols-2 gap-2">
@@ -359,32 +363,6 @@ function CreateChannelModal({
         </div>
       </form>
     </Modal>
-  );
-}
-
-/** Chave "Canal +18" (Criar canal e Editar canal). */
-function NsfwChannelSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-4">
-        <span className="flex items-center gap-1.5 font-semibold">
-          <span className="flex items-center gap-1 rounded bg-amber-400/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400"><Icons.Warning size={12} />Conteúdo Sensível</span>
-          Canal com conteúdo sensível
-        </span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={on}
-          onClick={onToggle}
-          className={cx('relative h-6 w-11 shrink-0 rounded-full transition-colors', on ? 'bg-accent' : 'bg-edge')}
-        >
-          <span className={cx('absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all', on ? 'left-[22px]' : 'left-0.5')} />
-        </button>
-      </div>
-      <p className="mt-1 text-sm text-muted">
-        Na primeira vez que alguém abrir o canal aparece um aviso de conteúdo sensível. Só entra quem informou ter 18 anos ou mais.
-      </p>
-    </div>
   );
 }
 
@@ -449,7 +427,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
   const [restricted, setRestricted] = useState(!!channel?.interactRestricted);
   const [interactRoleIds, setInteractRoleIds] = useState<string[]>(channel?.interactRoleIds ?? []);
   const [interactMemberIds, setInteractMemberIds] = useState<string[]>(channel?.interactMemberIds ?? []);
-  const [nsfw, setNsfw] = useState(!!channel?.nsfw);
+  const [rating, setRating] = useState<Rating | null>(channel ? channelRating(channel) : null);
   const { busy, error, run } = useAction();
   if (!channel) return null;
   const isText = channel.type !== 'voice';
@@ -459,8 +437,8 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
     restricted !== !!channel.interactRestricted ||
     (isPrivate && (!sameSet(roleIds, channel.roleIds) || !sameSet(memberIds, channel.memberIds))) ||
     (restricted && (!sameSet(interactRoleIds, channel.interactRoleIds) || !sameSet(interactMemberIds, channel.interactMemberIds)));
-  const nsfwChanged = nsfw !== !!channel.nsfw;
-  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged || nsfwChanged;
+  const ratingChanged = rating !== channelRating(channel);
+  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged || ratingChanged;
   const emptyPrivate = isPrivate && !roleIds.length && !memberIds.length;
   return (
     <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose} width={520} tall>
@@ -472,7 +450,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
               await api.updateChannel(channelId, {
                 name: name.trim(),
                 topic: topic.trim(),
-                ...(hasAccess && nsfwChanged ? { nsfw } : {}),
+                ...(hasAccess && ratingChanged ? { rating: rating ?? '', nsfw: rating === '18' } : {}),
                 ...(hasAccess && accessChanged
                   ? {
                       access: {
@@ -513,7 +491,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
         </Field>
         {hasAccess && channel.serverId && (
           <>
-            <NsfwChannelSwitch on={nsfw} onToggle={() => setNsfw((v) => !v)} />
+            <RatingPicker value={rating} onChange={setRating} none="Igual ao servidor" noneHint="O canal segue a classificação do servidor." />
             <div>
               <PrivateSwitch on={isPrivate} onToggle={() => setIsPrivate((v) => !v)} label="Quem pode ver" />
               <p className="mt-1 text-sm text-muted">
@@ -1027,6 +1005,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
   const [ownerBadge, setOwnerBadge] = useState(server?.showOwnerBadge ?? true);
   const [nsfwLevel, setNsfwLevel] = useState<'light' | 'moderate' | 'high'>(server?.nsfwLevel ?? 'moderate');
+  const [rating, setRating] = useState<Rating | null>(server?.rating ?? null);
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });
   const [imageError, setImageError] = useState('');
@@ -1054,6 +1033,11 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
           <Checkbox checked={isPublic} onChange={setIsPublic} />
           Servidor público (aparece em Explorar)
         </label>
+        <RatingPicker
+          value={rating}
+          onChange={(r) => r && setRating(r)}
+          noneHint="Este servidor ainda não tem classificação. Escolha uma para as pessoas saberem o que esperar."
+        />
         <Field label="Censura de mídias" group hint={NSFW_LEVELS.find((l) => l.value === nsfwLevel)?.hint}>
           <Select value={nsfwLevel} onChange={(v) => setNsfwLevel(v as typeof nsfwLevel)} options={NSFW_LEVELS} />
         </Field>
@@ -1093,6 +1077,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
                     isPublic,
                     ...(isOwner && ownerBadge !== (server.showOwnerBadge ?? true) ? { showOwnerBadge: ownerBadge } : {}),
                     ...(nsfwLevel !== (server.nsfwLevel ?? 'moderate') ? { nsfwLevel } : {}),
+                    ...(rating && rating !== server.rating ? { rating } : {}),
                     ...(icon.changed ? { iconId: icon.id } : {}),
                     ...(banner.changed ? { bannerId: banner.id } : {}),
                   }),

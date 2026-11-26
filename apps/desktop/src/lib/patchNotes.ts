@@ -53,6 +53,35 @@ export type PatchNote = {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    id: '2026-11-26',
+    title: 'Classificação indicativa',
+    intro: 'Agora cada servidor e cada canal pode dizer para qual idade é indicado, do jeitinho que você já conhece da TV e do cinema.',
+    highlights: [
+      {
+        icon: 'shield',
+        title: 'Escolha a classificação do seu servidor',
+        text: 'Ao criar um servidor você escolhe entre Livre, 10, 12, 14, 16 e 18 anos, com uma explicação de cada uma. Dá para mudar depois nas configurações do servidor.',
+      },
+      {
+        icon: 'eye',
+        title: 'Explorar mais seguro',
+        text: 'Os servidores em Explorar mostram o selo da classificação, e os que ainda não têm uma aparecem com as imagens borradas. Cada pessoa só vê os servidores indicados para a idade informada em Minha conta, e os de conteúdo sensível só aparecem para quem tem 18 anos ou mais.',
+      },
+    ],
+    improvements: [
+      {
+        icon: 'message',
+        title: 'Classificação por canal',
+        text: 'Canais de texto e de voz também podem ter a própria classificação, ou seguir a do servidor. Os canais que já eram de conteúdo sensível continuam iguais.',
+      },
+      {
+        icon: 'eye',
+        title: 'Canais de conteúdo sensível bloqueados sem idade',
+        text: 'Quem não informou a data de nascimento ou tem menos de 18 anos vê só uma tela preta com o aviso, sem nenhuma mensagem do canal.',
+      },
+    ],
+  },
+  {
     id: '2026-11-20',
     title: 'Voz mais limpa e chamadas do seu jeito',
     intro: 'Esta atualização deixa suas chamadas mais claras, mais leves e muito mais fáceis de ajustar. Também chegou esta página, para você acompanhar tudo o que muda no Line.',

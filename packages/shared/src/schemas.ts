@@ -47,6 +47,7 @@ export const createServerSchema = z.object({
   name: z.string().trim().min(2).max(100),
   description: z.string().max(300).optional(),
   isPublic: z.boolean().optional(),
+  rating: z.enum(['L', '10', '12', '14', '16', '18']).optional(),
 });
 
 /** Orientação, movimento e velocidade de uma parte da tag. */
@@ -109,6 +110,8 @@ export const updateChannelSchema = z.object({
   position: z.number().int().min(0).optional(),
   /** Canal +18 (aviso de conteúdo sensível na primeira entrada). */
   nsfw: z.boolean().optional(),
+  /** Classificação indicativa; '' volta a seguir o servidor. 18 liga o aviso de conteúdo sensível. */
+  rating: z.enum(['L', '10', '12', '14', '16', '18', '']).optional(),
   /** Quem vê (canal privado) e quem interage (manda mensagem / fala). Manda tudo de uma vez. */
   access: z
     .object({

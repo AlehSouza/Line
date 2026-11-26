@@ -200,7 +200,12 @@ export interface Server {
   showOwnerBadge?: boolean;
   /** Rigor da detecção automática de +18 nas mídias (padrão moderate). */
   nsfwLevel?: 'light' | 'moderate' | 'high';
+  /** Classificação indicativa; null = sem classificação (servidores antigos). */
+  rating?: Rating | null;
 }
+
+/** Classificação indicativa no estilo brasileiro. 18 = conteúdo sensível. */
+export type Rating = 'L' | '10' | '12' | '14' | '16' | '18';
 
 export interface Category {
   id: string;
@@ -240,6 +245,8 @@ export interface Channel {
   type: ChannelType;
   /** Canal +18: aviso de conteúdo sensível na primeira entrada, só para 18 anos ou mais. */
   nsfw?: boolean;
+  /** Classificação indicativa do canal; null = segue o servidor. */
+  rating?: Rating | null;
   serverId: string | null;
   categoryId: string | null;
   name: string;

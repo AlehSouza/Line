@@ -488,12 +488,37 @@ impl UpdateProfile {
     }
 }
 
+pub const RATINGS: [&str; 6] = ["L", "10", "12", "14", "16", "18"];
+
+/// Valida a classificação; `allow_empty` aceita "" (canal volta a seguir o servidor).
+fn rating(r: &Option<String>, allow_empty: bool) -> ApiResult<()> {
+    match r {
+        Some(v) if !(RATINGS.contains(&v.as_str()) || allow_empty && v.is_empty()) => {
+            Err(validation("Classificação inválida"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A classificação cabe na idade? Sem idade conhecida, só o 18 fica de fora.
+pub fn rating_allows(rating: Option<&str>, age: Option<i32>) -> bool {
+    let min = match rating {
+        None | Some("L") => 0,
+        Some(r) => r.parse::<i32>().unwrap_or(0),
+    };
+    match age {
+        Some(a) => a >= min,
+        None => min < 18,
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateServer {
     pub name: String,
     pub description: Option<String>,
     pub is_public: Option<bool>,
+    pub rating: Option<String>,
 }
 
 fn server_name(raw: &str) -> ApiResult<String> {
@@ -508,6 +533,7 @@ impl CreateServer {
         if let Some(d) = &self.description {
             text(d, 0, 300, "A descrição")?;
         }
+        rating(&self.rating, false)?;
         Ok(self)
     }
 }
@@ -531,6 +557,8 @@ pub struct UpdateServer {
     pub show_owner_badge: Option<bool>,
     /// Rigor da detecção de +18: light | moderate | high.
     pub nsfw_level: Option<String>,
+    /// Classificação indicativa: L | 10 | 12 | 14 | 16 | 18.
+    pub rating: Option<String>,
 }
 
 impl UpdateServer {
@@ -540,6 +568,7 @@ impl UpdateServer {
             text(d, 0, 300, "A descrição")?;
         }
         self.icon_color = self.icon_color.as_deref().map(color).transpose()?;
+        rating(&self.rating, false)?;
         if let Some(l) = &self.nsfw_level
             && !["light", "moderate", "high"].contains(&l.as_str())
         {
@@ -609,6 +638,8 @@ pub struct UpdateChannel {
     pub access: Option<ChannelAccessInput>,
     /// Canal +18.
     pub nsfw: Option<bool>,
+    /// Classificação indicativa: L | 10 | 12 | 14 | 16 | 18 (18 liga o aviso de conteúdo sensível).
+    pub rating: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -634,6 +665,7 @@ impl UpdateChannel {
         if let Some(n) = &self.name {
             text(n.trim(), 1, 100, "O nome do canal")?;
         }
+        rating(&self.rating, true)?;
         if let Some(a) = &self.access
             && (a.member_ids.len() > 500
                 || a.interact_member_ids.len() > 500
