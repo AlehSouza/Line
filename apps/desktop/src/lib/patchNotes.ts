@@ -65,7 +65,7 @@ export const PATCH_NOTES: PatchNote[] = [
       {
         icon: 'eye',
         title: 'Explorar mais seguro',
-        text: 'Os servidores em Explorar mostram o selo da classificação, e os que ainda não têm uma aparecem com as imagens borradas. Cada pessoa só vê os servidores indicados para a idade informada em Minha conta, e os de conteúdo sensível só aparecem para quem tem 18 anos ou mais.',
+        text: 'Os servidores em Explorar mostram o selo da classificação, e os que ainda não têm uma só aparecem, com as imagens borradas, para quem tem 18 anos ou mais. Cada pessoa só vê os servidores indicados para a idade informada em Minha conta, e os de conteúdo sensível só aparecem para quem tem 18 anos ou mais.',
       },
     ],
     improvements: [
@@ -76,8 +76,8 @@ export const PATCH_NOTES: PatchNote[] = [
       },
       {
         icon: 'eye',
-        title: 'Canais de conteúdo sensível bloqueados sem idade',
-        text: 'Quem não informou a data de nascimento ou tem menos de 18 anos vê só uma tela preta com o aviso, sem nenhuma mensagem do canal.',
+        title: 'Aviso antes de entrar em canais classificados',
+        text: 'Quem não informou a data de nascimento ou não tem a idade mínima de um canal classificado vê só um aviso, sem as mensagens. Nos canais de conteúdo sensível, o aviso também aparece na primeira vez para quem tem 18 anos ou mais.',
       },
     ],
   },

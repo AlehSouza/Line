@@ -2149,20 +2149,26 @@ fn require_access(q: &Q, channel_id: &str, user_id: &str) -> ApiResult<Channel> 
     }
 }
 
-/// Canal de conteúdo sensível só abre para quem informou ter 18 anos ou mais.
+/// Canal com classificação indicativa (a dele ou a do servidor, menos Livre) só abre para quem
+/// informou a data de nascimento e tem a idade mínima.
 fn require_age_for(q: &Q, channel: &Channel, user_id: &str) -> ApiResult<()> {
-    if !channel.nsfw {
-        return Ok(());
-    }
-    let adult = q
-        .user_row(user_id)
-        .and_then(|u| u.birth_date)
-        .and_then(|b| age_of(&b))
-        .is_some_and(|age| age >= 18);
-    if adult {
+    let own = channel.rating.clone().or_else(|| channel.nsfw.then(|| "18".to_string()));
+    let rating = own.or_else(|| {
+        (channel.kind == "text" || channel.kind == "voice")
+            .then(|| channel.server_id.as_deref().and_then(|s| q.server(s)).and_then(|s| s.rating))
+            .flatten()
+    });
+    let min: i32 = match rating.as_deref() {
+        None | Some("L") => return Ok(()),
+        Some(r) => r.parse().unwrap_or(18),
+    };
+    let age = q.user_row(user_id).and_then(|u| u.birth_date).and_then(|b| age_of(&b));
+    if age.is_some_and(|a| a >= min) {
         Ok(())
     } else {
-        Err(forbidden("Este canal tem conteúdo sensível e só abre para quem tem 18 anos ou mais"))
+        Err(forbidden(&format!(
+            "Este canal tem classificação indicativa de {min} anos e só abre para quem informou ter {min} anos ou mais"
+        )))
     }
 }
 

@@ -954,7 +954,7 @@ impl Q<'_> {
     }
 
     /// Servidores públicos em que a pessoa ainda não está. Some o que tem classificação acima
-    /// da idade dela; sem data de nascimento, some só o conteúdo sensível (18).
+    /// da idade dela; sem data de nascimento, somem o 18 e os sem classificação.
     pub fn discover_servers(&self, user_id: &str, query: &str, age: Option<i32>) -> Vec<Server> {
         let like = format!("%{query}%");
         let mut st = ok(self.c.prepare_cached(&format!(

@@ -500,10 +500,12 @@ fn rating(r: &Option<String>, allow_empty: bool) -> ApiResult<()> {
     }
 }
 
-/// A classificação cabe na idade? Sem idade conhecida, só o 18 fica de fora.
+/// A classificação cabe na idade? Sem idade conhecida, só o 18 fica de fora. Servidor sem
+/// classificação conta como 18 (só aparece para quem informou ter 18 anos ou mais).
 pub fn rating_allows(rating: Option<&str>, age: Option<i32>) -> bool {
     let min = match rating {
-        None | Some("L") => 0,
+        None => 18,
+        Some("L") => 0,
         Some(r) => r.parse::<i32>().unwrap_or(0),
     };
     match age {

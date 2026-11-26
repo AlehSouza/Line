@@ -12,9 +12,8 @@ import { messageLink } from '@/lib/messageLink';
 import { Fragment, type ReactNode, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent, type Ref, type RefObject } from 'react';
 import { api } from '@/lib/api';
 import { looksNsfw } from '@/lib/nsfw';
-import { acceptNsfwChannel, loadNsfwOk, useNsfwOk } from '@/lib/nsfwGate';
-import { isAdult } from '@/lib/age';
-import { goBack } from '@/lib/history';
+import { acceptNsfwChannel, gateOf, loadNsfwOk, oldEnough, useNsfwOk, type Gate } from '@/lib/nsfwGate';
+import { goBack, useNav } from '@/lib/history';
 import { attachmentKind, AttachmentList, formatSize, GRID_MIN, isMedia, MediaGrid } from './Attachments';
 import { renderMarkdown } from '@/lib/markdown';
 import { LinkPreviews } from './LinkPreview';
@@ -26,7 +25,7 @@ import { MentionPicker, useMentionContext, type MentionPickerHandle } from './Me
 import { actions, dmTitle, mentionsToText, withoutCardCodes, channelPermsOf, textToMentions, useCan, useLine } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
 import { Avatar, channelIcon, cx, Icons, MessageSkeletons, Modal } from './ui';
-import { RatingBadge } from './Rating';
+import { RATING_DETAILS, RatingBadge, SENSITIVE_DETAILS } from './Rating';
 import { EmojiButton } from './EmojiField';
 import { VoiceStage } from './Voice';
 import { UserTagBadge } from './ServerTag';
@@ -67,10 +66,13 @@ export function ChatView({ channel }: { channel: Channel }) {
     return () => window.removeEventListener('focus', onFocus);
   }, [channel.id]);
 
-  const nsfwOk = useNsfwOk((g) => g.ids.includes(channel.id));
-  const adult = isAdult(me?.birthDate);
+  const serverRating = useLine((s) => (channel.serverId ? s.servers[channel.serverId]?.rating : null));
+  const gate = gateOf(channel, serverRating);
+  const gateOk = useNsfwOk((g) => !!gate && g.ids.includes(gate.key));
+  const allowed = !!gate && oldEnough(gate, me?.birthDate);
   useEffect(() => loadNsfwOk(), [me?.id]);
-  if (channel.nsfw && (!adult || !nsfwOk)) return <NsfwChannelGate channel={channel} adult={adult} />;
+  // Com idade suficiente, só o 18 mostra o aviso (na primeira vez); abaixo da idade, bloqueia.
+  if (gate && (!allowed || (gate.rating === '18' && !gateOk))) return <NsfwChannelGate channel={channel} gate={gate} allowed={allowed} />;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" {...drop.handlers}>
@@ -1786,38 +1788,67 @@ function nameFromUrl(url: string, type: string) {
   return `${base || (type.startsWith('video/') ? 'video' : 'imagem')}.${ext}`;
 }
 
+/** Voltar da tela de bloqueio: volta no histórico; sem histórico (ou se ele cair no mesmo
+ * canal), vai para outro canal de texto liberado do servidor, ou para o início. */
+function leaveNsfwGate(channel: Channel) {
+  const { back } = useNav.getState();
+  const prev = back[back.length - 1];
+  if (prev && !(prev.kind === 'server' && prev.channelId === channel.id)) return goBack();
+  const s = useLine.getState();
+  const other = Object.values(s.channels).find(
+    (c) => c.serverId === channel.serverId && c.id !== channel.id && c.type === 'text' && !c.nsfw,
+  );
+  if (channel.serverId && other) actions.goServer(channel.serverId, other.id);
+  else actions.goHome();
+}
+
 /** Primeira entrada num canal +18: aviso centralizado com Voltar e Prosseguir. Sem data de
  * nascimento (ou menor de 18) não dá para prosseguir. */
-function NsfwChannelGate({ channel, adult }: { channel: Channel; adult: boolean }) {
+function NsfwChannelGate({ channel, gate, allowed }: { channel: Channel; gate: Gate; allowed: boolean }) {
   const server = useLine((s) => (channel.serverId ? s.servers[channel.serverId] : undefined));
   const hasBirth = !!useLine((s) => s.me?.birthDate);
   const ChanIcon = channelIcon(channel);
+  const sensitive = gate.rating === '18';
+  const why = sensitive ? ', por ter conteúdo sensível' : '';
+  const details = gate.rating === '18' ? SENSITIVE_DETAILS : RATING_DETAILS[gate.rating];
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#000000] text-white">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-white/10 px-4">
         <MobileBack />
         <ChanIcon size={20} className="text-white/60" />
         <h1 className="truncate font-bold">{channel.name}</h1>
-        <RatingBadge rating="18" size={20} />
+        <RatingBadge rating={gate.rating} size={20} />
       </header>
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <RatingBadge rating="18" size={64} className="rounded-xl" />
-        <h2 className="text-2xl font-bold">Canal com conteúdo sensível</h2>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-6 py-8 text-center">
+        <RatingBadge rating={gate.rating} size={64} className="rounded-xl" />
+        <h2 className="text-2xl font-bold">Classificação indicativa: {gate.min} anos</h2>
         <p className="max-w-[520px] text-[15px] leading-relaxed text-white/70">
-          {adult
-            ? `Este canal foi marcado como conteúdo sensível pela administração de ${server?.name ?? 'este servidor'}. Prossiga só se você tem 18 anos ou mais.`
+          {allowed
+            ? `A administração de ${server?.name ?? 'este servidor'} classificou este canal como não recomendado para menores de ${gate.min} anos${why}. Prossiga só se você tem ${gate.min} anos ou mais.`
             : hasBirth
-              ? 'Este canal foi marcado como conteúdo sensível e só pode ser aberto por quem tem 18 anos ou mais.'
-              : 'Este canal foi marcado como conteúdo sensível. Para entrar, informe sua data de nascimento em Configurações, Minha conta.'}
+              ? `Este canal tem classificação indicativa de ${gate.min} anos${why} e só pode ser aberto por quem tem ${gate.min} anos ou mais.`
+              : `Este canal tem classificação indicativa de ${gate.min} anos${why}. Para entrar, informe sua data de nascimento em Configurações, Minha conta.`}
         </p>
+        <div className="w-full max-w-[520px] rounded-xl border border-white/15 bg-white/5 p-4 text-left">
+          <p className="text-sm font-bold">O que pode aparecer neste canal</p>
+          <ul className="mt-2 space-y-1.5 text-sm text-white/75">
+            {details.map((d) => (
+              <li key={d} className="flex items-start gap-2">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-white/60" />
+                {d}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-white/55">A classificação é definida pela administração do servidor.</p>
+        </div>
         <div className="mt-1 flex gap-3">
-          <button onClick={() => goBack()} className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20">
+          <button onClick={() => leaveNsfwGate(channel)} className="rounded-lg bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20">
             Voltar
           </button>
-          {adult ? (
+          {allowed ? (
             <button
               onClick={() => {
-                acceptNsfwChannel(channel.id);
+                acceptNsfwChannel(gate.key);
                 if (channel.type === 'voice') void joinVoice(channel.id);
               }}
               className="rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent hover:bg-accent-strong"

@@ -20,6 +20,22 @@ export const RATINGS: { value: Rating; label: string; color: string; fg: string;
   },
 ];
 
+/** O que cada faixa pode ter (tela de aviso do canal). */
+export const RATING_DETAILS: Record<Exclude<Rating, 'L' | '18'>, string[]> = {
+  '10': ['Brigas e sustos leves', 'Linguagem um pouco mais forte, sem palavrões pesados', 'Temas que pedem um pouco mais de maturidade'],
+  '12': ['Violência sem detalhes', 'Palavrões e piadas de duplo sentido', 'Insinuações e assuntos delicados'],
+  '14': ['Violência mais intensa', 'Temas adultos e conversas sobre sexo, sem cenas explícitas', 'Conversas sobre drogas'],
+  '16': ['Violência forte', 'Uso de drogas', 'Temas pesados, como mortes e crimes'],
+};
+
+/** O que pode aparecer num canal de conteúdo sensível (tela de bloqueio). */
+export const SENSITIVE_DETAILS = [
+  'Nudez e conteúdo sexual explícito',
+  'Violência extrema ou muito detalhada',
+  'Uso e apologia de drogas ilícitas',
+  'Outros conteúdos sensíveis, só para adultos',
+];
+
 export const ratingOf = (r: Rating | null | undefined) => RATINGS.find((x) => x.value === r);
 
 /** Classificação que vale para o canal: a dele, ou conteúdo sensível se já estava marcado assim. */
