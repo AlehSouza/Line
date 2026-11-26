@@ -242,8 +242,8 @@ describe('Line server', () => {
     expect(badColor.data.error).toBe('validation');
     expect((await api('POST', '/auth/register', undefined, { username: 'x', password: 'senha123' })).status).toBe(400);
 
-    // Servidor público aparece no explorar de quem não é membro
-    const srv = await api<{ id: string; isPublic: boolean }>('POST', '/servers', fabi.token, { name: 'Aberto', isPublic: true });
+    // Servidor público com classificação aparece no explorar de quem não é membro
+    const srv = await api<{ id: string; isPublic: boolean }>('POST', '/servers', fabi.token, { name: 'Aberto', isPublic: true, rating: 'L' });
     expect(srv.data.isPublic).toBe(true);
     const found = await api<{ id: string }[]>('GET', '/servers/discover?q=Abe', gui.token);
     expect(found.data.map((s) => s.id)).toContain(srv.data.id);
