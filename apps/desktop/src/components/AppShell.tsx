@@ -8,7 +8,7 @@ import { mobile, useMobile } from '@/lib/mobile';
 import { ensureServerLoaded } from '@/lib/session';
 import { actions, firstTextChannel, useLine } from '@/lib/store';
 import { ChannelSidebar } from './ChannelSidebar';
-import { ChatView, MediaThreadsPanel, ThreadPanel } from './ChatView';
+import { ChatView, MediaThreadsPanel, ThreadPanel, VoiceRatingGate } from './ChatView';
 import { DiscoverView } from './DiscoverView';
 import { DmSidebar } from './DmSidebar';
 import { FriendRequestsView, FriendsView } from './FriendsView';
@@ -70,7 +70,12 @@ export function AppShell() {
   if (suspended) main = <SuspendedServer />;
   else if (view.kind === 'discover') main = <DiscoverView />;
   else if (view.kind === 'home' && !view.dmId) main = view.page === 'requests' ? <FriendRequestsView /> : view.page === 'saved' ? <SavedView /> : view.page === 'patch-notes' ? <PatchNotesView /> : <FriendsView />;
-  else if (channel?.type === 'voice') main = <VoiceStage channel={channel} />;
+  else if (channel?.type === 'voice')
+    main = (
+      <VoiceRatingGate channel={channel}>
+        <VoiceStage channel={channel} />
+      </VoiceRatingGate>
+    );
   else if (channel?.base === 'activity') main = <ActivityChannel channel={channel} />;
   else if (channel?.base === 'events') main = <EventsChannel channel={channel} />;
   else if (channel) main = <ChatView channel={channel} />;

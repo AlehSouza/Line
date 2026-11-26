@@ -58,6 +58,11 @@ export const PATCH_NOTES: PatchNote[] = [
     intro: 'Agora cada servidor e cada canal pode dizer para qual idade é indicado, do jeitinho que você já conhece da TV e do cinema.',
     highlights: [
       {
+        icon: 'headphones',
+        title: 'Aviso também nos canais de voz',
+        text: 'Canais de voz com classificação agora mostram o aviso antes da chamada. Em um aparelho novo, entrar na chamada não fica mais sem resposta: é só confirmar no aviso e você já entra.',
+      },
+      {
         icon: 'shield',
         title: 'Escolha a classificação do seu servidor',
         text: 'Ao criar um servidor você escolhe entre Livre, 10, 12, 14, 16 e 18 anos, com uma explicação de cada uma. Dá para mudar depois nas configurações do servidor.',

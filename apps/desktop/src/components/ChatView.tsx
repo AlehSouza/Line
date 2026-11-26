@@ -1788,6 +1788,20 @@ function nameFromUrl(url: string, type: string) {
   return `${base || (type.startsWith('video/') ? 'video' : 'imagem')}.${ext}`;
 }
 
+/** Canal de voz classificado: mostra o mesmo aviso do canal de texto antes da tela da chamada
+ * (sem isso, entrar na chamada não fazia nada para quem ainda não tinha aceitado o aviso). */
+export function VoiceRatingGate({ channel, children }: { channel: Channel; children: ReactNode }) {
+  const me = useLine((s) => s.me);
+  const serverRating = useLine((s) => (channel.serverId ? s.servers[channel.serverId]?.rating : null));
+  const inCall = useVoice((v) => v.channelId === channel.id);
+  const gate = gateOf(channel, serverRating);
+  const gateOk = useNsfwOk((g) => !!gate && g.ids.includes(gate.key));
+  const allowed = !!gate && oldEnough(gate, me?.birthDate);
+  useEffect(() => loadNsfwOk(), [me?.id]);
+  if (!inCall && gate && (!allowed || (gate.rating === '18' && !gateOk))) return <NsfwChannelGate channel={channel} gate={gate} allowed={allowed} />;
+  return <>{children}</>;
+}
+
 /** Voltar da tela de bloqueio: volta no histórico; sem histórico (ou se ele cair no mesmo
  * canal), vai para outro canal de texto liberado do servidor, ou para o início. */
 function leaveNsfwGate(channel: Channel) {
