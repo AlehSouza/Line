@@ -989,8 +989,9 @@ function GalleryViewer({ items, start, channelId, onClose }: { items: { url: str
   );
 }
 
-/** Rigor da detecção automática de +18 nas mídias enviadas no servidor. */
+/** Rigor da detecção automática de conteúdo sensível nas mídias enviadas no servidor (Nenhuma desliga). */
 const NSFW_LEVELS = [
+  { value: 'none', label: 'Nenhuma', hint: 'Sem detecção automática. Quem envia ainda pode marcar o anexo como Spoiler ou conteúdo sensível.' },
   { value: 'light', label: 'Leve', hint: 'Marca como conteúdo sensível só o que é completamente explícito: sexo explícito, genitália à mostra e afins.' },
   { value: 'moderate', label: 'Moderada', hint: 'Tudo do Leve, mais o que incita sexo: se esfregar, poses e situações insinuantes.' },
   { value: 'high', label: 'Alta', hint: 'Tudo do Leve e do Moderado, mais qualquer mínima sugestão sexual.' },
@@ -1004,7 +1005,7 @@ export function ServerOverview({ serverId, onClose }: { serverId: string; onClos
   const [description, setDescription] = useState(server?.description ?? '');
   const [isPublic, setIsPublic] = useState(server?.isPublic ?? false);
   const [ownerBadge, setOwnerBadge] = useState(server?.showOwnerBadge ?? true);
-  const [nsfwLevel, setNsfwLevel] = useState<'light' | 'moderate' | 'high'>(server?.nsfwLevel ?? 'moderate');
+  const [nsfwLevel, setNsfwLevel] = useState<'none' | 'light' | 'moderate' | 'high'>(server?.nsfwLevel ?? 'moderate');
   const [rating, setRating] = useState<Rating | null>(server?.rating ?? null);
   const [icon, setIcon] = useState<ServerImage>({ id: null, url: server?.iconUrl ?? null });
   const [banner, setBanner] = useState<ServerImage>({ id: null, url: server?.bannerUrl ?? null });

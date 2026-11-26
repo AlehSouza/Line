@@ -199,7 +199,7 @@ export interface Server {
   /** Estrelinha de dono ao lado do nome do dono (padrão: sim). */
   showOwnerBadge?: boolean;
   /** Rigor da detecção automática de +18 nas mídias (padrão moderate). */
-  nsfwLevel?: 'light' | 'moderate' | 'high';
+  nsfwLevel?: 'none' | 'light' | 'moderate' | 'high';
   /** Classificação indicativa; null = sem classificação (servidores antigos). */
   rating?: Rating | null;
 }

@@ -1927,6 +1927,9 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
       window.setTimeout(() => setNotice(''), 4000);
       return;
     }
+    // Servidor com censura "Nenhuma": sem detecção automática (marcar Spoiler/sensível continua manual).
+    const level = (channel.serverId ? useLine.getState().servers[channel.serverId]?.nsfwLevel : undefined) ?? 'moderate';
+    const autoCheck = level !== 'none';
     const room = MAX_FILES - pendingRef.current.length;
     if (files.length > room) toast(`Dá para enviar até ${MAX_FILES} anexos por mensagem.`, 'error');
     for (const file of files.slice(0, Math.max(0, room))) {
@@ -1941,13 +1944,12 @@ export function Composer({ channel, placeholder, ref: handle, onSent }: { channe
         progress: 0,
         preview: kind === 'image' || kind === 'video' ? URL.createObjectURL(file) : undefined,
         error: file.size > MAX_FILE ? 'Maior que 100 MB' : file.size === 0 ? 'Arquivo vazio' : undefined,
-        checking: kind === 'image' || kind === 'video',
+        checking: (kind === 'image' || kind === 'video') && autoCheck,
       };
       setPending((list) => [...list, item]);
       if (item.error) continue;
       if (item.checking) {
-        const level = channel.serverId ? useLine.getState().servers[channel.serverId]?.nsfwLevel : undefined;
-        void looksNsfw(file, level ?? 'moderate').then((hit) => {
+        void looksNsfw(file, level === 'none' ? 'moderate' : level).then((hit) => {
           patch(key, hit ? { checking: false, checked: true, nsfw: true, autoNsfw: true } : { checking: false, checked: true });
           if (hit) toast('Esse anexo parece conteúdo sensível e foi marcado como sensível.');
         });
