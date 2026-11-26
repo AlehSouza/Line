@@ -90,6 +90,13 @@ export const PATCH_NOTES: PatchNote[] = [
         text: 'No mixer de volume do Windows, o som das chamadas agora aparece como Line, com o nosso ícone, e não mais com um nome genérico. Fica mais fácil achar e ajustar o volume do Line sem mexer nos outros apps.',
       },
     ],
+    fixes: [
+      {
+        icon: 'headphones',
+        title: 'Voltar a ouvir sem abrir o microfone',
+        text: 'Se o seu microfone estava mutado antes de ensurdecer, ele continua mutado quando você volta a ouvir. Ativar o microfone enquanto ensurdecido continua trazendo o som de volta junto.',
+      },
+    ],
   },
   {
     id: '2026-11-20',

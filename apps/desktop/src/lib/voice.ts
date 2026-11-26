@@ -150,11 +150,15 @@ const SCREEN_AUDIO_KEY = 'line.voice.screenAudio';
 const SELF_MUTE_KEY = 'line.voice.selfMute';
 
 /** Meu mudo/ensurdecido, guardado no aparelho para continuar igual depois de recarregar ou reabrir. */
+/** Se o mic já estava mutado antes de ensurdecer: ao voltar a ouvir, ele continua como estava. */
+let mutedBeforeDeafen = false;
+
 function loadSelfMute(): { muted: boolean; deafened: boolean } {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SELF_MUTE_KEY) : null;
-    const v = raw ? (JSON.parse(raw) as Partial<{ muted: boolean; deafened: boolean }>) : {};
+    const v = raw ? (JSON.parse(raw) as Partial<{ muted: boolean; deafened: boolean; mutedBeforeDeafen: boolean }>) : {};
     const deafened = !!v.deafened;
+    mutedBeforeDeafen = deafened && !!v.mutedBeforeDeafen;
     return { muted: deafened || !!v.muted, deafened };
   } catch {
     return { muted: false, deafened: false };
@@ -163,7 +167,7 @@ function loadSelfMute(): { muted: boolean; deafened: boolean } {
 
 function saveSelfMute(muted: boolean, deafened: boolean) {
   try {
-    localStorage.setItem(SELF_MUTE_KEY, JSON.stringify({ muted, deafened }));
+    localStorage.setItem(SELF_MUTE_KEY, JSON.stringify({ muted, deafened, mutedBeforeDeafen }));
   } catch {
     // sem localStorage: vale só nesta sessão
   }
@@ -702,8 +706,11 @@ export function toggleMute() {
 }
 
 export function toggleDeafen() {
-  const deafened = !getV().deafened;
-  const next = { deafened, muted: deafened ? true : !voiceCan(Perm.Speak) };
+  const cur = getV();
+  const deafened = !cur.deafened;
+  // Voltar a ouvir não mexe no mic: se estava mutado antes de ensurdecer, continua mutado.
+  if (deafened) mutedBeforeDeafen = cur.muted;
+  const next = { deafened, muted: deafened ? true : mutedBeforeDeafen || !voiceCan(Perm.Speak) };
   setV(next);
   saveSelfMute(next.muted, next.deafened);
   playSfx(deafened ? 'selfDeafen' : 'selfUndeafen');
