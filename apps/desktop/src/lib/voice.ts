@@ -1016,32 +1016,62 @@ export function setInputMode(mode: InputMode) {
   setV({ inputMode: mode, pttDown: false });
   savePrefs();
   applyMute();
+  syncGlobalPtt();
 }
 
 export function setPttKey(code: string | null) {
   setV({ pttKey: code, pttDown: false });
   savePrefs();
   applyMute();
+  syncGlobalPtt();
 }
 
-/** Apertar para falar: segura a tecla escolhida e o microfone abre (só com a janela do Line em foco). */
+/**
+ * Apertar para falar: segura a tecla escolhida e o microfone abre.
+ * No app do Windows a tecla vale em qualquer lugar (jogo, outro app): o casco em Rust vigia o teclado
+ * e avisa por 'line:ptt'. Na web e nos outros sistemas, só com a janela do Line em foco.
+ */
+let globalPtt = false;
+
+function setPttDown(down: boolean) {
+  if (getV().pttDown === down) return;
+  setV({ pttDown: down });
+  applyMute();
+}
+
+/** Liga/desliga a tecla global no app do Windows conforme o modo e a tecla escolhidos. */
+function syncGlobalPtt() {
+  if (typeof window === 'undefined' || window.line?.platform !== 'win32') return;
+  const internals = (window as unknown as { __TAURI_INTERNALS__?: { invoke: (c: string, a?: unknown) => Promise<boolean> } }).__TAURI_INTERNALS__;
+  if (!internals) return;
+  const { inputMode, pttKey } = getV();
+  const code = inputMode === 'ptt' ? pttKey : null;
+  internals.invoke('ptt_set', { code }).then(
+    (ok) => (globalPtt = ok),
+    () => (globalPtt = false),
+  );
+}
+
+export function pttIsGlobal() {
+  return globalPtt;
+}
+
 if (typeof window !== 'undefined') {
   const isPtt = (e: KeyboardEvent) => {
     const { inputMode, pttKey } = getV();
-    return inputMode === 'ptt' && !!pttKey && e.code === pttKey;
+    return !globalPtt && inputMode === 'ptt' && !!pttKey && e.code === pttKey;
   };
   window.addEventListener('keydown', (e) => {
-    if (!isPtt(e) || e.repeat || getV().pttDown) return;
-    setV({ pttDown: true });
-    applyMute();
+    if (!isPtt(e) || e.repeat) return;
+    setPttDown(true);
   });
-  const release = () => {
-    if (!getV().pttDown) return;
-    setV({ pttDown: false });
-    applyMute();
-  };
-  window.addEventListener('keyup', (e) => isPtt(e) && release());
-  window.addEventListener('blur', release);
+  window.addEventListener('keyup', (e) => isPtt(e) && setPttDown(false));
+  // Sem a tecla global, sair da janela solta a tecla (o keyup não chegaria).
+  window.addEventListener('blur', () => !globalPtt && setPttDown(false));
+  window.addEventListener('line:ptt', (e) => {
+    if (globalPtt && getV().inputMode === 'ptt') setPttDown(!!(e as CustomEvent<boolean>).detail);
+  });
+  syncGlobalPtt();
 }
 
 /**

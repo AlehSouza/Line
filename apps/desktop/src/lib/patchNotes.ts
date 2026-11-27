@@ -53,6 +53,18 @@ export type PatchNote = {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    id: '2026-11-27',
+    title: 'Apertar para falar em qualquer lugar',
+    intro: 'Agora dá para falar segurando a tecla sem precisar voltar para o Line.',
+    highlights: [
+      {
+        icon: 'mic',
+        title: 'Apertar para falar dentro do jogo',
+        text: 'No app para Windows, a tecla do Apertar para falar funciona mesmo com o Line em segundo plano: no meio do jogo, no navegador ou em qualquer outro app. A tecla continua funcionando normalmente onde você estiver.',
+      },
+    ],
+  },
+  {
     id: '2026-11-26',
     title: 'Classificação indicativa',
     intro: 'Agora cada servidor e cada canal pode dizer para qual idade é indicado, do jeitinho que você já conhece da TV e do cinema.',

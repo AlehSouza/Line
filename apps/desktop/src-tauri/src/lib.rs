@@ -26,6 +26,16 @@ mod ducking;
 mod loopback;
 #[cfg(windows)]
 mod toast;
+#[cfg(windows)]
+mod ptt;
+/// Fora do Windows o Apertar para falar fica só com a janela em foco.
+#[cfg(not(windows))]
+mod ptt {
+    #[tauri::command]
+    pub fn ptt_set(_code: Option<String>) -> bool {
+        false
+    }
+}
 #[cfg(target_os = "linux")]
 mod rtc;
 #[cfg(windows)]
@@ -951,7 +961,8 @@ pub fn run() {
             screen::screen_sources,
             screen::screen_start,
             screen::screen_stop,
-            games::game_running
+            games::game_running,
+            ptt::ptt_set
         ])
         .setup(|app| {
             #[cfg(windows)]

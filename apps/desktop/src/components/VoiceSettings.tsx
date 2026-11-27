@@ -16,6 +16,7 @@ import {
   setOutputDevice,
   setOutputVolume,
   setPttKey,
+  pttIsGlobal,
   setSensitivityDb,
   useVoice,
   type InputProfile,
@@ -495,7 +496,7 @@ function PttKeyRecorder({ code, down }: { code: string | null; down: boolean }) 
       </div>
       <p className="text-xs text-muted">
         {code ? 'Segure a tecla para falar; a bolinha fica verde enquanto o microfone está aberto. ' : 'Escolha uma tecla para poder falar. '}
-        Por enquanto funciona com a janela do Line em foco.
+        {pttIsGlobal() ? 'Funciona mesmo com o Line em segundo plano, dentro de jogos e outros apps.' : 'Aqui funciona com a janela do Line em foco; no app para Windows vale em qualquer lugar.'}
       </p>
     </div>
   );
