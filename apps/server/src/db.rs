@@ -584,6 +584,10 @@ const MIGRATIONS: &[&str] = &[
   ALTER TABLE channels ADD COLUMN rating TEXT;
   UPDATE channels SET rating = '18' WHERE nsfw = 1;
 "#,
+    // Personalização do canal de voz: { image, color, opacity } em JSON; NULL = fundo padrão.
+    r#"
+  ALTER TABLE channels ADD COLUMN look TEXT;
+"#,
 ];
 
 pub fn open_database(file: &str) -> rusqlite::Result<Connection> {

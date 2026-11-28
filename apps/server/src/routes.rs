@@ -2225,6 +2225,30 @@ async fn get_channel(State(app): S, Me(me): Me, Path(id): Path<String>) -> Res {
     ok(require_access(&app.store.q(), &id, &me)?)
 }
 
+/// Fundo da chamada: imagem enviada ao Line, cor da sobreposição (#rrggbb) e intensidade (0 a 100).
+/// Sem imagem nem cor, não sobra nada para guardar.
+fn clean_channel_look(look: Option<&serde_json::Value>) -> Option<serde_json::Value> {
+    let c = look?.as_object()?;
+    let image = c
+        .get("image")
+        .and_then(|x| x.as_str())
+        .filter(|x| x.starts_with("/api/attachments/") && x.len() <= 300 && !x.contains(".."));
+    let color = c
+        .get("color")
+        .and_then(|x| x.as_str())
+        .filter(|x| x.len() == 7 && x.starts_with('#') && x[1..].chars().all(|ch| ch.is_ascii_hexdigit()))
+        .map(|x| x.to_lowercase());
+    let opacity = c
+        .get("opacity")
+        .and_then(|x| x.as_f64())
+        .map(|o| o.clamp(0.0, 100.0).round() as i64)
+        .unwrap_or(40);
+    if image.is_none() && color.is_none() {
+        return None;
+    }
+    Some(json!({ "image": image, "color": color, "opacity": opacity }))
+}
+
 async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: Bytes) -> Res {
     let q = app.store.q();
     let (channel, server_id) = require_channel_manager(&q, &id, &me)?;
@@ -2293,6 +2317,12 @@ async fn update_channel(State(app): S, Me(me): Me, Path(id): Path<String>, b: By
         && (channel.kind == "text" || channel.kind == "voice")
     {
         q.set_channel_rating(&channel.id, r);
+    }
+    if let Some(look) = &p.look {
+        if channel.kind != "voice" {
+            return Err(bad_request("Só canais de voz têm fundo próprio"));
+        }
+        q.set_channel_look(&channel.id, clean_channel_look(look.as_ref()).as_ref());
     }
     let updated = q.update_channel(
         &channel.id,

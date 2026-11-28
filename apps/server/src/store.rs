@@ -221,6 +221,7 @@ struct ChannelRow {
     base: String,
     nsfw: bool,
     rating: Option<String>,
+    look: Option<serde_json::Value>,
 }
 
 fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
@@ -244,6 +245,11 @@ fn channel_row(r: &Row) -> rusqlite::Result<ChannelRow> {
         base: r.get("base").unwrap_or_default(),
         nsfw: r.get::<_, i64>("nsfw").unwrap_or(0) != 0,
         rating: r.get::<_, Option<String>>("rating").unwrap_or(None),
+        look: r
+            .get::<_, Option<String>>("look")
+            .unwrap_or(None)
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .filter(|v: &serde_json::Value| v.is_object()),
     })
 }
 
@@ -1379,6 +1385,14 @@ impl Q<'_> {
         ));
     }
 
+    /// Fundo da chamada do canal de voz (None = volta ao padrão).
+    pub fn set_channel_look(&self, channel_id: &str, look: Option<&serde_json::Value>) {
+        ok(self.c.execute(
+            "UPDATE channels SET look = ? WHERE id = ?",
+            params![look.map(|v| v.to_string()), channel_id],
+        ));
+    }
+
     pub fn set_channel_nsfw(&self, channel_id: &str, on: bool) {
         ok(self.c.execute(
             "UPDATE channels SET nsfw = ? WHERE id = ?",
@@ -1431,6 +1445,7 @@ impl Q<'_> {
             interact_restricted: row.interact_restricted,
             nsfw: row.nsfw,
             rating: row.rating,
+            look: row.look,
             base: row.base,
             interact_member_ids,
             interact_role_ids,
@@ -2600,6 +2615,8 @@ impl Q<'_> {
                    OR json_extract(mb.server_profile, '$.bannerId') = attachments.id))
              AND NOT EXISTS (SELECT 1 FROM users u WHERE json_valid(u.profile_games)
                  AND json_extract(u.profile_games, '$.call.image') LIKE '/api/attachments/' || attachments.id || '/%')
+             AND NOT EXISTS (SELECT 1 FROM channels ch WHERE json_valid(ch.look)
+                 AND json_extract(ch.look, '$.image') LIKE '/api/attachments/' || attachments.id || '/%')
              AND id NOT IN (SELECT json_extract(m.value, '$.id') FROM servers s, json_each(s.bot_replies) r, json_each(r.value, '$.media') m)",
             [cutoff],
         ));

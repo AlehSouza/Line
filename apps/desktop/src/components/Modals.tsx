@@ -30,7 +30,8 @@ import { Avatar, Button, Checkbox, cx, ErrorText, Field, Icons, Input, Modal, pr
 import { EmojiButton, EmojiInput, EmojiTextarea } from './EmojiField';
 import { confirmDialog } from './Dialogs';
 import { channelRating, RatingPicker } from './Rating';
-import type { Rating } from '@line/shared';
+import { ChannelLookEditor } from './ChannelLook';
+import type { ChannelLook, Rating } from '@line/shared';
 
 
 export function Modals() {
@@ -428,9 +429,12 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
   const [interactRoleIds, setInteractRoleIds] = useState<string[]>(channel?.interactRoleIds ?? []);
   const [interactMemberIds, setInteractMemberIds] = useState<string[]>(channel?.interactMemberIds ?? []);
   const [rating, setRating] = useState<Rating | null>(channel ? channelRating(channel) : null);
+  const [look, setLook] = useState<ChannelLook | null>(channel?.look ?? null);
+  const [tab, setTab] = useState<'general' | 'look'>('general');
   const { busy, error, run } = useAction();
   if (!channel) return null;
   const isText = channel.type !== 'voice';
+  const lookChanged = !isText && JSON.stringify(look ?? null) !== JSON.stringify(channel.look ?? null);
   const hasAccess = !!channel.serverId && (channel.type === 'text' || channel.type === 'voice');
   const accessChanged =
     isPrivate !== !!channel.isPrivate ||
@@ -438,7 +442,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
     (isPrivate && (!sameSet(roleIds, channel.roleIds) || !sameSet(memberIds, channel.memberIds))) ||
     (restricted && (!sameSet(interactRoleIds, channel.interactRoleIds) || !sameSet(interactMemberIds, channel.interactMemberIds)));
   const ratingChanged = rating !== channelRating(channel);
-  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged || ratingChanged;
+  const changed = name.trim() !== channel.name || topic.trim() !== (channel.topic ?? '') || accessChanged || ratingChanged || lookChanged;
   const emptyPrivate = isPrivate && !roleIds.length && !memberIds.length;
   return (
     <Modal title="Editar canal" subtitle={isText ? `#${channel.name}` : channel.name} onClose={onClose} width={520} tall>
@@ -451,6 +455,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
                 name: name.trim(),
                 topic: topic.trim(),
                 ...(hasAccess && ratingChanged ? { rating: rating ?? '', nsfw: rating === '18' } : {}),
+                ...(lookChanged ? { look } : {}),
                 ...(hasAccess && accessChanged
                   ? {
                       access: {
@@ -470,6 +475,27 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
         }}
         className="space-y-5"
       >
+        {!isText && (
+          <div className="flex gap-6 border-b border-edge">
+            {(
+              [
+                ['general', 'Geral'],
+                ['look', 'Personalização'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                className={cx('-mb-px border-b-2 pb-2.5 text-sm font-medium', tab === id ? 'border-accent text-accent' : 'border-transparent text-soft hover:text-fg')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {tab === 'look' && !isText && <ChannelLookEditor look={look} onChange={setLook} title={name.trim() || channel.name} />}
+        <div className={cx('space-y-5', tab !== 'general' && 'hidden')}>
         <div>
           <p className="mb-2 text-sm font-semibold text-soft">Nome do canal</p>
           <div className="flex items-center gap-2 rounded-lg border border-edge bg-rail px-3 focus-within:border-accent">
@@ -525,6 +551,7 @@ function EditChannelModal({ channelId, onClose }: { channelId: string; onClose: 
             </div>
           </>
         )}
+        </div>
         <ErrorText>{error}</ErrorText>
         <div className="flex items-center justify-between gap-2">
           <Button

@@ -32,6 +32,16 @@ export type NameFont =
   | 'mono' | 'orbitron' | 'gothic' | 'pacifico' | 'pixel' | 'caveat';
 export type NameEffect = 'solid' | 'gradient' | 'neon' | 'draw' | 'pop' | 'gummy' | 'prism';
 
+/** Fundo da chamada de um canal de voz: imagem, cor por cima e quanto dessa cor aparece. */
+export interface ChannelLook {
+  /** Caminho de um anexo enviado (/api/attachments/...). */
+  image?: string | null;
+  /** Cor da sobreposição (#rrggbb). */
+  color?: string | null;
+  /** Intensidade da sobreposição, de 0 a 100. */
+  opacity?: number;
+}
+
 export interface CallLook {
   /** Fundo: cor sólida ou imagem; sem = o tom tirado da foto. */
   bg?: 'color' | 'image' | null;
@@ -263,6 +273,8 @@ export interface Channel {
   base?: BaseChannelKind;
   interactMemberIds?: string[];
   interactRoleIds?: string[];
+  /** Só canal de voz: fundo da área da chamada, igual para todos. */
+  look?: ChannelLook | null;
   /** Só para dm / group_dm. */
   recipients?: PublicUser[];
   /** Dono da DM em grupo ou quem criou a thread. */
@@ -446,7 +458,11 @@ export type VoiceSignal =
   /** Quem transmite conta a todos do canal quem está assistindo à tela agora. */
   | { type: 'viewers'; ids: string[] }
   /** Quem transmite manda a cada 2 s um resumo do próprio envio (para o painel de estatísticas de quem assiste). */
-  | { type: 'senderStats'; stats: SenderSummary };
+  | { type: 'senderStats'; stats: SenderSummary }
+  /** Não estou recebendo o seu vídeo: confira o que você manda e negocie de novo (hard = refaça a conexão). */
+  | { type: 'resync'; screen?: boolean; hard?: boolean }
+  /** Refiz a conexão com você do zero: descarte a sua, a oferta nova vem em seguida. */
+  | { type: 'reset' };
 
 /** Resumo do envio da tela, do lado de quem transmite. */
 export interface SenderSummary {

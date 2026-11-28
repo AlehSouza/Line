@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { api } from '@/lib/api';
 import { dmPrefs, MAX_PINNED, useDmPrefs } from '@/lib/dmPrefs';
 import { setIgnored, useIgnored } from '@/lib/ignored';
+import { inviteLink } from '@/lib/invite';
 import { isChannelMuted, muteChannel, unmuteChannel } from '@/lib/notify';
 import { actions, useLine } from '@/lib/store';
 import { joinVoice } from '@/lib/voice';
@@ -36,7 +37,7 @@ function InviteSubmenu({ userId }: { userId: string }) {
             void (async () => {
               const dm = await api.openDm([userId]);
               actions.upsertChannel(dm);
-              await api.sendMessage(dm.id, `Entra no servidor ${sv.name} comigo! Código de convite: ${sv.inviteCode}`, []);
+              await api.sendMessage(dm.id, `Entre no servidor ${sv.name} comigo! ${inviteLink(sv.inviteCode)}`, []);
               toast(`Convite de ${sv.name} enviado para ${name}.`);
             })().catch(showError);
           }}

@@ -362,6 +362,7 @@ export const Icons = {
   HeadphonesOff: icon(L.HeadphoneOff),
   Video: icon(L.Video),
   Radio: icon(L.Radio),
+  Live: icon(L.TvMinimalPlay),
   VideoOff: icon(L.VideoOff),
   Screen: icon(L.MonitorUp),
   MonitorX: icon(L.MonitorX),

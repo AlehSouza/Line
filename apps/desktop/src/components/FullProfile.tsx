@@ -603,7 +603,7 @@ export function MoreMenu({
   async function sendInvite(sv: Server) {
     const dm = await api.openDm([user.id]);
     actions.upsertChannel(dm);
-    await api.sendMessage(dm.id, `Entra no servidor ${sv.name} comigo! ${inviteLink(sv.inviteCode)}`, []);
+    await api.sendMessage(dm.id, `Entre no servidor ${sv.name} comigo! ${inviteLink(sv.inviteCode)}`, []);
     toast(`Convite de ${sv.name} enviado para ${user.displayName}.`);
   }
 

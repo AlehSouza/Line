@@ -8,6 +8,7 @@ import { mobile } from '@/lib/mobile';
 import { ensureServerLoaded } from '@/lib/session';
 import { actions, useLine } from '@/lib/store';
 import { showError } from './Dialogs';
+import { TagPill } from './ServerTag';
 import { DefaultServerIcon } from './ui';
 
 type InviteInfo = Server & { onlineCount?: number; member?: boolean };
@@ -169,34 +170,34 @@ export function InvitePage({ code, onClose }: { code: string; onClose: () => voi
   );
 }
 
-/** Cartão de convite no chat: banner, foto, nome, online/membros, desde quando e o botão de entrar. */
+/** Cartão de convite no chat: banner, foto sobre o banner, nome com a tag, online/membros e o botão de entrar. */
 export function InviteCard({ code }: { code: string }) {
   const info = useInvite(code);
   const { joining, member, go } = useJoin(code, info);
 
   if (info === null) {
     return (
-      <div className="mt-1.5 flex w-[300px] max-w-full items-center gap-3 rounded-xl border border-edge bg-side p-4 text-sm text-muted">
+      <div className="mt-1.5 flex w-[340px] max-w-full items-center gap-3 rounded-xl border border-edge bg-side p-4 text-sm text-muted">
         <L.Link2Off size={18} className="shrink-0" /> Convite inválido ou expirado.
       </div>
     );
   }
 
   return (
-    <div className="mt-1.5 w-[300px] max-w-full overflow-hidden rounded-xl border border-edge bg-side">
-      <div className="h-[72px] bg-gradient-to-b from-[#d9d9d9] to-[#8a8a8a]">
+    <div className="mt-1.5 w-[340px] max-w-full overflow-hidden rounded-xl border border-edge bg-side">
+      <div className="h-[88px] bg-raise">
         {info?.bannerUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={fileUrl(info.bannerUrl)} alt="" className="h-full w-full object-cover" />
         )}
       </div>
       <div className="px-4 pb-4">
-        <span className="-mt-8 flex h-[64px] w-[64px] overflow-hidden rounded-[18px] border-4 border-side bg-side">
+        <span className="-mt-9 flex h-[68px] w-[68px] overflow-hidden rounded-[20px] border-4 border-side bg-side">
           {info?.iconUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={fileUrl(info.iconUrl)} alt="" className="h-full w-full rounded-[14px] object-cover" />
+            <img src={fileUrl(info.iconUrl)} alt="" className="h-full w-full rounded-[16px] object-cover" />
           ) : (
-            <span className="h-full w-full overflow-hidden rounded-[14px]">
+            <span className="h-full w-full overflow-hidden rounded-[16px]">
               <DefaultServerIcon />
             </span>
           )}
@@ -205,22 +206,50 @@ export function InviteCard({ code }: { code: string }) {
           <div className="mt-2 space-y-2">
             <div className="h-4 w-32 animate-pulse rounded bg-raise" />
             <div className="h-3 w-44 animate-pulse rounded bg-raise" />
-            <div className="h-9 w-full animate-pulse rounded-lg bg-raise" />
+            <div className="h-10 w-full animate-pulse rounded-lg bg-raise" />
           </div>
         ) : (
           <>
-            <p className="mt-2 truncate text-base leading-tight font-bold text-fg">{info.name}</p>
-            <Counts info={info} />
-            <p className="mt-0.5 text-xs text-muted">
-              Desde {new Date(info.createdAt).toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+            <div className="mt-2 flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-base leading-tight font-bold text-fg">{info.name}</p>
+              {info.tag && (
+                <TagPill
+                  text={info.tag}
+                  icon={info.tagIcon}
+                  iconUrl={info.iconUrl}
+                  tagStyle={info.tagStyle}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md bg-raise px-1 py-px text-[11px] leading-4 font-bold text-soft"
+                />
+              )}
+            </div>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-soft">
+              {info.onlineCount != null && (
+                <span className="flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-online" /> {info.onlineCount.toLocaleString('pt-BR')} Online
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-full bg-offline" /> {info.memberCount.toLocaleString('pt-BR')}{' '}
+                {info.memberCount === 1 ? 'Membro' : 'Membros'}
+              </span>
             </p>
             <button
               type="button"
               disabled={joining || info.suspended}
               onClick={() => void go()}
-              className="mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#248046] text-sm font-semibold text-white transition hover:bg-[#1a6334] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#248046] text-sm font-semibold text-white transition hover:bg-[#1a6334] disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <JoinLabel joining={joining} member={member} suspended={info.suspended} />
+              {joining ? (
+                <>
+                  <L.LoaderCircle size={16} className="animate-spin" /> Entrando…
+                </>
+              ) : info.suspended ? (
+                'Servidor suspenso'
+              ) : member ? (
+                'Ir para o servidor'
+              ) : (
+                'Juntar-se'
+              )}
             </button>
           </>
         )}

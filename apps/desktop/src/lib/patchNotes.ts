@@ -53,6 +53,72 @@ export type PatchNote = {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    id: '2026-11-28',
+    title: 'Opções da chamada a um clique',
+    intro: 'As opções da chamada agora estão onde você clicar.',
+    highlights: [
+      {
+        icon: 'mouse',
+        title: 'Clique direito em qualquer lugar da chamada',
+        text: 'Clique com o botão direito em qualquer parte da chamada, até no espaço vazio, para mostrar ou esconder quem está sem vídeo, sua câmera, sua transmissão e as transmissões que você não está assistindo. No quadro de alguém, o clique direito continua trazendo as opções daquela pessoa.',
+      },
+      {
+        icon: 'image',
+        title: 'Papel de parede no canal de voz',
+        text: 'Em Editar canal, a nova aba Personalização deixa você escolher uma imagem de fundo para a chamada, uma cor por cima dela e o quanto essa cor aparece. Todo mundo que entra no canal vê o mesmo fundo.',
+      },
+    ],
+    improvements: [
+      {
+        icon: 'message',
+        title: 'Convite para o servidor com cartão',
+        text: 'Ao convidar um amigo pelo clique com o botão direito na lista de amigos, ele recebe o cartão do servidor com o botão Juntar-se, sem precisar copiar código. O cartão de convite também ficou de cara nova, com o banner, a foto e a tag do servidor e quantas pessoas estão online.',
+      },
+      {
+        icon: 'eye',
+        title: 'Assista a uma transmissão sem entrar antes na chamada',
+        text: 'Clique na prévia da tela de alguém, mesmo fora da chamada, e você entra na chamada com a tela da pessoa já aberta. A prévia aparece também no Ativo agora, no Início, e no cartão de perfil de quem está transmitindo, em qualquer lugar do app, até na conversa privada.',
+      },
+      {
+        icon: 'monitor',
+        title: 'Vídeo carregando com estilo',
+        text: 'Quando alguém liga a câmera ou começa a transmitir a tela, o quadro dessa pessoa mostra uma animação suave enquanto a imagem chega, em vez de ficar parado ou escuro. Assim você sabe que o vídeo já está a caminho.',
+      },
+      {
+        icon: 'monitor',
+        title: 'Selo Ao vivo nos canais de voz',
+        text: 'Na lista de quem está nos canais de voz, quem está transmitindo a tela ganha um selo vermelho escrito Ao vivo, fácil de ver de relance. Quem está com a câmera ligada aparece com o ícone de câmera cheio. A tag do servidor saiu dessa lista para os nomes caberem melhor, e continua aparecendo no resto do app.',
+      },
+      {
+        icon: 'headphones',
+        title: 'Voltar a ouvir traz só o som',
+        text: 'Ao clicar em Voltar a ouvir, só o som da chamada volta. Seu microfone continua desligado até você ativar, então ninguém ouve você sem querer.',
+      },
+      {
+        icon: 'mouse',
+        title: 'Menu de quem está na chamada mais completo',
+        text: 'O volume da transmissão de alguém agora vai até 200%, os cargos da pessoa podem ser mudados ali mesmo e Sair da transmissão aparece em vermelho. Também dá para abrir a tela de alguém em tela cheia direto da grade, sem precisar colocar em destaque antes.',
+      },
+    ],
+    fixes: [
+      {
+        icon: 'monitor',
+        title: 'Janela de Transmitir tela fecha certinho',
+        text: 'Ao começar a transmitir, a janela de escolha da tela fecha sozinha assim que a transmissão começa. Se algo der errado, ela continua aberta com o aviso para você escolher outra tela.',
+      },
+      {
+        icon: 'refresh',
+        title: 'Câmera e tela sempre chegam, mesmo em chamadas longas',
+        text: 'Em chamadas abertas há muito tempo, ligar a câmera ou transmitir a tela às vezes não aparecia para todo mundo, e era preciso sair e voltar. Agora a chamada percebe sozinha quando um vídeo não chegou e se reconecta em segundos, sem você precisar fazer nada.',
+      },
+      {
+        icon: 'volume',
+        title: 'Ícone de voz do servidor volta depois de recarregar',
+        text: 'Ao recarregar a página durante uma chamada, o servidor às vezes ficava sem o ícone de som, como se você não estivesse conectado. Agora o ícone aparece de novo assim que você volta para a chamada.',
+      },
+    ],
+  },
+  {
     id: '2026-11-27',
     title: 'Apertar para falar em qualquer lugar',
     intro: 'Agora dá para falar segurando a tecla sem precisar voltar para o Line.',

@@ -5,7 +5,6 @@ import { mobile } from '@/lib/mobile';
 import { MobileBack } from './Mobile';
 
 import { CallMusicBar, MusicBotInVoice } from './Music';
-import { UserTagBadge } from './ServerTag';
 import { useMusic } from '@/lib/music';
 
 import type { Channel, PublicUser, VoiceState } from '@line/shared';
@@ -44,17 +43,19 @@ import {
 } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Modal, Select, Slider, useAvatarTint } from './ui';
 import { InviteToVoiceItem, VoiceStatusLine } from './VoiceInvite';
-import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu } from './VoiceUserMenu';
+import { Item as MenuItem, Sep as MenuSep, VoiceUserMenu, CallViewMenu } from './VoiceUserMenu';
 import { DeviceMenu } from './UserPanel';
 import { Meter, useMicLoopback } from './VoiceSettings';
 import { SoundboardButton } from './Soundboard';
 import { useSounds } from '@/lib/sounds';
 import { EMOJI_FONT } from './EmojiPicker';
-import { fileUrl } from '@/lib/api';
+import { api, fileUrl } from '@/lib/api';
+import { PATCH_NOTES } from '@/lib/patchNotes';
 import { toast } from './Dialogs';
 import { ScreenStatsPanel } from './ScreenStatsPanel';
 import { toggleScreenStats, useScreenStats } from '@/lib/screenStats';
 import { hasNativeScreen, listScreenSources, type ScreenSource } from '@/lib/nativeScreen';
+import { ChannelBackdrop } from './ChannelLook';
 
 /** Ping até o servidor (useline.tech), medido a cada 5 s com uma requisição leve. */
 function usePing(active: boolean) {
@@ -90,6 +91,7 @@ function Video({
   contain,
   onAspect,
   detectPause,
+  loadingLabel,
 }: {
   stream: MediaStream;
   mirror?: boolean;
@@ -97,15 +99,20 @@ function Video({
   onAspect?: (aspect: number) => void;
   /** Transmissão de tela: mostra "Transmissão pausada" quando a janela de quem transmite é minimizada. */
   detectPause?: boolean;
+  /** Mostra o card de carregando (sonar) até chegar o primeiro quadro. */
+  loadingLabel?: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const paused = usePausedFrames(ref, !!detectPause);
   // Troquei câmera/tela sem parar: mesmo stream com trilha nova, então reaplica na prévia.
   const rev = useVoice((v) => v.mediaRev);
   const lastRev = useRef(rev);
+  // Até o primeiro quadro aparecer, o quadro mostra o card de carregando.
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (el.srcObject !== stream || lastRev.current !== rev) setReady(false);
     if (el.srcObject !== stream) el.srcObject = stream;
     else if (lastRev.current !== rev) {
       el.srcObject = null;
@@ -117,6 +124,7 @@ function Video({
     const v = ref.current;
     // Quadro minúsculo (janela minimizada do outro lado) não muda o tamanho do quadro.
     if (v && v.videoWidth >= 100 && v.videoHeight >= 100) onAspect?.(v.videoWidth / v.videoHeight);
+    if (v && v.videoWidth > 0) setReady(true);
   };
   return (
     <>
@@ -128,9 +136,11 @@ function Video({
       onLoadedMetadata={report}
       onResize={report}
       onPlaying={report}
+      onLoadedData={report}
       className={cx('h-full w-full bg-black', contain ? 'object-contain' : 'object-cover', mirror && '-scale-x-100')}
     />
     {paused && <PausedScreen />}
+    {loadingLabel && !ready && !paused && <VideoLoading label={loadingLabel} />}
     </>
   );
 }
@@ -191,6 +201,29 @@ function PausedScreen() {
       <p className="mt-[2cqw] text-[max(13px,1.7cqw)] font-medium text-[#e4e4e7]">Transmissão pausada</p>
       <p className="mt-[0.6cqw] text-[max(11px,1.15cqw)] text-[#71717a]">A imagem volta assim que a janela reabrir</p>
     </div>
+    </div>
+  );
+}
+
+/**
+ * Card de carregando do vídeo (câmera ou tela): cinzas neutros e um sonar que sai do centro
+ * e se espalha até a borda do círculo maior, repetindo. Só CSS (line-sonar em globals.css).
+ * Aparece com um leve atraso para não piscar quando o vídeo chega na hora.
+ */
+function VideoLoading({ label }: { label: string }) {
+  return (
+    <div className="line-sonar-card pointer-events-none absolute inset-0 z-[4] @container">
+      <div
+        className="flex h-full w-full flex-col items-center justify-center bg-[#131316] text-center"
+        style={{ backgroundImage: 'radial-gradient(circle at center, rgba(255,255,255,0.05), rgba(255,255,255,0) 60%)' }}
+      >
+        <div className="line-sonar h-8 w-8">
+          <span className="line-sonar-wave" />
+          <span className="line-sonar-wave" style={{ animationDelay: '0.8s' }} />
+          <span className="line-sonar-wave" style={{ animationDelay: '1.6s' }} />
+        </div>
+        <p className="mt-2.5 text-[max(12px,1.1cqw)] font-medium text-[#a1a1aa]">{label}</p>
+      </div>
     </div>
   );
 }
@@ -307,7 +340,6 @@ function ScreenMenu({ userId }: { userId: string }) {
           style={pos}
           className="fixed z-50 w-56 cursor-default space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl"
         >
-          <MenuItem onClick={() => setWatching(userId, false)}>Parar de assistir</MenuItem>
           <MenuItem onClick={() => toggleScreenMute(userId)} check={muted}>
             Silenciar
           </MenuItem>
@@ -317,8 +349,12 @@ function ScreenMenu({ userId }: { userId: string }) {
               Volume da transmissão
               <span className="text-xs text-muted">{muted ? 0 : Math.round(volume * 100)}%</span>
             </p>
-            <Slider value={muted ? 0 : Math.round(volume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
+            <Slider max={200} value={muted ? 0 : Math.round(volume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
           </div>
+          <MenuSep />
+          <MenuItem danger onClick={() => setWatching(userId, false)}>
+            Sair da transmissão
+          </MenuItem>
         </div>
       )}
     </div>
@@ -517,7 +553,7 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
       className={cx('fixed inset-0 z-[300] bg-black', idle && 'cursor-none')}
     >
       <ZoomBox enabled={!tile.isMe} controls={idle ? 'hidden' : 'flex'}>
-        <Video stream={tile.stream} contain detectPause />
+        <Video stream={tile.stream} contain detectPause loadingLabel="Carregando transmissão…" />
       </ZoomBox>
       <div
         className={cx(
@@ -541,6 +577,25 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
   );
 }
 
+/** A conta é administradora do Line (a resposta das Novidades já diz isso). Pergunta uma vez só. */
+let lineAdmin: Promise<boolean> | null = null;
+function useLineAdmin() {
+  const [admin, setAdmin] = useState(false);
+  useEffect(() => {
+    if (!PATCH_NOTES[0]) return;
+    lineAdmin ??= api.patchNote(PATCH_NOTES[0].id).then((d) => !!d.admin, () => {
+      lineAdmin = null;
+      return false;
+    });
+    let alive = true;
+    void lineAdmin.then((v) => alive && setAdmin(v));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return admin;
+}
+
 function TileView({
   tile,
   big,
@@ -556,7 +611,14 @@ function TileView({
 }) {
   const speaking = useVoice((v) => !!v.speaking[tile.state.userId]);
   const effect = useSounds((s) => (tile.kind === 'person' ? s.effects[tile.state.userId] : undefined));
-  const hidden = useVoice((v) => tile.kind === 'screen' && !tile.isMe && !v.watching[tile.state.userId]);
+  // Tela que não assisto, ou que eu assistia e saí da chamada (o vídeo não chega mais): prévia borrada
+  // com "Assistir transmissão", nunca o card de carregando.
+  const hidden = useVoice(
+    (v) =>
+      tile.kind === 'screen' &&
+      !tile.isMe &&
+      (!v.watching[tile.state.userId] || (!tile.stream && v.channelId !== tile.state.channelId)),
+  );
   const nick = useLine((s) => (tile.state.serverId ? s.members[tile.state.serverId]?.[tile.state.userId]?.nickname : null));
   const name = nick || tile.user?.displayName || 'Alguém';
   // Foto do perfil do servidor por cima da principal, igual ao cartão e à lista de membros.
@@ -572,7 +634,18 @@ function TileView({
   // Tela de alguém da minha chamada: no hover, mostra por fora (acima) quem está assistindo.
   const showViewers = tile.kind === 'screen' && inSameCall;
   const statsOpen = useScreenStats((s) => s.open);
-  const canStats = tile.kind === 'screen' && !!tile.stream && !hidden;
+  // Estatísticas só para os administradores do Line.
+  const isAdmin = useLineAdmin();
+  const canStats = tile.kind === 'screen' && !!tile.stream && !hidden && isAdmin;
+  // Ligou a câmera ou estou assistindo à tela, mas o vídeo ainda não chegou: card de carregando.
+  // Câmera: só para quem está na mesma chamada; de fora do canal, a pessoa aparece com a foto normal.
+  const cameraHidden = useVoice((v) => !!v.hiddenVideo[tile.state.userId]);
+  const waiting =
+    !tile.stream &&
+    !hidden &&
+    !tile.pending &&
+    !tile.isMe &&
+    (tile.kind === 'screen' || (inSameCall && !!tile.state.cameraStreamId && !cameraHidden));
   return (
     <div className={cx('group/stream relative', big && 'h-full', tile.pending && 'pointer-events-none animate-pulse opacity-50')}>
     <div
@@ -630,21 +703,20 @@ function TileView({
           )}
           <span className="pointer-events-none absolute inset-0 bg-black/30" />
           <button
-            disabled={!inSameCall}
-            title={inSameCall ? undefined : 'Entre na chamada para assistir'}
             onClick={(e) => {
               e.stopPropagation();
+              // Fora da chamada: entra nela e já abre a tela da pessoa.
               if (inSameCall) setWatching(tile.state.userId, true);
+              else void watchStream(tile.state.userId, tile.state.channelId);
             }}
-            className="relative flex items-center gap-1.5 rounded-full bg-white/60 px-4 py-1.5 text-sm font-semibold text-[#141418] backdrop-blur-sm transition-colors hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/60"
+            className="relative flex items-center gap-2 rounded-full border border-white/25 bg-white/20 px-6 py-2.5 text-[15px] font-semibold text-white shadow-lg backdrop-blur-md transition-colors hover:bg-white/30 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-white/20"
           >
-            <Icons.Eye size={14} /> Assistir transmissão
+            <Icons.Eye size={17} /> Assistir transmissão
           </button>
-          {!inSameCall && big && <p className="relative text-xs text-white/80">Entre na chamada para assistir.</p>}
         </div>
       ) : tile.stream && tile.kind === 'screen' ? (
         <ZoomBox enabled={!!big && !tile.isMe} controls="hidden group-hover:flex">
-          <Video stream={tile.stream} contain onAspect={onAspect} detectPause />
+          <Video stream={tile.stream} contain onAspect={onAspect} detectPause loadingLabel="Carregando transmissão…" />
         </ZoomBox>
       ) : tile.stream ? (
         <Video
@@ -653,7 +725,10 @@ function TileView({
           // Em destaque a câmera também mantém a proporção original (sem esticar nem cortar), igual à tela.
           contain={tile.kind === 'screen' || big}
           onAspect={tile.kind === 'screen' ? onAspect : undefined}
+          loadingLabel={tile.kind === 'screen' ? 'Carregando transmissão…' : 'Carregando câmera…'}
         />
+      ) : waiting ? (
+        <VideoLoading label={tile.kind === 'screen' ? 'Carregando transmissão…' : 'Carregando câmera…'} />
       ) : (
         <>
           {tile.kind === 'person' && <CallLookLayers look={look} />}
@@ -734,7 +809,7 @@ function TileView({
 const GAP = 12;
 
 /** Quadros 16:9 centralizados e do maior tamanho que cabe no espaço, sem barra de rolagem. */
-function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) => void }) {
+function TileGrid({ tiles, onFocus, onFullscreen }: { tiles: Tile[]; onFocus: (key: string) => void; onFullscreen: (key: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -762,7 +837,7 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
       {width > 0 &&
         tiles.map((t) => (
           <div key={t.key} style={{ width }}>
-            <TileView tile={t} onClick={() => onFocus(t.key)} />
+            <TileView tile={t} onClick={() => onFocus(t.key)} onFullscreen={() => onFullscreen(t.key)} />
           </div>
         ))}
     </div>
@@ -770,7 +845,17 @@ function TileGrid({ tiles, onFocus }: { tiles: Tile[]; onFocus: (key: string) =>
 }
 
 /** Fileira embaixo do destaque: mostra só os quadros que cabem; o resto vira um quadrado "+N" que volta para a grade. */
-function TileStrip({ tiles, onFocus, onShowAll }: { tiles: Tile[]; onFocus: (key: string) => void; onShowAll: () => void }) {
+function TileStrip({
+  tiles,
+  onFocus,
+  onShowAll,
+  onFullscreen,
+}: {
+  tiles: Tile[];
+  onFocus: (key: string) => void;
+  onShowAll: () => void;
+  onFullscreen: (key: string) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(0);
   useEffect(() => {
@@ -793,7 +878,7 @@ function TileStrip({ tiles, onFocus, onShowAll }: { tiles: Tile[]; onFocus: (key
       {w > 0 &&
         shown.map((t) => (
           <div key={t.key} className="h-full shrink-0" style={{ aspectRatio: '16 / 9' }}>
-            <TileView tile={t} onClick={() => onFocus(t.key)} />
+            <TileView tile={t} onClick={() => onFocus(t.key)} onFullscreen={() => onFullscreen(t.key)} />
           </div>
         ))}
       {w > 0 && overflow && (
@@ -875,8 +960,9 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             'radial-gradient(120% 80% at 50% 110%, color-mix(in srgb, var(--color-accent) 70%, transparent) 0%, color-mix(in srgb, var(--color-accent) 25%, transparent) 45%, transparent 75%), linear-gradient(to bottom, var(--color-rail), color-mix(in srgb, var(--color-accent) 18%, var(--color-rail)))',
         }}
       >
+        <ChannelBackdrop look={channel.look} />
         {!compact && (
-          <header className="flex h-12 shrink-0 items-center gap-2 px-4">
+          <header className="relative flex h-12 shrink-0 items-center gap-2 px-4">
             <MobileBack />
             <Icons.Speaker size={20} className="text-soft" />
             <h1 className="font-bold">{title}</h1>
@@ -888,7 +974,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             )}
           </header>
         )}
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+        <div className="relative flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <h2 className="text-3xl font-bold text-white drop-shadow">{title}</h2>
           <p className="text-soft">Ninguém está em voz no momento.</p>
           <button
@@ -912,7 +998,8 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   }
 
   return (
-    <div className={cx('flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
+    <div className={cx('relative flex flex-col bg-rail', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}>
+      <ChannelBackdrop look={channel.look} />
       {fullTile && (
         <StreamFullscreen
           key={fullTile.key}
@@ -936,7 +1023,16 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
         </header>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 max-md:p-2">
+      <div
+        className="relative flex min-h-0 flex-1 flex-col gap-3 p-4 max-md:p-2"
+        onContextMenu={(e) => {
+          // Quadros e menus já tratam o próprio clique direito; aqui é o resto da área da chamada.
+          if (e.defaultPrevented || !inCall) return;
+          e.preventDefault();
+          setEmptyMenu({ x: e.clientX, y: e.clientY });
+        }}
+      >
+        {emptyMenu && inCall && <CallViewMenu x={emptyMenu.x} y={emptyMenu.y} onClose={() => setEmptyMenu(null)} />}
         {count === 0 && !inCall ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-20 w-20 items-center justify-center rounded-full bg-raise text-accent">
@@ -953,23 +1049,14 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
             <FitBox aspect={focused.kind === 'screen' ? (aspect ?? 16 / 9) : 16 / 9} >
               <TileView tile={focused} big onClick={() => setFocus(null)} onAspect={setAspect} onFullscreen={() => setFull(focused.key)} />
             </FitBox>
-            {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} />}
+            {others.length > 0 && <TileStrip tiles={others} onFocus={setFocus} onShowAll={() => setFocus(null)} onFullscreen={setFull} />}
           </>
         ) : others.length === 0 && count > 0 ? (
-          <div
-            className="flex flex-1 items-center justify-center text-center text-sm text-muted"
-            onContextMenu={(e) => {
-              e.preventDefault();
-              if (meId) setEmptyMenu({ x: e.clientX, y: e.clientY });
-            }}
-          >
+          <div className="flex flex-1 items-center justify-center text-center text-sm text-muted">
             Ninguém com vídeo agora. Clique com o direito aqui para mostrar quem está sem vídeo.
-            {emptyMenu && meId && (
-              <VoiceUserMenu userId={meId} channelId={channel.id} x={emptyMenu.x} y={emptyMenu.y} onClose={() => setEmptyMenu(null)} />
-            )}
           </div>
         ) : (
-          <TileGrid tiles={others} onFocus={setFocus} />
+          <TileGrid tiles={others} onFocus={setFocus} onFullscreen={setFull} />
         )}
 
         {error && (
@@ -981,7 +1068,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           </p>
         )}
 
-        <div className="flex shrink-0 justify-center pb-6 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        <div className="flex shrink-0 justify-center py-3 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
           {inCall ? (
             <VoiceControls large />
           ) : (
@@ -1031,7 +1118,7 @@ export function MiniStream({ viewingChannelId }: { viewingChannelId: string | nu
   };
   return (
     <FloatingCorner onClick={open} title="Voltar para a transmissão (arraste para mudar de lugar)">
-      <Video stream={stream} contain detectPause />
+      <Video stream={stream} contain detectPause loadingLabel="Carregando transmissão…" />
       <span className="absolute bottom-2 left-2 flex max-w-[calc(100%-3rem)] items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 whitespace-nowrap text-xs font-medium text-white">
         <Icons.Screen size={12} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
       </span>
@@ -1501,12 +1588,14 @@ export function ScreenShareModal({
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const alive = useRef(true);
-  useEffect(
-    () => () => {
+  // Marca de novo ao montar: no modo de desenvolvimento o React monta, desmonta e monta outra vez,
+  // e sem isso a caixa achava que já tinha fechado e ficava aberta depois que a transmissão começava.
+  useEffect(() => {
+    alive.current = true;
+    return () => {
       alive.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   const [listError, setListError] = useState<string | null>(null);
   const load = () => {
@@ -1926,13 +2015,104 @@ export function VoiceBar() {
 
 // ---------- participantes embaixo do canal de voz ----------
 
-/** Selo de transmissão (ícone "radio" no vermelho): com o mouse em cima, mostra a prévia da transmissão (e o jogo, se for um). */
+/**
+ * Assistir à transmissão de alguém de qualquer lugar: abre o canal de voz com a tela da pessoa em destaque
+ * e, se eu ainda não estou nessa chamada, entra nela primeiro e já começa a assistir.
+ */
+export async function watchStream(userId: string, channelId: string) {
+  const meId = useLine.getState().me?.id;
+  const isMe = userId === meId;
+  requestStageFocus(`screen:${userId}`);
+  const st = useVoice.getState().states[userId];
+  const serverId = st?.serverId ?? useLine.getState().channels[channelId]?.serverId;
+  if (serverId) actions.goServer(serverId, channelId);
+  else actions.goHome(channelId);
+  const v = useVoice.getState();
+  if (v.channelId !== channelId || v.connecting) {
+    if (v.channelId !== channelId) await joinVoice(channelId);
+    // Não deu para entrar (sem permissão, aviso de conteúdo sensível etc.): a tela do canal mostra o motivo.
+    const now = useVoice.getState();
+    if (now.channelId !== channelId || now.connecting) return;
+    // Depois de entrar, a tela volta a pedir destaque (a entrada pode ter reorganizado a chamada).
+    requestStageFocus(`screen:${userId}`);
+  }
+  if (!isMe && useVoice.getState().states[userId]?.screenStreamId) setWatching(userId, true);
+}
+
+/** Prévia da transmissão (miniatura borrada + "Assistir transmissão"), para usar fora da chamada, ex.: no Ativo agora. */
+export function StreamPreview({ userId, channelId }: { userId: string; channelId: string }) {
+  const thumb = useVoice((v) => v.screenThumbs[userId]);
+  const game = useVoice((v) => v.screenGames[userId]);
+  const user = useLine((s) => s.users[userId]);
+  const watchingNow = useVoice((v) => v.channelId === channelId && !!v.watching[userId]);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation();
+        void watchStream(userId, channelId);
+      }}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && void watchStream(userId, channelId)}
+      className="group relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black"
+    >
+      {thumb ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={thumb} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl" />
+      ) : user?.avatarUrl ? (
+        // Sem miniatura ainda (ela chega quando se está na chamada): a foto de quem transmite, borrada, no lugar.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={user.avatarUrl} alt="" draggable={false} className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-2xl" />
+      ) : (
+        <span className="pointer-events-none absolute inset-0" style={{ background: user?.avatarColor ?? '#3a3a42' }} />
+      )}
+      <span className="pointer-events-none absolute inset-0 bg-black/30 transition-colors group-hover:bg-black/20" />
+      {game && (
+        <span className="pointer-events-none absolute left-2 top-2 flex max-w-[calc(100%-1rem)] items-center gap-1.5 rounded-md bg-black/50 px-1.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+          {game.icon ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={game.icon} alt="" className="h-4 w-4 shrink-0 object-contain" />
+          ) : (
+            <Icons.Gamepad size={13} className="shrink-0" />
+          )}
+          <span className="truncate">{game.name}</span>
+        </span>
+      )}
+      <span className="relative flex items-center gap-2 rounded-full border border-white/25 bg-white/20 px-5 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition-colors group-hover:bg-white/30">
+        <Icons.Eye size={16} /> {watchingNow ? 'Abrir transmissão' : 'Assistir transmissão'}
+      </span>
+    </div>
+  );
+}
+
+/** Câmera ligada: o "video" do Lucide preenchido (o Lucide só tem a versão de traço). */
+function SolidVideo({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinejoin="round"
+      strokeLinecap="round"
+      role="img"
+      aria-label="Câmera ligada"
+    >
+      <title>Câmera ligada</title>
+      <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5z" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
+    </svg>
+  );
+}
+
+/** Selo de transmissão ("Ao vivo" no vermelho): com o mouse em cima, mostra a prévia da transmissão (e o jogo, se for um). */
 function LiveBadge({ userId, channelId }: { userId: string; channelId: string }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const thumb = useVoice((v) => v.screenThumbs[userId]);
   const game = useVoice((v) => v.screenGames[userId]);
-  const inSameCall = useVoice((v) => v.channelId === channelId && !v.connecting);
   const meId = useLine((s) => s.me?.id);
   const isMe = userId === meId;
   const show = (e: ReactMouseEvent) => {
@@ -1958,15 +2138,10 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
     return () => document.removeEventListener('pointerdown', down, true);
   }, [at]);
   // Assistir: abre o canal de voz com a transmissão em destaque (não fica no chat de texto).
-  // A própria transmissão também abre em destaque (sem pedir para "assistir" a si mesmo).
+  // Fora da chamada, entra nela e já abre a tela da pessoa. A própria transmissão também abre em destaque.
   const watch = () => {
-    if (!isMe) setWatching(userId, true);
     setAt(null);
-    requestStageFocus(`screen:${userId}`);
-    const st = useVoice.getState().states[userId];
-    const serverId = st?.serverId ?? useLine.getState().channels[channelId]?.serverId;
-    if (serverId) actions.goServer(serverId, channelId);
-    else actions.goHome(channelId);
+    void watchStream(userId, channelId);
   };
   return (
     <>
@@ -1974,9 +2149,9 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
         onMouseEnter={show}
         onMouseLeave={hide}
         title="Transmitindo a tela"
-        className="flex h-[18px] w-[22px] items-center justify-center rounded bg-danger text-white"
+        className="flex h-[18px] items-center justify-center rounded bg-danger px-1.5 text-[11px] font-semibold text-white"
       >
-        <Icons.Radio size={13} />
+        Ao vivo
       </span>
       {at &&
         createPortal(
@@ -2003,12 +2178,9 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
               </div>
             )}
             <div
-              // Clicar na miniatura também abre a transmissão, igual ao botão.
-              onClick={inSameCall ? watch : undefined}
-              className={cx(
-                'relative flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-black',
-                inSameCall && 'cursor-pointer',
-              )}
+              // Clicar na miniatura também abre a transmissão, igual ao botão (fora da chamada, entra nela).
+              onClick={watch}
+              className="relative flex aspect-video cursor-pointer items-center justify-center overflow-hidden rounded-lg bg-black"
             >
               {thumb ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -2017,19 +2189,12 @@ function LiveBadge({ userId, channelId }: { userId: string; channelId: string })
                 <Icons.Screen size={28} className="text-muted" />
               )}
             </div>
-            {inSameCall ? (
-              <button
-                onClick={watch}
-                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/90 py-1.5 text-sm font-semibold text-[#141418] transition-colors hover:bg-white"
-              >
-                <Icons.Eye size={14} /> {isMe ? 'Ver minha transmissão' : 'Assistir transmissão'}
-              </button>
-            ) : (
-              <>
-                <p className="mt-2 text-center text-sm font-semibold">Assistir transmissão</p>
-                <p className="text-center text-xs text-muted">Entre na chamada para assistir.</p>
-              </>
-            )}
+            <button
+              onClick={watch}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-white/90 py-1.5 text-sm font-semibold text-[#141418] transition-colors hover:bg-white"
+            >
+              <Icons.Eye size={14} /> {isMe ? 'Ver minha transmissão' : 'Assistir transmissão'}
+            </button>
           </div>,
           document.body,
         )}
@@ -2084,11 +2249,9 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
               <StyledName user={u} className="truncate">
                 {displayNameIn(useLine.getState(), p.serverId, p.userId)}
               </StyledName>
-              {u && <UserTagBadge user={u} />}
             </span>
             <span className="flex shrink-0 items-center gap-1.5 text-muted">
-              {p.screenStreamId && <LiveBadge userId={p.userId} channelId={channelId} />}
-              {p.cameraStreamId && <Icons.Video size={15} />}
+              {p.cameraStreamId && <SolidVideo size={15} />}
               {(p.muted || p.deafened || p.serverMuted || p.serverDeafened) && (
                 <span
                   title={
@@ -2104,6 +2267,7 @@ export function VoiceChannelMembers({ channelId, serverId }: { channelId: string
                   {(p.deafened || p.serverDeafened) && <Icons.HeadphonesOff size={15} className={cx(p.serverDeafened && 'text-danger')} />}
                 </span>
               )}
+              {p.screenStreamId && <LiveBadge userId={p.userId} channelId={channelId} />}
             </span>
           </button>
         );

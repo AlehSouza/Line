@@ -55,7 +55,13 @@ export function ServerRail() {
     actions.setServerOrder(ids);
     void api.reorderMyServers(ids).catch(() => {});
   };
-  const myVoiceServer = myVoiceChannel ? channels[myVoiceChannel]?.serverId : null;
+  // Depois de um F5 o app volta para a chamada antes de carregar os canais daquele servidor;
+  // nesse caso o servidor vem da presença de voz (a minha ou de quem está no mesmo canal).
+  const myVoiceServer = myVoiceChannel
+    ? (channels[myVoiceChannel]?.serverId ??
+      Object.values(voiceStates).find((st) => st.channelId === myVoiceChannel && st.serverId)?.serverId ??
+      null)
+    : null;
   const inVoice: Record<string, string[]> = {};
   for (const st of Object.values(voiceStates)) if (st.serverId) (inVoice[st.serverId] ??= []).push(st.userId);
 

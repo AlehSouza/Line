@@ -31,14 +31,23 @@ type LineSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 const DEFAULT_ICE: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 /** STUN + TURN do servidor (quando ele tiver), renovado a cada chamada. */
 let iceServers: RTCIceServer[] = DEFAULT_ICE;
+/** Quando a lista foi buscada. A senha do TURN vale 24 h: numa chamada longa, renova antes de reconectar. */
+let iceFetchedAt = 0;
+const ICE_STALE_MS = 6 * 3600_000;
 
 async function refreshIceServers() {
   try {
     const res = await api.iceServers();
     if (res.iceServers?.length) iceServers = res.iceServers;
+    iceFetchedAt = Date.now();
   } catch {
     iceServers = DEFAULT_ICE;
   }
+}
+
+async function freshIceServers() {
+  if (Date.now() - iceFetchedAt > ICE_STALE_MS) await refreshIceServers();
+  return iceServers;
 }
 
 // ---------- qualidade da transmissão de tela ----------
@@ -151,14 +160,12 @@ const SELF_MUTE_KEY = 'line.voice.selfMute';
 
 /** Meu mudo/ensurdecido, guardado no aparelho para continuar igual depois de recarregar ou reabrir. */
 /** Se o mic já estava mutado antes de ensurdecer: ao voltar a ouvir, ele continua como estava. */
-let mutedBeforeDeafen = false;
 
 function loadSelfMute(): { muted: boolean; deafened: boolean } {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(SELF_MUTE_KEY) : null;
-    const v = raw ? (JSON.parse(raw) as Partial<{ muted: boolean; deafened: boolean; mutedBeforeDeafen: boolean }>) : {};
+    const v = raw ? (JSON.parse(raw) as Partial<{ muted: boolean; deafened: boolean }>) : {};
     const deafened = !!v.deafened;
-    mutedBeforeDeafen = deafened && !!v.mutedBeforeDeafen;
     return { muted: deafened || !!v.muted, deafened };
   } catch {
     return { muted: false, deafened: false };
@@ -167,7 +174,7 @@ function loadSelfMute(): { muted: boolean; deafened: boolean } {
 
 function saveSelfMute(muted: boolean, deafened: boolean) {
   try {
-    localStorage.setItem(SELF_MUTE_KEY, JSON.stringify({ muted, deafened, mutedBeforeDeafen }));
+    localStorage.setItem(SELF_MUTE_KEY, JSON.stringify({ muted, deafened }));
   } catch {
     // sem localStorage: vale só nesta sessão
   }
@@ -289,6 +296,14 @@ interface Peer {
   streamIds: Set<string>;
   /** Parou de assistir: os envios da minha tela ficam na conexão sem trilha, prontos para voltar sem renegociar. */
   pausedScreen?: RTCRtpSender[];
+  createdAt: number;
+  /** Conta as ofertas: o vigia de uma oferta antiga não mexe numa nova. */
+  offerSeq: number;
+  offerTimer?: ReturnType<typeof setTimeout>;
+  offerRetries: number;
+  iceTimer?: ReturnType<typeof setTimeout>;
+  lastIceRestart: number;
+  iceRestarts: number;
 }
 
 let socket: LineSocket | null = null;
@@ -351,6 +366,12 @@ function othersIn(channelId: string, except?: string) {
 
 // ---------- ligação com o socket ----------
 
+/** Id do socket com que entrei no canal: se o socket reconectar com outro, preciso entrar de novo. */
+let joinedSid: string | null = null;
+/** Som de saída esperando um instante: se a pessoa volta logo (reconexão), não toca nada. */
+const leaveSounds = new Map<string, ReturnType<typeof setTimeout>>();
+const LEAVE_SOUND_DELAY_MS = 2500;
+
 export function bindVoiceSocket(s: LineSocket, userId: string) {
   socket = s;
   myId = userId;
@@ -365,9 +386,13 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
       resumeTried = true;
       resumeVoice(list);
     }
-    if (channelId && !list.some((v) => v.userId === myId)) {
+    // O socket caiu e voltou com outra identidade: mesmo que o servidor ainda me mostre no canal (ele
+    // demora a notar a queda), os sinais da conexão nova não chegavam a ninguém e câmera/tela ligadas
+    // depois disso não carregavam. Entra de novo com esta conexão.
+    const stale = !!joinedSid && s.id !== joinedSid;
+    if (channelId && !getV().connecting && (stale || !list.some((v) => v.userId === myId))) {
       cleanupPeers();
-      void rejoin(channelId);
+      void freshIceServers().then(() => (getV().channelId === channelId ? rejoin(channelId) : undefined)).catch(() => {});
     }
   });
 
@@ -388,8 +413,23 @@ export function bindVoiceSocket(s: LineSocket, userId: string) {
         if (after === here) {
           // Atenderam a minha ligação: para de chamar.
           if (sfxLoop()?.key === here) stopSfxLoop(here);
-          playSfx('voiceJoin');
-        } else if (before === here) playSfx(isDmChannel(here) && !othersIn(here, uid) ? 'callEnd' : 'voiceLeave');
+          // Saiu e voltou na hora (reconexão automática): nem som de saída, nem de entrada.
+          const pending = leaveSounds.get(uid);
+          if (pending) {
+            clearTimeout(pending);
+            leaveSounds.delete(uid);
+          } else playSfx('voiceJoin');
+        } else if (before === here) {
+          const sound = isDmChannel(here) && !othersIn(here, uid) ? 'callEnd' : 'voiceLeave';
+          clearTimeout(leaveSounds.get(uid));
+          leaveSounds.set(
+            uid,
+            setTimeout(() => {
+              leaveSounds.delete(uid);
+              if (getV().channelId === here && getV().states[uid]?.channelId !== here) playSfx(sound);
+            }, LEAVE_SOUND_DELAY_MS),
+          );
+        }
       } else if (here && after === here && state?.screenStreamId && !getV().states[uid]?.screenStreamId) {
         // Alguém do meu canal começou a transmitir: todos do canal ouvem.
         playSfx('streamStarted');
@@ -522,7 +562,7 @@ function saveResume(store: 'session' | 'local' = 'session', windowMs = RESUME_WI
   if (!channelId || connecting) return;
   const data: VoiceResume = {
     channelId,
-    serverId: useLine.getState().channels[channelId]?.serverId ?? null,
+    serverId: serverOfVoice(channelId),
     watching: Object.keys(watching).filter((id) => watching[id]),
     until: Date.now() + windowMs,
   };
@@ -531,6 +571,15 @@ function saveResume(store: 'session' | 'local' = 'session', windowMs = RESUME_WI
   } catch {
     // sem armazenamento: só não volta sozinho
   }
+}
+
+/** Servidor do canal de voz, mesmo que os canais daquele servidor ainda não tenham carregado. */
+function serverOfVoice(channelId: string, list: VoiceState[] = Object.values(getV().states)): string | null {
+  return (
+    useLine.getState().channels[channelId]?.serverId ??
+    list.find((v) => v.channelId === channelId && v.serverId)?.serverId ??
+    null
+  );
 }
 
 function readResume(store: Storage): VoiceResume | null {
@@ -582,7 +631,20 @@ function resumeVoice(list: VoiceState[]) {
   const live = new Set(list.filter((v) => v.screenStreamId).map((v) => v.userId));
   const watching = Object.fromEntries((data.watching ?? []).filter((id) => live.has(id)).map((id) => [id, true]));
   if (Object.keys(watching).length) setV((v) => ({ watching: { ...v.watching, ...watching } }));
-  const { channelId, serverId } = data;
+  const { channelId } = data;
+  const serverId = data.serverId ?? serverOfVoice(channelId, list);
+  // Carrega os canais do servidor da chamada, mesmo abrindo em outro lugar: sem eles o ícone de voz
+  // no servidor e o nome do canal na barra da chamada não aparecem.
+  if (serverId && !useLine.getState().loadedServers[serverId]) {
+    void api
+      .server(serverId)
+      .then((detail) => {
+        if (useLine.getState().loadedServers[serverId]) return;
+        actions.upsertServer(detail.server);
+        actions.loadServerDetail(serverId, detail.categories, detail.channels, detail.members, detail.roles);
+      })
+      .catch(() => {});
+  }
   // Abre a chamada na tela só se não havia outro lugar aberto antes (ex.: um canal de texto).
   let hadView = false;
   try {
@@ -657,6 +719,7 @@ async function rejoin(channelId: string) {
   const { muted, deafened } = getV();
   const res = await socket.emitWithAck('voice:join', { channelId, muted, deafened });
   if (!res.ok) throw new Error(res.error);
+  joinedSid = socket.id ?? null;
   setV({ connecting: false });
   // Reenvia câmera/tela se já estavam ligadas (reconexão).
   const { camera, screen } = getV();
@@ -664,6 +727,7 @@ async function rejoin(channelId: string) {
   for (const p of res.peers) if (!peers.has(p.userId)) createPeer(p.userId);
   startSpeakingLoop();
   startStatsLoop();
+  startHealthLoop();
 }
 
 export async function leaveVoice(notify = true, sound = true) {
@@ -679,7 +743,10 @@ export async function leaveVoice(notify = true, sound = true) {
   stopMic();
   stopSpeakingLoop();
   stopStatsLoop();
-  setV({ channelId: null, connecting: false, camera: null, screen: null, streams: {}, speaking: {} });
+  stopHealthLoop();
+  joinedSid = null;
+  // Sair da chamada também para de assistir: ao voltar com "Entrar", a tela de ninguém abre sozinha.
+  setV({ channelId: null, connecting: false, camera: null, screen: null, streams: {}, speaking: {}, watching: {} });
   stopDeadRing();
 }
 
@@ -708,9 +775,8 @@ export function toggleMute() {
 export function toggleDeafen() {
   const cur = getV();
   const deafened = !cur.deafened;
-  // Voltar a ouvir não mexe no mic: se estava mutado antes de ensurdecer, continua mutado.
-  if (deafened) mutedBeforeDeafen = cur.muted;
-  const next = { deafened, muted: deafened ? true : mutedBeforeDeafen || !voiceCan(Perm.Speak) };
+  // Ensurdecer muta o mic; voltar a ouvir devolve só o som: o mic continua mutado até eu ativar.
+  const next = { deafened, muted: true };
   setV(next);
   saveSelfMute(next.muted, next.deafened);
   playSfx(deafened ? 'selfDeafen' : 'selfUndeafen');
@@ -1795,20 +1861,21 @@ function sendViewers(to?: string) {
 
 function createPeer(peerId: string): Peer {
   const pc = new RTCPeerConnection({ iceServers });
-  const peer: Peer = { pc, polite: (myId ?? '') > peerId, makingOffer: false, ignoreOffer: false, streamIds: new Set() };
+  const peer: Peer = {
+    pc,
+    polite: (myId ?? '') > peerId,
+    makingOffer: false,
+    ignoreOffer: false,
+    streamIds: new Set(),
+    createdAt: Date.now(),
+    offerSeq: 0,
+    offerRetries: 0,
+    lastIceRestart: 0,
+    iceRestarts: 0,
+  };
   peers.set(peerId, peer);
 
-  pc.onnegotiationneeded = async () => {
-    try {
-      peer.makingOffer = true;
-      await pc.setLocalDescription();
-      if (pc.localDescription) send(peerId, { type: 'description', description: pc.localDescription.toJSON() });
-    } catch (err) {
-      console.warn('Falha na negociação de voz', err);
-    } finally {
-      peer.makingOffer = false;
-    }
-  };
+  pc.onnegotiationneeded = () => void makeOffer(peerId, peer);
 
   pc.onicecandidate = ({ candidate }) => send(peerId, { type: 'candidate', candidate: candidate ? candidate.toJSON() as never : null });
 
@@ -1817,8 +1884,16 @@ function createPeer(peerId: string): Peer {
   // minha, e a tela não chegava. Se mesmo assim ela não vier, pede de novo (quem transmite ignora repetido).
   let rewatched = false;
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === 'failed') pc.restartIce();
-    if (pc.connectionState !== 'connected' || rewatched || !getV().watching[peerId]) return;
+    const state = pc.connectionState;
+    clearTimeout(peer.iceTimer);
+    if (state === 'connected') peer.iceRestarts = 0;
+    // Caiu de vez: reconecta já. Oscilou: espera um pouco, quase sempre volta sozinho.
+    if (state === 'failed') void restartPeerIce(peerId, peer);
+    else if (state === 'disconnected')
+      peer.iceTimer = setTimeout(() => {
+        if (peers.get(peerId) === peer && pc.connectionState === 'disconnected') void restartPeerIce(peerId, peer);
+      }, ICE_DISCONNECTED_MS);
+    if (state !== 'connected' || rewatched || !getV().watching[peerId]) return;
     rewatched = true;
     send(peerId, { type: 'watch', on: true });
     setTimeout(() => {
@@ -1860,6 +1935,15 @@ async function onSignal(from: string, signal: VoiceSignal) {
   const mine = getV().channelId;
   // O servidor só repassa sinais entre pessoas do mesmo canal; o estado local pode ainda não ter chegado.
   if (!mine) return;
+  if (signal.type === 'reset') {
+    // O outro lado refez a conexão comigo do zero: descarta a minha; a oferta nova chega logo atrás.
+    if (peers.has(from)) dropPeerKeepingWatch(from);
+    return;
+  }
+  if (signal.type === 'resync' && !peers.has(from)) {
+    resetPeer(from);
+    return;
+  }
   const peer = peers.get(from) ?? createPeer(from);
   const { pc } = peer;
   if (signal.type === 'thumb') {
@@ -1876,6 +1960,10 @@ async function onSignal(from: string, signal: VoiceSignal) {
         return { screenThumbs: { ...v.screenThumbs, [from]: signal.data }, screenGames };
       });
     }
+    return;
+  }
+  if (signal.type === 'resync') {
+    onResync(from, peer, !!signal.screen, !!signal.hard);
     return;
   }
   if (signal.type === 'senderStats') {
@@ -1955,15 +2043,187 @@ async function renegotiateIfPending(peer: Peer) {
   if (!pc.getTransceivers().some((t) => !t.mid && t.sender.track)) return;
   const peerId = [...peers.entries()].find(([, p]) => p === peer)?.[0];
   if (!peerId) return;
+  await makeOffer(peerId, peer);
+}
+
+// ---------- recuperação automática da conexão ----------
+// Numa chamada longa, uma oferta pode se perder (socket oscilou), a rede pode mudar ou a conexão pode
+// cair sem ninguém notar. Antes, a câmera ou a tela ligada depois disso não chegava e era preciso sair e
+// voltar. Agora cada lado vigia a própria negociação e quem não recebe o vídeo anunciado pede de novo.
+
+/** Sem resposta para a oferta nesse tempo: desfaz e manda outra. */
+const OFFER_TIMEOUT_MS = 10_000;
+const OFFER_MAX_RETRIES = 4;
+/** Conexão "desconectada" por mais que isso: reconecta (ICE restart). */
+const ICE_DISCONNECTED_MS = 5000;
+const ICE_RETRY_MS = 15_000;
+const ICE_MAX_RESTARTS = 3;
+const HEALTH_MS = 3000;
+/** Vídeo anunciado e não chegou nesse tempo: começa a pedir de novo (o prazo dobra a cada tentativa). */
+const MISSING_GRACE_MS = 6000;
+const MISSING_MAX_TRIES = 4;
+
+async function makeOffer(peerId: string, peer: Peer, iceRestart = false, retry = false) {
+  const { pc } = peer;
+  if (peer.makingOffer || pc.signalingState === 'closed') return;
+  // Já há uma oferta esperando resposta: o vigia dela cuida (desfazer agora atropelaria a resposta a caminho).
+  if (!retry && pc.signalingState !== 'stable') return;
+  const seq = ++peer.offerSeq;
   try {
     peer.makingOffer = true;
+    // Oferta antiga sem resposta travava todas as próximas (negotiationneeded só dispara em "stable").
+    if (pc.signalingState === 'have-local-offer') await pc.setLocalDescription({ type: 'rollback' });
+    if (pc.signalingState !== 'stable') return;
+    if (iceRestart) pc.restartIce();
     await pc.setLocalDescription();
     if (pc.localDescription) send(peerId, { type: 'description', description: pc.localDescription.toJSON() });
   } catch (err) {
-    console.warn('Falha ao renegociar voz', err);
+    console.warn('Falha na negociação de voz', err);
   } finally {
     peer.makingOffer = false;
   }
+  clearTimeout(peer.offerTimer);
+  peer.offerTimer = setTimeout(() => {
+    if (peers.get(peerId) !== peer || peer.offerSeq !== seq || pc.signalingState !== 'have-local-offer') {
+      if (pc.signalingState === 'stable') peer.offerRetries = 0;
+      return;
+    }
+    if (++peer.offerRetries > OFFER_MAX_RETRIES) return;
+    void makeOffer(peerId, peer, pc.connectionState !== 'connected', true);
+  }, OFFER_TIMEOUT_MS);
+}
+
+/** Reconecta a rota (ICE restart), com a senha do TURN renovada se ela já está velha. */
+async function restartPeerIce(peerId: string, peer: Peer) {
+  const { pc } = peer;
+  if (peers.get(peerId) !== peer || pc.signalingState === 'closed') return;
+  if (Date.now() - peer.lastIceRestart < ICE_RETRY_MS) return;
+  peer.lastIceRestart = Date.now();
+  // Reconectar várias vezes sem sucesso: refaz a conexão do zero (só um dos lados, para não colidir).
+  if (++peer.iceRestarts > ICE_MAX_RESTARTS) {
+    if (!peer.polite) resetPeer(peerId);
+    else send(peerId, { type: 'resync', hard: true });
+    return;
+  }
+  const servers = await freshIceServers();
+  try {
+    pc.setConfiguration({ ...pc.getConfiguration(), iceServers: servers });
+  } catch {
+    // configuração recusada: reconecta com a que já tinha
+  }
+  await makeOffer(peerId, peer, true);
+}
+
+/** Fecha a conexão com alguém sem tirar essa pessoa de quem assiste à minha tela (ela volta na conexão nova). */
+function dropPeerKeepingWatch(peerId: string) {
+  const watched = watchers.has(peerId);
+  closePeer(peerId);
+  // O aviso de "quem assiste" sai num microtask: voltando a pessoa antes dele, ninguém ouve sair/entrar.
+  if (watched) watchers.add(peerId);
+}
+
+/** Refaz do zero a conexão com alguém, como sair e voltar, mas só entre nós dois e sem som. */
+function resetPeer(peerId: string) {
+  if (!getV().channelId) return;
+  if (peers.has(peerId)) dropPeerKeepingWatch(peerId);
+  send(peerId, { type: 'reset' });
+  createPeer(peerId);
+}
+
+/** Alguém não está recebendo o meu vídeo: confere o que mando e negocia de novo. */
+function onResync(from: string, peer: Peer, wantsScreen: boolean, hard: boolean) {
+  const { pc } = peer;
+  if (hard) {
+    // Conexão nova há pouco: é a própria recuperação ainda chegando.
+    if (Date.now() - peer.createdAt > OFFER_TIMEOUT_MS) resetPeer(from);
+    return;
+  }
+  const { camera, screen } = getV();
+  let changed = false;
+  if (camera && !sendsStream(pc, camera)) {
+    addStream(pc, camera);
+    changed = true;
+  }
+  if (wantsScreen && screen) {
+    // O "assistir" pode ter se perdido no caminho: vale como se tivesse chegado agora.
+    if (!watchers.has(from)) {
+      watchers.add(from);
+      sendViewers();
+    }
+    if (!sendsStream(pc, screen) && !resumeScreen(peer, screen)) {
+      addStream(pc, screen);
+      changed = true;
+    }
+  }
+  // Nada faltava do meu lado: manda uma oferta nova (reconectando a rota se ela não está boa).
+  if (!changed) void makeOffer(from, peer, pc.connectionState !== 'connected');
+}
+
+let healthTimer: ReturnType<typeof setInterval> | null = null;
+/** Vídeo anunciado que não chegou, por pessoa + stream. */
+const missingVideo = new Map<string, { tries: number; next: number }>();
+
+function startHealthLoop() {
+  if (healthTimer) return;
+  healthTimer = setInterval(checkCallHealth, HEALTH_MS);
+}
+
+function stopHealthLoop() {
+  if (healthTimer) clearInterval(healthTimer);
+  healthTimer = null;
+  missingVideo.clear();
+}
+
+/** 'ok' = chegando; 'muted' = a faixa existe mas está sem quadros; 'none' = nem chegou. */
+function videoState(stream: MediaStream | undefined): 'ok' | 'muted' | 'none' {
+  const live = stream?.getVideoTracks().filter((t) => t.readyState === 'live') ?? [];
+  if (!live.length) return 'none';
+  return live.some((t) => !t.muted) ? 'ok' : 'muted';
+}
+
+function checkCallHealth() {
+  const v = getV();
+  const here = v.channelId;
+  if (!here || v.connecting) return;
+  const now = Date.now();
+  const seen = new Set<string>();
+  for (const [peerId, peer] of peers) {
+    const st = v.states[peerId];
+    if (!st || st.channelId !== here) continue;
+    const { pc } = peer;
+    // Conexão caída que não voltou: tenta de novo.
+    if (pc.connectionState === 'failed') void restartPeerIce(peerId, peer);
+    const wanted: [string, boolean, 'muted' | 'none'][] = [];
+    const check = (streamId: string | null | undefined, isScreen: boolean) => {
+      const got = streamId ? videoState(v.streams[streamId]) : 'ok';
+      if (streamId && got !== 'ok') wanted.push([streamId, isScreen, got]);
+    };
+    check(st.cameraStreamId, false);
+    if (v.watching[peerId]) check(st.screenStreamId, true);
+    for (const [streamId, isScreen, got] of wanted) {
+      const key = `${peerId}:${streamId}`;
+      seen.add(key);
+      const m = missingVideo.get(key);
+      if (!m) {
+        missingVideo.set(key, { tries: 0, next: now + MISSING_GRACE_MS });
+        continue;
+      }
+      if (now < m.next || m.tries >= MISSING_MAX_TRIES) continue;
+      m.tries++;
+      m.next = now + MISSING_GRACE_MS * 2 ** m.tries;
+      if (m.tries < 3) {
+        // Pede para quem manda conferir e negociar de novo.
+        send(peerId, { type: 'resync', screen: isScreen });
+      } else if (got === 'muted' && pc.connectionState === 'connected') {
+        // A faixa chegou e a conexão está boa: pode ser só uma imagem parada. Não derruba a conexão por isso.
+        m.tries = MISSING_MAX_TRIES;
+      } else if (!peer.polite) {
+        // Ainda nada: refaz a conexão entre nós dois (o lado "educado" pede para o outro fazer).
+        resetPeer(peerId);
+      } else send(peerId, { type: 'resync', hard: true });
+    }
+  }
+  for (const key of missingVideo.keys()) if (!seen.has(key)) missingVideo.delete(key);
 }
 
 /**
@@ -2183,6 +2443,8 @@ function closePeer(peerId: string) {
   if (watchers.delete(peerId) && getV().screen) queueMicrotask(() => sendViewers());
   const peer = peers.get(peerId);
   if (!peer) return;
+  clearTimeout(peer.offerTimer);
+  clearTimeout(peer.iceTimer);
   peer.pc.close();
   peers.delete(peerId);
   for (const id of peer.streamIds) dropRemoteStream(id);

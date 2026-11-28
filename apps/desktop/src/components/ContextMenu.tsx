@@ -333,7 +333,7 @@ function SubmenuItem({ label, render }: { label: string; render: () => ReactNode
 }
 
 /** Submenu "Cargos" do membro: todos os cargos com caixinha para dar/tirar. */
-function RolesSubmenu({ serverId, userId }: { serverId: string; userId: string }) {
+export function RolesSubmenu({ serverId, userId }: { serverId: string; userId: string }) {
   const roles = useLine((s) => s.roles[serverId]);
   const member = useLine((s) => s.members[serverId]?.[userId]);
   const myTop = useLine((s) => topPosition(s, serverId, s.me?.id));

@@ -33,6 +33,8 @@ import { setMusicVolume, stopMusic, toggleMusicMute, useMusic } from "@/lib/musi
 import { cx, Icons, Slider } from "./ui";
 import { hasPerm, Perm } from "@line/shared";
 import { confirmDialog } from './Dialogs';
+import { RolesSubmenu } from './ContextMenu';
+import { placeAt, useFloating } from "@/lib/floating";
 
 /** Quem pode silenciar ("Silenciar membros") ou mover/desconectar ("Mover membros") os outros na voz. */
 export function useCanModerateVoice(serverId: string | null | undefined) {
@@ -127,6 +129,13 @@ export function VoiceUserMenu({
       (music.djId === s.me?.id ||
         hasPerm(permsOf(s, music.serverId, s.me?.id), Perm.ManageAgent)),
   );
+  const canRoles = useLine(
+    (s) =>
+      !!serverId &&
+      !!s.members[serverId]?.[userId] &&
+      hasPerm(permsOf(s, serverId, s.me?.id), Perm.ManageRoles),
+  );
+  const [rolesOpen, setRolesOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [error, setError] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -194,16 +203,16 @@ export function VoiceUserMenu({
   const viewOptions = (
     <>
       <Item onClick={run(toggleShowNoVideo, true)} check={showNoVideo}>
-        Mostrar participantes sem vídeo
+        Participantes sem vídeo
       </Item>
       <Item onClick={run(toggleShowMyCamera, true)} check={showMyCamera}>
-        Mostrar minha câmera
+        Minha câmera
       </Item>
       <Item onClick={run(toggleShowMyScreen, true)} check={showMyScreen}>
-        Mostrar minha transmissão
+        Minha transmissão
       </Item>
       <Item onClick={run(toggleShowUnwatched, true)} check={showUnwatched}>
-        Mostrar transmissões não assistidas
+        Transmissões não assistidas
       </Item>
     </>
   );
@@ -230,20 +239,30 @@ export function VoiceUserMenu({
                 Volume da transmissão
                 <span className="text-muted">{screenMuted ? 0 : Math.round(screenVolume * 100)}%</span>
               </p>
-              <Slider value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
+              <Slider max={200} value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
             </div>
             <Item onClick={run(() => toggleScreenMute(userId), true)} check={screenMuted}>
               Silenciar transmissão
             </Item>
-            <Item disabled={!watching && !inSameCall} onClick={run(() => setWatching(userId, !watching))}>
-              {watching ? "Sair da transmissão" : "Assistir transmissão"}
-            </Item>
+            {!watching && (
+              <Item disabled={!inSameCall} onClick={run(() => setWatching(userId, true))}>
+                Assistir transmissão
+              </Item>
+            )}
           </>
         )}
         {inSameCall && (
           <>
             <Sep />
             {viewOptions}
+          </>
+        )}
+        {!isMe && watching && (
+          <>
+            <Sep />
+            <Item danger onClick={run(() => setWatching(userId, false))}>
+              Sair da transmissão
+            </Item>
           </>
         )}
         {error && <p className="px-2.5 py-1 text-xs text-danger">{error}</p>}
@@ -287,6 +306,24 @@ export function VoiceUserMenu({
         >
           Alterar apelido
         </Item>
+      )}
+      {serverId && canRoles && (
+        <div
+          className="relative"
+          onMouseEnter={() => setRolesOpen(true)}
+          onMouseLeave={() => setRolesOpen(false)}
+        >
+          <Item onClick={() => setRolesOpen((v) => !v)} arrow>
+            Cargos
+          </Item>
+          {rolesOpen && (
+            <div className="absolute top-0 left-full z-10 pl-1">
+              <div className="max-h-72 w-60 space-y-0.5 overflow-y-auto rounded-lg border border-edge bg-rail p-1.5 shadow-2xl">
+                <RolesSubmenu serverId={serverId} userId={userId} />
+              </div>
+            </div>
+          )}
+        </div>
       )}
       {!isMe && !isBot && (
         <>
@@ -364,7 +401,7 @@ export function VoiceUserMenu({
                 <p className="mb-1.5 font-medium text-soft">
                   Volume da transmissão
                 </p>
-                <Slider value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
+                <Slider max={200} value={screenMuted ? 0 : Math.round(screenVolume * 100)} onChange={(v) => setScreenVolume(userId, v / 100)} className="w-full" label="Volume da transmissão" />
               </div>
               <Item
                 onClick={run(() => toggleScreenMute(userId), true)}
@@ -434,13 +471,6 @@ export function VoiceUserMenu({
         </div>
       )}
 
-      {!isBot && inSameCall && (
-        <>
-          <Sep />
-          {viewOptions}
-        </>
-      )}
-
       {canModerate && state && (
         <>
           <Sep />
@@ -498,6 +528,61 @@ export function VoiceUserMenu({
         </>
       )}
       {error && <p className="px-2.5 py-1 text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+
+/** Clique direito em qualquer lugar da chamada (fora de um quadro): as opções que valem para a chamada toda. */
+export function CallViewMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  const muted = useVoice((v) => v.muted);
+  const deafened = useVoice((v) => v.deafened);
+  const showNoVideo = useVoice((v) => v.showNoVideo);
+  const showMyCamera = useVoice((v) => v.showMyCamera);
+  const showMyScreen = useVoice((v) => v.showMyScreen);
+  const showUnwatched = useVoice((v) => v.showUnwatched);
+  const ref = useRef<HTMLDivElement>(null);
+  const { style } = useFloating(ref, (w, h) => placeAt(x, y, w, h));
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      style={style}
+      className="fixed z-50 w-60 space-y-0.5 rounded-lg border border-edge bg-rail p-1.5 text-sm shadow-2xl"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <Item onClick={toggleShowNoVideo} check={showNoVideo}>
+        Participantes sem vídeo
+      </Item>
+      <Item onClick={toggleShowMyCamera} check={showMyCamera}>
+        Minha câmera
+      </Item>
+      <Item onClick={toggleShowMyScreen} check={showMyScreen}>
+        Minha transmissão
+      </Item>
+      <Item onClick={toggleShowUnwatched} check={showUnwatched}>
+        Transmissões não assistidas
+      </Item>
+      <Sep />
+      <Item onClick={() => void toggleMute()} check={muted}>
+        Silenciar
+      </Item>
+      <Item onClick={() => void toggleDeafen()} check={deafened}>
+        Desativar áudio
+      </Item>
     </div>
   );
 }

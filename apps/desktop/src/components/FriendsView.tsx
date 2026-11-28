@@ -14,6 +14,7 @@ import { actions, useLine } from '@/lib/store';
 import { useMusic } from '@/lib/music';
 import { joinVoice, leaveVoice, toggleCamera, useVoice } from '@/lib/voice';
 import { Avatar, Button, cx, Icons, Input, presenceLabel } from './ui';
+import { StreamPreview } from './Voice';
 import { confirmDialog, showError } from './Dialogs';
 import { openContextMenu, openMenuAt, type MenuEntry } from './ContextMenu';
 
@@ -462,6 +463,7 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
   const activity = useActivity(user);
   const users = useLine((s) => s.users);
   const myChannel = useVoice((s) => s.channelId);
+  const states = useVoice((s) => s.states);
   const status = user.customStatus || user.thought;
   if (!activity && !status) return null;
   const group = people.length > 1;
@@ -470,6 +472,8 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
   const open = (e: React.MouseEvent) =>
     actions.openModal({ kind: 'user', userId: user.id, at: { x: e.clientX, y: e.clientY } });
   const inside = !!activity?.channelId && myChannel === activity.channelId;
+  // Quem do cartão está transmitindo a tela: cada um ganha a prévia com "Assistir transmissão".
+  const streamers = activity?.channelId ? people.filter((p) => states[p.id]?.screenStreamId) : [];
 
   return (
     <div
@@ -542,6 +546,16 @@ function ActiveCard({ people }: { people: PublicUser[] }) {
               </Button>
             )
           )}
+        </div>
+      )}
+      {streamers.length > 0 && (
+        <div className="space-y-2 border-t border-edge bg-rail/40 p-3">
+          {streamers.map((p) => (
+            <div key={p.id}>
+              {group && <p className="mb-1 truncate text-xs font-semibold text-muted">Tela de {p.displayName}</p>}
+              <StreamPreview userId={p.id} channelId={activity!.channelId!} />
+            </div>
+          ))}
         </div>
       )}
     </div>

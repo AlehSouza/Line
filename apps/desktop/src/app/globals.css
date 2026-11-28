@@ -377,6 +377,33 @@ body {
 }
 .line-sound-rise { animation: line-sound-rise 2s ease-out forwards; }
 
+/* Card de carregando do vídeo (Voice.tsx, VideoLoading): sonar em cinzas neutros. */
+.line-sonar-card { opacity: 0; animation: line-sonar-card-in 300ms ease-out 250ms forwards; }
+@keyframes line-sonar-card-in { to { opacity: 1; } }
+.line-sonar {
+  position: relative;
+  border-radius: 9999px;
+  background: radial-gradient(circle at center, #26262b 0%, #1c1c20 70%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.line-sonar-wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: rgba(212, 212, 216, 0.45);
+  opacity: 0;
+  transform: scale(0);
+  animation: line-sonar-wave 2.4s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+}
+@keyframes line-sonar-wave {
+  0% { opacity: 0.9; transform: scale(0); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .line-sonar-wave { animation-duration: 4.8s; }
+}
+
 /* Tooltip do Line (components/Tooltip.tsx): aparece com um leve fade. */
 @keyframes line-tip-in {
   from {

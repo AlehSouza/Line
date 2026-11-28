@@ -642,6 +642,9 @@ pub struct UpdateChannel {
     pub nsfw: Option<bool>,
     /// Classificação indicativa: L | 10 | 12 | 14 | 16 | 18 (18 liga o aviso de conteúdo sensível).
     pub rating: Option<String>,
+    /// Fundo da chamada (só canal de voz): { image, color, opacity }; null volta ao padrão.
+    #[serde(default, deserialize_with = "nullable")]
+    pub look: Option<Option<serde_json::Value>>,
 }
 
 #[derive(Deserialize)]

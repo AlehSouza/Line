@@ -19,6 +19,7 @@ import { MoreMenu } from './FullProfile';
 import { useIgnored } from '@/lib/ignored';
 import { placeAround, placeBeside, useFloating } from '@/lib/floating';
 import { createPortal } from 'react-dom';
+import { StreamPreview } from './Voice';
 
 export { statusOptions } from './StatusPicker';
 
@@ -469,6 +470,7 @@ function useViewServer(): string | null {
 function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
   const channelId = useVoice((v) => v.states[userId]?.channelId ?? null);
   const myChannel = useVoice((v) => v.channelId);
+  const streaming = useVoice((v) => !!v.states[userId]?.screenStreamId);
   const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
   const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
   const [busy, setBusy] = useState(false);
@@ -490,6 +492,12 @@ function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
           <span className="block truncate text-xs text-muted">em {server.name}</span>
         </span>
       </div>
+      {/* Transmitindo a tela: a prévia leva direto para a chamada com a tela aberta, de qualquer lugar do app. */}
+      {streaming && (
+        <div className="mt-3" onClickCapture={() => setTimeout(onClose, 0)}>
+          <StreamPreview userId={userId} channelId={channel.id} />
+        </div>
+      )}
       <Button
         variant="subtle"
         className="mt-3 w-full"

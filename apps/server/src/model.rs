@@ -137,6 +137,9 @@ pub struct Channel {
     pub nsfw: bool,
     /// Classificação indicativa do canal (L | 10 | 12 | 14 | 16 | 18); null = sem classificação.
     pub rating: Option<String>,
+    /// Fundo da chamada (canal de voz): { image, color, opacity }; ausente = padrão.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub look: Option<serde_json::Value>,
     /// Canal base: 'rules' | 'announcements' | 'events' | 'activity'; vazio = canal comum.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub base: String,

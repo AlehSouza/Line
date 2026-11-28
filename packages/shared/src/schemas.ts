@@ -123,6 +123,15 @@ export const updateChannelSchema = z.object({
       interactRoleIds: z.array(z.string()).max(250),
     })
     .optional(),
+  /** Só canal de voz: fundo da chamada; null volta ao padrão. */
+  look: z
+    .object({
+      image: z.string().max(300).nullable().optional(),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+      opacity: z.number().min(0).max(100).optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export const createCategorySchema = z.object({
