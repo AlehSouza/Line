@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, fileUrl } from '@/lib/api';
 import { actions, useServerLook, displayNameIn, permsOf, topPosition, useLine, useMemberColor } from '@/lib/store';
 import { joinVoice, useVoice } from '@/lib/voice';
+import { ensureServerLoaded } from '@/lib/session';
 import { Avatar, Button, cx, DefaultServerIcon, ErrorText, Icons, Modal, presenceLabel } from './ui';
 import { UserTagBadge } from './ServerTag';
 import { EmojiButton } from './EmojiField';
@@ -295,7 +296,7 @@ export function UserCard({
               {mutual.friends.length > 0 && (
                 <span className="flex -space-x-1.5">
                   {mutual.friends.slice(0, 3).map((f) => (
-                    <span key={f.id} className="rounded-full ring-2 ring-rail">
+                    <span key={f.id} className="flex shrink-0 rounded-full ring-2 ring-rail">
                       <Avatar name={f.displayName} color={f.avatarColor} src={f.avatarUrl} size={18} />
                     </span>
                   ))}
@@ -469,11 +470,19 @@ function useViewServer(): string | null {
 /** "Em voz": canal de voz em que a pessoa está, se eu consigo ver esse canal. */
 function InVoice({ userId, onClose }: { userId: string; onClose: () => void }) {
   const channelId = useVoice((v) => v.states[userId]?.channelId ?? null);
+  const voiceServerId = useVoice((v) => v.states[userId]?.serverId ?? null);
   const myChannel = useVoice((v) => v.channelId);
   const streaming = useVoice((v) => !!v.states[userId]?.screenStreamId);
   const channel = useLine((s) => (channelId ? s.channels[channelId] : undefined));
-  const server = useLine((s) => (channel?.serverId ? s.servers[channel.serverId] : undefined));
+  const server = useLine((s) => { const sid = channel?.serverId ?? voiceServerId; return sid ? s.servers[sid] : undefined; });
   const [busy, setBusy] = useState(false);
+  // Depois do F5 os canais desse servidor podem não estar carregados (só carregam ao abrir o servidor): carrega para mostrar a chamada e a prévia da transmissão.
+  // Se o servidor já constava como carregado mas o canal não veio, força o recarregamento.
+  const missing = !!channelId && !!voiceServerId && !channel;
+  useEffect(() => {
+    if (!missing || !voiceServerId) return;
+    void ensureServerLoaded(voiceServerId, !!useLine.getState().loadedServers[voiceServerId]).catch(() => {});
+  }, [missing, voiceServerId]);
   if (!channel || !server) return null;
   const here = myChannel === channel.id;
   return (

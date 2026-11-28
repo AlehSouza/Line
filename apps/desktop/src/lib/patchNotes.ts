@@ -70,6 +70,16 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     improvements: [
       {
+        icon: 'headphones',
+        title: 'Veja quem está no canal de voz antes de entrar',
+        text: 'Abrindo um canal de voz fora da chamada, você vê os cartões de quem está lá em tamanho menor e os nomes logo abaixo, com o botão para entrar na chamada. Com bastante gente, aparecem os primeiros nomes e "outras pessoas".',
+      },
+      {
+        icon: 'window',
+        title: 'Câmera em tela cheia',
+        text: 'Quando alguém estiver com a câmera ligada na chamada, passe o mouse no quadro da pessoa e use o botão de tela cheia para ver só a câmera dela. Se a câmera for desligada, você volta automaticamente para a pessoa em destaque.',
+      },
+      {
         icon: 'message',
         title: 'Convite para o servidor com cartão',
         text: 'Ao convidar um amigo pelo clique com o botão direito na lista de amigos, ele recebe o cartão do servidor com o botão Juntar-se, sem precisar copiar código. O cartão de convite também ficou de cara nova, com o banner, a foto e a tag do servidor e quantas pessoas estão online.',
@@ -102,6 +112,16 @@ export const PATCH_NOTES: PatchNote[] = [
     ],
     fixes: [
       {
+        icon: 'message',
+        title: 'Comentários apagados somem das Novidades',
+        text: 'Quando um comentário das Novidades é apagado, ele some da lista. O aviso de mensagem excluída só fica quando o comentário tinha uma Conversa com respostas. A caixa de escrever também ganhou um respiro em relação ao título.',
+      },
+      {
+        icon: 'image',
+        title: 'Fotos na hora ao passar o mouse',
+        text: 'Ao passar o mouse num servidor, a foto de quem está na chamada já aparece certinha, sem mostrar o ícone padrão antes.',
+      },
+      {
         icon: 'monitor',
         title: 'Janela de Transmitir tela fecha certinho',
         text: 'Ao começar a transmitir, a janela de escolha da tela fecha sozinha assim que a transmissão começa. Se algo der errado, ela continua aberta com o aviso para você escolher outra tela.',
@@ -115,6 +135,26 @@ export const PATCH_NOTES: PatchNote[] = [
         icon: 'volume',
         title: 'Ícone de voz do servidor volta depois de recarregar',
         text: 'Ao recarregar a página durante uma chamada, o servidor às vezes ficava sem o ícone de som, como se você não estivesse conectado. Agora o ícone aparece de novo assim que você volta para a chamada.',
+      },
+      {
+        icon: 'shield',
+        title: 'Excluir só quando dá',
+        text: 'A opção "Excluir mensagem" agora só aparece nas mensagens que você realmente pode excluir. Nas conversas diretas, cada um exclui só as próprias mensagens.',
+      },
+      {
+        icon: 'eye',
+        title: 'Prévia da transmissão na conversa privada',
+        text: 'Depois de recarregar o app, a conversa privada com um amigo que está transmitindo voltou a mostrar a prévia da tela dele e onde ele está em voz.',
+      },
+      {
+        icon: 'monitor',
+        title: 'Quadro da chamada sem risco na borda',
+        text: 'Às vezes aparecia um risco claro na lateral do quadro de quem está com a câmera ligada. Agora o quadro fica limpinho.',
+      },
+      {
+        icon: 'sparkles',
+        title: 'Fotos dos amigos em comum redondinhas',
+        text: 'No cartão de perfil, as fotos dos amigos em comum voltaram a ser círculos perfeitos.',
       },
     ],
   },

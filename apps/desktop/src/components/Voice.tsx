@@ -552,9 +552,13 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
       onPointerDown={wake}
       className={cx('fixed inset-0 z-[300] bg-black', idle && 'cursor-none')}
     >
-      <ZoomBox enabled={!tile.isMe} controls={idle ? 'hidden' : 'flex'}>
-        <Video stream={tile.stream} contain detectPause loadingLabel="Carregando transmissão…" />
-      </ZoomBox>
+      {tile.kind === 'screen' ? (
+        <ZoomBox enabled={!tile.isMe} controls={idle ? 'hidden' : 'flex'}>
+          <Video stream={tile.stream} contain detectPause loadingLabel="Carregando transmissão…" />
+        </ZoomBox>
+      ) : (
+        <Video stream={tile.stream} contain mirror={tile.isMe} loadingLabel="Carregando câmera…" />
+      )}
       <div
         className={cx(
           'absolute top-3 right-3 left-3 z-30 flex items-center justify-between gap-2 transition-opacity duration-200',
@@ -562,7 +566,8 @@ function StreamFullscreen({ tile, name, onClose }: { tile: Tile; name: string; o
         )}
       >
         <span className="flex min-w-0 items-center gap-1.5 overflow-hidden rounded-md bg-black/60 px-2 py-0.5 text-sm font-medium whitespace-nowrap text-white">
-          <Icons.Screen size={14} className="shrink-0" /> <span className="min-w-0 truncate">Tela de {name}</span>
+          {tile.kind === 'screen' ? <Icons.Screen size={14} className="shrink-0" /> : <Icons.Video size={14} className="shrink-0" />}{' '}
+          <span className="min-w-0 truncate">{tile.kind === 'screen' ? `Tela de ${name}` : name}</span>
         </span>
         <button
           title="Sair da tela cheia (Esc)"
@@ -662,7 +667,8 @@ function TileView({
         'group relative flex aspect-video w-full cursor-pointer items-center justify-center overflow-hidden rounded-xl transition-colors',
         big && 'aspect-auto h-full',
       )}
-      style={{ background: tile.kind === 'screen' ? '#000' : tint }}
+      // Com vídeo o fundo é preto: a cor da foto não escapa como um risco claro na borda quando o vídeo arredonda o tamanho.
+      style={{ background: tile.kind === 'screen' || tile.stream || waiting ? '#000' : tint }}
     >
       {/* Borda de "falando" desenhada por dentro do tile, para a grade (overflow-hidden) não cortar. Some e aparece suave. */}
       {tile.kind === 'person' && (
@@ -783,8 +789,11 @@ function TileView({
           <Icons.Signal size={14} />
         </button>
       )}
-      {onFullscreen && tile.kind === 'screen' && tile.stream && !hidden && (
-        <button title="Tela cheia (só a transmissão)" onClick={onFullscreen} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
+      {/* Tela cheia: transmissão assistida, ou a pessoa só enquanto a câmera estiver ligada. */}
+      {onFullscreen && tile.stream && !hidden && (
+        <button
+          title={tile.kind === 'screen' ? 'Tela cheia (só a transmissão)' : 'Tela cheia (só a câmera)'}
+          onClick={onFullscreen} className="rounded-md bg-black/60 p-1 hover:bg-black/80">
           <Icons.Fullscreen size={14} />
         </button>
       )}
@@ -944,14 +953,22 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
   const focused = tiles.find((t) => t.key === focus);
   // Tela cheia total de uma transmissão (some quando ela acaba).
   const [full, setFull] = useState<string | null>(null);
-  const fullTile = tiles.find((t) => t.key === full && t.kind === 'screen' && t.stream);
+  const fullTile = tiles.find((t) => t.key === full && t.stream);
+  // A pessoa desligou a câmera em tela cheia: sai dela e fica em destaque.
+  const fullGone = !!full && !fullTile;
+  useEffect(() => {
+    if (!fullGone) return;
+    if (tiles.some((t) => t.key === full && t.kind === 'person')) setFocus(full);
+    setFull(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullGone]);
   const fullNick = useLine((s) => (fullTile?.state.serverId ? s.members[fullTile.state.serverId]?.[fullTile.state.userId]?.nickname : null));
   const [aspect, setAspect] = useState<number | null>(null);
   useEffect(() => setAspect(null), [focus]);
   const others = focused ? tiles.filter((t) => t !== focused) : tiles;
 
-  // Canal vazio: tela de espera colorida, com o convite para entrar no centro.
-  if (count === 0 && !inCall) {
+  // Fora da chamada (canal vazio ou com gente): tela de espera colorida, com quem está lá e o convite para entrar.
+  if (!inCall) {
     return (
       <div
         className={cx('relative flex flex-col overflow-hidden', compact ? 'h-[45%] min-h-64 border-b border-edge' : 'min-h-0 flex-1')}
@@ -976,7 +993,7 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
         )}
         <div className="relative flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <h2 className="text-3xl font-bold text-white drop-shadow">{title}</h2>
-          <p className="text-soft">Ninguém está em voz no momento.</p>
+          <VoicePeople channelId={channel.id} />
           <button
             disabled={connecting}
             onClick={() => joinVoice(channel.id)}
@@ -1083,6 +1100,67 @@ export function VoiceStage({ channel, compact }: { channel: Channel; compact?: b
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Fora da chamada: fotos pequenas de quem está no canal e o resumo em texto embaixo. */
+function VoicePeople({ channelId }: { channelId: string }) {
+  const states = useVoice((v) => v.states);
+  const users = useLine((s) => s.users);
+  const members = useLine((s) => s.members);
+  const list = useMemo(() => participants(states, channelId), [states, channelId]);
+  if (!list.length) return <p className="text-soft">Ninguém está em voz no momento.</p>;
+  const MAX = 8;
+  const shown = list.slice(0, MAX);
+  const nameOf = (st: VoiceState) => (st.serverId ? members[st.serverId]?.[st.userId]?.nickname : null) || users[st.userId]?.displayName || 'Alguém';
+  const first = list.slice(0, 3).map(nameOf);
+  const text =
+    list.length === 1
+      ? `${first[0]} está na chamada`
+      : list.length === 2
+        ? `${first[0]} e ${first[1]} estão na chamada`
+        : list.length === 3
+          ? `${first[0]}, ${first[1]} e ${first[2]} estão na chamada`
+          : `${first.join(', ')} e outras pessoas estão conectadas`;
+  return (
+    <>
+      <div className="mt-3 flex max-w-3xl flex-wrap items-center justify-center gap-2">
+        {shown.map((st) => (
+          <MiniPersonCard key={st.userId} state={st} name={nameOf(st)} />
+        ))}
+        {list.length > MAX && (
+          <div className="flex aspect-video w-40 items-center justify-center rounded-xl bg-black/40 text-lg font-semibold text-white">
+            +{list.length - MAX}
+          </div>
+        )}
+      </div>
+      <p className="max-w-md text-sm text-soft">{text}</p>
+    </>
+  );
+}
+
+/** Cartão pequeno de quem está no canal (mesma cor da foto e borda de "falando" dos quadros da chamada). */
+function MiniPersonCard({ state, name }: { state: VoiceState; name: string }) {
+  const user = useLine((s) => s.users[state.userId]);
+  const serverAvatar = useLine((s) => (state.serverId ? s.members[state.serverId]?.[state.userId]?.profile?.avatarUrl : null));
+  const avatarUrl = serverAvatar || user?.avatarUrl;
+  const tint = useAvatarTint(avatarUrl, user?.avatarColor ?? '#3a3a42');
+  const speaking = useVoice((v) => !!v.speaking[state.userId]);
+  // Visual da chamada da pessoa (papel de parede, borda da foto e do cartão), igual aos quadros grandes.
+  const look = useCallLook(state.userId);
+  return (
+    <div title={name} className="relative flex aspect-video w-40 items-center justify-center overflow-hidden rounded-xl shadow-lg" style={{ background: tint }}>
+      <span
+        className={cx(
+          'pointer-events-none absolute inset-0 z-10 rounded-xl ring-2 ring-inset ring-online transition-opacity',
+          speaking ? 'opacity-100 duration-150' : 'opacity-0 duration-500',
+        )}
+      />
+      <CallLookLayers look={look} />
+      <CallLookAvatar look={look}>
+        <Avatar name={user?.displayName ?? '?'} color={user?.avatarColor ?? '#3a3a42'} src={avatarUrl} size={44} />
+      </CallLookAvatar>
     </div>
   );
 }

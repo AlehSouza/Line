@@ -106,7 +106,9 @@ export function ChatView({ channel }: { channel: Channel }) {
       {news ? (
         <>
           {/* Comentários das Novidades: caixa no topo, os meus primeiro e o resto do mais novo ao mais antigo. */}
-          <Composer ref={composer} channel={channel} placeholder="Escreva um comentário…" />
+          <div className="pt-3">
+            <Composer ref={composer} channel={channel} placeholder="Escreva um comentário…" />
+          </div>
           <NewsList channel={channel} />
         </>
       ) : (
@@ -138,7 +140,8 @@ export function MediaThreadsPanel({ channelId, messageIds }: { channelId: string
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
   const serverId = channel?.serverId ?? undefined;
-  const canManageMessages = useCan(serverId, Perm.ManageMessages);
+  // Em conversa direta ou grupo ninguém modera: só quem escreveu exclui a própria mensagem.
+  const canManageMessages = useCan(serverId, Perm.ManageMessages) && !!serverId;
   const canPinMessages = useCan(serverId, Perm.PinMessages);
   const canCreateThreads = useLine((s) => hasPerm(channelPermsOf(s, channelId, s.me?.id), Perm.CreateThreads));
   const serverMembers = useLine((s) => (serverId ? s.members[serverId] : undefined));
@@ -337,7 +340,7 @@ function MessageList({ channel, title, footer }: { channel: Channel; title: stri
   const myUsername = useLine((s) => s.me?.username);
   const users = useLine((s) => s.users);
   const news = channel.base === 'news' && !channel.serverId;
-  const canManageServer = useCan(channel.serverId, Perm.ManageMessages);
+  const canManageServer = useCan(channel.serverId, Perm.ManageMessages) && !!channel.serverId;
   const canPinServer = useCan(channel.serverId, Perm.PinMessages);
   const canManageNews = useLine((s) => news && hasPerm(channelPermsOf(s, channel.id, s.me?.id), Perm.ManageMessages));
   const canManageMessages = news ? canManageNews : canManageServer;
@@ -583,14 +586,18 @@ function NewsList({ channel }: { channel: Channel }) {
       .catch(() => {});
   }, [channel.id, myUsername]);
 
-  const items = bucket?.items ?? EMPTY;
+  // Comentário apagado só aparece se ainda tiver uma Conversa com respostas.
+  const items = useMemo(
+    () => (bucket?.items ?? EMPTY).filter((m) => !m.deleted || threadsOf(m).some((t) => t.messageCount > 0)),
+    [bucket],
+  );
   const byNewest = (a: Message, b: Message) => b.createdAt.localeCompare(a.createdAt);
   const mine = useMemo(() => {
     const live = new Map(items.map((m) => [m.id, m]));
     const all = new Map<string, Message>();
     for (const m of mineBucket?.items ?? EMPTY) all.set(m.id, live.get(m.id) ?? m);
     for (const m of items) if (m.author.id === meId) all.set(m.id, m);
-    return [...all.values()].sort(byNewest);
+    return [...all.values()].filter((m) => !m.deleted || threadsOf(m).some((t) => t.messageCount > 0)).sort(byNewest);
   }, [items, mineBucket, meId]);
   const others = useMemo(() => items.filter((m) => m.author.id !== meId).sort(byNewest), [items, meId]);
 

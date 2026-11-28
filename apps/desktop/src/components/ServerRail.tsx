@@ -3,12 +3,13 @@
 import { mobile } from '@/lib/mobile';
 
 import { hasPerm, Perm } from '@line/shared';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useShallow } from 'zustand/react/shallow';
 import { api, fileUrl } from '@/lib/api';
 import { actions, permsOf, useLine } from '@/lib/store';
 import { useVoice } from '@/lib/voice';
+import { ensureUsers } from '@/lib/session';
 import { openContextMenu, useContextMenuOpen, type MenuEntry } from './ContextMenu';
 import { Avatar, cx, DefaultServerIcon, Icons, Logo } from './ui';
 import { useIncomingCount } from './FriendsView';
@@ -64,6 +65,22 @@ export function ServerRail() {
     : null;
   const inVoice: Record<string, string[]> = {};
   for (const st of Object.values(voiceStates)) if (st.serverId) (inVoice[st.serverId] ??= []).push(st.userId);
+  // Quem está em voz aparece no tooltip do servidor: busca o perfil e já baixa a foto antes do
+  // mouse passar por cima, senão o tooltip mostrava o ícone padrão por alguns segundos.
+  const voiceUserKey = Object.values(voiceStates)
+    .filter((st) => st.serverId)
+    .map((st) => st.userId)
+    .sort()
+    .join(',');
+  const voiceAvatars = useLine(
+    useShallow((s) => (voiceUserKey ? voiceUserKey.split(',').map((id) => s.users[id]?.avatarUrl ?? '') : [])),
+  );
+  useEffect(() => {
+    if (voiceUserKey) ensureUsers(voiceUserKey.split(','));
+  }, [voiceUserKey]);
+  useEffect(() => {
+    for (const src of voiceAvatars) if (src) new Image().src = fileUrl(src);
+  }, [voiceAvatars]);
 
   return (
     <nav className="flex w-[72px] shrink-0 flex-col items-center gap-2 overflow-y-auto bg-rail py-3">
